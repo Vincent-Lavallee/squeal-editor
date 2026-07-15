@@ -1,0 +1,58 @@
+{
+  "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
+  "applicationId": "js.squeal.editor",
+  "version": "0.1.0",
+  "defaultMode": "window",
+  "port": 0,
+  "documentRoot": "/resources/",
+  "url": "/",
+  "enableServer": true,
+  "enableNativeAPI": true,
+  "enableExtensions": true,
+  "tokenSecurity": "one-time",
+  "logging": {
+    "enabled": true,
+    "writeToLogFile": true
+  },
+  "nativeAllowList": [
+    "app.*",
+    "os.*",
+    "window.*",
+    "events.*",
+    "extensions.*",
+    "storage.*",
+    "debug.log"
+  ],
+  "globalVariables": {
+    "DB_EXTENSION_ID": "js.squeal.db"
+  },
+  "extensions": [
+    {
+      "id": "js.squeal.db",
+      "commandDarwin": "bun ${NL_PATH}/extensions/db/main.ts",
+      "commandLinux": "bun ${NL_PATH}/extensions/db/main.ts",
+      "commandWindows": "bun.exe ${NL_PATH}/extensions/db/main.ts"
+    }
+  ],
+  "modes": {
+    "window": {
+      "title": "Squeal Editor",
+      "width": 1280,
+      "height": 800,
+      "minWidth": 900,
+      "minHeight": 600,
+      "center": true,
+      "resizable": true,
+      "exitProcessOnClose": true,
+      "enableInspector": true
+    }
+  },
+  "cli": {
+    "binaryName": "squeal-editor",
+    "resourcesPath": "/resources/",
+    "extensionsPath": "/extensions/",
+    "clientLibrary": "/frontend/public/js/neutralino.js",
+    "binaryVersion": "6.8.0",
+    "clientVersion": "6.8.0"
+  }
+}

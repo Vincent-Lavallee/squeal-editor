@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Squeal Editor</title>
+    <!-- Without this the webview requests /favicon.ico and logs a resource error. -->
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <!-- Served from frontend/public/js/ and refreshed by `neu update`. Must load
+         before the app so window.Neutralino exists at init time. -->
+    <script src="/js/neutralino.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

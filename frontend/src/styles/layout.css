@@ -1,0 +1,211 @@
+/* App-specific composition. Primitives live in components.css. */
+
+/* ---------------- Connect screen ---------------- */
+
+.connect {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: var(--gap-xl);
+}
+.connect__card {
+  width: 340px;
+}
+.connect__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  margin: 0;
+  font-size: var(--text-page);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.connect__mark {
+  color: var(--blue);
+}
+.connect__sub {
+  margin: 4px 0 var(--gap-xl);
+  color: var(--text-muted);
+}
+.connect__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+.connect__row {
+  display: flex;
+  gap: 10px;
+}
+.connect__row > .field:first-child {
+  flex: 1;
+}
+.connect__port {
+  width: 90px;
+}
+.connect__submit {
+  justify-content: center;
+  height: 34px;
+  margin-top: var(--gap-xs);
+}
+.connect__error {
+  margin-top: var(--gap-lg);
+}
+
+/* ---------------- Shell ---------------- */
+
+.app {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  height: 100%;
+}
+
+/* ---------------- Sidebar ---------------- */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.sidebar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-sm);
+  height: var(--bar-h);
+  padding: 0 var(--gap);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.sidebar__server {
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--gap-sm) 6px;
+}
+
+.tree__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: var(--row-h-dense);
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-body);
+  text-align: left;
+  cursor: pointer;
+}
+.tree__row:hover {
+  background: var(--hover);
+}
+.tree__row--active {
+  background: var(--selected);
+  color: var(--blue);
+}
+.tree__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree__icon {
+  flex: none;
+  font-size: 11px;
+  opacity: 0.75;
+}
+.tree__caret {
+  flex: none;
+  width: 10px;
+  font-size: 9px;
+  color: var(--text-faint);
+  transition: transform 0.12s ease;
+}
+.tree__caret--open {
+  transform: rotate(90deg);
+}
+.tree__children {
+  margin-left: 13px;
+  padding-left: 5px;
+  border-left: 1px solid var(--border);
+}
+.tree__note {
+  padding: 5px 8px;
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+}
+.tree__note--error {
+  color: var(--red-text);
+}
+
+/* ---------------- Main ---------------- */
+
+.main {
+  display: grid;
+  grid-template-rows: var(--bar-h) minmax(120px, 30%) 1fr;
+  min-width: 0;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--gap-lg);
+  border-bottom: 1px solid var(--border);
+}
+.toolbar__spacer {
+  flex: 1;
+}
+.toolbar__context {
+  font-family: var(--mono);
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+}
+.toolbar__hint {
+  font-size: var(--text-label);
+  color: var(--text-faint);
+}
+
+.editor {
+  width: 100%;
+  height: 100%;
+  padding: var(--gap-lg);
+  border: none;
+  outline: none;
+  resize: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+.results__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  flex: none;
+  padding: 0 var(--gap-lg);
+  height: 32px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+}

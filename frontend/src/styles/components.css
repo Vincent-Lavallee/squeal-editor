@@ -1,0 +1,254 @@
+/**
+ * Primitives. Anything reusable lives here; one-off layout lives in layout.css.
+ *
+ * Recipes, so new components stay on-system:
+ *   badge/status  -> pill radius, step-3 bg, step-11 text, 12px
+ *   button        -> 6px radius; solid blue takes DARK text (--on-blue)
+ *   card/panel    -> --bg + 1px --border-strong + 8px radius. NEVER a shadow.
+ *   section label -> 11px, uppercase, --tracking-label, --text-muted
+ *   identifiers   -> --mono (SQL, column names, cell values)
+ */
+
+/* ---------------- Buttons ---------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-badge);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+.btn:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+/* Solid blue with dark text -- the reference's signature primary. */
+.btn--primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--on-blue);
+  font-weight: 600;
+}
+.btn--primary:hover:not(:disabled) {
+  background: #7aabff;
+}
+.btn--primary:disabled {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--on-blue);
+  opacity: 0.45;
+}
+
+.btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+.btn--ghost:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* ---------------- Badges ---------------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-badge);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.badge--blue {
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+.badge--green {
+  background: var(--green-bg);
+  color: var(--green);
+}
+.badge--red {
+  background: var(--red-bg);
+  color: var(--red-text);
+}
+.badge--amber {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+.badge--purple {
+  background: var(--purple-bg);
+  color: var(--purple);
+}
+.badge--neutral {
+  background: var(--border);
+  color: var(--text-muted);
+}
+
+/* ---------------- Labels ---------------- */
+
+.label {
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+/* ---------------- Fields ---------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.field__hint {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+}
+
+.input,
+.select {
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-body);
+}
+.input::placeholder {
+  color: var(--text-faint);
+}
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+/* ---------------- Card ---------------- */
+
+.card {
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--gap-xl);
+}
+.card__title {
+  font-size: var(--text-title);
+  font-weight: 600;
+  margin: 0;
+}
+
+/* ---------------- Data grid ---------------- */
+
+.grid-scroll {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--mono);
+  font-size: var(--text-body);
+  white-space: nowrap;
+}
+
+.grid th,
+.grid td {
+  height: var(--row-h-dense);
+  padding: 0 10px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: var(--text-badge);
+}
+
+.grid tbody tr:hover td {
+  background: var(--hover);
+}
+
+/* Row numbers: sticky gutter, never selectable, muted. */
+.grid .gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+  color: var(--text-faint);
+  text-align: right;
+  user-select: none;
+  font-size: var(--text-badge);
+}
+.grid thead .gutter {
+  z-index: 2;
+}
+
+.null {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* ---------------- Notes ---------------- */
+
+.note {
+  padding: var(--gap-lg);
+  font-size: var(--text-body);
+}
+.note--muted {
+  color: var(--text-muted);
+}
+.note--ok {
+  color: var(--green);
+}
+.note--error {
+  color: var(--red-text);
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.callout--error {
+  padding: 9px 11px;
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  background: var(--red-bg);
+  color: var(--red-text);
+  font-size: var(--text-badge);
+  word-break: break-word;
+}

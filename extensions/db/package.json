@@ -1,0 +1,17 @@
+{
+  "name": "@squeal/db-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Neutralino extension: holds the MySQL/Postgres connections and runs queries",
+  "main": "main.ts",
+  "dependencies": {
+    "mysql2": "^3.11.5",
+    "pg": "^8.13.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.13"
+  }
+}

@@ -1,0 +1,18 @@
+node_modules/
+
+# Vite build output; regenerate with `bun run build`.
+resources/
+
+# Fetched by `neu update` (runs on postinstall), not source.
+bin/
+frontend/public/js/
+
+# Neutralino runtime scratch.
+.tmp/
+neutralinojs.log
+
+backlog.md
+completed.md
+claude.md
+.claude
+docs

@@ -1,0 +1,84 @@
+/**
+ * Design tokens.
+ *
+ * Lineage: Radix Colors *dark*. Nearly every value below lands on a Radix dark
+ * step -- #111113 is slate-1, #EDEEF0/#B0B4BA are slate-12/11, #E5484D is red-9,
+ * #3DD68C is green-11. Values sampled from the reference UI are used verbatim
+ * where they differ slightly from stock Radix (see --border-strong).
+ *
+ * The one rule that matters most: THERE IS ONE BACKGROUND. Canvas, sidebar, top
+ * bar, cards and table rows are all --bg. There is no elevation and there are no
+ * shadows. All structure comes from 1px borders and spacing. Do not introduce a
+ * lighter "card gray" -- it breaks the system immediately.
+ *
+ * Second rule: chrome is grayscale. The only non-gray in the chrome is --blue for
+ * interactive things. Every other hue is semantic (error/success/warning), never
+ * decorative.
+ */
+
+:root {
+  /* ---- Surface: one background, borders do the work ---- */
+  --bg: #111113;              /* slate-1: every surface */
+  --border: #272a2d;          /* slate-4: panel dividers, table rules */
+  --border-strong: #363a3f;   /* card + input outlines */
+  --hover: rgba(255, 255, 255, 0.04);
+  --selected: rgba(102, 156, 255, 0.14);
+
+  /* ---- Text ---- */
+  --text: #edeef0;            /* slate-12: primary */
+  --text-muted: #b0b4ba;      /* slate-11: labels, axes, secondary */
+  --text-faint: #696e77;      /* slate-9: disabled, placeholders */
+
+  /* ---- Interactive (the only non-semantic hue) ---- */
+  --blue: #669cff;
+  --blue-bg: #182449;         /* indigo-3: badge/chip background */
+  --on-blue: #0b1020;         /* solid blue buttons take DARK text */
+
+  /* ---- Semantic. Badge pattern is always: step-3 bg + step-11 text ---- */
+  --red: #e5484d;             /* red-9: error borders/solids */
+  --red-bg: #3b1219;          /* red-3 */
+  --red-text: #ff9592;        /* red-11 */
+
+  --green: #3dd68c;           /* green-11: success */
+  --green-bg: #132d21;        /* green-3 */
+
+  --amber: #ffca16;           /* amber-11: warning/truncation */
+  --amber-bg: #341c00;        /* amber-3 */
+
+  --purple: #bf7af0;          /* purple-11 */
+  --purple-bg: #301c3b;       /* purple-3 */
+
+  /* ---- Shape: pills for status, 6-8px for everything else ---- */
+  --radius-pill: 999px;       /* badges, chips, filter controls, search */
+  --radius: 6px;              /* buttons, inputs */
+  --radius-lg: 8px;           /* cards, panels */
+
+  /* ---- Type ---- */
+  --font: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+
+  --text-page: 24px;          /* page titles, stat numbers -- bold */
+  --text-title: 15px;         /* card titles -- semibold */
+  --text-body: 13px;          /* body, table cells */
+  --text-badge: 12px;         /* badges, secondary */
+  --text-label: 11px;         /* uppercase section labels, letter-spaced, muted */
+
+  --tracking-label: 0.04em;
+
+  /* ---- Density ---- */
+  --bar-h: 44px;              /* top bar */
+  --row-h: 44px;              /* reference table row height */
+  /*
+   * Deviation from the reference: its 44px rows suit a dashboard table of a
+   * dozen rows. A SQL result grid is a data grid -- 100 rows at 44px is nothing
+   * but scrolling -- so grids and the object tree use the dense height instead.
+   * Set this to var(--row-h) to follow the reference exactly.
+   */
+  --row-h-dense: 30px;
+
+  --gap-xs: 4px;
+  --gap-sm: 8px;
+  --gap: 12px;
+  --gap-lg: 16px;
+  --gap-xl: 24px;
+}
