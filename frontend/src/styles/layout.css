@@ -1,5 +1,141 @@
 /* App-specific composition. Primitives live in components.css. */
 
+/* ---------------- Window frame ---------------- */
+
+/*
+ * The window is borderless, so the titlebar is ours and it is always present --
+ * above the router, not inside it. Everything else lives under it.
+ */
+#root {
+  display: flex;
+  flex-direction: column;
+}
+.app-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: var(--titlebar-h);
+  /* One background: the bar is divided from the app by a rule, not a shade. */
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+.titlebar__mark {
+  flex: none;
+  padding: 0 var(--gap-sm) 0 10px;
+  color: var(--blue);
+  font-size: var(--text-badge);
+}
+/*
+ * Takes every pixel the menu and the buttons do not, because the draggable area
+ * of a titlebar should be "the titlebar", and a window you can only grab in one
+ * narrow spot feels broken long before anyone can say why.
+ */
+.titlebar__drag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+.titlebar__title {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-badge);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar__controls {
+  display: flex;
+  flex: none;
+  height: 100%;
+}
+/* 46px is the Windows control width; matching it is why the buttons feel right. */
+.titlebar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.titlebar__btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+/*
+ * The one coloured control, and it is semantic rather than decorative: red is
+ * this system's destructive hue, and closing is the destructive action. It is
+ * also the platform convention, so breaking it would only read as a bug.
+ */
+.titlebar__btn--close:hover {
+  background: var(--red);
+  color: var(--text);
+}
+
+/* ---------------- Menu ---------------- */
+
+.menu {
+  position: relative;
+  flex: none;
+}
+.menu__trigger {
+  height: var(--titlebar-h);
+  padding: 0 var(--gap-sm);
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-badge);
+  cursor: pointer;
+}
+.menu__trigger:hover,
+.menu__trigger--open {
+  background: var(--hover);
+  color: var(--text);
+}
+/*
+ * The one place something sits above the app, so it is the one place that needs
+ * an outline rather than a shade to separate it -- same background, 1px border.
+ */
+.menu__list {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: var(--gap-xs);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.menu__item {
+  padding: 6px var(--gap-sm);
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-body);
+  text-align: left;
+  cursor: pointer;
+}
+.menu__item:hover {
+  background: var(--hover);
+}
+
 /* ---------------- Connect screen ---------------- */
 
 .connect {
@@ -8,8 +144,13 @@
   height: 100%;
   padding: var(--gap-xl);
 }
+/*
+ * Wide enough that a row's `user@host:port` still reads in full with the edit
+ * and delete buttons holding their space beside it. At the old 340 the port --
+ * the very thing that tells two servers apart -- was the first casualty.
+ */
 .connect__card {
-  width: 340px;
+  width: 420px;
 }
 .connect__brand {
   display: flex;
@@ -45,10 +186,124 @@
 .connect__submit {
   justify-content: center;
   height: 34px;
+}
+.connect__actions {
+  display: flex;
+  gap: var(--gap-sm);
   margin-top: var(--gap-xs);
+}
+/* The primary action takes the room; Cancel stays the width of its label. */
+.connect__actions > .connect__submit {
+  flex: 1;
+}
+.connect__actions > .btn {
+  height: 34px;
 }
 .connect__error {
   margin-top: var(--gap-lg);
+}
+
+/* ---------------- Saved connections ---------------- */
+
+.saved__label {
+  display: block;
+  margin-bottom: var(--gap-sm);
+}
+.saved {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 var(--gap);
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+/* Rows are divided by a rule, not by a surface -- there is one background. */
+.saved__row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  padding-right: var(--gap-sm);
+}
+.saved__row + .saved__row {
+  border-top: 1px solid var(--border);
+}
+.saved__row:hover {
+  background: var(--hover);
+}
+
+.saved__pick {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: var(--gap-sm) 10px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.saved__pick:disabled {
+  cursor: default;
+}
+.saved__head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  min-width: 0;
+}
+.saved__name {
+  overflow: hidden;
+  font-size: var(--text-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.saved__server {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: var(--text-badge);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.saved__hint {
+  color: var(--text-faint);
+  font-family: var(--font);
+  font-size: var(--text-badge);
+}
+
+/*
+ * Row actions stay quiet until wanted: two text buttons per row is more chrome
+ * than the names they sit beside. They keep their space rather than being taken
+ * out of flow, so revealing them never reflows the row -- the server label is
+ * sized for the room that is left, not for room it loses on hover.
+ *
+ * `pointer-events` has to track `opacity`: an invisible button is still a
+ * clickable one, and an accidental invisible Delete is not a fair trade for a
+ * tidier row. focus-within keeps them reachable by keyboard either way.
+ */
+.saved__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  flex: none;
+  opacity: 0;
+  pointer-events: none;
+}
+.saved__row:hover .saved__actions,
+.saved__actions:focus-within,
+.saved__actions--open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.saved__new {
+  justify-content: center;
+  width: 100%;
 }
 
 /* ---------------- Shell ---------------- */
@@ -76,13 +331,6 @@
   padding: 0 var(--gap);
   border-bottom: 1px solid var(--border);
   flex: none;
-}
-.sidebar__server {
-  font-size: var(--text-badge);
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .tree {
   flex: 1;

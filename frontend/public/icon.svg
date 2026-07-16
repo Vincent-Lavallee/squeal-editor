@@ -1,0 +1,41 @@
+<!--
+  The app icon: a seal, for the pun. Source of truth — icon.png is generated from
+  this file (see docs/design-system.md), and everything else points at one or the
+  other.
+
+  Drawn for 16px, because that is the size Alt-Tab and the taskbar actually show.
+  That budget is what dictates the shape: one solid mass, no strokes, no interior
+  detail. The three cues that survive downsampling are the only reason it reads as
+  a seal rather than a bird or a dolphin — a blunt muzzle (a tapered one reads as a
+  beak), the propped-up land pose, and hind flippers fanned at the back. The front
+  flipper hangs below the belly line on purpose: same-fill shapes inside the
+  outline are invisible, so a limb only exists if it breaks the silhouette.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#111113"/>
+  <g transform="rotate(-8 16 16)">
+    <!-- head, body and hind flippers: one mass -->
+    <path fill="#669cff" d="
+      M 2.8 15.5
+      C 2.8 8.0 5.8 4.6 9.6 4.6
+      C 13.2 4.6 15.4 7.4 15.9 10.2
+      C 16.4 12.6 18.2 14.0 20.6 15.2
+      C 23.4 16.6 25.4 17.8 26.4 19.2
+      L 30.6 16.2
+      C 30.0 20.0 28.6 22.0 26.6 23.0
+      C 28.6 24.0 30.0 26.0 30.4 28.4
+      C 26.0 29.2 21.0 28.6 16.6 26.8
+      C 11.0 24.6 6.2 22.4 4.2 19.6
+      C 3.0 18.0 2.8 16.6 2.8 15.5
+      Z"/>
+    <!-- front flipper, planted; must clear the belly to be seen at all -->
+    <path fill="#669cff" d="
+      M 9.6 19.6
+      C 12.4 21.2 14.6 24.4 15.6 28.6
+      C 12.2 29.2 9.0 27.6 7.6 25.0
+      C 6.6 23.0 7.6 20.6 9.6 19.6
+      Z"/>
+    <!-- eye: plate-coloured rather than a cut-out, since the plate is always behind -->
+    <circle cx="6.8" cy="10.4" r="1.75" fill="#111113"/>
+  </g>
+</svg>

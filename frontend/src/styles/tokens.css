@@ -66,6 +66,7 @@
   --tracking-label: 0.04em;
 
   /* ---- Density ---- */
+  --titlebar-h: 32px;         /* the window's own titlebar: Windows' own height */
   --bar-h: 44px;              /* top bar */
   --row-h: 44px;              /* reference table row height */
   /*

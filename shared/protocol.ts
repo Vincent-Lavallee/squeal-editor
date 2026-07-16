@@ -8,15 +8,52 @@
 
 export type EngineType = 'mysql' | 'postgres';
 
-export interface ConnectionConfig {
+/**
+ * Everything needed to reach a server *except* the secret.
+ *
+ * The split is what lets the password stay out of places that have no business
+ * holding it: a saved connection describes a `ServerConfig` and keeps its
+ * password encrypted in the extension, and the UI's session holds a
+ * `ServerConfig` too -- once connected, nothing in the webview reads the
+ * password again, so it is not kept.
+ */
+export interface ServerConfig {
   type: EngineType;
   host: string;
   port: number;
   user: string;
-  password: string;
   /** Bootstrap database. Postgres must connect to one; MySQL may omit it. */
   database?: string;
 }
+
+/** A server plus the password to reach it. Only ever travels UI -> extension. */
+export interface ConnectionConfig extends ServerConfig {
+  password: string;
+}
+
+/**
+ * A connection the user named and kept. The password is deliberately absent:
+ * it lives encrypted in the extension's store and never crosses the bridge in
+ * this direction, so `hasPassword` is all the UI learns about it.
+ */
+export interface SavedConnection {
+  id: string;
+  name: string;
+  config: ServerConfig;
+  /** False when the user chose not to store one -- connecting must ask for it. */
+  hasPassword: boolean;
+}
+
+/**
+ * What to do with the password when saving. Three cases, all of them real, and
+ * `keep` is why this is a union rather than a `string | null`: the edit form is
+ * never sent the password it is editing, so "leave it alone" cannot be spelled
+ * as a value.
+ */
+export type PasswordUpdate =
+  | { mode: 'store'; password: string }
+  | { mode: 'none' }
+  | { mode: 'keep' };
 
 /** Cells arrive JSON-encoded, so drivers flatten exotic types to strings. */
 export type CellValue = string | number | boolean | null;
@@ -63,6 +100,53 @@ export interface Commands {
   'db.disconnect': {
     req: { connectionId: string };
     res: { ok: true };
+  };
+
+  /* -- Saved connections. The store is the extension's; the UI only ever sees
+        `SavedConnection`, which is to say never a password. -------------- */
+
+  'db.saved.list': {
+    req: Record<string, never>;
+    res: { connections: SavedConnection[] };
+  };
+  /** Omit `id` to add; pass one to update it in place. */
+  'db.saved.save': {
+    req: { id?: string; name: string; config: ServerConfig; password: PasswordUpdate };
+    res: { connection: SavedConnection };
+  };
+  'db.saved.delete': {
+    req: { id: string };
+    res: { ok: true };
+  };
+  /**
+   * `password` is required only for a saved connection that stores none; the
+   * extension decrypts its own otherwise. Echoes the config back rather than
+   * letting the UI seed its session from a list row that may be stale.
+   */
+  'db.saved.connect': {
+    req: { id: string; password?: string };
+    res: { connectionId: string; databases: string[]; config: ServerConfig };
+  };
+
+  /* -- The window. Not a database, and deliberately here anyway. ---------- */
+
+  /**
+   * Paint the OS-drawn window frame to match the app, which the webview cannot
+   * do for itself -- the frame is outside its client area. The extension is the
+   * process that makes the native calls the webview cannot, which is the same
+   * reason the connections live here.
+   *
+   * `pid` is the app's own (`NL_PID`): Neutralino spawns extensions through a
+   * shell, so the extension's parent is that shell rather than the window, and
+   * it cannot find the window without being told. `colour` is `--bg`, read from
+   * the stylesheet so that tokens.css stays the one place the colour is written.
+   *
+   * `applied` is false wherever the platform will not do it -- older Windows,
+   * anything not Windows -- which is not an error. The band just stays.
+   */
+  'window.matchFrame': {
+    req: { pid: number; colour: string };
+    res: { applied: boolean };
   };
 }
 

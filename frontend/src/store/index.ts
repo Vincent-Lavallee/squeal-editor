@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 
 import { explorerReducer } from './explorerSlice.ts';
 import { resultsReducer } from './resultsSlice.ts';
+import { savedReducer } from './savedSlice.ts';
 import { sessionReducer } from './sessionSlice.ts';
 
 /**
@@ -15,6 +16,7 @@ import { sessionReducer } from './sessionSlice.ts';
 export const store = configureStore({
   reducer: {
     session: sessionReducer,
+    saved: savedReducer,
     explorer: explorerReducer,
     results: resultsReducer,
   },

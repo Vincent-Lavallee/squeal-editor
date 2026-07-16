@@ -24,12 +24,23 @@ export interface Harness {
   stop(): Promise<void>;
 }
 
-export async function startHarness(): Promise<Harness> {
+/**
+ * `env` is how the saved-connection suite points the extension at a throwaway
+ * store and keychain entry. Both still exercise the real SQLite and the real OS
+ * credential store -- only the names change, so a test run cannot read, write or
+ * delete the connections you actually use.
+ */
+export async function startHarness(env: Record<string, string> = {}): Promise<Harness> {
   const wss = new WebSocketServer({ port: 0 });
   await new Promise<void>((resolve) => wss.once('listening', () => resolve()));
   const { port } = wss.address() as { port: number };
 
-  const child: Subprocess = Bun.spawn(['bun', EXT_MAIN], { stdin: 'pipe', stdout: 'inherit', stderr: 'inherit' });
+  const child: Subprocess = Bun.spawn(['bun', EXT_MAIN], {
+    stdin: 'pipe',
+    stdout: 'inherit',
+    stderr: 'inherit',
+    env: { ...process.env, ...env },
+  });
   child.stdin.write(
     JSON.stringify({ nlPort: String(port), nlToken: TOKEN, nlConnectToken: 'ct', nlExtensionId: EXT_ID })
   );

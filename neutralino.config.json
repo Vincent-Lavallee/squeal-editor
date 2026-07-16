@@ -37,11 +37,13 @@
   "modes": {
     "window": {
       "title": "Squeal Editor",
+      "icon": "/resources/icon.png",
       "width": 1280,
       "height": 800,
       "minWidth": 900,
       "minHeight": 600,
       "center": true,
+      "borderless": true,
       "resizable": true,
       "exitProcessOnClose": true,
       "enableInspector": true

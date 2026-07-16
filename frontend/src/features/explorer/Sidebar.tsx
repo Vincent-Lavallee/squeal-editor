@@ -1,5 +1,4 @@
 import type { TableInfo } from '../../../../shared/protocol.ts';
-import { useSession } from '../../store/sessionSlice.ts';
 import { useExplorer } from './useExplorer.ts';
 
 interface Props {
@@ -8,19 +7,18 @@ interface Props {
 }
 
 export default function Sidebar({ onSelectTable }: Props) {
-  const { serverLabel, disconnect } = useSession();
   const { databases, tables, loadingTables, error, activeDatabase, expanded, selectDatabase } =
     useExplorer();
 
   return (
     <aside className="sidebar">
+      {/*
+        Which server this is belongs to the window, not to the tree, so the
+        titlebar carries it -- printing it twice is how the two drift apart.
+        What is left is the tree's own header.
+      */}
       <div className="sidebar__head">
-        <span className="sidebar__server" title={serverLabel}>
-          {serverLabel}
-        </span>
-        <button className="btn btn--ghost" onClick={disconnect}>
-          Disconnect
-        </button>
+        <span className="label">Databases</span>
       </div>
 
       <nav className="tree">

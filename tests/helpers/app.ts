@@ -59,9 +59,19 @@ async function findPage(tries = 40): Promise<Target> {
   throw new Error('app never exposed a CDP page target');
 }
 
-export async function launchApp(): Promise<AppSession> {
+/**
+ * `env` reaches the extension: Neutralino spawns it as a child, so it inherits
+ * whatever `neu run` was given. That is how the UI suite points the saved
+ * connection store at a throwaway directory instead of the real one belonging
+ * to whoever is running the tests.
+ */
+export async function launchApp(env: Record<string, string> = {}): Promise<AppSession> {
   const child = Bun.spawn(['bun', 'x', 'neu', 'run'], {
-    env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${CDP_PORT}` },
+    env: {
+      ...process.env,
+      ...env,
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${CDP_PORT}`,
+    },
     stdout: 'ignore',
     stderr: 'ignore',
   });

@@ -8,6 +8,14 @@
  * app actually uses. Verified against the client's own d.ts for v6.8.
  */
 
+/**
+ * The app process's own id, injected as a global alongside the client.
+ *
+ * Typed as a number because that is what it is at runtime -- the client's own
+ * d.ts calls it a string, and it is not.
+ */
+declare const NL_PID: number;
+
 declare namespace Neutralino {
   function init(): void;
 
@@ -27,5 +35,22 @@ declare namespace Neutralino {
 
   namespace app {
     function exit(code?: number): Promise<void>;
+  }
+
+  namespace window {
+    interface SizeOptions {
+      width?: number;
+      height?: number;
+      minWidth?: number;
+      minHeight?: number;
+      resizable?: boolean;
+    }
+    function setSize(options: SizeOptions): Promise<void>;
+    function minimize(): Promise<void>;
+    function maximize(): Promise<void>;
+    function unmaximize(): Promise<void>;
+    function isMaximized(): Promise<boolean>;
+    /** Hands the window to the OS move loop; that is what keeps Aero Snap native. */
+    function beginDrag(screenX?: number, screenY?: number): Promise<void>;
   }
 }

@@ -18,9 +18,12 @@ import {
   type CommandName,
   type CommandReq,
   type CommandRes,
+  type ConnectionConfig,
   type QueryResult,
 } from '../../shared/protocol.ts';
+import { matchWindowFrame } from './chrome.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';
+import { deleteSaved, listSaved, resolveSaved, saveConnection } from './store.ts';
 
 // Killing the app does not reliably close our socket: WebView2 child processes
 // inherit the listening handle, so the connection can sit in ESTABLISHED forever
@@ -64,14 +67,19 @@ async function closeConnection(connectionId: string): Promise<void> {
 
 type Handlers = { [K in CommandName]: (req: CommandReq<K>) => Promise<CommandRes<K>> };
 
+/** Open, verify and register a connection -- what both connect paths mean by it. */
+async function establish(config: ConnectionConfig): Promise<{ connectionId: string; databases: string[] }> {
+  const conn = await openConnection(config);
+  const databases = await conn.listDatabases();
+
+  const connectionId = randomUUID();
+  connections.set(connectionId, conn);
+  return { connectionId, databases };
+}
+
 const COMMANDS: Handlers = {
   async 'db.connect'({ config }) {
-    const conn = await openConnection(config);
-    const databases = await conn.listDatabases();
-
-    const connectionId = randomUUID();
-    connections.set(connectionId, conn);
-    return { connectionId, databases };
+    return establish(config);
   },
 
   async 'db.databases'({ connectionId }) {
@@ -92,6 +100,32 @@ const COMMANDS: Handlers = {
   async 'db.disconnect'({ connectionId }) {
     await closeConnection(connectionId);
     return { ok: true };
+  },
+
+  /* -- Saved connections (store.ts owns the file and the key) ---------- */
+
+  async 'db.saved.list'() {
+    return { connections: listSaved() };
+  },
+
+  async 'db.saved.save'({ id, name, config, password }) {
+    return { connection: await saveConnection({ id, name, config, password }) };
+  },
+
+  async 'db.saved.delete'({ id }) {
+    deleteSaved(id);
+    return { ok: true };
+  },
+
+  async 'db.saved.connect'({ id, password }) {
+    const { password: secret, ...config } = await resolveSaved(id, password);
+    return { ...(await establish({ ...config, password: secret })), config };
+  },
+
+  /* -- The window (chrome.ts explains why this lives here) ------------- */
+
+  async 'window.matchFrame'({ pid, colour }) {
+    return { applied: matchWindowFrame(pid, colour) };
   },
 };
 

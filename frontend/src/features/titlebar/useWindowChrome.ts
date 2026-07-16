@@ -1,0 +1,128 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { call } from '../../bridge.ts';
+
+/**
+ * The window chrome: dragging, maximise state and the window buttons.
+ *
+ * None of this is store state. `maximized` is read back from the window rather
+ * than remembered, and nothing else here outlives the webview.
+ *
+ * This hook calls the bridge directly instead of going through a thunk, which is
+ * the one place in the app that does. A thunk earns its keep by putting a result
+ * in a slice and a failure on screen; the frame paint has neither -- it returns
+ * nothing to keep and, when the platform says no, there is nothing to tell the
+ * user. A slice for it would hold no state.
+ */
+
+/**
+ * Pixels of travel before a press on the bar counts as a drag.
+ *
+ * Not a taste value: see `onPointerMove` for why a drag cannot begin on the press
+ * itself.
+ */
+const DRAG_THRESHOLD = 4;
+
+export function useWindowChrome() {
+  const [maximized, setMaximized] = useState(false);
+
+  /*
+   * Two halves of one idea: keep the OS frame, stop it looking like the OS frame.
+   *
+   * Neutralino's borderless mode is `style & ~(WS_CAPTION | WS_THICKFRAME)`, and
+   * Windows hangs *both* edge-resize and Aero Snap off WS_THICKFRAME -- a window
+   * without it cannot be snapped, because Windows only snaps windows it believes
+   * are sizeable. Borderless alone therefore trades the titlebar for a window you
+   * cannot snap or resize, which is the whole trap this feature exists to avoid.
+   * setSize is the only public API that puts the bit back, and it reads as a
+   * no-op: it sends the size the window already has, and `resizable` is the point.
+   *
+   * Keeping the frame means Windows draws ~7px of it above our titlebar, in the
+   * non-client area no webview can paint. So the extension paints it: it is the
+   * process that can make the native calls we cannot. The colour comes from
+   * tokens.css rather than being written twice, and the pid has to be sent
+   * because Neutralino spawns extensions through a shell -- the extension's own
+   * parent is that shell, not this window.
+   *
+   * See docs/decisions.md before touching either half.
+   */
+  useEffect(() => {
+    void (async () => {
+      await Neutralino.window.setSize({ resizable: true });
+
+      const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg');
+      // Best-effort chrome: a window that keeps its own frame colour is a
+      // cosmetic loss, and not something to fail startup or shout about.
+      await call('window.matchFrame', { pid: NL_PID, colour: bg.trim() }).catch(() => undefined);
+    })();
+  }, []);
+
+  const sync = useCallback(async (): Promise<void> => {
+    setMaximized(await Neutralino.window.isMaximized());
+  }, []);
+
+  /*
+   * The OS owns maximise as much as we do: snapping to the top edge maximises
+   * without ever touching our buttons, so the icon has to follow the window
+   * rather than our last click. Every one of those paths resizes the webview.
+   */
+  useEffect(() => {
+    void sync();
+    globalThis.addEventListener('resize', sync);
+    return () => globalThis.removeEventListener('resize', sync);
+  }, [sync]);
+
+  const minimize = useCallback((): void => {
+    void Neutralino.window.minimize();
+  }, []);
+
+  const toggleMaximize = useCallback(async (): Promise<void> => {
+    if (await Neutralino.window.isMaximized()) await Neutralino.window.unmaximize();
+    else await Neutralino.window.maximize();
+    await sync();
+  }, [sync]);
+
+  const close = useCallback((): void => {
+    void Neutralino.app.exit();
+  }, []);
+
+  /*
+   * Drag starts on movement, not on pointerdown.
+   *
+   * beginDrag hands the window to the OS move loop, and that loop swallows the
+   * rest of the click -- start it eagerly (as Neutralino's own
+   * setDraggableRegion does) and the second press of a double-click never
+   * reaches the webview, so double-click-to-maximise silently stops working.
+   * Waiting for real travel separates the two: a click stays a click, and a drag
+   * still reaches the OS loop, which is what keeps snapping native.
+   */
+  const origin = useRef<{ x: number; y: number } | null>(null);
+
+  const onPointerDown = useCallback((e: React.PointerEvent): void => {
+    if (e.button !== 0) return;
+    origin.current = { x: e.screenX, y: e.screenY };
+  }, []);
+
+  const onPointerMove = useCallback((e: React.PointerEvent): void => {
+    const start = origin.current;
+    if (!start) return;
+    if (Math.hypot(e.screenX - start.x, e.screenY - start.y) < DRAG_THRESHOLD) return;
+
+    // The OS takes the pointer from here, so our pointerup never arrives.
+    origin.current = null;
+    void Neutralino.window.beginDrag(e.screenX, e.screenY);
+  }, []);
+
+  const onPointerUp = useCallback((): void => {
+    origin.current = null;
+  }, []);
+
+  return {
+    maximized,
+    minimize,
+    toggleMaximize,
+    close,
+    /** Spread onto whatever area of the bar should move the window. */
+    dragProps: { onPointerDown, onPointerMove, onPointerUp, onDoubleClick: toggleMaximize },
+  };
+}

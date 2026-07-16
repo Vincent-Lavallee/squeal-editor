@@ -7,7 +7,7 @@ export default defineConfig({
   // relative rather than rooted at /.
   base: './',
   build: {
-    // Straight into what Neutralino serves; public/ (the client lib + favicon)
+    // Straight into what Neutralino serves; public/ (the client lib + the icon)
     // is copied on every build, which is why emptying the dir is safe.
     outDir: '../resources',
     emptyOutDir: true,

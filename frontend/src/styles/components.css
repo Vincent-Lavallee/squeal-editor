@@ -127,6 +127,29 @@
   color: var(--text-faint);
 }
 
+/*
+ * Checkbox + its label as one target. `accent-color` recolours the native
+ * control, which keeps the platform's focus and keyboard behaviour rather than
+ * reimplementing them behind a styled div.
+ */
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  margin-top: var(--gap-xs);
+  color: var(--text-muted);
+  font-size: var(--text-badge);
+  cursor: pointer;
+}
+.check input {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+
 .input,
 .select {
   width: 100%;
@@ -141,6 +164,10 @@
 }
 .input::placeholder {
   color: var(--text-faint);
+}
+.input:disabled {
+  color: var(--text-faint);
+  border-color: var(--border);
 }
 .input:focus,
 .select:focus {

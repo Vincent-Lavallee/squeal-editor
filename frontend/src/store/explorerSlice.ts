@@ -2,7 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 
 import type { TableInfo } from '../../../shared/protocol.ts';
 import { call } from '../bridge.ts';
-import { connect, disconnect } from './sessionSlice.ts';
+import { disconnect, sessionOpened } from './sessionSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
 interface TablesError {
@@ -52,13 +52,6 @@ const explorerSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
-      // The database list arrives with the connection itself, so the explorer
-      // reads it off the session's event rather than fetching it again.
-      .addCase(connect.fulfilled, (state, action) => {
-        state.databases = action.payload.databases;
-        state.tables = {};
-        state.error = null;
-      })
       .addCase(disconnect.fulfilled, () => initialState)
       .addCase(loadTables.pending, (state, action) => {
         state.loadingTables = action.meta.arg;
@@ -76,6 +69,15 @@ const explorerSlice = createSlice({
           database: action.meta.arg,
           message: action.payload ?? 'Could not list tables.',
         };
+      })
+      // The database list arrives with the connection itself, so the explorer
+      // reads it off the session's event rather than fetching it again. Matching
+      // the event and not a thunk is what keeps this working when a new way to
+      // connect appears; addMatcher must follow every addCase.
+      .addMatcher(sessionOpened, (state, action) => {
+        state.databases = action.payload.databases;
+        state.tables = {};
+        state.error = null;
       });
   },
 });
