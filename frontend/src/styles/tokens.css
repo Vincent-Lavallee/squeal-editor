@@ -48,7 +48,7 @@
   --green: #3dd68c;           /* green-11: success */
   --green-bg: #132d21;        /* green-3 */
 
-  --amber: #ffca16;           /* amber-11: warning/truncation */
+  --amber: #ffca16;           /* amber-11: warning */
   --amber-bg: #341c00;        /* amber-3 */
 
   --purple: #bf7af0;          /* purple-11 */
@@ -85,6 +85,17 @@
   --text-label: 11px;         /* uppercase section labels, letter-spaced, muted */
 
   --tracking-label: 0.04em;
+
+  /*
+   * ---- Icons ----
+   *
+   * One size, because there is one kind of icon: a 16px mark beside 13px text.
+   * The set draws every glyph on a 24px canvas with its own padding, so this is
+   * the canvas, not the ink -- the drawing inside lands around 10-11px, which is
+   * why it sits beside --text-body without shouting over it. A second size here
+   * is a second scale to keep honest; grow the row before you grow the icon.
+   */
+  --icon: 16px;
 
   /* ---- Density ---- */
   --titlebar-h: 32px;         /* the window's own titlebar: Windows' own height */

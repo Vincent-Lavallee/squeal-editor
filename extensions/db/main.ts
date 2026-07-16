@@ -100,6 +100,13 @@ const COMMANDS: Handlers = {
     return { ...outcome, durationMs: Date.now() - startedAt } as QueryResult;
   },
 
+  async 'db.browse'({ connectionId, database, table, offset }) {
+    const conn = getConnection(connectionId);
+    const startedAt = Date.now();
+    const { columns, rows, ...page } = await conn.browse(database, table, offset);
+    return { result: { columns, rows, durationMs: Date.now() - startedAt }, ...page };
+  },
+
   async 'db.disconnect'({ connectionId }) {
     await closeConnection(connectionId);
     return { ok: true };

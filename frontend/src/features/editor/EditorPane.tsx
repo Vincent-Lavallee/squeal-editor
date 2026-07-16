@@ -98,15 +98,16 @@ export default function EditorPane({ onRun, running }: Props) {
   }, [setSql]);
 
   /*
-   * Clicking a table writes its preview SQL from outside the editor, so the
-   * text has to flow in as well as out. Only when it actually differs: setting
-   * the value Monaco already holds would fire on every keystroke and throw the
-   * cursor back to the top of the document.
+   * Text flows one way -- out of Monaco, into `sql` -- because nothing writes it
+   * from outside any more: browsing a table paints the grid and leaves the
+   * editor alone. The effect that fed text back in is gone with its only caller.
+   *
+   * Whatever writes from outside next (the palette, a formatter, session
+   * restore) needs it back, and needs its guard: feed the value in only when it
+   * actually differs from Monaco's own, or setting the value Monaco already
+   * holds fires on every keystroke and throws the cursor to the top of the
+   * document. See `docs/decisions.md`.
    */
-  useEffect(() => {
-    const instance = editor.current;
-    if (instance && sql !== instance.getValue()) instance.setValue(sql);
-  }, [sql]);
 
   // The engine names its own dialect; the UI only passes it along.
   useEffect(() => {

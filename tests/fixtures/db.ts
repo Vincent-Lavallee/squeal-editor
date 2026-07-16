@@ -7,6 +7,10 @@
  * The seed deliberately contains the values that have caused real bugs: a BIGINT
  * past 2^53, a timezone-less DATETIME, NULLs, a BLOB, JSON, a view, and (on
  * Postgres) a table outside the public schema.
+ *
+ * `events` is sized for paging: 150 rows is more than one 100-row page, and it
+ * makes the case that broke the old row-count guess reachable without a second
+ * table -- page from row 51 and a *full* page comes back with nothing after it.
  */
 
 import { $ } from 'bun';
@@ -28,6 +32,8 @@ CREATE VIEW active_users AS SELECT id, name FROM users;
 CREATE SCHEMA reporting;
 CREATE TABLE reporting.daily_stats (day date, hits bigint);
 INSERT INTO reporting.daily_stats VALUES ('2026-01-05', 9007199254740993);
+CREATE TABLE events (id serial primary key, label text);
+INSERT INTO events (label) SELECT 'e' || g FROM generate_series(1, 150) g;
 `;
 
 const MYSQL_SEED = `
@@ -46,6 +52,12 @@ INSERT INTO users (name, email, meta, avatar, big) VALUES
   ('Ada', 'ada@x.io', '{"role":"admin"}', UNHEX('0102FF'), 9007199254740993),
   ('Grace', NULL, NULL, NULL, NULL);
 CREATE VIEW active_users AS SELECT id, name FROM users;
+CREATE TABLE events (id int auto_increment primary key, label varchar(20));
+INSERT INTO events (label)
+WITH RECURSIVE series AS (
+  SELECT 1 AS n UNION ALL SELECT n + 1 FROM series WHERE n < 150
+)
+SELECT CONCAT('e', n) FROM series;
 `;
 
 async function waitFor(label: string, probe: () => Promise<boolean>, tries = 60): Promise<void> {

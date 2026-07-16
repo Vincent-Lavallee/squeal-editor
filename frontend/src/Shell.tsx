@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 
 import type { TableInfo } from '../../shared/protocol.ts';
 import { useSession } from './store/sessionSlice.ts';
-import { EditorPane, EditorProvider, useEditor } from './features/editor/index.ts';
+import { EditorPane, EditorProvider } from './features/editor/index.ts';
 import { ExplorerProvider, Sidebar } from './features/explorer/index.ts';
 import { ResultsTable, useResults } from './features/results/index.ts';
 
@@ -25,19 +25,21 @@ export default function Shell() {
 
 function ShellLayout() {
   const { selectDatabase } = useSession();
-  const { setSql } = useEditor();
-  const { run, running } = useResults();
+  const { run, running, open } = useResults();
 
-  // Clicking a table spans all three: the explorer picks it, the editor shows
-  // its SQL, the results run it. Ordering matters -- dispatch is synchronous, so
-  // pointing at the database first guarantees the query targets it.
+  // Clicking a table points the session at its database and browses it. The
+  // editor is deliberately left alone: browsing pages through SQL the extension
+  // writes, so putting page N's text into the editor would either overwrite the
+  // query being written or invite an edit the pager cannot honour.
+  //
+  // Ordering matters -- dispatch is synchronous, so pointing at the database
+  // first guarantees the page is read from it.
   const openTable = useCallback(
     (database: string, table: TableInfo) => {
       selectDatabase(database);
-      setSql(table.previewSql);
-      run(table.previewSql);
+      open(table.name);
     },
-    [selectDatabase, setSql, run]
+    [selectDatabase, open]
   );
 
   return (

@@ -33,7 +33,7 @@ const KEYCHAIN_SERVICE = `squeal-ui-test-${Bun.randomUUIDv7()}`;
 
 let app: AppSession;
 
-/** Tree rows: databases have a caret glyph, tables have an empty one. */
+/** Tree rows: nesting tells them apart, since both kinds carry a caret slot. */
 const clickRow = (kind: 'db' | 'table', label: string) => `
   [...document.querySelectorAll('.tree__row')]
     .filter(e => ${kind === 'db' ? "e.closest('.tree__children') === null" : "e.closest('.tree__children') !== null"})
@@ -49,6 +49,14 @@ const clickRow = (kind: 'db' | 'table', label: string) => `
  */
 const editorText = `window.squealEditor.getValue()`;
 const setEditorText = (sql: string) => `window.squealEditor.setValue(${JSON.stringify(sql)}); true;`;
+
+/** The results bar's label: which table, and which rows of it are on screen. */
+const barText = `document.querySelector('.results__bar span').textContent`;
+
+/** Prev/Next carry an icon beside the word, so match the trimmed text. */
+const pagerBtn = (label: 'Prev' | 'Next') => `
+  [...document.querySelectorAll('.results__pager .btn')]
+    .find(e => e.textContent.trim() === ${JSON.stringify(label)})`;
 
 /** A saved row by exact name -- `.includes` would match a longer neighbour. */
 const savedRow = (name: string) => `
@@ -149,12 +157,21 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(tables).toContain('reporting.daily_stats');
     });
 
-    test('clicking a table previews it', async () => {
+    /*
+     * Browsing pages SQL the extension wrote, so it deliberately does not go
+     * through the editor: the query being written is not the thing being paged,
+     * and writing page N's text over it would lose work the pager cannot even
+     * honour. The sentinel is the whole test -- the grid filling proves the
+     * browse ran, and the editor still holding it proves it went around.
+     */
+    test('clicking a table browses it, leaving the editor alone', async () => {
+      await app.evaluate(setEditorText('SELECT 1 -- still being written'));
+      await Bun.sleep(200);
+
       await app.evaluate(clickRow('table', 'users'));
       await Bun.sleep(2000);
 
-      const sql = await app.evaluate<string>(editorText);
-      expect(sql).toMatch(/SELECT \* FROM "users" LIMIT 100/);
+      expect(await app.evaluate<string>(editorText)).toBe('SELECT 1 -- still being written');
 
       const headers = await app.evaluate<string[]>(
         `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`
@@ -165,7 +182,41 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(rows).toBe(2);
     });
 
+    // Two rows is under a page, so there is nowhere to go and nothing to offer.
+    test('a table that fits on one page has no pager', async () => {
+      expect(await app.evaluate<number>(`document.querySelectorAll('.results__pager').length`)).toBe(0);
+    });
+
+    test('a table larger than a page pages forward and back', async () => {
+      await app.evaluate(clickRow('table', 'events'));
+      await Bun.sleep(2000);
+
+      expect(await app.evaluate<string>(barText)).toContain('rows 1–100');
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid tbody tr').length`)).toBe(100);
+      // Nothing before row 1.
+      expect(await app.evaluate<boolean>(`${pagerBtn('Prev')}.disabled`)).toBe(true);
+
+      await app.evaluate(`${pagerBtn('Next')}.click(); true;`);
+      await Bun.sleep(1500);
+
+      // 150 rows: the last page is the remainder, and the gutter counts from
+      // where the page starts rather than calling this row 1 all over again.
+      expect(await app.evaluate<string>(barText)).toContain('rows 101–150');
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid tbody tr').length`)).toBe(50);
+      expect(await app.evaluate<string>(`document.querySelector('.grid tbody td.gutter').textContent`)).toBe('101');
+      expect(await app.evaluate<boolean>(`${pagerBtn('Next')}.disabled`)).toBe(true);
+
+      await app.evaluate(`${pagerBtn('Prev')}.click(); true;`);
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string>(barText)).toContain('rows 1–100');
+    });
+
     test('NULL is rendered distinctly, not as empty or "null"', async () => {
+      // Browse `users` rather than inheriting whatever the last test left in the
+      // grid: Grace's NULL email is the subject, and a neighbour paging away to
+      // another table should fail that test, not this one.
+      await app.evaluate(clickRow('table', 'users'));
+      await Bun.sleep(2000);
       expect(await app.evaluate<boolean>(`!!document.querySelector('.grid .null')`)).toBe(true);
     });
 
@@ -181,6 +232,10 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`
       );
       expect(headers).toEqual(['name', 'email']);
+
+      // The grid now holds SQL the user wrote, and the extension will not
+      // rewrite that to reach page 2 -- so there is no page 2 to offer.
+      expect(await app.evaluate<number>(`document.querySelectorAll('.results__pager').length`)).toBe(0);
     });
 
     /*
@@ -277,14 +332,22 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<string>(`document.querySelector('.badge').textContent`)).toBe('MySQL');
     });
 
-    test('uses backtick quoting for previews', async () => {
+    /*
+     * The page SQL and its quoting are the extension's now, so there is no text
+     * up here to assert on -- `tests/extension.test.ts` checks the backticks
+     * against the real server. What the UI can still prove is the part that
+     * matters here: clicking a table fills the grid on this engine too.
+     */
+    test('clicking a table browses it', async () => {
       await app.evaluate(clickRow('db', 'shop'));
       await Bun.sleep(1500);
       await app.evaluate(clickRow('table', 'users'));
       await Bun.sleep(2000);
 
-      const sql = await app.evaluate<string>(editorText);
-      expect(sql).toContain('`users`');
+      const headers = await app.evaluate<string[]>(
+        `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`
+      );
+      expect(headers).toContain('email');
     });
 
     // The same assertion the Postgres block makes, and the pair is the test:

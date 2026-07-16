@@ -1,4 +1,5 @@
 import type { TableInfo } from '../../../../shared/protocol.ts';
+import { CaretIcon, DatabaseIcon, TableIcon, ViewIcon } from '../../icons.ts';
 import { useExplorer } from './useExplorer.ts';
 
 interface Props {
@@ -33,8 +34,11 @@ export default function Sidebar({ onSelectTable }: Props) {
                 className={`tree__row ${activeDatabase === db ? 'tree__row--active' : ''}`}
                 onClick={() => selectDatabase(db)}
               >
-                <span className={`tree__caret ${isExpanded ? 'tree__caret--open' : ''}`}>▸</span>
-                <span className="tree__icon">🗄</span>
+                <CaretIcon
+                  className={`icon tree__caret ${isExpanded ? 'tree__caret--open' : ''}`}
+                  aria-hidden="true"
+                />
+                <DatabaseIcon className="icon tree__icon" aria-hidden="true" />
                 <span className="tree__label">{db}</span>
               </button>
 
@@ -48,10 +52,15 @@ export default function Sidebar({ onSelectTable }: Props) {
                       key={t.name}
                       className="tree__row"
                       onClick={() => onSelectTable(db, t)}
-                      title={`${t.name} — click to preview`}
+                      title={`${t.name} — click to browse`}
                     >
-                      <span className="tree__caret" />
-                      <span className="tree__icon">{t.kind === 'view' ? '👁' : '▦'}</span>
+                      {/* Leaves have no caret, but must still reserve its slot. */}
+                      <span className="icon" />
+                      {t.kind === 'view' ? (
+                        <ViewIcon className="icon tree__icon" aria-hidden="true" />
+                      ) : (
+                        <TableIcon className="icon tree__icon" aria-hidden="true" />
+                      )}
                       <span className="tree__label">{t.name}</span>
                     </button>
                   ))}

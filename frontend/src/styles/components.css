@@ -7,7 +7,31 @@
  *   card/panel    -> --bg + 1px --border-strong + 8px radius. NEVER a shadow.
  *   section label -> 11px, uppercase, --tracking-label, --text-muted
  *   identifiers   -> --mono (SQL, column names, cell values)
+ *   icon          -> .icon; size from --icon, colour inherited. Never a size prop.
  */
+
+/* ---------------- Icons ---------------- */
+
+/*
+ * Every drawn icon wears this, and it is the whole of how an icon is sized and
+ * coloured.
+ *
+ * Sized here rather than through the set's `size` prop because a prop is a
+ * hardcoded size in a component -- the thing tokens exist to prevent. CSS
+ * width/height beat the width/height attributes the set writes onto the <svg>,
+ * so this wins without !important.
+ *
+ * Colour is inherited, never set: the icons default to `currentColor`, so an
+ * icon is the colour of the text it sits beside and follows it into hover,
+ * --blue on an active row, and --red on a destructive one -- for free, and
+ * without this file learning every place an icon can appear. Recolour the row,
+ * not the icon.
+ */
+.icon {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+}
 
 /* ---------------- Buttons ---------------- */
 

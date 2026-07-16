@@ -366,15 +366,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/*
+ * Both wear .icon, which sizes them. What is left is the hierarchy: the mark is
+ * quieter than the name it labels, and the caret is quieter still.
+ */
 .tree__icon {
-  flex: none;
-  font-size: 11px;
-  opacity: 0.75;
+  color: var(--text-muted);
+}
+/* The active row is --blue; its icon follows the row rather than staying gray. */
+.tree__row--active .tree__icon {
+  color: inherit;
 }
 .tree__caret {
-  flex: none;
-  width: 10px;
-  font-size: 9px;
   color: var(--text-faint);
   transition: transform 0.12s ease;
 }
@@ -382,7 +385,9 @@
   transform: rotate(90deg);
 }
 .tree__children {
-  margin-left: 13px;
+  /* The guide line runs down the centre of the caret slot above it: the row's
+     6px padding plus half of --icon. Move --icon and this has to move too. */
+  margin-left: 14px;
   padding-left: 5px;
   border-left: 1px solid var(--border);
 }
@@ -453,4 +458,21 @@
   border-bottom: 1px solid var(--border);
   font-size: var(--text-badge);
   color: var(--text-muted);
+}
+
+/*
+ * The pager sits at the far end of the bar, opposite the row count it pages
+ * through. Ghost buttons: the bar is chrome, and a solid button here would
+ * outrank the grid it is a footnote to.
+ */
+.results__pager {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  margin-left: auto;
+}
+/* Short enough to sit in a 32px bar without crowding the rule beneath it. */
+.results__pager .btn {
+  height: 24px;
+  padding: 0 6px;
 }

@@ -11,7 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import type { ConnectionConfig, QueryResult, TableInfo } from '../shared/protocol.ts';
+import type { ConnectionConfig, QueryResult, TableInfo, TablePage } from '../shared/protocol.ts';
 import { FIXTURE_DB, MYSQL, PG } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 
@@ -80,6 +80,9 @@ describe.each([
   const query = async (sql: string, database: string | undefined = FIXTURE_DB): Promise<QueryResult> =>
     (await h.ok('db.query', { connectionId, database, sql })) as QueryResult;
 
+  const browse = async (table: string, offset = 0): Promise<TablePage> =>
+    (await h.ok('db.browse', { connectionId, database: FIXTURE_DB, table, offset })) as TablePage;
+
   test('lists tables and flags views', async () => {
     const { tables } = (await h.ok('db.tables', { connectionId, database: FIXTURE_DB })) as { tables: TableInfo[] };
     const names = tables.map((t) => t.name);
@@ -94,13 +97,101 @@ describe.each([
     }
   });
 
-  test('preview SQL is quoted for the engine and actually runs', async () => {
-    const { tables } = (await h.ok('db.tables', { connectionId, database: FIXTURE_DB })) as { tables: TableInfo[] };
-    const users = tables.find((t) => t.name === 'users')!;
+  test('browsing a table reads it, quoted for the engine', async () => {
+    // The UI names a table and never SQL, so this is also the only proof that
+    // the identifier was quoted the way this engine spells it.
+    const page = await browse('users');
+    expect(page.result.columns).toContain('email');
+    expect(page.result.rows).toHaveLength(2);
+    expect(page.hasMore).toBe(false);
+    expect(page.offset).toBe(0);
+  });
 
-    expect(users.previewSql).toMatch(label === 'mysql' ? /`users`/ : /"users"/);
-    const res = await query(users.previewSql);
-    expect(res.rows).toHaveLength(2);
+  test.if(expectSchemaQualified)('browsing a schema-qualified relation quotes each part', async () => {
+    // "reporting.daily_stats" as one quoted string names a table with a dot in
+    // it, which does not exist. The parts have to be quoted separately.
+    const page = await browse('reporting.daily_stats');
+    expect(page.result.rows).toHaveLength(1);
+  });
+
+  test('a table smaller than a page does not offer a next one', async () => {
+    // The bug this feature exists to kill, at the other end: a two-row table
+    // must not claim more rows, and a full page must not claim them either.
+    expect((await browse('users')).hasMore).toBe(false);
+  });
+
+  test('pages forward, reporting more rows without counting them', async () => {
+    const first = await browse('events');
+    expect(first.result.rows).toHaveLength(first.pageSize);
+    expect(first.hasMore).toBe(true);
+
+    // 150 rows: the second page is the remainder and there is nothing after it.
+    const second = await browse('events', first.pageSize);
+    expect(second.offset).toBe(first.pageSize);
+    expect(second.result.rows).toHaveLength(150 - first.pageSize);
+    expect(second.hasMore).toBe(false);
+
+    // Pages must not overlap, or "next" would re-show rows already read.
+    expect(second.result.rows[0]![0]).not.toBe(first.result.rows[0]![0]);
+  });
+
+  /*
+   * The exact failure the old UI-side guess produced: it inferred "there is
+   * more" from a page being full, so a table ending precisely on a page
+   * boundary was labelled truncated and offered a page that does not exist.
+   * Rows 51-150 of `events` are a full page with nothing after them.
+   */
+  test('a full page with nothing after it says so', async () => {
+    const page = await browse('events', 50);
+    expect(page.result.rows).toHaveLength(page.pageSize);
+    expect(page.hasMore).toBe(false);
+  });
+
+  test('the probe row never reaches the caller', async () => {
+    // hasMore is answered by fetching pageSize + 1; that extra row is the
+    // next page's first and must be dropped, not rendered as row 101.
+    const first = await browse('events');
+    const second = await browse('events', first.pageSize);
+    expect(first.result.rows).toHaveLength(first.pageSize);
+    expect(second.result.rows[0]![0]).not.toBe(first.result.rows[first.pageSize - 1]![0]);
+  });
+
+  test('a page past the end is empty rather than an error', async () => {
+    const page = await browse('events', 100_000);
+    expect(page.result.rows).toHaveLength(0);
+    expect(page.hasMore).toBe(false);
+  });
+
+  test('offset is forced to a number, not pasted into the SQL', async () => {
+    // It is user-supplied JSON on its way into a LIMIT clause, which no
+    // placeholder can carry. Junk must become 0, not a second statement.
+    const res = await h.dispatch('db.browse', {
+      connectionId,
+      database: FIXTURE_DB,
+      table: 'events',
+      offset: '0; DROP TABLE events; --',
+    });
+    expect(res.ok).toBe(true);
+
+    // The table is still there, which is the actual assertion.
+    expect((await browse('events')).result.rows).toHaveLength(100);
+  });
+
+  test('browsing a table that is not there errors cleanly', async () => {
+    const res = await h.dispatch('db.browse', {
+      connectionId,
+      database: FIXTURE_DB,
+      table: 'nope_missing',
+      offset: 0,
+    });
+    expect(res.ok).toBe(false);
+
+    // The connection must survive it, the same way a bad statement does.
+    expect((await browse('users')).result.rows).toHaveLength(2);
+  });
+
+  test('reports how long a page took', async () => {
+    expect(typeof (await browse('users')).result.durationMs).toBe('number');
   });
 
   test('NULL survives as null rather than a string', async () => {

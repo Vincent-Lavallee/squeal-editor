@@ -77,8 +77,6 @@ export interface TableInfo {
   /** Display name; schema-qualified for Postgres when not in `public`. */
   name: string;
   kind: 'table' | 'view';
-  /** Ready-to-run preview, quoted by the owning engine. */
-  previewSql: string;
 }
 
 export interface QueryResult {
@@ -88,6 +86,31 @@ export interface QueryResult {
   /** Set instead of columns/rows for statements that return no grid. */
   affectedRows?: number;
   message?: string;
+}
+
+/**
+ * One page of a table's rows.
+ *
+ * Browsing is a command of its own rather than a `db.query` the UI wrote,
+ * because paging means authoring page N's SQL and only the extension may do
+ * that: it knows the engine's quoting, and rewriting a *user's* statement to
+ * bolt a LIMIT onto it is how an editor starts lying about what it ran. The UI
+ * therefore names a table, never SQL, and steps by `offset`.
+ */
+export interface TablePage {
+  result: QueryResult;
+  /** Row offset of the first row here, so the grid can number rows absolutely. */
+  offset: number;
+  /** Rows per page, authored by the extension. The UI steps by it, never by 100. */
+  pageSize: number;
+  /**
+   * Whether a next page exists, *answered* rather than inferred: the page SQL
+   * asks for one row beyond `pageSize` and that row is dropped before it ships.
+   * A full page is not evidence of more rows -- a table of exactly `pageSize`
+   * rows would claim a page 2 that does not exist -- and `COUNT(*)` is a full
+   * scan to answer a question this already answers for free.
+   */
+  hasMore: boolean;
 }
 
 /**
@@ -111,6 +134,14 @@ export interface Commands {
   'db.query': {
     req: { connectionId: string; database?: string; sql: string };
     res: QueryResult;
+  };
+  /**
+   * One page of a table, in the server's natural order. `offset` is the first
+   * row wanted; the extension writes the SQL and reports the page size back.
+   */
+  'db.browse': {
+    req: { connectionId: string; database: string; table: string; offset: number };
+    res: TablePage;
   };
   'db.disconnect': {
     req: { connectionId: string };
