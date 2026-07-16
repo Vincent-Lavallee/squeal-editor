@@ -424,19 +424,16 @@
   color: var(--text-faint);
 }
 
+/*
+ * Monaco owns everything inside this box -- its own colours come from the theme
+ * in features/editor/monaco.ts, which reads the same tokens this file does, so
+ * there is nothing to style here beyond giving it room. It measures itself
+ * (automaticLayout), and a grid track will happily hand it a height it then
+ * cannot shrink below, so min-height keeps the pane resizable.
+ */
 .editor {
-  width: 100%;
-  height: 100%;
-  padding: var(--gap-lg);
-  border: none;
-  outline: none;
-  resize: none;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: var(--text-body);
-  line-height: 1.6;
-  tab-size: 2;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .results {

@@ -21,8 +21,14 @@
   --bg: #111113;              /* slate-1: every surface */
   --border: #272a2d;          /* slate-4: panel dividers, table rules */
   --border-strong: #363a3f;   /* card + input outlines */
-  --hover: rgba(255, 255, 255, 0.04);
-  --selected: rgba(102, 156, 255, 0.14);
+  /*
+   * Hex, including the alpha, rather than rgba(): a token is not only read by
+   * CSS. The extension is handed --bg to paint the window frame and Monaco is
+   * handed these to build its theme, and neither parses rgba(). Identical
+   * colours; #RRGGBBAA is the form that travels.
+   */
+  --hover: #ffffff0a;         /* white at 4% */
+  --selected: #669cff24;      /* --blue at 14% */
 
   /* ---- Text ---- */
   --text: #edeef0;            /* slate-12: primary */
@@ -47,6 +53,21 @@
 
   --purple: #bf7af0;          /* purple-11 */
   --purple-bg: #301c3b;       /* purple-3 */
+
+  /*
+   * ---- Syntax: the one place colour describes content, not chrome ----
+   *
+   * The rule above still holds -- these mean something, and what they mean is
+   * "this is a string", "this is a keyword". They are separate tokens rather
+   * than re-used semantic ones because a string is not a success and a number
+   * is not a warning: retuning --green for a callout must not repaint the SQL.
+   * Same Radix dark lineage, so they land on the same steps today.
+   */
+  --syntax-keyword: var(--blue);
+  --syntax-string: #3dd68c;   /* green-11 */
+  --syntax-number: #ffca16;   /* amber-11 */
+  --syntax-comment: var(--text-faint);
+  --syntax-punctuation: var(--text-muted);
 
   /* ---- Shape: pills for status, 6-8px for everything else ---- */
   --radius-pill: 999px;       /* badges, chips, filter controls, search */

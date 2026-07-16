@@ -20,6 +20,7 @@ import {
   type CommandRes,
   type ConnectionConfig,
   type QueryResult,
+  type SqlDialect,
 } from '../../shared/protocol.ts';
 import { matchWindowFrame } from './chrome.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';
@@ -68,13 +69,15 @@ async function closeConnection(connectionId: string): Promise<void> {
 type Handlers = { [K in CommandName]: (req: CommandReq<K>) => Promise<CommandRes<K>> };
 
 /** Open, verify and register a connection -- what both connect paths mean by it. */
-async function establish(config: ConnectionConfig): Promise<{ connectionId: string; databases: string[] }> {
+async function establish(
+  config: ConnectionConfig
+): Promise<{ connectionId: string; databases: string[]; dialect: SqlDialect }> {
   const conn = await openConnection(config);
   const databases = await conn.listDatabases();
 
   const connectionId = randomUUID();
   connections.set(connectionId, conn);
-  return { connectionId, databases };
+  return { connectionId, databases, dialect: conn.dialect };
 }
 
 const COMMANDS: Handlers = {

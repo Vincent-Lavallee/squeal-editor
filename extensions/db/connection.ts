@@ -1,4 +1,4 @@
-import type { ConnectionConfig, TableInfo } from '../../shared/protocol.ts';
+import type { ConnectionConfig, SqlDialect, TableInfo } from '../../shared/protocol.ts';
 import { withDriver, type Driver, type QueryOutcome } from './drivers.ts';
 
 /**
@@ -8,6 +8,8 @@ import { withDriver, type Driver, type QueryOutcome } from './drivers.ts';
  */
 export interface ConnectionHandle {
   readonly config: ConnectionConfig;
+  /** The driver's own answer, so the renderer never derives it from `config.type`. */
+  readonly dialect: SqlDialect;
   listDatabases(): Promise<string[]>;
   listTables(database: string): Promise<TableInfo[]>;
   query(database: string | undefined, sql: string): Promise<QueryOutcome>;
@@ -48,6 +50,7 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig): ConnectionHandle
 
   return {
     config,
+    dialect: driver.dialect,
 
     async listDatabases() {
       return driver.listDatabases(await getClient(config.database));

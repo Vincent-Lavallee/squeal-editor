@@ -40,6 +40,16 @@ const clickRow = (kind: 'db' | 'table', label: string) => `
     .find(e => e.querySelector('.tree__label').textContent === ${JSON.stringify(label)})
     .click(); true;`;
 
+/*
+ * The editor is Monaco, so its text is in a model rather than in a DOM value:
+ * there is nothing to read with `.value` and nothing REACT_SETTERS can type
+ * into. `window.squealEditor` is the seam the app exposes for exactly this.
+ * Writing through it goes the same way a keystroke does -- the model change
+ * fires the editor's own listener -- so React's state follows as it would.
+ */
+const editorText = `window.squealEditor.getValue()`;
+const setEditorText = (sql: string) => `window.squealEditor.setValue(${JSON.stringify(sql)}); true;`;
+
 /** A saved row by exact name -- `.includes` would match a longer neighbour. */
 const savedRow = (name: string) => `
   [...document.querySelectorAll('.saved__row')]
@@ -143,7 +153,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(clickRow('table', 'users'));
       await Bun.sleep(2000);
 
-      const sql = await app.evaluate<string>(`document.querySelector('.editor').value`);
+      const sql = await app.evaluate<string>(editorText);
       expect(sql).toMatch(/SELECT \* FROM "users" LIMIT 100/);
 
       const headers = await app.evaluate<string[]>(
@@ -160,8 +170,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     test('Ctrl+Enter runs the editor contents', async () => {
-      await app.evaluate(`${REACT_SETTERS}
-        setNative(document.querySelector('.editor'), 'SELECT name, email FROM users ORDER BY id'); true;`);
+      await app.evaluate(setEditorText('SELECT name, email FROM users ORDER BY id'));
       await Bun.sleep(200);
       await app.evaluate(
         `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`
@@ -174,10 +183,74 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(headers).toEqual(['name', 'email']);
     });
 
-    test('a SQL error is surfaced in the results pane', async () => {
-      await app.evaluate(
-        `${REACT_SETTERS} setNative(document.querySelector('.editor'), 'SELECT * FROM does_not_exist'); true;`
+    /*
+     * The point of reporting the dialect as data: nothing in the renderer maps
+     * an engine to a grammar, so the only way to know this is wired is to ask
+     * the editor which language it ended up in after a real connect.
+     */
+    test('highlights with the dialect the engine reported', async () => {
+      expect(await app.evaluate<string>(`window.squealEditor.getModel().getLanguageId()`)).toBe('pgsql');
+    });
+
+    test('keywords are highlighted, not left as plain text', async () => {
+      await app.evaluate(setEditorText("SELECT 'x' -- comment"));
+      await Bun.sleep(400);
+      // Monaco paints each token in its own span, so a themed keyword is a span
+      // with a colour of its own. One undifferentiated run means no grammar ran.
+      const colours = await app.evaluate<string[]>(`
+        [...document.querySelectorAll('.view-lines .view-line span span')]
+          .map(e => getComputedStyle(e).color)`);
+      expect(new Set(colours).size).toBeGreaterThan(1);
+    });
+
+    test('find and replace is available over the editor text', async () => {
+      await app.evaluate(setEditorText('SELECT id FROM users'));
+      await Bun.sleep(200);
+      await app.evaluate(`window.squealEditor.getAction('editor.action.startFindReplaceAction').run()`);
+      await Bun.sleep(400);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('.find-widget.visible')`)).toBe(true);
+
+      // Not just the widget: the action it exists for has to reach the text.
+      await app.evaluate(`
+        const c = window.squealEditor.getContribution('editor.contrib.findController');
+        c.getState().change({ searchString: 'id', replaceString: 'email' }, false);
+        c.replaceAll(); true;`);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string>(editorText)).toBe('SELECT email FROM users');
+
+      // `closeFindWidget` is a command rather than an editor action, so it is
+      // triggered, not fetched -- getAction would hand back null.
+      await app.evaluate(`window.squealEditor.trigger('test', 'closeFindWidget', null); true;`);
+    });
+
+    /*
+     * There is no autocomplete yet, so nothing may be offered. Word-based
+     * suggestions are on by default and would propose the identifiers already
+     * typed -- a schema-blind guess dressed up as knowledge. Asking for
+     * suggestions outright is the strongest way to prove they are gone.
+     *
+     * Count the rows, not the widget: explicitly triggering suggest always
+     * shows it, in a "No suggestions." message state with nothing in it. The
+     * widget being up is not the bug; something to click would be. `em` here
+     * is the live bait -- `email` is on screen, so word-based would offer it.
+     */
+    test('nothing is suggested: word-based suggestions are off', async () => {
+      await app.evaluate(setEditorText('SELECT email FROM users WHERE em'));
+      await Bun.sleep(200);
+      await app.evaluate(`
+        window.squealEditor.setPosition({ lineNumber: 1, column: 33 });
+        window.squealEditor.focus();
+        window.squealEditor.getAction('editor.action.triggerSuggest').run(); true;`);
+      await Bun.sleep(800);
+
+      const rows = await app.evaluate<string[]>(
+        `[...document.querySelectorAll('.suggest-widget .monaco-list-row')].map(e => e.textContent)`
       );
+      expect(rows).toEqual([]);
+    });
+
+    test('a SQL error is surfaced in the results pane', async () => {
+      await app.evaluate(setEditorText('SELECT * FROM does_not_exist'));
       await Bun.sleep(200);
       await app.evaluate(`document.querySelector('.toolbar .btn--primary').click(); true;`);
       await Bun.sleep(1500);
@@ -210,8 +283,14 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(clickRow('table', 'users'));
       await Bun.sleep(2000);
 
-      const sql = await app.evaluate<string>(`document.querySelector('.editor').value`);
+      const sql = await app.evaluate<string>(editorText);
       expect(sql).toContain('`users`');
+    });
+
+    // The same assertion the Postgres block makes, and the pair is the test:
+    // one engine agreeing proves nothing, two disagreeing proves it is data.
+    test('highlights with the dialect the engine reported', async () => {
+      expect(await app.evaluate<string>(`window.squealEditor.getModel().getLanguageId()`)).toBe('mysql');
     });
 
     test('BIGINT past 2^53 reaches the grid intact', async () => {

@@ -1,7 +1,7 @@
 import { createSlice, isAnyOf, type PayloadAction } from '@reduxjs/toolkit';
 import { useCallback } from 'react';
 
-import type { ConnectionConfig, ServerConfig } from '../../../shared/protocol.ts';
+import type { ConnectionConfig, ServerConfig, SqlDialect } from '../../../shared/protocol.ts';
 import { call } from '../bridge.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
@@ -26,6 +26,12 @@ interface SessionState {
   connectionId: string | null;
   config: ServerConfig | null;
   activeDatabase: string | null;
+  /**
+   * How the editor highlights this server's SQL, as the extension reported it.
+   * It is here rather than derived from `config.type` on the spot because the
+   * UI does not know dialects -- it only knows how to pass one along.
+   */
+  dialect: SqlDialect;
   connecting: boolean;
   error: string | null;
 }
@@ -34,6 +40,8 @@ const initialState: SessionState = {
   connectionId: null,
   config: null,
   activeDatabase: null,
+  // Plain SQL until a server says otherwise: the editor exists before a session does.
+  dialect: 'sql',
   connecting: false,
   error: null,
 };
@@ -47,6 +55,7 @@ interface Opened {
   connectionId: string;
   config: ServerConfig;
   databases: string[];
+  dialect: SqlDialect;
 }
 
 /** Connect to a server the user typed out, saved or not. */
@@ -56,7 +65,7 @@ export const connect = createAppThunk(
     try {
       const res = await call('db.connect', { config });
       const { password: _password, ...server } = config;
-      return { connectionId: res.connectionId, config: server, databases: res.databases };
+      return { connectionId: res.connectionId, config: server, databases: res.databases, dialect: res.dialect };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
     }
@@ -75,7 +84,7 @@ export const connectSaved = createAppThunk(
   ): Promise<Opened | ReturnType<typeof rejectWithValue>> => {
     try {
       const res = await call('db.saved.connect', arg);
-      return { connectionId: res.connectionId, config: res.config, databases: res.databases };
+      return { connectionId: res.connectionId, config: res.config, databases: res.databases, dialect: res.dialect };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
     }
@@ -125,10 +134,11 @@ const sessionSlice = createSlice({
         state.error = null;
       })
       .addMatcher(sessionOpened, (state, action) => {
-        const { connectionId, config, databases } = action.payload;
+        const { connectionId, config, databases, dialect } = action.payload;
         state.connecting = false;
         state.connectionId = connectionId;
         state.config = config;
+        state.dialect = dialect;
         // Pre-select something sensible so the editor is usable immediately.
         state.activeDatabase = config.database ?? databases[0] ?? null;
       })

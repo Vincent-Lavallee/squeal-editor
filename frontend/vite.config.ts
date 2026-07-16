@@ -11,6 +11,14 @@ export default defineConfig({
     // is copied on every build, which is why emptying the dir is safe.
     outDir: '../resources',
     emptyOutDir: true,
+    /*
+     * Monaco is ~4MB and lands in the main chunk. The default 500kB warning is
+     * advice for a website -- split it, the visitor is waiting on a network. No
+     * one is: this file is read off the user's disk by the app that shipped it.
+     * Raised rather than silenced, so a chunk that outgrows even the editor
+     * still says so.
+     */
+    chunkSizeWarningLimit: 5000,
   },
   server: { port: 5173 },
 });

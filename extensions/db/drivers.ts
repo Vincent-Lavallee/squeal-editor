@@ -2,7 +2,7 @@ import mysql from 'mysql2/promise';
 import type { Connection as MysqlConnection, FieldPacket } from 'mysql2/promise';
 import pg from 'pg';
 
-import type { CellValue, ConnectionConfig, EngineType } from '../../shared/protocol.ts';
+import type { CellValue, ConnectionConfig, EngineType, SqlDialect } from '../../shared/protocol.ts';
 
 const { Client: PgClient, types: pgTypes } = pg;
 
@@ -44,6 +44,11 @@ export type QueryOutcome =
  */
 export interface Driver<C> {
   defaultPort: number;
+  /**
+   * How this engine's SQL is written. The renderer highlights with it and never
+   * learns which engine said so, which is the same rule that keeps quoting here.
+   */
+  dialect: SqlDialect;
   createClient(config: ConnectionConfig, database?: string): Promise<C>;
   closeClient(client: C): Promise<void>;
   listDatabases(client: C): Promise<string[]>;
@@ -73,6 +78,7 @@ const describeOk = (count: number) => `OK - ${count} row${count === 1 ? '' : 's'
 
 export const mysqlDriver: Driver<MysqlConnection> = {
   defaultPort: 3306,
+  dialect: 'mysql',
 
   async createClient(config, database) {
     return mysql.createConnection({
@@ -143,6 +149,7 @@ export const mysqlDriver: Driver<MysqlConnection> = {
 
 export const postgresDriver: Driver<pg.Client> = {
   defaultPort: 5432,
+  dialect: 'pgsql',
 
   async createClient(config, database) {
     // Postgres binds a connection to one database for its lifetime, so switching

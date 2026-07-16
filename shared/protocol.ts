@@ -9,6 +9,21 @@
 export type EngineType = 'mysql' | 'postgres';
 
 /**
+ * How an engine's SQL is written, as the engine itself reports it.
+ *
+ * The UI highlights a query without knowing which engine it is talking to: it
+ * takes this value and hands it to the editor. That is the whole point -- a
+ * `type === 'mysql'` in the renderer is the thing this exists to prevent, the
+ * same way preview SQL is quoted in the driver rather than guessed at up there.
+ *
+ * The values are Monaco's language ids, so nothing has to translate them. That
+ * is a deliberate coupling to the one editor this app has, and it is cheaper
+ * than a lookup table on each side of the bridge that could disagree. A dialect
+ * Monaco does not know would be spelled `sql` here, not invented.
+ */
+export type SqlDialect = 'mysql' | 'pgsql' | 'sql';
+
+/**
  * Everything needed to reach a server *except* the secret.
  *
  * The split is what lets the password stay out of places that have no business
@@ -83,7 +98,7 @@ export interface QueryResult {
 export interface Commands {
   'db.connect': {
     req: { config: ConnectionConfig };
-    res: { connectionId: string; databases: string[] };
+    res: { connectionId: string; databases: string[]; dialect: SqlDialect };
   };
   'db.databases': {
     req: { connectionId: string };
@@ -125,7 +140,7 @@ export interface Commands {
    */
   'db.saved.connect': {
     req: { id: string; password?: string };
-    res: { connectionId: string; databases: string[]; config: ServerConfig };
+    res: { connectionId: string; databases: string[]; dialect: SqlDialect; config: ServerConfig };
   };
 
   /* -- The window. Not a database, and deliberately here anyway. ---------- */
