@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
 import { engineLabel } from '../../engines.ts';
 import { useSession } from '../../store/sessionSlice.ts';
+import { useTabs } from '../../store/tabsSlice.ts';
 import { useEditor } from './EditorContext.tsx';
 import { defineTheme, monaco, px, THEME, token } from './monaco.ts';
 
@@ -18,36 +19,68 @@ declare global {
      * `Runtime.evaluate`, and Monaco's text lives in a model rather than in a
      * DOM value -- there is no `.editor` to read or to type into any more. This
      * is the seam that replaces it; see `docs/testing.md`.
+     *
+     * Still one editor, so still one seam: tabs swap the model underneath it,
+     * they do not make a second editor. It holds no model at all while a grid
+     * tab is showing.
      */
     squealEditor?: monaco.editor.IStandaloneCodeEditor;
   }
 }
 
 export default function EditorPane({ onRun, running }: Props) {
-  const { config, activeDatabase, dialect } = useSession();
-  const { sql, setSql } = useEditor();
+  const { config, dialect } = useSession();
+  const { tabs, activeTab } = useTabs();
+  const { sqlByTab, setSql } = useEditor();
+
+  const activeTabId = activeTab?.id ?? null;
+  const isEditorTab = activeTab?.kind === 'editor';
+  const sql = activeTabId ? (sqlByTab[activeTabId] ?? '') : '';
 
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
   /*
-   * The Ctrl+Enter command below is registered once, with the editor, but it
-   * has to run whatever the *current* handler and text are -- capturing them
-   * would pin it to the first render and run the empty query forever.
+   * One editor, one model per tab. The model is what makes the text per tab, and
+   * swapping it is why nothing here has to write text *into* Monaco: `setModel`
+   * is not `setValue`, so the guard that keeps `setValue` from throwing the
+   * cursor to the top of the document never comes up. See `docs/decisions.md`.
    */
-  const latest = useRef({ sql, onRun, dialect });
-  latest.current = { sql, onRun, dialect };
+  const models = useRef(new Map<string, monaco.editor.ITextModel>());
+  const viewStates = useRef(new Map<string, monaco.editor.ICodeEditorViewState>());
+  const shownTabId = useRef<string | null>(null);
+
+  /*
+   * The Ctrl+Enter command below is registered once, with the editor, but it
+   * has to run whatever the *current* handler, text and tab are -- capturing
+   * them would pin it to the first render and run the empty query forever.
+   */
+  const latest = useRef({ sql, onRun, dialect, activeTabId });
+  latest.current = { sql, onRun, dialect, activeTabId };
+
+  const modelFor = useCallback((tabId: string): monaco.editor.ITextModel => {
+    const existing = models.current.get(tabId);
+    if (existing) return existing;
+    // Born in the dialect the engine reported, and kept in it by the effect
+    // below -- a tab opened while another is showing must not come back
+    // highlighted as plain SQL.
+    const created = monaco.editor.createModel('', latest.current.dialect);
+    models.current.set(tabId, created);
+    return created;
+  }, []);
 
   // Create once. Monaco owns its DOM, so React must not re-render into it.
-  useEffect(() => {
+  //
+  // A layout effect rather than a plain one so that the switch effect below --
+  // which needs the instance to exist -- finds it on the very first commit
+  // instead of a frame later.
+  useLayoutEffect(() => {
     defineTheme();
 
-    // A session is already open by the time this renders -- Shell is what routes
-    // to it -- so the dialect is real here, and starting in it means the text
-    // never appears unhighlighted for a frame.
     const instance = monaco.editor.create(host.current!, {
-      value: latest.current.sql,
-      language: latest.current.dialect,
+      // No model: the switch effect attaches the active tab's. Letting Monaco
+      // mint a default one would leave an orphan owned by nobody.
+      model: null,
       theme: THEME,
       placeholder: 'SELECT * FROM …',
       automaticLayout: true,
@@ -73,7 +106,13 @@ export default function EditorPane({ onRun, running }: Props) {
       scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
     });
 
-    instance.onDidChangeModelContent(() => setSql(instance.getValue()));
+    // Text flows one way -- out of Monaco, into `sqlByTab` -- and it is attributed
+    // to whichever tab is showing when the keystroke lands, never to whichever
+    // tab was showing when this was registered.
+    instance.onDidChangeModelContent(() => {
+      const id = latest.current.activeTabId;
+      if (id) setSql(id, instance.getValue());
+    });
 
     /*
      * Ctrl+Enter is already Monaco's "insert line below", and it wins inside
@@ -87,33 +126,82 @@ export default function EditorPane({ onRun, running }: Props) {
     editor.current = instance;
     window.squealEditor = instance;
 
+    const open = models.current;
     return () => {
-      instance.getModel()?.dispose();
       instance.dispose();
+      // The map owns every model, including the one attached: disposing the
+      // editor does not take them with it.
+      open.forEach((m) => m.dispose());
+      open.clear();
       editor.current = null;
       delete window.squealEditor;
     };
-    // Mount only. The text flows in through the effect below instead, because
+    // Mount only. The models flow in through the effect below instead, because
     // re-creating the editor on every keystroke is not a way to keep it in sync.
   }, [setSql]);
 
   /*
-   * Text flows one way -- out of Monaco, into `sql` -- because nothing writes it
-   * from outside any more: browsing a table paints the grid and leaves the
-   * editor alone. The effect that fed text back in is gone with its only caller.
+   * Show the active tab's model.
    *
-   * Whatever writes from outside next (the palette, a formatter, session
-   * restore) needs it back, and needs its guard: feed the value in only when it
-   * actually differs from Monaco's own, or setting the value Monaco already
-   * holds fires on every keystroke and throws the cursor to the top of the
-   * document. See `docs/decisions.md`.
+   * A layout effect because the pane is `display: none` while a grid tab is
+   * showing: `automaticLayout`'s observer has not fired by the time this runs,
+   * so the editor still believes it is 0 tall, and a scroll offset restored
+   * against a 0-height viewport is silently lost. Measuring first is the fix.
    */
+  useLayoutEffect(() => {
+    const ed = editor.current;
+    if (!ed) return;
 
-  // The engine names its own dialect; the UI only passes it along.
+    // Nothing to show. Detaching matters rather than being tidy: the tab may be
+    // closing, and its model is disposed moments later by the effect below.
+    if (!activeTabId || !isEditorTab) {
+      ed.setModel(null);
+      shownTabId.current = null;
+      return;
+    }
+
+    const switching = shownTabId.current !== null && shownTabId.current !== activeTabId;
+    ed.setModel(modelFor(activeTabId));
+    ed.layout();
+
+    const saved = viewStates.current.get(activeTabId);
+    if (saved) ed.restoreViewState(saved);
+    // Only when moving between tabs: on the first render this would steal focus
+    // from a screen the user has not asked to type into yet.
+    if (switching) ed.focus();
+    shownTabId.current = activeTabId;
+
+    return () => {
+      // On the way out, which includes being hidden for a grid tab -- not only a
+      // switch to another editor tab.
+      const state = ed.saveViewState();
+      if (state) viewStates.current.set(activeTabId, state);
+    };
+  }, [activeTabId, isEditorTab, modelFor]);
+
+  // The engine names its own dialect; the UI only passes it along. Every model,
+  // not just the one showing, or a background tab comes back as plain SQL.
   useEffect(() => {
-    const model = editor.current?.getModel();
-    if (model) monaco.editor.setModelLanguage(model, dialect);
+    models.current.forEach((model) => monaco.editor.setModelLanguage(model, dialect));
   }, [dialect]);
+
+  /*
+   * Dispose the models of tabs that are gone.
+   *
+   * Keyed on the tab list rather than hooked to the close button, so that
+   * "close others", a disconnect, and whatever closes a tab next all land here
+   * for free. Hooking the one handler is how the explorer quietly stopped
+   * receiving its database list once already; see `docs/decisions.md`.
+   */
+  useEffect(() => {
+    const live = new Set(tabs.map((t) => t.id));
+    for (const [id, model] of models.current) {
+      if (live.has(id)) continue;
+      model.dispose();
+      models.current.delete(id);
+      viewStates.current.delete(id);
+    }
+  }, [tabs]);
 
   // Ctrl/Cmd+Enter runs from anywhere in the window, matching every other SQL
   // tool. Inside the editor, Monaco's own binding above handles it and stops
@@ -122,18 +210,21 @@ export default function EditorPane({ onRun, running }: Props) {
     function onKeyDown(e: KeyboardEvent): void {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
+        // A grid tab has no query to run. This pane is still mounted underneath
+        // it -- there is one Monaco and every tab's model hangs off it -- so the
+        // listener is live and has to refuse for itself.
+        if (!isEditorTab) return;
         onRun(sql);
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [sql, onRun]);
+  }, [sql, onRun, isEditorTab]);
 
   return (
     <>
       <div className="toolbar">
         {config && <span className="badge badge--blue">{engineLabel(config.type)}</span>}
-        <span className="toolbar__context">{activeDatabase ?? 'no database selected'}</span>
         <div className="toolbar__spacer" />
         <span className="toolbar__hint">Ctrl/⌘ + Enter</span>
         <button className="btn btn--primary" onClick={() => onRun(sql)} disabled={running}>

@@ -100,6 +100,12 @@
   /* ---- Density ---- */
   --titlebar-h: 32px;         /* the window's own titlebar: Windows' own height */
   --bar-h: 44px;              /* top bar */
+  /*
+   * The tab strip. Its own token although it matches --titlebar-h today: that
+   * one means "the height Windows draws a titlebar", which is not a fact about
+   * tabs, and pinning them together is how they drift apart later.
+   */
+  --tab-h: 32px;
   --row-h: 44px;              /* reference table row height */
   /*
    * Deviation from the reference: its 44px rows suit a dashboard table of a

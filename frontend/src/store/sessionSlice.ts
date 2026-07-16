@@ -1,4 +1,4 @@
-import { createSlice, isAnyOf, type PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, isAnyOf } from '@reduxjs/toolkit';
 import { useCallback } from 'react';
 
 import type { ConnectionConfig, ServerConfig, SqlDialect } from '../../../shared/protocol.ts';
@@ -7,15 +7,16 @@ import { useAppDispatch, useAppSelector } from './hooks.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
 /**
- * Who we are connected to, and what database we are pointed at.
+ * Who we are connected to.
  *
  * Every feature reads this -- the explorer to list, the editor to label, the
  * results to query -- so it belongs to no feature in particular. That is also
  * why `features/connections` owns only the *screen* you connect from: the
  * session it opens outlives that screen.
  *
- * `activeDatabase` is here for the same reason. It never renders on its own, but
- * it is a parameter of nearly every bridge call and three features read it.
+ * Which database we are pointed at is *not* here: it belongs to a tab, so that
+ * switching database to check one thing does not drag every other tab along.
+ * See `tabsSlice`.
  *
  * `config` is a `ServerConfig`, so the password is structurally absent. Nothing
  * reads it after connecting -- the extension holds the connection, and a saved
@@ -25,7 +26,6 @@ import { createAppThunk, errorMessage } from './thunk.ts';
 interface SessionState {
   connectionId: string | null;
   config: ServerConfig | null;
-  activeDatabase: string | null;
   /**
    * How the editor highlights this server's SQL, as the extension reported it.
    * It is here rather than derived from `config.type` on the spot because the
@@ -39,7 +39,6 @@ interface SessionState {
 const initialState: SessionState = {
   connectionId: null,
   config: null,
-  activeDatabase: null,
   // Plain SQL until a server says otherwise: the editor exists before a session does.
   dialect: 'sql',
   connecting: false,
@@ -115,9 +114,6 @@ const sessionSlice = createSlice({
   name: 'session',
   initialState,
   reducers: {
-    databaseSelected(state, action: PayloadAction<string>) {
-      state.activeDatabase = action.payload;
-    },
     /** Moving between the list and the form must not carry the last attempt's error along. */
     errorDismissed(state) {
       state.error = null;
@@ -134,13 +130,13 @@ const sessionSlice = createSlice({
         state.error = null;
       })
       .addMatcher(sessionOpened, (state, action) => {
-        const { connectionId, config, databases, dialect } = action.payload;
+        const { connectionId, config, dialect } = action.payload;
         state.connecting = false;
         state.connectionId = connectionId;
         state.config = config;
         state.dialect = dialect;
-        // Pre-select something sensible so the editor is usable immediately.
-        state.activeDatabase = config.database ?? databases[0] ?? null;
+        // The database this opens on is picked by `tabsSlice`, which creates the
+        // first tab off this same event and is what holds a database now.
       })
       .addMatcher(isAnyOf(connect.rejected, connectSaved.rejected), (state, action) => {
         state.connecting = false;
@@ -149,7 +145,7 @@ const sessionSlice = createSlice({
   },
 });
 
-export const { databaseSelected, errorDismissed } = sessionSlice.actions;
+export const { errorDismissed } = sessionSlice.actions;
 export const sessionReducer = sessionSlice.reducer;
 
 /** How a server reads in the chrome, from anything that carries one. */
@@ -170,7 +166,6 @@ export function useSession() {
       [dispatch]
     ),
     disconnect: useCallback(() => void dispatch(disconnect()), [dispatch]),
-    selectDatabase: useCallback((db: string) => dispatch(databaseSelected(db)), [dispatch]),
     dismissError: useCallback(() => dispatch(errorDismissed()), [dispatch]),
   };
 }

@@ -322,15 +322,20 @@
   min-height: 0;
   border-right: 1px solid var(--border);
 }
+/* The database picker's bar. It sits at --bar-h to line up with the toolbar
+   across the divider, and the select keeps its own 32px inside that. */
 .sidebar__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--gap-sm);
   height: var(--bar-h);
   padding: 0 var(--gap);
   border-bottom: 1px solid var(--border);
   flex: none;
+}
+.sidebar__head .select {
+  flex: 1;
+  min-width: 0;
 }
 .tree {
   flex: 1;
@@ -357,39 +362,15 @@
 .tree__row:hover {
   background: var(--hover);
 }
-.tree__row--active {
-  background: var(--selected);
-  color: var(--blue);
-}
 .tree__label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/*
- * Both wear .icon, which sizes them. What is left is the hierarchy: the mark is
- * quieter than the name it labels, and the caret is quieter still.
- */
+/* It wears .icon, which sizes it. What is left is the hierarchy: the mark is
+   quieter than the name it labels. */
 .tree__icon {
   color: var(--text-muted);
-}
-/* The active row is --blue; its icon follows the row rather than staying gray. */
-.tree__row--active .tree__icon {
-  color: inherit;
-}
-.tree__caret {
-  color: var(--text-faint);
-  transition: transform 0.12s ease;
-}
-.tree__caret--open {
-  transform: rotate(90deg);
-}
-.tree__children {
-  /* The guide line runs down the centre of the caret slot above it: the row's
-     6px padding plus half of --icon. Move --icon and this has to move too. */
-  margin-left: 14px;
-  padding-left: 5px;
-  border-left: 1px solid var(--border);
 }
 .tree__note {
   padding: 5px 8px;
@@ -404,9 +385,152 @@
 
 .main {
   display: grid;
-  grid-template-rows: var(--bar-h) minmax(120px, 30%) 1fr;
+  grid-template-rows: var(--tab-h) var(--bar-h) minmax(120px, 30%) 1fr;
   min-width: 0;
   min-height: 0;
+}
+
+/*
+ * A grid tab has no query to run and no text to run it on, so it spends none of
+ * the screen on an editor nobody asked for.
+ *
+ * The pane is hidden rather than unmounted, and that is not a preference: there
+ * is one Monaco instance and every tab's model hangs off it, so unmounting the
+ * pane would dispose the lot and every other tab would come back empty. A
+ * display:none element generates no box, so the results pane lands in track 2 on
+ * its own -- the rows are written out here to be read, not to make it work.
+ */
+.main--grid {
+  grid-template-rows: var(--tab-h) 1fr;
+}
+.main--grid .toolbar,
+.main--grid .editor {
+  display: none;
+}
+
+/* ---------------- Tabs ---------------- */
+
+.tabs {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Tabs are divided by a rule, not by a surface -- there is one background. */
+.tabs__tab {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  flex: none;
+  max-width: 200px;
+  padding-right: var(--gap-xs);
+}
+.tabs__tab + .tabs__tab {
+  border-left: 1px solid var(--border);
+}
+.tabs__tab:hover {
+  background: var(--hover);
+}
+/*
+ * The active tab is marked the way an active tree row is -- there is one
+ * background, so it cannot be a lighter surface, and --selected is already this
+ * system's word for "this one". An underline would be a second visual device for
+ * a job the system has a word for; see docs/design-system.md.
+ */
+.tabs__tab--active {
+  background: var(--selected);
+  color: var(--blue);
+}
+.tabs__tab--active:hover {
+  background: var(--selected);
+}
+
+.tabs__pick {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  flex: 1;
+  min-width: 0;
+  height: var(--tab-h);
+  padding: 0 var(--gap-xs) 0 10px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-badge);
+  cursor: pointer;
+}
+.tabs__icon {
+  flex: none;
+  color: var(--text-muted);
+}
+.tabs__tab--active .tabs__icon {
+  color: inherit;
+}
+.tabs__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Close stays quiet until wanted -- a row of x's is more chrome than the names
+ * beside them -- but keeps its space rather than being taken out of flow, so
+ * revealing it never reflows the strip and never renames a tab by resizing it.
+ *
+ * `pointer-events` has to track `opacity`: an invisible button is still a
+ * clickable one, and an invisible Close under the cursor is the worst version of
+ * that bug this app could have. The active tab keeps its close visible -- it is
+ * the one you are most likely to want gone.
+ */
+.tabs__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+.tabs__tab:hover .tabs__close,
+.tabs__tab--active .tabs__close,
+.tabs__close:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.tabs__close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.tabs__new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--tab-h);
+  border: none;
+  border-left: 1px solid var(--border);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.tabs__new:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .toolbar {
@@ -418,11 +542,6 @@
 }
 .toolbar__spacer {
   flex: 1;
-}
-.toolbar__context {
-  font-family: var(--mono);
-  font-size: var(--text-badge);
-  color: var(--text-muted);
 }
 .toolbar__hint {
   font-size: var(--text-label);

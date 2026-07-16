@@ -33,12 +33,28 @@ const KEYCHAIN_SERVICE = `squeal-ui-test-${Bun.randomUUIDv7()}`;
 
 let app: AppSession;
 
-/** Tree rows: nesting tells them apart, since both kinds carry a caret slot. */
-const clickRow = (kind: 'db' | 'table', label: string) => `
+/** The tree is one database's tables, flat: a row is a table and nothing else. */
+const clickTable = (label: string) => `
   [...document.querySelectorAll('.tree__row')]
-    .filter(e => ${kind === 'db' ? "e.closest('.tree__children') === null" : "e.closest('.tree__children') !== null"})
     .find(e => e.querySelector('.tree__label').textContent === ${JSON.stringify(label)})
     .click(); true;`;
+
+/** The database is picked from a select now, so React's own setter is the way in. */
+const selectDatabase = (name: string) => `${REACT_SETTERS}
+  setSelect(document.querySelector('.sidebar__head .select'), ${JSON.stringify(name)});
+  true;`;
+
+/** The tab strip, left to right. */
+const tabLabels = `[...document.querySelectorAll('.tabs__label')].map(e => e.textContent)`;
+const activeTabLabel = `document.querySelector('.tabs__tab--active .tabs__label')?.textContent ?? ''`;
+
+/** Tabs are matched on exact label text, same rule as every other selector here. */
+const tab = (label: string) => `
+  [...document.querySelectorAll('.tabs__tab')]
+    .find(e => e.querySelector('.tabs__label').textContent === ${JSON.stringify(label)})`;
+const clickTab = (label: string) => `${tab(label)}.querySelector('.tabs__pick').click(); true;`;
+const closeTab = (label: string) => `${tab(label)}.querySelector('.tabs__close').click(); true;`;
+const newTab = `document.querySelector('.tabs__new').click(); true;`;
 
 /*
  * The editor is Monaco, so its text is in a model rather than in a DOM value:
@@ -46,8 +62,11 @@ const clickRow = (kind: 'db' | 'table', label: string) => `
  * into. `window.squealEditor` is the seam the app exposes for exactly this.
  * Writing through it goes the same way a keystroke does -- the model change
  * fires the editor's own listener -- so React's state follows as it would.
+ *
+ * Still one editor with tabs: they swap the model underneath it. It holds no
+ * model at all while a grid tab is showing, which is why the reads below guard.
  */
-const editorText = `window.squealEditor.getValue()`;
+const editorText = `window.squealEditor.getModel()?.getValue() ?? null`;
 const setEditorText = (sql: string) => `window.squealEditor.setValue(${JSON.stringify(sql)}); true;`;
 
 /** The results bar's label: which table, and which rows of it are on screen. */
@@ -140,55 +159,189 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(shell).toBe(true);
     });
 
-    test('lists databases', async () => {
+    test('opens on one editor tab', async () => {
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1']);
+    });
+
+    test('offers the databases in the picker', async () => {
       const dbs = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.tree__row')].map(e => e.querySelector('.tree__label')?.textContent)`
+        `[...document.querySelectorAll('.sidebar__head .select option')].map(e => e.textContent)`
       );
       expect(dbs).toContain('shop');
     });
 
-    test('expanding a database loads its tables', async () => {
-      await app.evaluate(clickRow('db', 'shop'));
+    test('picking a database lists its tables', async () => {
+      await app.evaluate(selectDatabase('shop'));
       await Bun.sleep(1500);
       const tables = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.tree__children .tree__label')].map(e => e.textContent)`
+        `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`
       );
       expect(tables).toContain('users');
       expect(tables).toContain('reporting.daily_stats');
     });
 
     /*
-     * Browsing pages SQL the extension wrote, so it deliberately does not go
-     * through the editor: the query being written is not the thing being paged,
-     * and writing page N's text over it would lose work the pager cannot even
-     * honour. The sentinel is the whole test -- the grid filling proves the
-     * browse ran, and the editor still holding it proves it went around.
+     * The point of the whole feature: clicking a table no longer eats the query
+     * being written. It opens a grid tab of its own instead, and the editor tab
+     * is still sitting there with its text.
+     *
+     * The sentinel is the whole test. It is checked *after* switching back --
+     * while the grid tab is up there is no model attached at all, which is the
+     * other half of what "the editor is not on this tab" has to mean.
      */
-    test('clicking a table browses it, leaving the editor alone', async () => {
+    test('clicking a table opens a grid tab, leaving the editor tab alone', async () => {
       await app.evaluate(setEditorText('SELECT 1 -- still being written'));
       await Bun.sleep(200);
 
-      await app.evaluate(clickRow('table', 'users'));
+      await app.evaluate(clickTable('users'));
       await Bun.sleep(2000);
 
-      expect(await app.evaluate<string>(editorText)).toBe('SELECT 1 -- still being written');
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'users']);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe('users');
 
       const headers = await app.evaluate<string[]>(
         `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`
       );
       expect(headers).toContain('email');
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid tbody tr').length`)).toBe(2);
 
-      const rows = await app.evaluate<number>(`document.querySelectorAll('.grid tbody tr').length`);
-      expect(rows).toBe(2);
+      // A grid tab spends none of the screen on an editor nobody asked for.
+      expect(await app.evaluate<boolean>(`!!document.querySelector('.main--grid')`)).toBe(true);
+      expect(await app.evaluate<string | null>(editorText)).toBe(null);
+
+      await app.evaluate(clickTab('Query 1'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string | null>(editorText)).toBe('SELECT 1 -- still being written');
+    });
+
+    test('each tab keeps its own text', async () => {
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'users', 'Query 2']);
+
+      await app.evaluate(setEditorText('SELECT 2 -- the second tab'));
+      await Bun.sleep(300);
+
+      await app.evaluate(clickTab('Query 1'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string | null>(editorText)).toBe('SELECT 1 -- still being written');
+
+      await app.evaluate(clickTab('Query 2'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string | null>(editorText)).toBe('SELECT 2 -- the second tab');
+
+      await app.evaluate(closeTab('Query 2'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'users']);
+    });
+
+    /*
+     * Results are per tab, or switching tabs paints the last tab's rows under
+     * this one's query. Two tabs holding different grids at once is the only way
+     * to see that they are actually separate.
+     */
+    test('each tab keeps its own results', async () => {
+      await app.evaluate(clickTab('Query 1'));
+      await Bun.sleep(300);
+      await app.evaluate(setEditorText('SELECT 42 AS answer'));
+      await Bun.sleep(200);
+      await app.evaluate(`document.querySelector('.toolbar .btn--primary').click(); true;`);
+      await Bun.sleep(1500);
+
+      const headers = `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`;
+      expect(await app.evaluate<string[]>(headers)).toEqual(['answer']);
+
+      // The grid tab still holds the table it browsed, not this query's row.
+      await app.evaluate(clickTab('users'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(headers)).toContain('email');
+
+      await app.evaluate(clickTab('Query 1'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(headers)).toEqual(['answer']);
+    });
+
+    test('closing the last tab leaves an empty state', async () => {
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+      await app.evaluate(closeTab('Query 1'));
+      await Bun.sleep(400);
+
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+      const note = await app.evaluate<string>(`document.querySelector('.results .note--muted')?.textContent ?? ''`);
+      expect(note).toContain('Nothing open');
+    });
+
+    /*
+     * The empty state has to have a way out of it, and `+` is the only one.
+     *
+     * There is no active tab to inherit a database from, so the tab opens on the
+     * session's default -- and this asserts the *user-visible* consequences of
+     * that (an enabled picker, a listed tree) rather than the state behind them.
+     * `setSelect` would sail straight past a disabled picker: React's onChange
+     * fires for a synthetic `change` event that no real click could produce, so
+     * a test driving the picker that way passed while the app stranded you here.
+     */
+    test('a new tab from the empty state lands on a database', async () => {
+      await app.evaluate(newTab);
+      await Bun.sleep(1500);
+
+      // Not stranded: the picker names a real database and can be used.
+      expect(await app.evaluate<boolean>(`document.querySelector('.sidebar__head .select').disabled`)).toBe(false);
+      const picked = await app.evaluate<string>(`document.querySelector('.sidebar__head .select').value`);
+      expect(picked).not.toBe('');
+      const options = await app.evaluate<string[]>(
+        `[...document.querySelectorAll('.sidebar__head .select option')].map(e => e.value)`
+      );
+      expect(options).toContain(picked);
+
+      // The tree answered for that database, rather than sitting blank because
+      // nothing was ever fetched. "No tables" is a real answer -- the session
+      // opens on the server's first database, which for Postgres is the empty
+      // maintenance one -- so this asks for an answer, not for rows.
+      expect(
+        await app.evaluate<boolean>(
+          `document.querySelectorAll('.tree__row').length > 0 || !!document.querySelector('.tree__note')`
+        )
+      ).toBe(true);
+
+      // And the picker actually moves it -- back to somewhere the rest of the
+      // block can work from.
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1500);
+      const tables = await app.evaluate<string[]>(
+        `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`
+      );
+      expect(tables).toContain('users');
+    });
+
+    test('clicking a table twice opens a tab each time', async () => {
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(1500);
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(1500);
+
+      // Deliberately not deduped: comparing one table before and after a write
+      // is the whole reason to open it twice.
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 3', 'users', 'users']);
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
     });
 
     // Two rows is under a page, so there is nowhere to go and nothing to offer.
     test('a table that fits on one page has no pager', async () => {
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(2000);
       expect(await app.evaluate<number>(`document.querySelectorAll('.results__pager').length`)).toBe(0);
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
     });
 
     test('a table larger than a page pages forward and back', async () => {
-      await app.evaluate(clickRow('table', 'events'));
+      await app.evaluate(clickTable('events'));
       await Bun.sleep(2000);
 
       expect(await app.evaluate<string>(barText)).toContain('rows 1–100');
@@ -209,15 +362,36 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(`${pagerBtn('Prev')}.click(); true;`);
       await Bun.sleep(1500);
       expect(await app.evaluate<string>(barText)).toContain('rows 1–100');
+
+      await app.evaluate(closeTab('events'));
+      await Bun.sleep(300);
     });
 
     test('NULL is rendered distinctly, not as empty or "null"', async () => {
-      // Browse `users` rather than inheriting whatever the last test left in the
-      // grid: Grace's NULL email is the subject, and a neighbour paging away to
-      // another table should fail that test, not this one.
-      await app.evaluate(clickRow('table', 'users'));
+      // Browse `users` in a tab of its own rather than inheriting whatever the
+      // last test left in the grid: Grace's NULL email is the subject, and a
+      // neighbour paging away to another table should fail that test, not this.
+      await app.evaluate(clickTable('users'));
       await Bun.sleep(2000);
       expect(await app.evaluate<boolean>(`!!document.querySelector('.grid .null')`)).toBe(true);
+    });
+
+    /*
+     * A grid tab has nothing to run, and the editor pane is still mounted
+     * underneath it -- one Monaco, every tab's model hanging off it -- so its
+     * window listener is live and has to refuse for itself. The `users` grid tab
+     * from the test above is still active, which is the case being made.
+     */
+    test('Ctrl+Enter does nothing on a grid tab', async () => {
+      const before = await app.evaluate<string>(barText);
+      await app.evaluate(
+        `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(1000);
+      expect(await app.evaluate<string>(barText)).toBe(before);
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
     });
 
     test('Ctrl+Enter runs the editor contents', async () => {
@@ -314,11 +488,54 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(err).toMatch(/does_not_exist/);
     });
 
-    test('selecting another database updates the context', async () => {
-      await app.evaluate(clickRow('db', 'postgres'));
+    /*
+     * The database binds to a tab, not to the connection: this is the assertion
+     * the whole `tabsSlice` shape exists for. Moving one tab must leave the
+     * other where it was -- switching database to check one thing cannot drag
+     * every other tab along with it.
+     */
+    test('the database picker moves the active tab and no other', async () => {
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      const second = await app.evaluate<string>(activeTabLabel);
+
+      await app.evaluate(selectDatabase('postgres'));
       await Bun.sleep(1200);
-      const ctx = await app.evaluate<string>(`document.querySelector('.toolbar__context').textContent`);
-      expect(ctx.trim()).toBe('postgres');
+      expect(await app.evaluate<string>(`document.querySelector('.sidebar__head .select').value`)).toBe('postgres');
+
+      // Back to the first tab: it never moved, so the picker still reads `shop`
+      // and the tree is still showing shop's tables.
+      await app.evaluate(clickTab('Query 3'));
+      await Bun.sleep(1200);
+      expect(await app.evaluate<string>(`document.querySelector('.sidebar__head .select').value`)).toBe('shop');
+      const tables = await app.evaluate<string[]>(
+        `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`
+      );
+      expect(tables).toContain('users');
+
+      await app.evaluate(closeTab(second));
+      await Bun.sleep(300);
+    });
+
+    /*
+     * A grid tab is "this table, wherever I am pointed", so moving it re-browses
+     * the same name in the new database -- and when it does not live there, the
+     * error lands in this tab's own grid, which is where the action was taken.
+     */
+    test('moving a grid tab to a database without that table errors in that tab', async () => {
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(2000);
+      expect(await app.evaluate<string>(barText)).toContain('users');
+
+      await app.evaluate(selectDatabase('postgres'));
+      await Bun.sleep(2000);
+      const err = await app.evaluate<string>(`document.querySelector('.note--error')?.textContent ?? ''`);
+      expect(err).toMatch(/users/);
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1200);
     });
   });
 
@@ -339,9 +556,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * matters here: clicking a table fills the grid on this engine too.
      */
     test('clicking a table browses it', async () => {
-      await app.evaluate(clickRow('db', 'shop'));
+      await app.evaluate(selectDatabase('shop'));
       await Bun.sleep(1500);
-      await app.evaluate(clickRow('table', 'users'));
+      await app.evaluate(clickTable('users'));
       await Bun.sleep(2000);
 
       const headers = await app.evaluate<string[]>(
@@ -350,10 +567,28 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(headers).toContain('email');
     });
 
-    // The same assertion the Postgres block makes, and the pair is the test:
-    // one engine agreeing proves nothing, two disagreeing proves it is data.
+    /*
+     * The same assertion the Postgres block makes, and the pair is the test: one
+     * engine agreeing proves nothing, two disagreeing proves it is data.
+     *
+     * Asked of a tab opened *after* the connect, and of a model that has been
+     * sitting in the background: the dialect has to reach every model, not just
+     * whichever one was attached when the engine reported it.
+     */
     test('highlights with the dialect the engine reported', async () => {
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
       expect(await app.evaluate<string>(`window.squealEditor.getModel().getLanguageId()`)).toBe('mysql');
+
+      await app.evaluate(clickTab('Query 1'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string>(`window.squealEditor.getModel().getLanguageId()`)).toBe('mysql');
+
+      // Hand the next test back the grid it is about.
+      await app.evaluate(closeTab('Query 2'));
+      await Bun.sleep(300);
+      await app.evaluate(clickTab('users'));
+      await Bun.sleep(400);
     });
 
     test('BIGINT past 2^53 reaches the grid intact', async () => {
@@ -477,7 +712,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       }
       // It must be a real session, not just a routed screen.
       const dbs = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`
+        `[...document.querySelectorAll('.sidebar__head .select option')].map(e => e.textContent)`
       );
       expect(dbs).toContain('shop');
     });
