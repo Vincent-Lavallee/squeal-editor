@@ -29,9 +29,9 @@
   "extensions": [
     {
       "id": "js.squeal.db",
-      "commandDarwin": "bun ${NL_PATH}/extensions/db/main.ts",
-      "commandLinux": "bun ${NL_PATH}/extensions/db/main.ts",
-      "commandWindows": "bun.exe ${NL_PATH}/extensions/db/main.ts"
+      "commandDarwin": "${NL_PATH}/extensions/db/squeal-db-ext",
+      "commandLinux": "${NL_PATH}/extensions/db/squeal-db-ext",
+      "commandWindows": "${NL_PATH}\\extensions\\db\\squeal-db-ext.exe"
     }
   ],
   "modes": {

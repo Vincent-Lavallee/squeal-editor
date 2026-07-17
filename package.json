@@ -10,11 +10,12 @@
   "scripts": {
     "postinstall": "neu update",
     "build": "bun run --filter @squeal/frontend build",
-    "start": "bun run build && neu run",
-    "dev": "neu run",
+    "build:ext": "bun build extensions/db/main.ts --compile --outfile extensions/db/squeal-db-ext",
+    "start": "bun run build && bun run build:ext && neu run",
+    "dev": "bun run build:ext && neu run",
     "typecheck": "tsc -p frontend --noEmit && tsc -p extensions/db --noEmit",
     "test": "bun test",
-    "test:ui": "SQUEAL_UI=1 bun test tests/ui.test.ts --timeout 120000",
+    "test:ui": "bun run build:ext && SQUEAL_UI=1 bun test tests/ui.test.ts --timeout 120000",
     "test:db:up": "bun run tests/fixtures/db.ts up",
     "test:db:down": "bun run tests/fixtures/db.ts down",
     "neu:update": "neu update"
