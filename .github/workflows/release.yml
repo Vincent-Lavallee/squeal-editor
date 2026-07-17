@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # Reads conventional commits off dev, keeps the version + changelog, and cuts
+  # the GitHub Release. It only opens/updates a release PR most of the time;
+  # release_created is true only on the run where that PR merged and the tag was
+  # made.
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          target-branch: dev
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Rides the same run as the release. It cannot be an `on: release` workflow: a
+  # Release cut by the default GITHUB_TOKEN does not trigger further workflows
+  # (GitHub's recursion guard), so that build would silently never fire.
+  build:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write
+    strategy:
+      # One platform failing must not withhold the others — packaging is still
+      # unsolved and mac/Linux are unverified (see docs/architecture.md).
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: macos-latest
+            name: macos
+          - os: ubuntu-latest
+            name: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      # postinstall runs `neu update`, which fetches the Neutralino binaries that
+      # `neu build` needs.
+      - name: Install dependencies
+        run: bun install
+
+      # The frontend has to be built into resources/ before neu bundles it —
+      # resources/ is the build output neu ships, icon.png included.
+      - name: Build frontend
+        run: bun run build
+
+      # On Windows the extensions copy needs an elevated shell or it EPERMs on
+      # Bun's linked node_modules symlinks; GitHub runners are admin, so it works
+      # here where a plain local shell would not.
+      - name: Package the app
+        run: bunx neu build
+
+      - name: Zip the bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/squeal-editor/* -DestinationPath "squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip"
+
+      - name: Zip the bundle (Unix)
+        if: runner.os != 'Windows'
+        run: cd dist && zip -r "../squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip" squeal-editor
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" "squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip" --clobber
