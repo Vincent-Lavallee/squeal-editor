@@ -65,6 +65,14 @@ export interface Driver<C> {
    */
   listColumns(client: C, database: string, table: string): Promise<ColumnInfo[]>;
   query(client: C, sql: string): Promise<QueryOutcome>;
+  /**
+   * Put this client's session into read-only mode, or back to read-write, so the
+   * *server* refuses writes rather than the app trying to parse them out of the
+   * SQL. It is a driver method because the statement is per-engine, the same
+   * reason quoting is -- and it is applied per client, once per database a
+   * connection opens (see `connection.ts`).
+   */
+  setReadOnly(client: C, readOnly: boolean): Promise<void>;
   quoteIdent(name: string): string;
 }
 
@@ -188,6 +196,13 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     };
   },
 
+  async setReadOnly(client, readOnly) {
+    // Sets the default access mode for this session's transactions. In autocommit
+    // each statement is its own transaction, so a write is then refused with
+    // ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION -- no explicit BEGIN needed.
+    await client.query(readOnly ? 'SET SESSION TRANSACTION READ ONLY' : 'SET SESSION TRANSACTION READ WRITE');
+  },
+
   quoteIdent(name) {
     return `\`${String(name).replace(/`/g, '``')}\``;
   },
@@ -307,6 +322,17 @@ export const postgresDriver: Driver<pg.Client> = {
     }
 
     return { columns, rows: (res.rows as unknown[][]).map(toDisplayRow) };
+  },
+
+  async setReadOnly(client, readOnly) {
+    // Sets default_transaction_read_only for the session, so subsequent
+    // statements run in a read-only transaction and writes fail with SQLSTATE
+    // 25006 (read_only_sql_transaction).
+    await client.query(
+      readOnly
+        ? 'SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY'
+        : 'SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE'
+    );
   },
 
   quoteIdent(name) {

@@ -43,6 +43,7 @@ export interface SaveArg {
   name: string;
   config: ServerConfig;
   environment: Environment;
+  readOnly: boolean;
   password: PasswordUpdate;
 }
 

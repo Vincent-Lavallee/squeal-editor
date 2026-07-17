@@ -33,6 +33,15 @@ export interface OpenConnection {
    */
   name: string;
   environment: Environment;
+  /**
+   * Whether the server is refusing writes on this connection.
+   *
+   * It crossed the bridge -- the extension applied it and reports it back -- so
+   * it lives here rather than being derived from `environment` on the spot: the
+   * Production default is the UI's, but once open the truth is what the extension
+   * did, and the lock in the status bar toggles it per connection.
+   */
+  readOnly: boolean;
 }
 
 /**
@@ -91,11 +100,11 @@ interface Opened extends OpenConnection {
 export const connect = createAppThunk(
   'session/connect',
   async (
-    arg: { config: ConnectionConfig; name: string; environment: Environment },
+    arg: { config: ConnectionConfig; name: string; environment: Environment; readOnly: boolean },
     { rejectWithValue }
   ): Promise<Opened | ReturnType<typeof rejectWithValue>> => {
     try {
-      const res = await call('db.connect', { config: arg.config });
+      const res = await call('db.connect', { config: arg.config, readOnly: arg.readOnly });
       const { password: _password, ...server } = arg.config;
       return {
         connectionId: res.connectionId,
@@ -104,6 +113,7 @@ export const connect = createAppThunk(
         dialect: res.dialect,
         name: arg.name,
         environment: arg.environment,
+        readOnly: arg.readOnly,
       };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
@@ -130,6 +140,7 @@ export const connectSaved = createAppThunk(
         dialect: res.dialect,
         name: res.name,
         environment: res.environment,
+        readOnly: res.readOnly,
       };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
@@ -176,6 +187,26 @@ export const disconnect = createAppThunk(
   { condition: (connectionId, { getState }) => getState().session.connections[connectionId] !== undefined }
 );
 
+/**
+ * Turn read-only on or off for one open connection.
+ *
+ * The flip lands on `fulfilled`, not optimistically: read-only is a promise the
+ * server is keeping, so the lock only closes once the extension confirms it
+ * reached every client. A failed toggle leaves the connection as it was and the
+ * error where the action was taken.
+ */
+export const setReadOnly = createAppThunk(
+  'session/setReadOnly',
+  async (arg: { connectionId: string; readOnly: boolean }, { rejectWithValue }) => {
+    try {
+      await call('db.readonly', arg);
+      return arg;
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  }
+);
+
 const sessionSlice = createSlice({
   name: 'session',
   initialState,
@@ -209,14 +240,20 @@ const sessionSlice = createSlice({
           state.activeConnectionId = state.order[state.order.length - 1] ?? null;
         }
       })
+      .addCase(setReadOnly.fulfilled, (state, action) => {
+        const { connectionId, readOnly } = action.payload;
+        const conn = state.connections[connectionId];
+        // A toggle in flight when its connection closed finds nothing and no-ops.
+        if (conn) conn.readOnly = readOnly;
+      })
       .addMatcher(isAnyOf(connect.pending, connectSaved.pending), (state) => {
         state.connecting = true;
         state.error = null;
       })
       .addMatcher(sessionOpened, (state, action) => {
-        const { connectionId, config, dialect, name, environment } = action.payload;
+        const { connectionId, config, dialect, name, environment, readOnly } = action.payload;
         state.connecting = false;
-        state.connections[connectionId] = { connectionId, config, dialect, name, environment };
+        state.connections[connectionId] = { connectionId, config, dialect, name, environment, readOnly };
         state.order.push(connectionId);
         // Opening one puts you on it. Anything else means connecting to a server
         // and then having to go and find it.
@@ -269,13 +306,14 @@ export function useSession() {
     dialect: active?.dialect ?? 'sql',
     environment: active?.environment ?? null,
     name: active?.name ?? '',
+    readOnly: active?.readOnly ?? false,
     connecting,
     error,
     connected: activeConnectionId !== null,
     serverLabel: active ? serverLabel(active.config) : '',
     connect: useCallback(
-      (config: ConnectionConfig, name: string, environment: Environment) =>
-        dispatch(connect({ config, name, environment })),
+      (config: ConnectionConfig, name: string, environment: Environment, readOnly: boolean) =>
+        dispatch(connect({ config, name, environment, readOnly })),
       [dispatch]
     ),
     connectSaved: useCallback(
@@ -292,6 +330,10 @@ export function useSession() {
     ),
     activate: useCallback(
       (connectionId: string) => dispatch(connectionActivated({ connectionId })),
+      [dispatch]
+    ),
+    setReadOnly: useCallback(
+      (connectionId: string, readOnly: boolean) => dispatch(setReadOnly({ connectionId, readOnly })),
       [dispatch]
     ),
     dismissError: useCallback(() => dispatch(errorDismissed()), [dispatch]),

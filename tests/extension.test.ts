@@ -338,4 +338,51 @@ describe.each([
 
     await h.ok('db.disconnect', { connectionId: b.connectionId });
   });
+
+  /*
+   * Read-only is the *server* refusing writes, not a parser of ours -- which is
+   * the whole point, so the only way to prove it is to make the server do it. A
+   * WHERE that matches nothing keeps the fixture untouched: the refusal happens
+   * when the statement is a write, before any row is considered, so 0 matched
+   * rows is enough to show it and enough to leave the seed as it was.
+   */
+  describe('read-only', () => {
+    // Touches no rows either way: refused as a write under read-only, a 0-row
+    // success under read-write.
+    const noopWrite = 'UPDATE users SET name = name WHERE 1 = 0';
+
+    test('the server refuses writes when read-only, and takes them again when off', async () => {
+      await h.ok('db.readonly', { connectionId, readOnly: true });
+
+      const refused = await h.dispatch('db.query', { connectionId, database: FIXTURE_DB, sql: noopWrite });
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) expect(refused.error).toMatch(/read.only/i);
+
+      // Reads still work while locked -- read-only is not "no queries".
+      const read = (await h.ok('db.query', { connectionId, database: FIXTURE_DB, sql: 'SELECT 1 AS ok' })) as QueryResult;
+      expect(Number(read.rows[0]![0])).toBe(1);
+
+      await h.ok('db.readonly', { connectionId, readOnly: false });
+      expect((await h.dispatch('db.query', { connectionId, database: FIXTURE_DB, sql: noopWrite })).ok).toBe(true);
+    });
+
+    test('opening read-only refuses a write on a database opened afterwards', async () => {
+      // A fresh connection asked to be read-only up front. Its default client is
+      // the server's default database, so querying `shop` opens a *new* client
+      // after the connection is already read-only -- which is the case that
+      // breaks if the mode only reached the clients open at toggle time.
+      const { connectionId: roId } = (await h.ok('db.connect', { config, readOnly: true })) as {
+        connectionId: string;
+      };
+
+      const refused = await h.dispatch('db.query', { connectionId: roId, database: FIXTURE_DB, sql: noopWrite });
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) expect(refused.error).toMatch(/read.only/i);
+
+      const read = (await h.ok('db.query', { connectionId: roId, database: FIXTURE_DB, sql: 'SELECT 1 AS ok' })) as QueryResult;
+      expect(Number(read.rows[0]![0])).toBe(1);
+
+      await h.ok('db.disconnect', { connectionId: roId });
+    });
+  });
 });

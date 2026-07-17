@@ -6,6 +6,7 @@ import { EditorPane, EditorProvider } from './features/editor/index.ts';
 import { Sidebar } from './features/explorer/index.ts';
 import { ConnectionRail } from './features/rail/index.ts';
 import { ResultsTable, useResults } from './features/results/index.ts';
+import { StatusBar } from './features/statusbar/index.ts';
 import { TabStrip } from './features/tabs/index.ts';
 
 interface Props {
@@ -73,22 +74,28 @@ function ShellLayout({ onAddConnection }: Props) {
   // asks the same question the editor pane does: is there a query here at all.
   const showEditor = activeTab?.kind === 'editor';
 
+  // A column so the status bar spans the full width beneath the shell -- the rail,
+  // the sidebar and the main pane -- rather than sitting inside any one of them.
   return (
-    <div className="app">
-      <ConnectionRail onAdd={onAddConnection} />
-      <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} />
+    <div className="shell">
+      <div className="app">
+        <ConnectionRail onAdd={onAddConnection} />
+        <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} />
 
-      <main className={`main ${showEditor ? '' : 'main--grid'}`}>
-        <TabStrip />
-        <EditorPane onRun={run} running={running} />
-        <div className="results">
-          {activeTab ? (
-            <ResultsTable />
-          ) : (
-            <div className="note note--muted">Nothing open. Click a table, or start a new query.</div>
-          )}
-        </div>
-      </main>
+        <main className={`main ${showEditor ? '' : 'main--grid'}`}>
+          <TabStrip />
+          <EditorPane onRun={run} running={running} />
+          <div className="results">
+            {activeTab ? (
+              <ResultsTable />
+            ) : (
+              <div className="note note--muted">Nothing open. Click a table, or start a new query.</div>
+            )}
+          </div>
+        </main>
+      </div>
+
+      <StatusBar />
     </div>
   );
 }

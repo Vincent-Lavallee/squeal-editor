@@ -121,6 +121,16 @@ export interface SavedConnection {
   name: string;
   config: ServerConfig;
   environment: Environment;
+  /**
+   * Open this connection read-only, letting the server refuse writes.
+   *
+   * Beside `environment` rather than inside `config`, and deliberately: a
+   * `ServerConfig` is what it takes to *reach* a server, and read-only is a
+   * session policy that changes nothing about reaching it -- the same reason
+   * `environment` is a sibling and not a field of the config. Defaulted on for
+   * Production, but that policy lives in the UI; the extension is told a boolean.
+   */
+  readOnly: boolean;
   /** False when the user chose not to store one -- connecting must ask for it. */
   hasPassword: boolean;
 }
@@ -202,7 +212,7 @@ export interface TablePage {
  */
 export interface Commands {
   'db.connect': {
-    req: { config: ConnectionConfig };
+    req: { config: ConnectionConfig; readOnly: boolean };
     res: { connectionId: string; databases: string[]; dialect: SqlDialect };
   };
   'db.databases': {
@@ -243,6 +253,18 @@ export interface Commands {
     req: { connectionId: string };
     res: { ok: true };
   };
+  /**
+   * Turn read-only on or off for an open connection.
+   *
+   * The session is per client and a connection holds one client per database, so
+   * the extension applies this to every open client *and* remembers it for every
+   * client opened afterwards -- miss the second and switching database quietly
+   * makes a read-only connection writable again.
+   */
+  'db.readonly': {
+    req: { connectionId: string; readOnly: boolean };
+    res: { ok: true };
+  };
 
   /* -- Saved connections. The store is the extension's; the UI only ever sees
         `SavedConnection`, which is to say never a password. -------------- */
@@ -259,6 +281,7 @@ export interface Commands {
       name: string;
       config: ServerConfig;
       environment: Environment;
+      readOnly: boolean;
       password: PasswordUpdate;
     };
     res: { connection: SavedConnection };
@@ -276,6 +299,10 @@ export interface Commands {
    * session is labelled and coloured by once more than one can be open. Neither
    * is anything the extension does with a connection -- it carries them the way
    * it carries `dialect`, because the row they live in is its to read.
+   *
+   * `readOnly` is the exception that *is* acted on: it is the stored row's, so it
+   * comes back rather than being recomputed up top, and the extension has already
+   * applied it to the connection it hands back.
    */
   'db.saved.connect': {
     req: { id: string; password?: string };
@@ -286,6 +313,7 @@ export interface Commands {
       config: ServerConfig;
       name: string;
       environment: Environment;
+      readOnly: boolean;
     };
   };
 

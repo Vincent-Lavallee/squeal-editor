@@ -26,26 +26,38 @@ export interface ConnectionHandle {
   readonly config: ConnectionConfig;
   /** The driver's own answer, so the renderer never derives it from `config.type`. */
   readonly dialect: SqlDialect;
+  /** Whether the server is currently refusing writes on this connection. */
+  readonly readOnly: boolean;
   listDatabases(): Promise<string[]>;
   listTables(database: string): Promise<TableInfo[]>;
   listColumns(database: string, table: string): Promise<ColumnInfo[]>;
   query(database: string | undefined, sql: string): Promise<QueryOutcome>;
   browse(database: string, table: string, offset: number): Promise<TableRows>;
+  /**
+   * Turn read-only on or off across every client this connection holds, and
+   * remember it for every client opened afterwards. Both halves matter: one
+   * client per database means a toggle that only reached the open ones would be
+   * undone the moment the user switched to a database not yet opened.
+   */
+  setReadOnly(value: boolean): Promise<void>;
   close(): Promise<void>;
 }
 
 /**
  * Opens a connection and verifies it immediately, so bad credentials surface as
  * a failed "Connect" rather than later as a mystery error in the tree.
+ *
+ * `readOnly` is seeded before the eager `listDatabases()` forces the first client
+ * open, so a connection asked to be read-only is never briefly writable.
  */
-export async function openConnection(config: ConnectionConfig): Promise<ConnectionHandle> {
-  const handle = withDriver(config.type, (driver) => build(driver, config));
+export async function openConnection(config: ConnectionConfig, readOnly: boolean): Promise<ConnectionHandle> {
+  const handle = withDriver(config.type, (driver) => build(driver, config, readOnly));
   // Force the default client open now; throws here if the server rejects us.
   await handle.listDatabases();
   return handle;
 }
 
-function build<C>(driver: Driver<C>, config: ConnectionConfig): ConnectionHandle {
+function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: boolean): ConnectionHandle {
   /**
    * One client per database. Postgres pins a connection to a single database, so
    * switching means a new client; MySQL does not need this, but sharing the shape
@@ -56,12 +68,19 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig): ConnectionHandle
    */
   const clients = new Map<string | null, C>();
 
+  // Mutable: `setReadOnly` flips it, and every client opened afterwards reads it.
+  let readOnly = initialReadOnly;
+
   async function getClient(database?: string): Promise<C> {
     const key = database ?? null;
     const existing = clients.get(key);
     if (existing) return existing;
 
     const client = await driver.createClient(config, database);
+    // Apply before it is cached and handed out, so a read-only connection's new
+    // database is read-only from its first query -- not just the ones open when
+    // the toggle happened.
+    if (readOnly) await driver.setReadOnly(client, true);
     clients.set(key, client);
     return client;
   }
@@ -69,6 +88,9 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig): ConnectionHandle
   return {
     config,
     dialect: driver.dialect,
+    get readOnly() {
+      return readOnly;
+    },
 
     async listDatabases() {
       return driver.listDatabases(await getClient(config.database));
@@ -123,6 +145,13 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig): ConnectionHandle
         pageSize: PAGE_SIZE,
         hasMore,
       };
+    },
+
+    async setReadOnly(value) {
+      // Remember first, so a client created mid-flight by a racing query already
+      // reads the new mode in `getClient`, then bring the open ones into line.
+      readOnly = value;
+      await Promise.all([...clients.values()].map((client) => driver.setReadOnly(client, value)));
     },
 
     async close() {

@@ -12,6 +12,8 @@ import {
   RiFlaskLine,
   RiGlobalLine,
   RiLeafLine,
+  RiLockLine,
+  RiLockUnlockLine,
   RiRocketLine,
   RiShoppingCartLine,
   RiStackLine,
@@ -57,6 +59,14 @@ export const CloseIcon = RiCloseLine;
 
 /** Leaving a workspace for the picker. Not `PrevPageIcon`: paging is not going back. */
 export const BackIcon = RiArrowLeftLine;
+
+/*
+ * The read-only lock in the status bar. Two kinds, told apart by shape the way a
+ * table is from a view: a closed lock is the server refusing writes, an open one
+ * is a connection that will take them.
+ */
+export const ReadOnlyIcon = RiLockLine;
+export const WritableIcon = RiLockUnlockLine;
 
 /*
  * The workspace marks.

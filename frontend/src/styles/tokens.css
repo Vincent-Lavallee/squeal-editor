@@ -29,6 +29,13 @@
    */
   --hover: #ffffff0a;         /* white at 4% */
   --selected: #669cff24;      /* --blue at 14% */
+  /*
+   * The dim behind a modal. The one place a shade is allowed: it is not a lighter
+   * surface *inside* the app breaking "one background", it is the app itself
+   * pushed back so a blocking dialog reads as blocking. Hex-with-alpha like the
+   * rest -- black at 60%.
+   */
+  --scrim: #00000099;
 
   /* ---- Text ---- */
   --text: #edeef0;            /* slate-12: primary */
@@ -124,6 +131,9 @@
    * tabs, and pinning them together is how they drift apart later.
    */
   --tab-h: 32px;
+  /* The bottom status bar. Shorter than the top bar: it is a footnote, not chrome
+     you act in -- it carries status, and today just the read-only lock. */
+  --statusbar-h: 26px;
   /*
    * The connection rail. Narrower than the reference's 68px icon rail, which it
    * is otherwise the same idea as: that one carried a flyout, this one carries

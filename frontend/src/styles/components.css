@@ -213,6 +213,48 @@
   margin: 0;
 }
 
+/* ---------------- Modal ---------------- */
+
+/*
+ * The one thing that blocks the app. The scrim is the app pushed back, not a
+ * surface added on top -- see --scrim. The card itself is the menu's and the
+ * find widget's situation exactly: the thing that floats is outlined with
+ * --border-strong, never raised with a shadow.
+ */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: var(--gap-xl);
+  background: var(--scrim);
+}
+.modal {
+  width: 380px;
+  max-width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--gap-xl);
+}
+.modal__title {
+  margin: 0 0 var(--gap);
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.modal__body {
+  margin: 0 0 var(--gap-lg);
+  color: var(--text-muted);
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+/* The environment named in the prose and in the box you must type it into. */
+.modal__env {
+  color: var(--text);
+  font-family: var(--mono);
+}
+
 /* ---------------- Data grid ---------------- */
 
 .grid-scroll {

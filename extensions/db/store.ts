@@ -83,6 +83,7 @@ const CONNECTIONS_SCHEMA = `
     default_database TEXT,
     environment      TEXT NOT NULL,
     ssl              INTEGER NOT NULL DEFAULT 0,
+    read_only        INTEGER NOT NULL DEFAULT 0,
     password         BLOB,
     UNIQUE (workspace_id, name)
   );
@@ -112,6 +113,8 @@ interface Row {
   environment: string;
   /** SQLite has no boolean; 0 or 1. `toSaved` is the only place that reads it. */
   ssl: number;
+  /** SQLite has no boolean; 0 or 1. Open the connection refusing writes. */
+  read_only: number;
   password: Uint8Array | null;
 }
 
@@ -159,9 +162,9 @@ function migrate(database: Database): void {
     database.transaction(() => {
       database.run('ALTER TABLE saved_connections RENAME TO saved_connections_legacy');
       database.run(CONNECTIONS_SCHEMA);
-      // `ssl` is left out of both lists so the column default applies -- see the
-      // backfill below for why off is the only safe answer for a row that
-      // predates the column.
+      // `ssl` and `read_only` are left out of both lists so their column defaults
+      // apply -- see the backfills below for why off is the only safe answer for
+      // a row that predates the column.
       database.run(
         `INSERT INTO saved_connections
            (id, workspace_id, name, engine, host, port, username, default_database, environment, password)
@@ -190,6 +193,19 @@ function migrate(database: Database): void {
    */
   if (!hasColumn(database, 'saved_connections', 'ssl')) {
     database.run('ALTER TABLE saved_connections ADD COLUMN ssl INTEGER NOT NULL DEFAULT 0');
+  }
+
+  /*
+   * A store written before read-only connections existed. Plain ADD COLUMN for
+   * the same reasons as `ssl` above: nothing about the old table became wrong,
+   * and off is the only safe default -- these rows connect read-write today, so
+   * defaulting them read-only would break a working connection on the launch
+   * after an update, and it would read as the server refusing writes rather than
+   * the app having changed the rules. The guess that costs least changes nothing
+   * it was not told to.
+   */
+  if (!hasColumn(database, 'saved_connections', 'read_only')) {
+    database.run('ALTER TABLE saved_connections ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0');
   }
 }
 
@@ -266,6 +282,7 @@ const toSaved = (row: Row): SavedConnection => ({
     ssl: row.ssl !== 0,
   },
   environment: row.environment as Environment,
+  readOnly: row.read_only !== 0,
   hasPassword: row.password !== null,
 });
 
@@ -368,6 +385,7 @@ export interface SaveInput {
   name: string;
   config: ServerConfig;
   environment: Environment;
+  readOnly: boolean;
   password: PasswordUpdate;
 }
 
@@ -377,6 +395,7 @@ export async function saveConnection({
   name,
   config,
   environment,
+  readOnly,
   password,
 }: SaveInput): Promise<SavedConnection> {
   const trimmed = name.trim();
@@ -409,18 +428,19 @@ export async function saveConnection({
     default_database: config.database ?? null,
     environment,
     ssl: config.ssl ? 1 : 0,
+    read_only: readOnly ? 1 : 0,
     password: await nextPassword(password, existing),
   };
 
   open().run(
     `INSERT INTO saved_connections
-       (id, workspace_id, name, engine, host, port, username, default_database, environment, ssl, password)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, workspace_id, name, engine, host, port, username, default_database, environment, ssl, read_only, password)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        workspace_id = excluded.workspace_id, name = excluded.name, engine = excluded.engine,
        host = excluded.host, port = excluded.port, username = excluded.username,
        default_database = excluded.default_database, environment = excluded.environment,
-       ssl = excluded.ssl, password = excluded.password`,
+       ssl = excluded.ssl, read_only = excluded.read_only, password = excluded.password`,
     [
       row.id,
       row.workspace_id,
@@ -432,6 +452,7 @@ export async function saveConnection({
       row.default_database,
       row.environment,
       row.ssl,
+      row.read_only,
       row.password,
     ]
   );
@@ -447,23 +468,24 @@ export function deleteSaved(id: string): void {
  * The saved server plus the password to reach it, decrypting the stored one
  * unless the caller supplied its own (which a connection storing none requires).
  *
- * `name` and `environment` come along because the row is what knows them and the
- * session is labelled by them. They are kept beside the config rather than
- * folded into it: a `ServerConfig` is what it takes to reach a server, and
- * neither of these helps you reach anything.
+ * `name`, `environment` and `readOnly` come along because the row is what knows
+ * them. `name` and `environment` label and colour the session; `readOnly` the
+ * extension acts on. They are kept beside the config rather than folded into it:
+ * a `ServerConfig` is what it takes to reach a server, and none of these helps
+ * you reach anything.
  */
 export async function resolveSaved(
   id: string,
   supplied?: string
-): Promise<{ config: ServerConfig; password: string; name: string; environment: Environment }> {
+): Promise<{ config: ServerConfig; password: string; name: string; environment: Environment; readOnly: boolean }> {
   const row = findRow(id);
   if (!row) throw new Error('That connection no longer exists.');
 
   const password = supplied ?? (row.password ? await decrypt(row.password) : null);
   if (password === null) throw new Error(`"${row.name}" does not store a password; one is needed to connect.`);
 
-  const { config, name, environment } = toSaved(row);
-  return { config, password, name, environment };
+  const { config, name, environment, readOnly } = toSaved(row);
+  return { config, password, name, environment, readOnly };
 }
 
 /** Tests only: the store is a process-lifetime singleton in the app itself. */

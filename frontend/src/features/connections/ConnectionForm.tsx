@@ -17,6 +17,7 @@ export interface FormValues {
   name: string;
   config: ServerConfig;
   environment: Environment;
+  readOnly: boolean;
   password: string;
   savePassword: boolean;
   /** Editing only: an untouched field means the stored password stands. */
@@ -43,9 +44,17 @@ interface FormState {
   database: string;
   environment: Environment;
   ssl: boolean;
+  readOnly: boolean;
   savePassword: boolean;
   passwordTouched: boolean;
 }
+
+/**
+ * Read-only defaults on for Production and off elsewhere -- the one place that
+ * policy lives, since the form is the one place that holds the environment for a
+ * connection nobody has saved yet. The box is still freely overridable.
+ */
+const readOnlyDefault = (environment: Environment): boolean => environment === 'production';
 
 function initialState(initial?: SavedConnection): FormState {
   if (!initial) {
@@ -59,6 +68,7 @@ function initialState(initial?: SavedConnection): FormState {
       database: '',
       environment: DEFAULT_ENVIRONMENT,
       ssl: false,
+      readOnly: readOnlyDefault(DEFAULT_ENVIRONMENT),
       savePassword: true,
       passwordTouched: false,
     };
@@ -73,6 +83,7 @@ function initialState(initial?: SavedConnection): FormState {
     database: initial.config.database ?? '',
     environment: initial.environment,
     ssl: initial.config.ssl ?? false,
+    readOnly: initial.readOnly,
     // Never prefilled -- the extension does not send it back, which is the whole
     // point. `savePassword` carries whether one is stored; leaving the field
     // alone keeps it.
@@ -112,6 +123,7 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
         ssl: form.ssl,
       },
       environment: form.environment,
+      readOnly: form.readOnly,
       password: form.password,
       savePassword: willBeStored && form.savePassword,
       passwordTouched: form.passwordTouched,
@@ -157,7 +169,14 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
           id="environment"
           className="select"
           value={form.environment}
-          onChange={(e) => set('environment', e.target.value as Environment)}
+          onChange={(e) => {
+            const environment = e.target.value as Environment;
+            // The Production default follows the picker: choosing Production ticks
+            // read-only, choosing anything else unticks it. An intentional change
+            // the user makes after is theirs -- until they move the environment
+            // again, which is the one gesture that means "reconsider the default".
+            setForm((prev) => ({ ...prev, environment, readOnly: readOnlyDefault(environment) }));
+          }}
         >
           {ENVIRONMENTS.map((env) => (
             <option key={env.value} value={env.value}>
@@ -165,6 +184,26 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
             </option>
           ))}
         </select>
+      </div>
+
+      {/*
+       * Beside the environment because it is defaulted from it, and because
+       * read-only is the same kind of fact -- which deployment you are about to
+       * point at, and how much you trust yourself not to write to it. The server
+       * enforces it; the hint says so, since "read-only" in other tools often
+       * means the client politely declining rather than the server refusing.
+       */}
+      <div className="field">
+        <label className="check" htmlFor="readOnly">
+          <input
+            id="readOnly"
+            type="checkbox"
+            checked={form.readOnly}
+            onChange={(e) => set('readOnly', e.target.checked)}
+          />
+          Open read-only
+          <span className="field__hint">— the server refuses writes; on by default for Production</span>
+        </label>
       </div>
 
       <div className="field">

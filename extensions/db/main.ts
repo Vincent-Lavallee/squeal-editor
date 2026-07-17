@@ -78,9 +78,10 @@ type Handlers = { [K in CommandName]: (req: CommandReq<K>) => Promise<CommandRes
 
 /** Open, verify and register a connection -- what both connect paths mean by it. */
 async function establish(
-  config: ConnectionConfig
+  config: ConnectionConfig,
+  readOnly: boolean
 ): Promise<{ connectionId: string; databases: string[]; dialect: SqlDialect }> {
-  const conn = await openConnection(config);
+  const conn = await openConnection(config, readOnly);
   const databases = await conn.listDatabases();
 
   const connectionId = randomUUID();
@@ -89,8 +90,8 @@ async function establish(
 }
 
 const COMMANDS: Handlers = {
-  async 'db.connect'({ config }) {
-    return establish(config);
+  async 'db.connect'({ config, readOnly }) {
+    return establish(config, readOnly);
   },
 
   async 'db.databases'({ connectionId }) {
@@ -124,14 +125,19 @@ const COMMANDS: Handlers = {
     return { ok: true };
   },
 
+  async 'db.readonly'({ connectionId, readOnly }) {
+    await getConnection(connectionId).setReadOnly(readOnly);
+    return { ok: true };
+  },
+
   /* -- Saved connections (store.ts owns the file and the key) ---------- */
 
   async 'db.saved.list'() {
     return { connections: listSaved() };
   },
 
-  async 'db.saved.save'({ id, workspaceId, name, config, environment, password }) {
-    return { connection: await saveConnection({ id, workspaceId, name, config, environment, password }) };
+  async 'db.saved.save'({ id, workspaceId, name, config, environment, readOnly, password }) {
+    return { connection: await saveConnection({ id, workspaceId, name, config, environment, readOnly, password }) };
   },
 
   async 'db.saved.delete'({ id }) {
@@ -140,8 +146,8 @@ const COMMANDS: Handlers = {
   },
 
   async 'db.saved.connect'({ id, password }) {
-    const { config, password: secret, name, environment } = await resolveSaved(id, password);
-    return { ...(await establish({ ...config, password: secret })), config, name, environment };
+    const { config, password: secret, name, environment, readOnly } = await resolveSaved(id, password);
+    return { ...(await establish({ ...config, password: secret }, readOnly)), config, name, environment, readOnly };
   },
 
   /* -- Workspaces (store.ts owns the grouping and the cascade) --------- */

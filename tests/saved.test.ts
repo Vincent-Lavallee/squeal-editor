@@ -128,6 +128,21 @@ describe('the store', () => {
     await h.ok('db.saved.delete', { id: on.id });
   });
 
+  test('read-only is off unless asked for, and survives a round trip when asked for', async () => {
+    const writable = await save({ name: 'ro-off', config: PG_SERVER, readOnly: false, password: { mode: 'none' } });
+    expect(writable.readOnly).toBe(false);
+
+    const locked = await save({ name: 'ro-on', config: PG_SERVER, readOnly: true, password: { mode: 'none' } });
+    expect(locked.readOnly).toBe(true);
+
+    // Read back through the list rather than the save's own answer: the column is
+    // an INTEGER and the boolean is `toSaved`'s doing, exactly as with `ssl`.
+    expect((await list()).find((c) => c.name === 'ro-on')!.readOnly).toBe(true);
+
+    await h.ok('db.saved.delete', { id: writable.id });
+    await h.ok('db.saved.delete', { id: locked.id });
+  });
+
   test('duplicate names are refused, case-insensitively', async () => {
     const res = await h.dispatch('db.saved.save', {
       workspaceId: DEFAULT_WS,
@@ -598,6 +613,49 @@ describe('migrating a store written before SSL', () => {
 
     // The column arrived without disturbing the row it was added to.
     expect(migrated.config).toEqual({ ...PG_SERVER, ssl: false });
+    expect(migrated.hasPassword).toBe(true);
+    const res = (await h.ok('db.saved.connect', { id: migrated.id })) as { connectionId: string };
+    expect(res.connectionId).toBeTruthy();
+    await h.ok('db.disconnect', { connectionId: res.connectionId });
+  });
+});
+
+/**
+ * The read-only column arrived the same way SSL did: a plain ADD COLUMN onto a
+ * store that already has workspaces. Downgraded from the live file, so a real row
+ * with a real password blob meets the migration.
+ */
+describe('migrating a store written before read-only connections', () => {
+  test('every connection comes back writable, and still connects', async () => {
+    const ws = (await workspaces())[0]!.id;
+    // Saved read-only on purpose, so the drop-and-re-add below has something to
+    // wipe: if the migration preserved the old value there would be no way to
+    // tell it apart from never having reset it.
+    const before = await save({
+      workspaceId: ws,
+      name: 'pre-ro-conn',
+      config: PG_SERVER,
+      readOnly: true,
+      password: { mode: 'store', password: PG_PASSWORD },
+    });
+    expect(before.readOnly).toBe(true);
+    await h.stop();
+
+    // Drop the column back off the live file, leaving the row and its real
+    // ciphertext exactly as the current version wrote them.
+    const db = new Database(DB_FILE);
+    db.run('ALTER TABLE saved_connections DROP COLUMN read_only');
+    const columns = (db.query('PRAGMA table_info(saved_connections)').all() as { name: string }[]).map((c) => c.name);
+    db.close();
+    expect(columns).not.toContain('read_only');
+
+    h = await startHarness(ENV);
+
+    const migrated = (await list()).find((c) => c.name === 'pre-ro-conn')!;
+    // Off, not the stored true: a row that predates the column connected
+    // read-write, and defaulting it locked would refuse writes it used to take --
+    // silently, looking like the server rather than the app changing its mind.
+    expect(migrated.readOnly).toBe(false);
     expect(migrated.hasPassword).toBe(true);
     const res = (await h.ok('db.saved.connect', { id: migrated.id })) as { connectionId: string };
     expect(res.connectionId).toBeTruthy();

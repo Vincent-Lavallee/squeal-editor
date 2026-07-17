@@ -99,17 +99,23 @@ export default function ConnectScreen({ onCancel }: Props) {
           name: values.name,
           config: values.config,
           environment: values.environment,
+          readOnly: values.readOnly,
           password: passwordUpdate(values, 'new'),
         });
       } catch {
         return; // Rendered from `saved.error`; connecting anyway would bury it.
       }
     }
-    // The name and the environment are the form's, not the store's: this path
-    // covers the connection nobody saved, so there is no row to read them back
-    // off. An unnamed one carries an empty name, and the rail falls back to the
-    // server for it.
-    void session.connect({ ...values.config, password: values.password }, values.name, values.environment);
+    // The name, environment and read-only mode are the form's, not the store's:
+    // this path covers the connection nobody saved, so there is no row to read
+    // them back off. An unnamed one carries an empty name, and the rail falls
+    // back to the server for it.
+    void session.connect(
+      { ...values.config, password: values.password },
+      values.name,
+      values.environment,
+      values.readOnly
+    );
   }
 
   async function submitEdit(connection: SavedConnection, values: FormValues): Promise<void> {
@@ -122,6 +128,7 @@ export default function ConnectScreen({ onCancel }: Props) {
         name: values.name,
         config: values.config,
         environment: values.environment,
+        readOnly: values.readOnly,
         password: passwordUpdate(values, 'edit'),
       });
       go({ view: 'list', workspaceId: connection.workspaceId });
