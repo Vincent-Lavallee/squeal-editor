@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.1.1...v0.1.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* zip the Windows bundle with tar instead of Compress-Archive ([c4de154](https://github.com/Vincent-Lavallee/squeal-editor/commit/c4de154e5feeed89c5c55baad7b4b9c0a72a403a))
+
 ## [0.1.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.1.0...v0.1.1) (2026-07-17)
 
 
