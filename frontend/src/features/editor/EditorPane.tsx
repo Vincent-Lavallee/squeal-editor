@@ -6,6 +6,7 @@ import { useTabs } from '../../store/tabsSlice.ts';
 import { useEditor } from './EditorContext.tsx';
 import { defineTheme, monaco, px, THEME, token } from './monaco.ts';
 import { useSqlCompletion } from './useSqlCompletion.ts';
+import { useSqlFormatter } from './useSqlFormatter.ts';
 
 interface Props {
   /** Running belongs to the results feature, so the shell supplies both. */
@@ -44,6 +45,11 @@ export default function EditorPane({ onRun, running }: Props) {
   // is called unconditionally -- the empty text simply puts nothing in scope.
   useSqlCompletion(sql, activeTab?.database ?? null);
 
+  // Format Document, over the whole document, in the session's dialect. This is
+  // what backs the toolbar button, Shift+Alt+F and the context-menu entry --
+  // one action, not three.
+  useSqlFormatter(dialect);
+
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
@@ -64,6 +70,13 @@ export default function EditorPane({ onRun, running }: Props) {
    */
   const latest = useRef({ sql, onRun, dialect, activeTabId });
   latest.current = { sql, onRun, dialect, activeTabId };
+
+  // The button is the same action the shortcut and the context menu run, not a
+  // second path into the formatter: reach for Monaco's registered action rather
+  // than calling the provider directly, so the three stay one thing.
+  const format = useCallback(() => {
+    void editor.current?.getAction('editor.action.formatDocument')?.run();
+  }, []);
 
   const modelFor = useCallback((tabId: string): monaco.editor.ITextModel => {
     const existing = models.current.get(tabId);
@@ -240,6 +253,9 @@ export default function EditorPane({ onRun, running }: Props) {
       <div className="toolbar">
         {config && <span className="badge badge--blue">{engineLabel(config.type)}</span>}
         <div className="toolbar__spacer" />
+        <button className="btn" onClick={format}>
+          Format
+        </button>
         <span className="toolbar__hint">Ctrl/⌘ + Enter</span>
         <button className="btn btn--primary" onClick={() => onRun(sql)} disabled={running}>
           {running ? 'Running…' : 'Run'}
