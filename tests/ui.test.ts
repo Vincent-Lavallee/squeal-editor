@@ -69,6 +69,39 @@ const newTab = `document.querySelector('.tabs__new').click(); true;`;
 const editorText = `window.squealEditor.getModel()?.getValue() ?? null`;
 const setEditorText = (sql: string) => `window.squealEditor.setValue(${JSON.stringify(sql)}); true;`;
 
+/**
+ * Types a query, puts the cursor where the `|` was, and reads the popup's labels.
+ *
+ * Three things here are the test earning its keep rather than ceremony:
+ *
+ * - **The `|` marks the cursor**, because every one of these assertions is about
+ *   a position and a hardcoded column number is a magic number that silently
+ *   stops meaning the same place the moment the query beside it is edited.
+ * - **The sleep before triggering is not padding.** The columns of anything in
+ *   the FROM are fetched over the bridge off the text changing, so the round
+ *   trip has to land before the popup is asked what it knows.
+ * - **The labels are read, not the row text.** A row's `textContent` is the
+ *   label *and* its type detail run together, so `.includes` on it would match
+ *   far too much -- and the labels come back as exact strings, which is what
+ *   lets these use `toContain` and mean it. `active_users` matching a search for
+ *   `users` is a mistake this suite has already made once.
+ */
+async function suggest(sql: string): Promise<string[]> {
+  const column = sql.indexOf('|') + 1;
+  await app.evaluate(setEditorText(sql.replace('|', '')));
+  await Bun.sleep(1200);
+
+  await app.evaluate(`
+    window.squealEditor.setPosition({ lineNumber: 1, column: ${column} });
+    window.squealEditor.focus();
+    window.squealEditor.getAction('editor.action.triggerSuggest').run(); true;`);
+  await Bun.sleep(800);
+
+  return app.evaluate<string[]>(`
+    [...document.querySelectorAll('.suggest-widget .monaco-list-row .label-name')]
+      .map(e => e.textContent)`);
+}
+
 /** The results bar's label: which table, and which rows of it are on screen. */
 const barText = `document.querySelector('.results__bar span').textContent`;
 
@@ -464,30 +497,60 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(`window.squealEditor.trigger('test', 'closeFindWidget', null); true;`);
     });
 
-    /*
-     * There is no autocomplete yet, so nothing may be offered. Word-based
-     * suggestions are on by default and would propose the identifiers already
-     * typed -- a schema-blind guess dressed up as knowledge. Asking for
-     * suggestions outright is the strongest way to prove they are gone.
-     *
-     * Count the rows, not the widget: explicitly triggering suggest always
-     * shows it, in a "No suggestions." message state with nothing in it. The
-     * widget being up is not the bug; something to click would be. `em` here
-     * is the live bait -- `email` is on screen, so word-based would offer it.
-     */
-    test('nothing is suggested: word-based suggestions are off', async () => {
-      await app.evaluate(setEditorText('SELECT email FROM users WHERE em'));
-      await Bun.sleep(200);
-      await app.evaluate(`
-        window.squealEditor.setPosition({ lineNumber: 1, column: 33 });
-        window.squealEditor.focus();
-        window.squealEditor.getAction('editor.action.triggerSuggest').run(); true;`);
-      await Bun.sleep(800);
+    test('the dialect\'s keywords are suggested', async () => {
+      // ILIKE is Postgres', and the mysql describe asserts its absence: between
+      // them, that is the proof the words come from the dialect the engine
+      // reported rather than from one list of SQL-ish words up here.
+      expect(await suggest('SELECT * FROM users WHERE name ILIK|')).toContain('ILIKE');
+    });
 
-      const rows = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.suggest-widget .monaco-list-row')].map(e => e.textContent)`
-      );
-      expect(rows).toEqual([]);
+    test('the database\'s tables are suggested', async () => {
+      expect(await suggest('SELECT * FROM user|')).toContain('users');
+    });
+
+    test('a table\'s columns are suggested after its alias and a dot', async () => {
+      // The alias is only knowable from the FROM further along the line, which
+      // is the whole of what the scan is for.
+      expect(await suggest('SELECT u.| FROM users u')).toContain('email');
+    });
+
+    test('a table\'s columns are suggested after its name and a dot', async () => {
+      expect(await suggest('SELECT users.| FROM users')).toContain('email');
+    });
+
+    test('columns of a table in the FROM are suggested unqualified', async () => {
+      // The case the feature is actually for: the FROM has already said which
+      // table this is about, so `ema` is enough.
+      expect(await suggest('SELECT ema| FROM users')).toContain('email');
+    });
+
+    test('a schema-qualified relation completes on its columns', async () => {
+      // `reporting.daily_stats.` is a relation and a dot, not an alias and two
+      // dots -- the one case where the qualifier itself contains one.
+      expect(await suggest('SELECT reporting.daily_stats.| FROM reporting.daily_stats')).toContain('hits');
+    });
+
+    test('a quoted schema-qualified relation completes through its alias', async () => {
+      // Each half quotes itself, which is ordinary Postgres and is the case a
+      // pattern allowing only the whole name to be quoted reads as the schema
+      // alone -- leaving the alias pointing at nothing. The name also has to
+      // come out of the scan as `reporting.daily_stats`, the spelling the
+      // catalog answers for, or the columns are fetched for a table that is not
+      // there.
+      expect(await suggest('SELECT d.| FROM "reporting"."daily_stats" d')).toContain('hits');
+    });
+
+    /*
+     * The rule that survived autocomplete arriving, and the reason it is still
+     * worth a test: word-based suggestions offer the identifiers already in the
+     * document, which is a guess about a schema Monaco has never read. Now that
+     * there are real suggestions to hide among, the bait has to be a word that
+     * no keyword and no catalog could account for -- if `zzz_bait` is ever
+     * offered, it can only have come from the document.
+     */
+    test('a word in the document is never suggested for being there', async () => {
+      const rows = await suggest('SELECT * FROM users WHERE zzz_bait = 1 AND zzz|');
+      expect(rows).not.toContain('zzz_bait');
     });
 
     test('a SQL error is surfaced in the results pane', async () => {
@@ -612,6 +675,30 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`
       );
       expect(cells[0]![headers.indexOf('big')]).toBe('9007199254740993');
+    });
+
+    /*
+     * The other half of the Postgres block's ILIKE assertion, and the pair is
+     * the test: one engine offering a word proves a list exists somewhere, two
+     * engines offering *different* words proves the list is the dialect's.
+     *
+     * ILIKE is Postgres-only, so MySQL must not offer it -- while still being a
+     * working editor that offers the words MySQL does have. Asserting only the
+     * absence would also pass if completion were simply broken here.
+     */
+    test('the keywords follow the engine, not one list of SQL words', async () => {
+      await app.evaluate(clickTab('Query 1'));
+      await Bun.sleep(400);
+
+      const rows = await suggest('SELECT * FROM users WHERE name LIK|');
+      expect(rows).toContain('LIKE');
+      expect(rows).not.toContain('ILIKE');
+    });
+
+    test('completes on this engine\'s own catalog', async () => {
+      // `big` exists in MySQL's `users` and not in Postgres', so this is the
+      // column list coming from the server actually connected to.
+      expect(await suggest('SELECT bi| FROM users')).toContain('big');
     });
   });
 

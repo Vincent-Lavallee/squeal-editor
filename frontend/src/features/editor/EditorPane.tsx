@@ -5,6 +5,7 @@ import { useSession } from '../../store/sessionSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import { useEditor } from './EditorContext.tsx';
 import { defineTheme, monaco, px, THEME, token } from './monaco.ts';
+import { useSqlCompletion } from './useSqlCompletion.ts';
 
 interface Props {
   /** Running belongs to the results feature, so the shell supplies both. */
@@ -36,6 +37,12 @@ export default function EditorPane({ onRun, running }: Props) {
   const activeTabId = activeTab?.id ?? null;
   const isEditorTab = activeTab?.kind === 'editor';
   const sql = activeTabId ? (sqlByTab[activeTabId] ?? '') : '';
+
+  // Completion follows the active tab: its text says which tables are in play,
+  // and its database is which catalog they are in. A grid tab has neither and
+  // needs no popup, but the pane is only hidden there, never unmounted, so this
+  // is called unconditionally -- the empty text simply puts nothing in scope.
+  useSqlCompletion(sql, activeTab?.database ?? null);
 
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -86,12 +93,19 @@ export default function EditorPane({ onRun, running }: Props) {
       automaticLayout: true,
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
-      // There is no autocomplete yet, and word-based suggestions are not one:
-      // offering the identifiers already typed, on a schema it has never read,
-      // is a popup that is right by luck. Off until it can ask the database.
+      /*
+       * Word-based suggestions stay off, and the reason has not changed: they
+       * offer the identifiers already in the document, which is a guess about a
+       * schema Monaco has never read. What changed is that there is now
+       * something better to offer -- `useSqlCompletion` registers a provider
+       * over the dialect's own words and the server's real catalog -- so these
+       * two are on. They were "off until it can ask the database", and it can.
+       */
       wordBasedSuggestions: 'off',
-      quickSuggestions: false,
-      suggestOnTriggerCharacters: false,
+      // Not `true`, which would also fire inside strings and comments: a
+      // literal is the one place in a query that is deliberately not SQL.
+      quickSuggestions: { other: 'on', comments: 'off', strings: 'off' },
+      suggestOnTriggerCharacters: true,
       // One background: the cursor's line is marked in the gutter by a brighter
       // number (editorLineNumber.activeForeground), not by a lit surface.
       renderLineHighlight: 'none',

@@ -11,7 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import type { ConnectionConfig, QueryResult, TableInfo, TablePage } from '../shared/protocol.ts';
+import type { ColumnInfo, ConnectionConfig, QueryResult, TableInfo, TablePage } from '../shared/protocol.ts';
 import { FIXTURE_DB, MYSQL, PG } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 
@@ -95,6 +95,49 @@ describe.each([
       // Postgres relations outside `public` must be qualified, or they are unusable.
       expect(names).toContain('reporting.daily_stats');
     }
+  });
+
+  const columnsOf = async (table: string): Promise<ColumnInfo[]> =>
+    ((await h.ok('db.columns', { connectionId, database: FIXTURE_DB, table })) as { columns: ColumnInfo[] })
+      .columns;
+
+  test('lists a table\'s columns in the order the table declares them', async () => {
+    const columns = await columnsOf('users');
+
+    // Ordinal order, not alphabetical: it is the order SELECT * answers in, so
+    // asserting the sequence is asserting the ORDER BY and not just the set.
+    expect(columns.map((c) => c.name).slice(0, 4)).toEqual(['id', 'name', 'email', 'created_at']);
+  });
+
+  test('every column carries the engine\'s own rendering of its type', async () => {
+    const columns = await columnsOf('users');
+
+    // Symmetric on purpose, because the strings are not: MySQL says `int`,
+    // Postgres says `integer`, and normalising them is the thing the protocol
+    // deliberately does not do. What both must do is answer with something.
+    expect(columns.every((c) => c.dataType.length > 0)).toBe(true);
+    expect(columns.find((c) => c.name === 'id')?.dataType).toMatch(/int/i);
+  });
+
+  test('a view has columns like a table does', async () => {
+    // The editor completes against a view exactly as it does a table, so the
+    // catalog query must not quietly be tables-only.
+    expect((await columnsOf('active_users')).map((c) => c.name)).toEqual(['id', 'name']);
+  });
+
+  test('a table that does not exist has no columns, and is not an error', async () => {
+    // This is the load-bearing one. The editor asks about whatever its regex
+    // found in a FROM, and a half-typed query says `FROM use` a keystroke before
+    // it says `FROM users` -- so a name that is not a table is the normal case,
+    // not an exceptional one, and it must come back empty rather than throw.
+    expect(await columnsOf('no_such_table')).toEqual([]);
+  });
+
+  test.if(expectSchemaQualified)('columns of a schema-qualified relation resolve', async () => {
+    // The name arrives exactly as `db.tables` reported it, so this is the proof
+    // that the qualification survives the round trip: split wrong, and the
+    // lookup silently answers for `public.daily_stats`, which does not exist.
+    expect((await columnsOf('reporting.daily_stats')).map((c) => c.name)).toEqual(['day', 'hits']);
   });
 
   test('browsing a table reads it, quoted for the engine', async () => {

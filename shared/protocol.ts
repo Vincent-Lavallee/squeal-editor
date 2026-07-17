@@ -145,6 +145,22 @@ export interface TableInfo {
   kind: 'table' | 'view';
 }
 
+/**
+ * A column of a table, as the catalog describes it.
+ *
+ * `dataType` is the engine's *own* rendering of the type -- `varchar(255)` from
+ * MySQL, `character varying(255)` from Postgres -- and deliberately not
+ * normalised into some neutral vocabulary of ours. Two reasons, and they are the
+ * same two that already keep quoting in the drivers: a normalising table would
+ * be a second place that has to know what MySQL means, and the value is only
+ * ever *shown*, beside a column name in the editor's completion. Nothing reads
+ * it, so carrying it is not knowing it -- the `SqlDialect` rule exactly.
+ */
+export interface ColumnInfo {
+  name: string;
+  dataType: string;
+}
+
 export interface QueryResult {
   columns: string[];
   rows: CellValue[][];
@@ -196,6 +212,20 @@ export interface Commands {
   'db.tables': {
     req: { connectionId: string; database: string };
     res: { tables: TableInfo[] };
+  };
+  /**
+   * A table's columns. The editor completes against these; nothing draws them.
+   *
+   * The UI names a table and never the catalog query, for the same reason
+   * `db.browse` exists: the query is per-engine (`information_schema.COLUMNS`
+   * against a schema name MySQL calls a database, `pg_attribute` and
+   * `format_type` against a Postgres relation), so only this side may write it.
+   * The renderer asking "what columns does this table have" and getting an
+   * answer is the whole of what it knows.
+   */
+  'db.columns': {
+    req: { connectionId: string; database: string; table: string };
+    res: { columns: ColumnInfo[] };
   };
   'db.query': {
     req: { connectionId: string; database?: string; sql: string };

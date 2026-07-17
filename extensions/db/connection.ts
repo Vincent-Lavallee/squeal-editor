@@ -1,4 +1,4 @@
-import type { CellValue, ConnectionConfig, SqlDialect, TableInfo } from '../../shared/protocol.ts';
+import type { CellValue, ColumnInfo, ConnectionConfig, SqlDialect, TableInfo } from '../../shared/protocol.ts';
 import { withDriver, type Driver, type QueryOutcome } from './drivers.ts';
 
 /**
@@ -28,6 +28,7 @@ export interface ConnectionHandle {
   readonly dialect: SqlDialect;
   listDatabases(): Promise<string[]>;
   listTables(database: string): Promise<TableInfo[]>;
+  listColumns(database: string, table: string): Promise<ColumnInfo[]>;
   query(database: string | undefined, sql: string): Promise<QueryOutcome>;
   browse(database: string, table: string, offset: number): Promise<TableRows>;
   close(): Promise<void>;
@@ -75,6 +76,10 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig): ConnectionHandle
 
     async listTables(database) {
       return driver.listTables(await getClient(database), database);
+    },
+
+    async listColumns(database, table) {
+      return driver.listColumns(await getClient(database), database, table);
     },
 
     async query(database, sql) {

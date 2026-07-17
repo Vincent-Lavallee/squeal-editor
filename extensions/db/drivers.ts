@@ -2,7 +2,7 @@ import mysql from 'mysql2/promise';
 import type { Connection as MysqlConnection, FieldPacket } from 'mysql2/promise';
 import pg from 'pg';
 
-import type { CellValue, ConnectionConfig, EngineType, SqlDialect } from '../../shared/protocol.ts';
+import type { CellValue, ColumnInfo, ConnectionConfig, EngineType, SqlDialect } from '../../shared/protocol.ts';
 
 const { Client: PgClient, types: pgTypes } = pg;
 
@@ -53,6 +53,17 @@ export interface Driver<C> {
   closeClient(client: C): Promise<void>;
   listDatabases(client: C): Promise<string[]>;
   listTables(client: C, database: string): Promise<TableMeta[]>;
+  /**
+   * A table's columns, in the order the table declares them.
+   *
+   * Ordinal order, not alphabetical: it is the order the table was written in
+   * and the order `SELECT *` returns, so it is the only one the reader already
+   * has in their head. The completion sorts by relevance on top of it anyway.
+   *
+   * `table` arrives exactly as `listTables` reported it, which is what makes a
+   * Postgres relation outside `public` resolvable at all -- see `splitRelation`.
+   */
+  listColumns(client: C, database: string, table: string): Promise<ColumnInfo[]>;
   query(client: C, sql: string): Promise<QueryOutcome>;
   quoteIdent(name: string): string;
 }
@@ -144,6 +155,24 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     }));
   },
 
+  async listColumns(client, database, table) {
+    const [rows] = (await client.query(
+      {
+        // COLUMN_TYPE, not DATA_TYPE: the former is MySQL's own full rendering
+        // ('varchar(255)', 'bigint unsigned'), the latter drops the length and
+        // the sign. Showing what the server said is the rule here too.
+        sql: `SELECT COLUMN_NAME, COLUMN_TYPE
+                FROM information_schema.COLUMNS
+               WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+               ORDER BY ORDINAL_POSITION`,
+        rowsAsArray: true,
+      },
+      [database, table]
+    )) as [string[][], FieldPacket[]];
+
+    return rows.map((r) => ({ name: r[0] as string, dataType: r[1] as string }));
+  },
+
   async query(client, sql) {
     const [result, fields] = (await client.query({ sql, rowsAsArray: true })) as [unknown, FieldPacket[] | undefined];
 
@@ -163,6 +192,28 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     return `\`${String(name).replace(/`/g, '``')}\``;
   },
 };
+
+/**
+ * Undoes what `listTables` did to a relation's name.
+ *
+ * `listTables` qualifies anything outside `public` as `schema.table` and leaves
+ * the common case bare, so a name coming back the other way has to be taken
+ * apart before it can be looked up -- the catalog stores the two halves in
+ * separate columns and no single column holds the string the UI is holding.
+ * Unqualified therefore means `public`, which is the only thing it can mean:
+ * that is precisely the case `listTables` chose not to spell out.
+ *
+ * Splitting on the *first* dot matches `quoteIdent` on every name `listTables`
+ * can actually produce, which is at most two parts. Neither survives a schema or
+ * a table with a dot in its name, and they fail the same way for the same
+ * reason; if that is ever worth fixing, it is worth fixing in both.
+ */
+function splitRelation(name: string): { schema: string; relation: string } {
+  const dot = name.indexOf('.');
+  return dot === -1
+    ? { schema: 'public', relation: name }
+    : { schema: name.slice(0, dot), relation: name.slice(dot + 1) };
+}
 
 export const postgresDriver: Driver<pg.Client> = {
   defaultPort: 5432,
@@ -214,6 +265,32 @@ export const postgresDriver: Driver<pg.Client> = {
       name: r[0] === 'public' ? (r[1] as string) : `${r[0]}.${r[1]}`,
       kind: r[2] === 'VIEW' ? ('view' as const) : ('table' as const),
     }));
+  },
+
+  // `database` goes unread: a pg client is pinned to one database for life, so
+  // the client handed in *is* the database being asked about. Same as listTables.
+  async listColumns(client, _database, table) {
+    const { schema, relation } = splitRelation(table);
+    const res = await client.query({
+      // pg_attribute rather than information_schema.columns, for the type: the
+      // latter reports 'character varying' and puts the length in a column of
+      // its own, so a display string would have to be reassembled out here --
+      // guessing at which types take a length and how each one spells it.
+      // format_type is Postgres rendering its own type, which is the answer.
+      text: `SELECT a.attname, format_type(a.atttypid, a.atttypmod)
+               FROM pg_attribute a
+               JOIN pg_class c ON c.oid = a.attrelid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = $1 AND c.relname = $2
+                -- attnum <= 0 is a system column (ctid, xmin); attisdropped
+                -- rows are the corpses of DROP COLUMN, which pg keeps.
+                AND a.attnum > 0 AND NOT a.attisdropped
+              ORDER BY a.attnum`,
+      values: [schema, relation],
+      rowMode: 'array',
+    });
+
+    return (res.rows as string[][]).map((r) => ({ name: r[0] as string, dataType: r[1] as string }));
   },
 
   async query(client, sql) {

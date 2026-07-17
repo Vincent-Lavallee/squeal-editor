@@ -113,6 +113,40 @@ export function defineTheme(): void {
       'editorOverviewRuler.selectionHighlightForeground': token('--blue'),
       'editorOverviewRuler.border': token('--border'),
       'editorIndentGuide.background1': token('--border'),
+      /*
+       * The suggest widget is the find widget's situation exactly: it floats, so
+       * it is outlined rather than raised. Same --bg, 1px --border-strong, and
+       * the row you are on wears --selected -- which is already this system's
+       * word for "this one", in the tree and on the active tab.
+       *
+       * Monaco would otherwise give it a surface of its own and a shadow, which
+       * is the one-background rule broken by the editor's own defaults rather
+       * than by anything this app wrote.
+       */
+      'editorSuggestWidget.background': token('--bg'),
+      'editorSuggestWidget.border': token('--border-strong'),
+      'editorSuggestWidget.foreground': token('--text'),
+      'editorSuggestWidget.selectedBackground': token('--selected'),
+      'editorSuggestWidget.selectedForeground': token('--text'),
+      // The letters you have actually typed, inside each label. --blue is what
+      // this system paints the interactive part of a thing, which is what these
+      // are: the reason the row is in the list at all.
+      'editorSuggestWidget.highlightForeground': token('--blue'),
+      'editorSuggestWidget.focusHighlightForeground': token('--blue'),
+      'editorSuggestWidget.selectedIconForeground': token('--text-muted'),
+      /*
+       * Monaco marks each suggestion by kind, and ships a *colour* per kind --
+       * a blue field, a purple keyword, an orange function -- which is decorative
+       * colour in the chrome, and lands on hues this palette issues for other
+       * meanings entirely. All of them go --text-muted: the same rule the tree's
+       * marks already follow, where the glyph is quieter than the name it labels
+       * and shape is what tells a table from a view.
+       */
+      'symbolIcon.fieldForeground': token('--text-muted'),
+      'symbolIcon.structForeground': token('--text-muted'),
+      'symbolIcon.interfaceForeground': token('--text-muted'),
+      'symbolIcon.keywordForeground': token('--text-muted'),
+      'symbolIcon.functionForeground': token('--text-muted'),
       'input.background': token('--bg'),
       'input.foreground': token('--text'),
       'input.border': token('--border-strong'),
