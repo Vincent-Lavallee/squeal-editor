@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { browseTable, runQuery } from '../../store/resultsSlice.ts';
+import { selectActiveTab } from '../../store/tabsSlice.ts';
 
 /**
  * The results feature's whole public surface: what came back for the tab you are
@@ -14,7 +15,10 @@ import { browseTable, runQuery } from '../../store/resultsSlice.ts';
  */
 export function useResults() {
   const dispatch = useAppDispatch();
-  const activeTabId = useAppSelector((s) => s.tabs.activeTabId);
+  // Through the selector rather than off `tabs.activeTabId`, which is a pointer
+  // per connection now: the grid on screen belongs to the tab in front of the
+  // connection in front, and that is the one question the selector answers.
+  const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
   const { result, browse, error, running } = useAppSelector(
     (s) => (activeTabId ? s.results[activeTabId] : undefined) ?? EMPTY
   );

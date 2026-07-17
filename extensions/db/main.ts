@@ -140,8 +140,8 @@ const COMMANDS: Handlers = {
   },
 
   async 'db.saved.connect'({ id, password }) {
-    const { password: secret, ...config } = await resolveSaved(id, password);
-    return { ...(await establish({ ...config, password: secret })), config };
+    const { config, password: secret, name, environment } = await resolveSaved(id, password);
+    return { ...(await establish({ ...config, password: secret })), config, name, environment };
   },
 
   /* -- Workspaces (store.ts owns the grouping and the cascade) --------- */

@@ -446,15 +446,24 @@ export function deleteSaved(id: string): void {
 /**
  * The saved server plus the password to reach it, decrypting the stored one
  * unless the caller supplied its own (which a connection storing none requires).
+ *
+ * `name` and `environment` come along because the row is what knows them and the
+ * session is labelled by them. They are kept beside the config rather than
+ * folded into it: a `ServerConfig` is what it takes to reach a server, and
+ * neither of these helps you reach anything.
  */
-export async function resolveSaved(id: string, supplied?: string): Promise<ServerConfig & { password: string }> {
+export async function resolveSaved(
+  id: string,
+  supplied?: string
+): Promise<{ config: ServerConfig; password: string; name: string; environment: Environment }> {
   const row = findRow(id);
   if (!row) throw new Error('That connection no longer exists.');
 
   const password = supplied ?? (row.password ? await decrypt(row.password) : null);
   if (password === null) throw new Error(`"${row.name}" does not store a password; one is needed to connect.`);
 
-  return { ...toSaved(row).config, password };
+  const { config, name, environment } = toSaved(row);
+  return { config, password, name, environment };
 }
 
 /** Tests only: the store is a process-lifetime singleton in the app itself. */

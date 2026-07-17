@@ -37,7 +37,10 @@ function ShellLayout() {
   const openTable = useCallback(
     (database: string, table: TableInfo) => {
       const tabId = openGridTab(database, table.name);
-      browseIn(tabId, table.name, 0);
+      // Null only if nothing is connected, which is not a state this tree is
+      // rendered in -- but the tab is what carries the connection now, so there
+      // is no tab to browse into and nothing to guess at.
+      if (tabId) browseIn(tabId, table.name, 0);
     },
     [openGridTab, browseIn]
   );

@@ -271,10 +271,22 @@ export interface Commands {
    * `password` is required only for a saved connection that stores none; the
    * extension decrypts its own otherwise. Echoes the config back rather than
    * letting the UI seed its session from a list row that may be stale.
+   *
+   * `name` and `environment` come back for that same reason, and they are what a
+   * session is labelled and coloured by once more than one can be open. Neither
+   * is anything the extension does with a connection -- it carries them the way
+   * it carries `dialect`, because the row they live in is its to read.
    */
   'db.saved.connect': {
     req: { id: string; password?: string };
-    res: { connectionId: string; databases: string[]; dialect: SqlDialect; config: ServerConfig };
+    res: {
+      connectionId: string;
+      databases: string[];
+      dialect: SqlDialect;
+      config: ServerConfig;
+      name: string;
+      environment: Environment;
+    };
   };
 
   /* -- Workspaces. The same store, and the thing connections hang off. --- */

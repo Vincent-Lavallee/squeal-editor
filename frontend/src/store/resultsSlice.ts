@@ -2,7 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 
 import type { QueryResult } from '../../../shared/protocol.ts';
 import { call } from '../bridge.ts';
-import { disconnect, sessionOpened } from './sessionSlice.ts';
+import { disconnect } from './sessionSlice.ts';
 import { tabClosed } from './tabsSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
@@ -47,21 +47,26 @@ const blank = (): ResultsState => ({ result: null, browse: null, error: null, ru
  * synchronous, so a caller that points a tab at a database and then runs is
  * guaranteed to query the database it just picked, with no stale render in
  * between.
+ *
+ * **The target is the tab, and the whole of it.** The connection is read off the
+ * tab rather than off the session, and that is not tidiness: the session's
+ * active connection is whatever the rail points at *now*, so reading it here is
+ * exactly how a tab opened on dev would run against prod the moment the rail
+ * moved. The tab knows which server it belongs to; nothing else does.
  */
 export const runQuery = createAppThunk(
   'results/runQuery',
   async (arg: { tabId: string; sql: string }, { getState, rejectWithValue }) => {
-    const { connectionId } = getState().session;
-    if (!connectionId) return rejectWithValue('Not connected.');
-
     // The target is still read, never passed: the arg names *which tab*, and the
-    // tab is what holds the database now. A `database` argument stays forbidden.
+    // tab is what holds the connection and the database. A `database` argument
+    // stays forbidden, and a `connectionId` one is forbidden for the same reason.
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
+    if (!tab) return rejectWithValue('That tab is gone.');
 
     try {
       return await call('db.query', {
-        connectionId,
-        database: tab?.database ?? undefined,
+        connectionId: tab.connectionId,
+        database: tab.database ?? undefined,
         sql: arg.sql.trim(),
       });
     } catch (err) {
@@ -89,15 +94,15 @@ export const runQuery = createAppThunk(
 export const browseTable = createAppThunk(
   'results/browseTable',
   async (arg: { tabId: string; table: string; offset: number }, { getState, rejectWithValue }) => {
-    const { connectionId } = getState().session;
-    if (!connectionId) return rejectWithValue('Not connected.');
-
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
-    if (!tab?.database) return rejectWithValue('Select a database first.');
+    if (!tab) return rejectWithValue('That tab is gone.');
+    if (!tab.database) return rejectWithValue('Select a database first.');
 
     try {
       const page = await call('db.browse', {
-        connectionId,
+        // The tab's, not the session's -- see `runQuery`. Paging a grid on a
+        // connection you are no longer looking at must still page that one.
+        connectionId: tab.connectionId,
         database: tab.database,
         table: arg.table,
         offset: arg.offset,
@@ -115,7 +120,17 @@ const resultsSlice = createSlice({
   reducers: {},
   extraReducers: (builder) => {
     builder
-      .addCase(disconnect.fulfilled, () => initialState)
+      // Only the tabs that went with it. This used to reset the lot, which was
+      // right while closing one connection and closing every connection were the
+      // same event -- now it would wipe the grids of every server still open.
+      //
+      // The ids come off the payload because nothing here can see `tabsSlice` to
+      // work out which tabs belonged to that connection, and the disconnect
+      // thunk can. That is the same shape as `sessionOpened` handing `databases`
+      // to the explorer: one event, carrying what its readers need.
+      .addCase(disconnect.fulfilled, (state, action) => {
+        for (const id of action.payload.tabIds) delete state[id];
+      })
       // Reacting to the event, not reaching into `tabsSlice` -- the same shape as
       // the disconnect case above, and the reason neither slice knows the other.
       .addCase(tabClosed, (state, action) => {
@@ -179,12 +194,13 @@ const resultsSlice = createSlice({
         // A failed page leaves nothing to page from, so the pager goes with it.
         s.browse = null;
         s.error = action.payload ?? 'Could not read the table.';
-      })
-      // A session opening drops every tab, so it has to drop every tab's grid
-      // too -- `tabsSlice` clears its tabs on this event as well as on
-      // disconnect, and a grid outliving the tab it belongs to is an entry
-      // nothing will ever collect. addMatcher must follow every addCase.
-      .addMatcher(sessionOpened, () => initialState);
+      });
+    // There is deliberately no `sessionOpened` case. It used to reset this,
+    // because a session opening dropped every tab and a grid outliving its tab
+    // is an entry nothing would ever collect. Opening a connection drops no tabs
+    // now -- it adds one -- so resetting here would blank the grid of every
+    // server already open. The tabs that do go, go through `tabClosed` and
+    // `disconnect` above, which is every way a tab can leave.
   },
 });
 

@@ -5,37 +5,47 @@ import { call } from '../bridge.ts';
 import { disconnect, sessionOpened } from './sessionSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
-interface TablesError {
-  /** Which database failed. A bare message would render under the wrong node. */
+/** Which tree node a fetch is about. Neither half identifies it alone. */
+interface TablesRequest {
+  connectionId: string;
   database: string;
+}
+
+interface TablesError extends TablesRequest {
   message: string;
 }
 
 /**
- * The catalog of the server this session is on: what the tree draws, and what
+ * The catalog of every server this app is holding: what the tree draws, and what
  * the editor completes against.
  *
  * It is named for the explorer because the explorer was the only thing that read
  * it. The editor reads it now too, which is why it was always in `store/` rather
  * than inside `features/explorer` -- a feature owning it would have made that
  * feature a hub and forced the editor to import it.
+ *
+ * **Everything here is keyed by connection first.** That was once true of
+ * `columns` alone and is now the shape of the whole slice -- see below.
  */
 interface ExplorerState {
-  databases: string[];
-  /** Cached per database; a database absent from the map has never been opened. */
-  tables: Record<string, TableInfo[]>;
+  /** Per connection, as its own connect reported them. */
+  databases: Record<string, string[]>;
+  /**
+   * Tables, keyed connection -> database. A database absent from a connection's
+   * map has never been opened.
+   *
+   * **This used to be keyed by database alone**, which was coherent only while
+   * one connection could be open: it carried no connection, so it had to be
+   * emptied whenever a session opened, or a new session's `app` would read the
+   * last one's. With a rail there is no such event -- opening a second server
+   * does not end the first -- and two connections both holding a database called
+   * `app` would have read each other's tables outright. So it moved to the shape
+   * `columns` already had, which is what the note on that field promised would
+   * happen. The two caches agree about what identifies a database again.
+   */
+  tables: Record<string, Record<string, TableInfo[]>>;
   /**
    * Columns, keyed connection -> database -> table.
-   *
-   * **The connection is in the key and `tables`' is not**, which is the one
-   * asymmetry here and is deliberate. Two connections both holding a database
-   * called `app` is the collision this key exists to refuse, and it is the same
-   * one the tree's cache will have to answer when more than one connection can
-   * be open. Until then the two caches simply have different lifetimes, and each
-   * is coherent with its own key: `tables` carries no connection, so it must be
-   * emptied when a session opens, while this one names it and has nothing to
-   * clear. Neither is guessing -- and the day the tree goes plural, it moves to
-   * this shape rather than this one being unpicked.
    *
    * **`null` means asked, not answered** -- in flight, or failed. It is a marker
    * in the same map rather than a second one beside it because the completion
@@ -45,35 +55,64 @@ interface ExplorerState {
    * table is asked exactly once.
    */
   columns: Record<string, Record<string, Record<string, ColumnInfo[] | null>>>;
-  loadingTables: string | null;
+  /**
+   * The tree's in-flight fetch, and its failure. Singular because one tree is
+   * drawn at a time -- but each names its connection, because the fetch that
+   * lands is not always the one the tree is still waiting for.
+   */
+  loadingTables: TablesRequest | null;
   error: TablesError | null;
 }
 
 const initialState: ExplorerState = {
-  databases: [],
+  databases: {},
   tables: {},
   columns: {},
   loadingTables: null,
   error: null,
 };
 
+const sameRequest = (a: TablesRequest | null, b: TablesRequest): boolean =>
+  a !== null && a.connectionId === b.connectionId && a.database === b.database;
+
+/**
+ * List a database's tables for the tree.
+ *
+ * The start and the failure are both carried by markers this dispatches, rather
+ * than reduced from `pending` and `rejected`. The reason is `loadColumns`'
+ * exactly: `pending` has no payload, so a reducer could only find the connection
+ * in `action.meta.arg` -- and the connection is the thunk's to read off the
+ * session, not the caller's to hand it. `rejected` has the same hole, and it
+ * matters here in a way it did not there, because a failure to list tables is
+ * rendered: without the connection in it, a slow failure on one server would
+ * paint its error under an identically-named database on another.
+ */
 export const loadTables = createAppThunk(
   'explorer/loadTables',
-  async (database: string, { getState, rejectWithValue }) => {
-    const { connectionId } = getState().session;
+  async (database: string, { getState, dispatch, rejectWithValue }) => {
+    const connectionId = getState().session.activeConnectionId;
     if (!connectionId) return rejectWithValue('Not connected.');
+
+    dispatch(tablesRequested({ connectionId, database }));
 
     try {
       const res = await call('db.tables', { connectionId, database });
-      return { database, tables: res.tables };
+      return { connectionId, database, tables: res.tables };
     } catch (err) {
-      return rejectWithValue(errorMessage(err));
+      const message = errorMessage(err);
+      dispatch(tablesFailed({ connectionId, database, message }));
+      return rejectWithValue(message);
     }
   },
   {
-    // The tree's per-database cache, expressed once. Callers just ask for the
-    // tables and the already-fetched case never reaches the bridge.
-    condition: (database, { getState }) => getState().explorer.tables[database] === undefined,
+    // The tree's cache, expressed once, and now naming the connection it is
+    // true of. Callers just ask for the tables and the already-fetched case
+    // never reaches the bridge.
+    condition: (database, { getState }) => {
+      const { session, explorer } = getState();
+      if (!session.activeConnectionId) return false;
+      return explorer.tables[session.activeConnectionId]?.[database] === undefined;
+    },
   }
 );
 
@@ -97,21 +136,18 @@ interface ColumnsArg {
 export const loadColumns = createAppThunk(
   'explorer/loadColumns',
   async ({ database, table }: ColumnsArg, { getState, dispatch, rejectWithValue }) => {
-    const { connectionId } = getState().session;
+    const connectionId = getState().session.activeConnectionId;
     if (!connectionId) return rejectWithValue('Not connected.');
 
     /*
      * Mark it asked *before* the await, or the next keystroke's condition still
      * sees `undefined` and fetches the same table again.
      *
-     * This is dispatched by the thunk rather than written in `pending`, and the
-     * reason is worth stating: `pending` has no payload, so a reducer keying off
-     * `action.meta.arg` could only find the connection there if a caller had put
-     * it there -- and the connection is the thunk's to read off the session, not
-     * the caller's to hand it. `tabId` in a thunk arg is the case that looks
-     * like this and is not: a tab is the result's destination and the bridge has
-     * never heard of one, whereas this *is* the target. So the marker carries it
-     * instead, and both rules survive intact.
+     * This is dispatched by the thunk rather than written in `pending` for the
+     * reason spelled out on `loadTables` above -- and `tabId` in a thunk arg is
+     * the case that looks like this and is not: a tab is the result's
+     * destination and the bridge has never heard of one, whereas this is the
+     * target.
      */
     dispatch(columnsRequested({ connectionId, database, table }));
 
@@ -127,8 +163,8 @@ export const loadColumns = createAppThunk(
     // which is what keeps a per-keystroke effect off the bridge.
     condition: ({ database, table }, { getState }) => {
       const { session, explorer } = getState();
-      if (!session.connectionId) return false;
-      return explorer.columns[session.connectionId]?.[database]?.[table] === undefined;
+      if (!session.activeConnectionId) return false;
+      return explorer.columns[session.activeConnectionId]?.[database]?.[table] === undefined;
     },
   }
 );
@@ -137,6 +173,20 @@ const explorerSlice = createSlice({
   name: 'explorer',
   initialState,
   reducers: {
+    /** `loadTables` dispatches this the moment it starts; nothing else may. */
+    tablesRequested(state, action: PayloadAction<TablesRequest>) {
+      state.loadingTables = action.payload;
+      state.error = null;
+    },
+
+    /** `loadTables` dispatches this when the bridge refuses; nothing else may. */
+    tablesFailed(state, action: PayloadAction<TablesError>) {
+      // Keyed by the request, not just stored: a slow failure for one node must
+      // not clear the spinner of whichever node is loading by the time it lands.
+      if (sameRequest(state.loadingTables, action.payload)) state.loadingTables = null;
+      state.error = action.payload;
+    },
+
     /** `loadColumns` dispatches this the moment it starts; nothing else may. */
     columnsRequested(state, action: PayloadAction<{ connectionId: string; database: string; table: string }>) {
       const { connectionId, database, table } = action.payload;
@@ -147,28 +197,29 @@ const explorerSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(disconnect.fulfilled, () => initialState)
-      .addCase(loadTables.pending, (state, action) => {
-        state.loadingTables = action.meta.arg;
-        state.error = null;
+      .addCase(disconnect.fulfilled, (state, action) => {
+        const { connectionId } = action.payload;
+        // Only this connection's catalog. Everything here names its connection,
+        // so there is exactly one key to drop per map and the other servers'
+        // trees are untouched.
+        delete state.databases[connectionId];
+        delete state.tables[connectionId];
+        delete state.columns[connectionId];
+        if (state.loadingTables?.connectionId === connectionId) state.loadingTables = null;
+        if (state.error?.connectionId === connectionId) state.error = null;
       })
       .addCase(loadTables.fulfilled, (state, action) => {
-        state.tables[action.payload.database] = action.payload.tables;
-        if (state.loadingTables === action.payload.database) state.loadingTables = null;
+        const { connectionId, database, tables } = action.payload;
+        (state.tables[connectionId] ??= {})[database] = tables;
+        if (sameRequest(state.loadingTables, action.payload)) state.loadingTables = null;
       })
-      .addCase(loadTables.rejected, (state, action) => {
-        // Keyed by meta.arg, not just stored: a slow failure for one database
-        // must not surface under whichever node is open by the time it lands.
-        if (state.loadingTables === action.meta.arg) state.loadingTables = null;
-        state.error = {
-          database: action.meta.arg,
-          message: action.payload ?? 'Could not list tables.',
-        };
-      })
+      // `loadTables.rejected` is deliberately not handled: `tablesFailed`
+      // carried the failure, with the connection in it, which is the one thing
+      // `rejected` cannot see.
       .addCase(loadColumns.fulfilled, (state, action) => {
         const { connectionId, database, table, columns } = action.payload;
         // Find the marker `columnsRequested` left, or no-op. A disconnect that
-        // lands while this is in flight resets the map, and writing here anyway
+        // lands while this is in flight drops the map, and writing here anyway
         // would resurrect a connection that is gone -- with nothing left to
         // collect it, since only a disconnect ever clears this. Same guard, and
         // the same reason for it, as a query landing after its tab closed.
@@ -180,24 +231,25 @@ const explorerSlice = createSlice({
       // request left behind stays exactly where it is, which is what says "asked
       // once, and it did not answer" -- handling it to clear the marker would
       // put the retry back on every keystroke.
+      //
       // The database list arrives with the connection itself, so the explorer
       // reads it off the session's event rather than fetching it again. Matching
       // the event and not a thunk is what keeps this working when a new way to
       // connect appears; addMatcher must follow every addCase.
       .addMatcher(sessionOpened, (state, action) => {
-        state.databases = action.payload.databases;
-        // `tables` is keyed by database alone, so a new session's `app` would
-        // read the last one's. `columns` names its connection in the key and so
-        // has nothing to answer for here -- see the note on the field.
-        state.tables = {};
-        state.error = null;
+        const { connectionId, databases } = action.payload;
+        state.databases[connectionId] = databases;
+        // Nothing is cleared. `tables` names its connection now, so a new
+        // connection's `app` cannot read an older one's -- which is exactly what
+        // this used to have to empty the whole cache to prevent.
       });
   },
 });
 
-// Deliberately not exported. `loadColumns` is the only thing that may dispatch
-// it -- the marker without the fetch behind it pins a table at "asked, never
-// answered" forever, which is precisely the state that is never retried.
-const { columnsRequested } = explorerSlice.actions;
+// Deliberately not exported. Each is dispatched by the one thunk that owns it
+// and by nothing else -- `columnsRequested` without the fetch behind it pins a
+// table at "asked, never answered" forever, which is precisely the state that is
+// never retried.
+const { tablesRequested, tablesFailed, columnsRequested } = explorerSlice.actions;
 
 export const explorerReducer = explorerSlice.reducer;

@@ -97,7 +97,11 @@ export default function ConnectScreen() {
         return; // Rendered from `saved.error`; connecting anyway would bury it.
       }
     }
-    void session.connect({ ...values.config, password: values.password });
+    // The name and the environment are the form's, not the store's: this path
+    // covers the connection nobody saved, so there is no row to read them back
+    // off. An unnamed one carries an empty name, and the rail falls back to the
+    // server for it.
+    void session.connect({ ...values.config, password: values.password }, values.name, values.environment);
   }
 
   async function submitEdit(connection: SavedConnection, values: FormValues): Promise<void> {

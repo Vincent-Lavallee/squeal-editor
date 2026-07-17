@@ -57,8 +57,10 @@ export function useSqlCompletion(sql: string, database: string | null): void {
   const snapshot: CompletionSnapshot = {
     words: wordsFor(dialect),
     // A tab pointed at nothing, or a database whose tables have not landed yet:
-    // both are "no tables to offer", which is not the same as a bug.
-    tables: (database ? tables[database] : undefined) ?? [],
+    // both are "no tables to offer", which is not the same as a bug. Both caches
+    // name the connection now, so an identically-named database on another
+    // server cannot answer for this one.
+    tables: (connectionId && database ? tables[connectionId]?.[database] : undefined) ?? [],
     scope,
     columnsFor: (table) => {
       if (!connectionId || !database) return null;
