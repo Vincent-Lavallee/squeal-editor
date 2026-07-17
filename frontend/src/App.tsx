@@ -4,6 +4,7 @@ import { useSession } from './store/sessionSlice.ts';
 import Shell from './Shell.tsx';
 import { ConnectScreen } from './features/connections/index.ts';
 import { Titlebar } from './features/titlebar/index.ts';
+import { UpdateBanner, useUpdater } from './features/updater/index.ts';
 
 /**
  * The titlebar is outside the routing: the window is borderless, so it carries
@@ -19,7 +20,14 @@ import { Titlebar } from './features/titlebar/index.ts';
  */
 export default function App() {
   const { connected, activeConnectionId } = useSession();
+  const { check } = useUpdater();
   const [adding, setAdding] = useState(false);
+
+  // Ask once on launch whether there is a newer release. Quiet by design: a
+  // check that finds nothing, or cannot reach GitHub, shows nothing at all.
+  useEffect(() => {
+    check();
+  }, [check]);
 
   /*
    * Opening a connection lands you on it, so the screen has done its job and is
@@ -33,7 +41,8 @@ export default function App() {
 
   return (
     <>
-      <Titlebar />
+      <Titlebar onCheckForUpdates={() => check(true)} />
+      <UpdateBanner />
       <div className="app-body">
         {connected && !adding ? (
           <Shell onAddConnection={() => setAdding(true)} />

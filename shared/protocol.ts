@@ -206,6 +206,30 @@ export interface TablePage {
 }
 
 /**
+ * What a release check found. Deliberately not an error channel: a check that
+ * cannot reach GitHub, is rate-limited, or runs on a platform the swap flow does
+ * not cover reports `hasUpdate: false`, never a thrown error -- an update the
+ * user did not ask for must not surface as a failure they did not cause.
+ */
+export interface UpdateStatus {
+  /** False off Windows, the only platform the swap-on-restart flow is built for. */
+  supported: boolean;
+  currentVersion: string;
+  /** Null when nothing newer was found, or the check could not be made. */
+  latestVersion: string | null;
+  hasUpdate: boolean;
+  /** The release's notes, shown in the prompt so "download?" has a "what". */
+  notes?: string;
+}
+
+/** Download progress, broadcast on `UPDATE_PROGRESS_EVENT` as bytes arrive. */
+export interface UpdateProgress {
+  receivedBytes: number;
+  /** 0 when the server sent no Content-Length, so the bar shows indeterminate. */
+  totalBytes: number;
+}
+
+/**
  * Every command the UI may issue, with its request and response shape.
  * `bridge.call` is typed from this map, so a typo or a wrong payload is a
  * compile error rather than a silent timeout.
@@ -360,6 +384,52 @@ export interface Commands {
     req: { pid: number; colour: string };
     res: { applied: boolean };
   };
+
+  /* -- The updater. Not a database either, and here for the same reason. --- */
+
+  /**
+   * Is there a newer release, and what is it? The extension checks -- not the
+   * webview -- because the whole flow that follows is native work the webview
+   * cannot do: streaming a download to disk, verifying it, and launching an
+   * installer. This is the first step of that flow, kept on the same side so
+   * the later steps have somewhere to stand.
+   *
+   * `currentVersion` is the running app's, injected at build time and passed in
+   * rather than read here: the compiled binary carries no `neutralino.config.json`
+   * to read a version from, and the UI already knows it.
+   *
+   * A check never nags or throws: offline, rate-limited or unsupported all come
+   * back as `hasUpdate: false`, not an error. `supported` is false off Windows
+   * (the only platform the swap-on-restart flow is built for) -- the same shape
+   * as `window.matchFrame`'s `applied: false`.
+   */
+  'update.check': {
+    req: { currentVersion: string };
+    res: UpdateStatus;
+  };
+  /**
+   * Download the update the last `update.check` found, stage it, and verify it
+   * two ways before resolving: a checksum for corruption and a detached ed25519
+   * signature for authenticity. Both must pass or this rejects and the staged
+   * file is discarded -- an unverified download is never offered for apply.
+   *
+   * Progress arrives out-of-band on the `update.progress` broadcast; this
+   * resolves only once the bytes are on disk *and* verified.
+   */
+  'update.download': {
+    req: Record<string, never>;
+    res: { ok: true };
+  };
+  /**
+   * Launch the staged installer and step back. Windows cannot overwrite a
+   * running `.exe`, so the installer -- not the app -- does the swap: it closes
+   * the running instance (and its extension), replaces every file, and relaunches.
+   * The UI calls `app.exit()` once this returns so the swap can proceed cleanly.
+   */
+  'update.apply': {
+    req: Record<string, never>;
+    res: { ok: true };
+  };
 }
 
 export type CommandName = keyof Commands;
@@ -372,3 +442,11 @@ export type DbResponse =
   | { reqId: number; ok: false; error: string };
 
 export const DB_RESPONSE_EVENT = 'db.response';
+
+/**
+ * Broadcast the extension emits during `update.download`, carrying an
+ * `UpdateProgress`. It rides the same fire-and-forget channel as `db.response`
+ * but is not a reply to any `reqId` -- the download resolves separately, and
+ * this is only the bar filling in between.
+ */
+export const UPDATE_PROGRESS_EVENT = 'update.progress';

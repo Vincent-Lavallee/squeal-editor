@@ -8,13 +8,23 @@ import { useWindowChrome } from './useWindowChrome.ts';
  * It sits above the router rather than inside the shell: the window has chrome
  * whether or not a connection is open, and a borderless window with no way to
  * close it is a trap.
+ *
+ * The menu's items are partly its own (disconnect, exit) and partly handed in:
+ * "Check for updates" belongs to the updater feature, and a feature never
+ * imports a sibling -- the composition root wires that action in as a prop, the
+ * same way anything spanning two features is wired above them.
  */
-export default function Titlebar() {
+interface Props {
+  onCheckForUpdates: () => void;
+}
+
+export default function Titlebar({ onCheckForUpdates }: Props) {
   const { maximized, minimize, toggleMaximize, close, dragProps } = useWindowChrome();
   const { connected, serverLabel, disconnect } = useSession();
 
   const items = [
     ...(connected ? [{ label: 'Disconnect', onSelect: disconnect }] : []),
+    { label: 'Check for updates…', onSelect: onCheckForUpdates },
     { label: 'Exit', onSelect: close },
   ];
 

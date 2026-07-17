@@ -79,6 +79,70 @@
   color: var(--text);
 }
 
+/* ---------------- Update banner ---------------- */
+
+/*
+ * A found update, under the titlebar. It never blocks -- the whole flow is
+ * user-initiated -- so it is a strip you can wave away, not a modal. One
+ * background, a single rule under it; no shade, no shadow.
+ */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  flex: none;
+  padding: var(--gap-xs) var(--gap);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--text-badge);
+}
+.update-banner .icon {
+  color: var(--blue);
+}
+.update-banner__msg {
+  margin-right: auto;
+}
+.update-banner__msg--error {
+  color: var(--red-text);
+}
+.update-banner__pct {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-badge);
+}
+/*
+ * The download bar. A track and a fill, both flat: the fill is --blue, the track
+ * a 1px-thin --border, in keeping with structure-from-borders. Width is the
+ * percentage when known.
+ */
+.update-banner__bar {
+  flex: 1;
+  max-width: 240px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  overflow: hidden;
+}
+.update-banner__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+  transition: width 0.15s linear;
+}
+/* No length from the server: a stripe that sweeps rather than a false percentage. */
+.update-banner__bar--indeterminate .update-banner__fill {
+  width: 40%;
+  animation: update-banner-sweep 1.1s ease-in-out infinite;
+}
+@keyframes update-banner-sweep {
+  from {
+    margin-left: -40%;
+  }
+  to {
+    margin-left: 100%;
+  }
+}
+
 /* ---------------- Menu ---------------- */
 
 .menu {

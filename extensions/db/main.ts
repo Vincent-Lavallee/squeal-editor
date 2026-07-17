@@ -15,6 +15,7 @@ import WebSocket from 'ws';
 
 import {
   DB_RESPONSE_EVENT,
+  UPDATE_PROGRESS_EVENT,
   type CommandName,
   type CommandReq,
   type CommandRes,
@@ -23,6 +24,7 @@ import {
   type SqlDialect,
 } from '../../shared/protocol.ts';
 import { matchWindowFrame } from './chrome.ts';
+import { applyUpdate, checkForUpdate, downloadUpdate } from './updater.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';
 import {
   deleteSaved,
@@ -169,6 +171,23 @@ const COMMANDS: Handlers = {
 
   async 'window.matchFrame'({ pid, colour }) {
     return { applied: matchWindowFrame(pid, colour) };
+  },
+
+  /* -- The updater (updater.ts explains why this lives here too) -------- */
+
+  async 'update.check'({ currentVersion }) {
+    return checkForUpdate(currentVersion);
+  },
+
+  async 'update.download'() {
+    // Progress rides its own broadcast; this resolves only once staged + verified.
+    await downloadUpdate((progress) => send(UPDATE_PROGRESS_EVENT, progress));
+    return { ok: true };
+  },
+
+  async 'update.apply'() {
+    applyUpdate();
+    return { ok: true };
   },
 };
 

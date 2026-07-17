@@ -8,6 +8,7 @@ import {
   RiBuilding2Line,
   RiCloseLine,
   RiCodeSSlashLine,
+  RiDownloadCloud2Line,
   RiEyeLine,
   RiFlaskLine,
   RiGlobalLine,
@@ -59,6 +60,9 @@ export const CloseIcon = RiCloseLine;
 
 /** Leaving a workspace for the picker. Not `PrevPageIcon`: paging is not going back. */
 export const BackIcon = RiArrowLeftLine;
+
+/** A new version waiting to come down, in the update banner. */
+export const UpdateIcon = RiDownloadCloud2Line;
 
 /*
  * The read-only lock in the status bar. Two kinds, told apart by shape the way a
