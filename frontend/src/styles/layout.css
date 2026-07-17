@@ -20,15 +20,12 @@
   align-items: center;
   flex: none;
   height: var(--titlebar-h);
+  /* Keeps the menu off the window's left corner; the controls still reach the
+     right corner, which the platform's close-target hot corner needs. */
+  padding-left: var(--gap-sm);
   /* One background: the bar is divided from the app by a rule, not a shade. */
   border-bottom: 1px solid var(--border);
   user-select: none;
-}
-.titlebar__mark {
-  flex: none;
-  padding: 0 var(--gap-sm) 0 10px;
-  color: var(--blue);
-  font-size: var(--text-badge);
 }
 /*
  * Takes every pixel the menu and the buttons do not, because the draggable area
@@ -160,9 +157,6 @@
   font-size: var(--text-page);
   font-weight: 700;
   letter-spacing: -0.01em;
-}
-.connect__mark {
-  color: var(--blue);
 }
 .connect__sub {
   margin: 4px 0 var(--gap-xl);

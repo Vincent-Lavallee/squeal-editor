@@ -20,9 +20,6 @@ export default function Titlebar() {
 
   return (
     <header className="titlebar">
-      <span className="titlebar__mark" aria-hidden="true">
-        ◆
-      </span>
       <FileMenu items={items} />
 
       {/* Everything between the menu and the buttons moves the window. */}

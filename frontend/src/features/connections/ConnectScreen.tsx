@@ -282,9 +282,7 @@ export default function ConnectScreen({ onCancel }: Props) {
   return (
     <div className="connect">
       <div className="card connect__card">
-        <h1 className="connect__brand">
-          <span className="connect__mark">◆</span> Squeal
-        </h1>
+        <h1 className="connect__brand">Squeal</h1>
         <p className="connect__sub">A stupid simple SQL editor.</p>
 
         {/* One control, which is the route back *and* names where it goes --
