@@ -68,10 +68,13 @@ jobs:
       - name: Package the app
         run: bunx neu build
 
+      # Not Compress-Archive: it throws "Could not find a part of the path" on the
+      # deep Monaco/extension paths in the bundle (Windows MAX_PATH). bsdtar ships
+      # on the runner, handles long paths, and matches the Unix step's shape —
+      # archiving the squeal-editor folder, not its bare contents.
       - name: Zip the bundle (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: Compress-Archive -Path dist/squeal-editor/* -DestinationPath "squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip"
+        run: tar -a -c -f "squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip" -C dist squeal-editor
 
       - name: Zip the bundle (Unix)
         if: runner.os != 'Windows'
