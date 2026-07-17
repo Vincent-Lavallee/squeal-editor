@@ -168,6 +168,15 @@
   margin: 4px 0 var(--gap-xl);
   color: var(--text-muted);
 }
+/*
+ * The way back to what is already open. Full width because it is a route rather
+ * than one of a pair of actions -- there is nothing for it to sit beside.
+ */
+.connect__back {
+  justify-content: flex-start;
+  width: 100%;
+  margin-bottom: var(--gap-lg);
+}
 .connect__form {
   display: flex;
   flex-direction: column;
@@ -406,8 +415,97 @@
 
 .app {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: var(--rail-w) 240px 1fr;
   height: 100%;
+}
+
+/* ---------------- Connection rail ---------------- */
+
+/*
+ * The open connections. One background and a 1px rule, like every other divider
+ * here -- it is a column of the shell, not a thing floating beside it.
+ */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-xs);
+  padding: var(--gap-sm) 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.rail__list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-xs);
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rail__item,
+.rail__add {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.rail__item:hover,
+.rail__add:hover {
+  background: var(--hover);
+}
+/*
+ * --selected is this system's word for "this one" -- the same language as an
+ * active tree row and an active tab. It cannot be a lighter surface, because
+ * there is one background.
+ */
+.rail__item--active {
+  background: var(--selected);
+}
+.rail__mark {
+  font-size: var(--text-badge);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/*
+ * The environment, and the only colour on this rail.
+ *
+ * On the mark rather than the whole button: the row's background is already
+ * saying "this one", and two colours fighting over one 32px square would leave
+ * neither legible. The border is what carries it at a glance; the letters are
+ * what you read.
+ */
+.rail__item[data-env='local'] {
+  border-color: var(--env-local);
+  color: var(--env-local);
+}
+.rail__item[data-env='dev'] {
+  border-color: var(--env-dev);
+  color: var(--env-dev);
+}
+.rail__item[data-env='staging'] {
+  border-color: var(--env-staging);
+  color: var(--env-staging);
+}
+.rail__item[data-env='production'] {
+  border-color: var(--env-production);
+  color: var(--env-production);
+}
+
+/* Pushed to the bottom, away from the list it does not belong to. */
+.rail__add {
+  margin-top: auto;
+  border-color: var(--border-strong);
+  font-size: 16px;
+  line-height: 1;
 }
 
 /* ---------------- Sidebar ---------------- */

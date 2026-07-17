@@ -302,4 +302,40 @@ describe.each([
     const res = await h.dispatch('db.query', { connectionId: temp, database: FIXTURE_DB, sql: 'SELECT 1' });
     expect(res.ok).toBe(false);
   });
+
+  /*
+   * The registry was always a map keyed by connection, so holding several at
+   * once needed nothing added -- which is exactly why it is worth pinning. The
+   * UI leans on every one of these now, and a regression here would surface up
+   * there as one connection mysteriously answering for another.
+   */
+  test('holds several connections at once, each its own', async () => {
+    const a = (await h.ok('db.connect', { config })) as { connectionId: string };
+    const b = (await h.ok('db.connect', { config })) as { connectionId: string };
+    expect(a.connectionId).not.toBe(b.connectionId);
+
+    // Same server, two connections: both work, and independently.
+    for (const id of [a.connectionId, b.connectionId]) {
+      const res = (await h.ok('db.query', {
+        connectionId: id,
+        database: FIXTURE_DB,
+        sql: 'SELECT 1 AS ok',
+      })) as QueryResult & { rows: unknown[][] };
+      expect(Number(res.rows[0]![0])).toBe(1);
+    }
+
+    // Closing one must not touch the other. This is the extension's half of
+    // "disconnecting one connection is not disconnecting the app".
+    await h.ok('db.disconnect', { connectionId: a.connectionId });
+    expect((await h.dispatch('db.query', { connectionId: a.connectionId, sql: 'SELECT 1' })).ok).toBe(false);
+
+    const survivor = (await h.ok('db.query', {
+      connectionId: b.connectionId,
+      database: FIXTURE_DB,
+      sql: 'SELECT 1 AS ok',
+    })) as QueryResult & { rows: unknown[][] };
+    expect(Number(survivor.rows[0]![0])).toBe(1);
+
+    await h.ok('db.disconnect', { connectionId: b.connectionId });
+  });
 });

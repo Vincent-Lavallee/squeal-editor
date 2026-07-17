@@ -44,6 +44,15 @@ const selectDatabase = (name: string) => `${REACT_SETTERS}
   setSelect(document.querySelector('.sidebar__head .select'), ${JSON.stringify(name)});
   true;`;
 
+/** The rail, top to bottom: one mark per open connection. */
+const railMarks = `[...document.querySelectorAll('.rail__mark')].map(e => e.textContent)`;
+/** The environment travels as data, so the test reads the fact and not a colour. */
+const railEnvs = `[...document.querySelectorAll('.rail__item')].map(e => e.dataset.env)`;
+const activeRail = `
+  [...document.querySelectorAll('.rail__item')]
+    .findIndex(e => e.classList.contains('rail__item--active'))`;
+const clickRail = (i: number) => `document.querySelectorAll('.rail__item')[${i}].click(); true;`;
+
 /** The tab strip, left to right. */
 const tabLabels = `[...document.querySelectorAll('.tabs__label')].map(e => e.textContent)`;
 const activeTabLabel = `document.querySelector('.tabs__tab--active .tabs__label')?.textContent ?? ''`;
@@ -123,8 +132,11 @@ const savedRow = (name: string) => `
  * With one workspace the picker is skipped, so there is never a step for it
  * here; the workspace describe is what drives that screen.
  */
-async function connect(cfg: typeof PG | typeof MYSQL, name = '', environment?: string): Promise<void> {
-  await app.reload();
+async function fillConnectForm(
+  cfg: typeof PG | typeof MYSQL,
+  name = '',
+  environment?: string
+): Promise<void> {
   await app.evaluate(`document.querySelector('.saved__new')?.click(); true;`);
   await Bun.sleep(300);
 
@@ -142,8 +154,8 @@ async function connect(cfg: typeof PG | typeof MYSQL, name = '', environment?: s
   await Bun.sleep(200);
 
   if (environment) {
-    // Only reachable once the connection has a name: an unnamed one is never
-    // stored, so it is never under a heading and has no environment to set.
+    // Asked for whether or not the connection will be saved: it is the rail's
+    // colour now, not only a heading in a list an unnamed one never joins.
     await app.evaluate(`${REACT_SETTERS}
       setSelect(document.querySelector('#environment'), ${JSON.stringify(environment)});
       true;`);
@@ -152,6 +164,26 @@ async function connect(cfg: typeof PG | typeof MYSQL, name = '', environment?: s
 
   await app.evaluate(`document.querySelector('.connect__submit').click(); true;`);
   await Bun.sleep(3000);
+}
+
+async function connect(cfg: typeof PG | typeof MYSQL, name = '', environment?: string): Promise<void> {
+  await app.reload();
+  await fillConnectForm(cfg, name, environment);
+}
+
+/**
+ * Opens a *second* connection, leaving the first one open -- the rail's "+",
+ * which is the only route to the connect screen that does not go through a
+ * reload. Deliberately not `connect`: reloading is what this must not do.
+ */
+async function addConnection(
+  cfg: typeof PG | typeof MYSQL,
+  name = '',
+  environment?: string
+): Promise<void> {
+  await app.evaluate(`document.querySelector('.rail__add').click(); true;`);
+  await Bun.sleep(500);
+  await fillConnectForm(cfg, name, environment);
 }
 
 /**
@@ -851,8 +883,10 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
   });
 
-  // Last of all: these leave a second workspace behind, and every describe above
-  // is written against a launch screen that skips the picker.
+  // Late on purpose: these leave a second workspace behind for most of their
+  // run, and every describe above is written against a launch screen that skips
+  // the picker. They end on a single empty workspace, which is what the describe
+  // below then launches into.
   describe('workspaces', () => {
     const groupLabels = `[...document.querySelectorAll('.ws-group > .label')].map(e => e.textContent)`;
     const names = `[...document.querySelectorAll('.saved__name')].map(e => e.textContent)`;
@@ -939,6 +973,132 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<string[]>(
         `[...${savedRow('Acme')}.querySelectorAll('.saved__actions .btn')].map(e => e.textContent)`
       )).toEqual(['Edit']);
+    });
+  });
+
+  /*
+   * Two servers at once. It runs after `workspaces` because it needs what that
+   * one leaves -- a single empty workspace, so the picker is skipped and the
+   * form is the launch screen -- and because it is the only describe here that
+   * ends with more than one connection open.
+   *
+   * The two fixtures are what make this testable at all: both seed a database
+   * called `shop`, and only Postgres's has a table in a second schema. That is
+   * the collision, and it is a real one rather than a contrived name.
+   */
+  describe('multiple connections', () => {
+    const treeLabels = `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`;
+
+    beforeAll(async () => {
+      await connect(PG, 'Shop dev', 'dev');
+      await addConnection(MYSQL, 'Shop prod', 'production');
+    });
+
+    test('the rail lists both, in the order they were opened', async () => {
+      expect(await app.evaluate<string[]>(railMarks)).toEqual(['SD', 'SP']);
+    });
+
+    test('each is coloured by its environment', async () => {
+      // The fact, not the colour: CSS picks the hue off this, so asserting the
+      // computed pixel would test the stylesheet rather than the app.
+      expect(await app.evaluate<string[]>(railEnvs)).toEqual(['dev', 'production']);
+    });
+
+    test('opening the second lands you on it, and the titlebar follows', async () => {
+      expect(await app.evaluate<number>(activeRail)).toBe(1);
+      // The rail says which; the titlebar says what. Neither repeats the other.
+      expect(await app.evaluate<string>(`document.querySelector('.titlebar__title').textContent`))
+        .toBe(`${MYSQL.user}@${MYSQL.host}:${MYSQL.port}`);
+    });
+
+    test('each connection keeps its own tabs, numbered from its own Query 1', async () => {
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'Query 2']);
+
+      // The first connection still has exactly the tab it had -- opening the
+      // second did not close it, which is the whole point of the feature. And it
+      // is Query 1: a second server's numbering is its own.
+      await app.evaluate(clickRail(0));
+      await Bun.sleep(500);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1']);
+    });
+
+    test('switching back restores the tab you were on, not the first one', async () => {
+      await app.evaluate(clickRail(1));
+      await Bun.sleep(500);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'Query 2']);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe('Query 2');
+    });
+
+    /*
+     * The bug the tree's cache was re-keyed for. Both connections hold a `shop`,
+     * so keyed by database alone the second one to ask reads the first one's
+     * answer -- silently, and against a different engine entirely.
+     */
+    test("two connections holding a database called 'shop' do not share its tables", async () => {
+      await app.evaluate(clickRail(0));
+      await Bun.sleep(400);
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1800);
+      expect(await app.evaluate<string[]>(treeLabels)).toContain('reporting.daily_stats');
+
+      await app.evaluate(clickRail(1));
+      await Bun.sleep(400);
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1800);
+      const mysql = await app.evaluate<string[]>(treeLabels);
+      // MySQL's shop has a `users`, so the tree did fetch and did answer...
+      expect(mysql).toContain('users');
+      // ...and it answered for MySQL. Postgres's schema-qualified table is the
+      // proof: there is no such thing here, so its presence would mean this tree
+      // had read the other connection's cache.
+      expect(mysql).not.toContain('reporting.daily_stats');
+    });
+
+    test("each connection's tab runs against that connection", async () => {
+      // Still on Shop prod (MySQL) from the test above.
+      await app.evaluate(setEditorText('SELECT VERSION() AS v'));
+      await Bun.sleep(200);
+      await app.evaluate(
+        `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(1800);
+      const mysql = await app.evaluate<string>(`document.querySelector('.grid tbody td:not(.gutter)').textContent`);
+      expect(mysql).toContain('8.');
+
+      await app.evaluate(clickRail(0));
+      await Bun.sleep(500);
+      await app.evaluate(setEditorText('SELECT version() AS v'));
+      await Bun.sleep(200);
+      await app.evaluate(
+        `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(1800);
+      const pg = await app.evaluate<string>(`document.querySelector('.grid tbody td:not(.gutter)').textContent`);
+      expect(pg).toContain('PostgreSQL');
+    });
+
+    test('disconnecting one leaves the other open, and lands you on it', async () => {
+      // Disconnect is the titlebar's, and it has always meant the one in front.
+      // Shop dev is in front, from the test above.
+      await disconnect();
+      await Bun.sleep(600);
+
+      expect(await app.evaluate<string[]>(railMarks)).toEqual(['SP']);
+      expect(await app.evaluate<number>(activeRail)).toBe(0);
+      // Its tabs are still its own, and still both of them: closing one
+      // connection is not closing the app.
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'Query 2']);
+      expect(await app.evaluate<string>(`document.querySelector('.titlebar__title').textContent`))
+        .toBe(`${MYSQL.user}@${MYSQL.host}:${MYSQL.port}`);
+    });
+
+    test('disconnecting the last one is the way back to the connect screen', async () => {
+      await disconnect();
+      await Bun.sleep(600);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('.rail')`)).toBe(false);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('.saved__row, #host')`)).toBe(true);
     });
   });
 });

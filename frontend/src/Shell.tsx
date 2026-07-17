@@ -4,8 +4,17 @@ import type { TableInfo } from '../../shared/protocol.ts';
 import { useTabs } from './store/tabsSlice.ts';
 import { EditorPane, EditorProvider } from './features/editor/index.ts';
 import { Sidebar } from './features/explorer/index.ts';
+import { ConnectionRail } from './features/rail/index.ts';
 import { ResultsTable, useResults } from './features/results/index.ts';
 import { TabStrip } from './features/tabs/index.ts';
+
+interface Props {
+  /**
+   * Routes to the connect screen without closing anything. `App` owns it because
+   * `App` owns the routing -- the rail only knows that it was asked for.
+   */
+  onAddConnection: () => void;
+}
 
 /**
  * The composition root for a connected session.
@@ -14,15 +23,15 @@ import { TabStrip } from './features/tabs/index.ts';
  * here and nowhere else. That is the whole job of this file: if a feature ever
  * needs a sibling's hook, the wiring belongs in this component instead.
  */
-export default function Shell() {
+export default function Shell({ onAddConnection }: Props) {
   return (
     <EditorProvider>
-      <ShellLayout />
+      <ShellLayout onAddConnection={onAddConnection} />
     </EditorProvider>
   );
 }
 
-function ShellLayout() {
+function ShellLayout({ onAddConnection }: Props) {
   const { activeTab, openGridTab, selectDatabase } = useTabs();
   const { run, running, browseIn } = useResults();
 
@@ -66,6 +75,7 @@ function ShellLayout() {
 
   return (
     <div className="app">
+      <ConnectionRail onAdd={onAddConnection} />
       <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} />
 
       <main className={`main ${showEditor ? '' : 'main--grid'}`}>

@@ -69,6 +69,24 @@
   --syntax-comment: var(--text-faint);
   --syntax-punctuation: var(--text-muted);
 
+  /*
+   * ---- Environments: which server you are about to run this against ----
+   *
+   * Its own ramp for the same reason --syntax-* is its own: an environment is
+   * not a status. Retuning --red for an error must not repaint the rail, and a
+   * production connection is not "an error" -- it is the one you want to notice
+   * before you type. Same Radix dark lineage, so they land on the same steps as
+   * the semantic hues today, which is not the same as being them.
+   *
+   * The order is the ramp: neutral, go, caution, danger. That is what makes this
+   * colour mean something rather than decorate -- read down the list and it is
+   * the deployment pipeline, which is the order ENVIRONMENTS is already in.
+   */
+  --env-local: #b0b4ba;       /* slate-11: your own machine, nothing at stake */
+  --env-dev: #3dd68c;         /* green-11 */
+  --env-staging: #ffca16;     /* amber-11 */
+  --env-production: #e5484d;  /* red-9 */
+
   /* ---- Shape: pills for status, 6-8px for everything else ---- */
   --radius-pill: 999px;       /* badges, chips, filter controls, search */
   --radius: 6px;              /* buttons, inputs */
@@ -106,6 +124,12 @@
    * tabs, and pinning them together is how they drift apart later.
    */
   --tab-h: 32px;
+  /*
+   * The connection rail. Narrower than the reference's 68px icon rail, which it
+   * is otherwise the same idea as: that one carried a flyout, this one carries
+   * two letters and a colour.
+   */
+  --rail-w: 44px;
   --row-h: 44px;              /* reference table row height */
   /*
    * Deviation from the reference: its 44px rows suit a dashboard table of a

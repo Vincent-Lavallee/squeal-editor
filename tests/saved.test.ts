@@ -212,11 +212,19 @@ describe('connecting from a saved connection', () => {
       connectionId: string;
       databases: string[];
       config: typeof PG_SERVER;
+      name: string;
+      environment: string;
     };
 
     expect(res.databases).toContain(FIXTURE_DB);
     expect(res.config).toEqual({ ...PG_SERVER, ssl: false });
     expect(res.config).not.toHaveProperty('password');
+
+    // Echoed back off the row for the same reason the config is: the UI labels
+    // and colours the session by these, and a list row it seeded them from may
+    // be stale. Neither is anything the extension does with the connection.
+    expect(res.name).toBe('with-password');
+    expect(res.environment).toBe('local');
 
     // The connection it hands back must be a working one, not just an id.
     const query = (await h.ok('db.query', {

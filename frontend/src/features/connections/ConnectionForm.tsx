@@ -139,29 +139,33 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
       </div>
 
       {/*
-       * Only for a connection that will be kept: an environment is a heading in
-       * the workspace's list, and a nameless connection is never in that list.
-       * Same gate as the password checkbox, and for the same reason.
+       * Asked for whether or not this will be kept, which the password checkbox
+       * below is still gated on and this no longer is.
+       *
+       * It used to be: an environment was a heading in the workspace's list, and
+       * a nameless connection is never in that list, so there was nothing for it
+       * to be true of. An environment is also the rail's colour now, and every
+       * open connection is on the rail -- so a nameless one has somewhere to say
+       * this, and "the connection I opened once to check something" is exactly
+       * the one worth colouring red.
        */}
-      {willBeStored && (
-        <div className="field">
-          <label className="label" htmlFor="environment">
-            Environment
-          </label>
-          <select
-            id="environment"
-            className="select"
-            value={form.environment}
-            onChange={(e) => set('environment', e.target.value as Environment)}
-          >
-            {ENVIRONMENTS.map((env) => (
-              <option key={env.value} value={env.value}>
-                {env.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div className="field">
+        <label className="label" htmlFor="environment">
+          Environment
+        </label>
+        <select
+          id="environment"
+          className="select"
+          value={form.environment}
+          onChange={(e) => set('environment', e.target.value as Environment)}
+        >
+          {ENVIRONMENTS.map((env) => (
+            <option key={env.value} value={env.value}>
+              {env.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className="field">
         <label className="label" htmlFor="type">

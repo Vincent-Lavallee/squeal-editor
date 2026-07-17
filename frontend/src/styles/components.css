@@ -303,3 +303,23 @@
   font-size: var(--text-badge);
   word-break: break-word;
 }
+
+/*
+ * Text for a screen reader and nothing else.
+ *
+ * For the case where the visible thing is a mark and the name is in a `title`:
+ * a tooltip needs a pointer, so on its own it says nothing to a keyboard or a
+ * reader. `display: none` would take it out of the accessibility tree along with
+ * the pixels, which is the opposite of the point -- hence the 1px clip.
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

@@ -36,7 +36,15 @@ function passwordUpdate(values: FormValues, mode: 'new' | 'edit'): PasswordUpdat
   return { mode: 'store', password: values.password };
 }
 
-export default function ConnectScreen() {
+interface Props {
+  /**
+   * The way back to what is already open, when anything is. Absent on the way
+   * in, which is the case that has nothing to go back to.
+   */
+  onCancel?: () => void;
+}
+
+export default function ConnectScreen({ onCancel }: Props) {
   const saved = useSavedConnections();
   const workspaces = useWorkspaces();
   const session = useSession();
@@ -271,6 +279,15 @@ export default function ConnectScreen() {
           <span className="connect__mark">◆</span> Squeal
         </h1>
         <p className="connect__sub">A stupid simple SQL editor.</p>
+
+        {/* One control, which is the route back *and* names where it goes --
+            `.ws-bar`'s rule exactly, and for its reason: a title with a button
+            beside it is two places naming one thing. */}
+        {onCancel && (
+          <button type="button" className="btn btn--ghost connect__back" onClick={onCancel}>
+            ← Back to {session.name || session.serverLabel}
+          </button>
+        )}
 
         {renderScreen()}
 
