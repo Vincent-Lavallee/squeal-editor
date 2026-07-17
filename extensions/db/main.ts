@@ -24,7 +24,15 @@ import {
 } from '../../shared/protocol.ts';
 import { matchWindowFrame } from './chrome.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';
-import { deleteSaved, listSaved, resolveSaved, saveConnection } from './store.ts';
+import {
+  deleteSaved,
+  deleteWorkspace,
+  listSaved,
+  listWorkspaces,
+  resolveSaved,
+  saveConnection,
+  saveWorkspace,
+} from './store.ts';
 
 // Killing the app does not reliably close our socket: WebView2 child processes
 // inherit the listening handle, so the connection can sit in ESTABLISHED forever
@@ -118,8 +126,8 @@ const COMMANDS: Handlers = {
     return { connections: listSaved() };
   },
 
-  async 'db.saved.save'({ id, name, config, password }) {
-    return { connection: await saveConnection({ id, name, config, password }) };
+  async 'db.saved.save'({ id, workspaceId, name, config, environment, password }) {
+    return { connection: await saveConnection({ id, workspaceId, name, config, environment, password }) };
   },
 
   async 'db.saved.delete'({ id }) {
@@ -130,6 +138,21 @@ const COMMANDS: Handlers = {
   async 'db.saved.connect'({ id, password }) {
     const { password: secret, ...config } = await resolveSaved(id, password);
     return { ...(await establish({ ...config, password: secret })), config };
+  },
+
+  /* -- Workspaces (store.ts owns the grouping and the cascade) --------- */
+
+  async 'db.workspaces.list'() {
+    return { workspaces: listWorkspaces() };
+  },
+
+  async 'db.workspaces.save'({ id, name, icon }) {
+    return { workspace: saveWorkspace({ id, name, icon }) };
+  },
+
+  async 'db.workspaces.delete'({ id }) {
+    deleteWorkspace(id);
+    return { ok: true };
   },
 
   /* -- The window (chrome.ts explains why this lives here) ------------- */

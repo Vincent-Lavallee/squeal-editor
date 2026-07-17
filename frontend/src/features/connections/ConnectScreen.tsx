@@ -1,15 +1,28 @@
 import { useState } from 'react';
 
-import type { PasswordUpdate, SavedConnection } from '../../../../shared/protocol.ts';
+import type { PasswordUpdate, SavedConnection, Workspace } from '../../../../shared/protocol.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import ConnectionForm, { type FormValues } from './ConnectionForm.tsx';
 import PasswordPrompt from './PasswordPrompt.tsx';
 import SavedConnectionList from './SavedConnectionList.tsx';
+import WorkspaceForm, { type WorkspaceFormValues } from './WorkspaceForm.tsx';
+import WorkspacePicker from './WorkspacePicker.tsx';
 import { useSavedConnections } from './useSavedConnections.ts';
+import { useWorkspaces } from './useWorkspaces.ts';
 
+/**
+ * Every screen the way in can be on.
+ *
+ * The connection screens carry the workspace they are inside rather than reading
+ * a "current workspace" from somewhere: which one you are in *is* which screen
+ * you are on, and a second place holding that is a second thing to keep in step.
+ */
 type Screen =
-  | { view: 'list' }
-  | { view: 'new' }
+  | { view: 'workspaces' }
+  | { view: 'workspaceNew' }
+  | { view: 'workspaceEdit'; workspace: Workspace }
+  | { view: 'list'; workspaceId: string }
+  | { view: 'new'; workspaceId: string }
   | { view: 'edit'; connection: SavedConnection }
   | { view: 'password'; connection: SavedConnection };
 
@@ -25,21 +38,38 @@ function passwordUpdate(values: FormValues, mode: 'new' | 'edit'): PasswordUpdat
 
 export default function ConnectScreen() {
   const saved = useSavedConnections();
+  const workspaces = useWorkspaces();
   const session = useSession();
 
   const [screen, setScreen] = useState<Screen | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
 
+  const loading = saved.loading || workspaces.loading;
+  const only = workspaces.workspaces.length === 1 ? workspaces.workspaces[0] : undefined;
+
   /**
-   * Null means "follow the list": with nothing saved there is no list worth
-   * showing, so the form *is* the screen. Deriving it rather than pinning it at
-   * mount means the first load settles on the right one without a flash.
+   * Null means "follow the data": with one workspace there is nothing to pick,
+   * so the picker is skipped and the whole feature can be ignored -- and with
+   * nothing saved in it there is no list worth showing, so the form *is* the
+   * screen. Deriving it rather than pinning it at mount means the first load
+   * settles on the right one without a flash.
+   *
+   * The picker is still reachable from the list's header, which is what keeps
+   * skipping it from being a trap: a first-run user has to be able to get to the
+   * screen that makes a second workspace.
    */
-  const view: Screen = screen ?? (saved.connections.length > 0 ? { view: 'list' } : { view: 'new' });
+  const view: Screen =
+    screen ??
+    (only
+      ? saved.connections.some((c) => c.workspaceId === only.id)
+        ? { view: 'list', workspaceId: only.id }
+        : { view: 'new', workspaceId: only.id }
+      : { view: 'workspaces' });
 
   function go(next: Screen | null): void {
     // A previous attempt's error must not follow the user to the next screen.
     saved.dismissError();
+    workspaces.dismissError();
     session.dismissError();
     setConnectingId(null);
     setScreen(next);
@@ -53,10 +83,16 @@ export default function ConnectScreen() {
   }
 
   /** Named connections are saved before connecting, so a name clash stops here. */
-  async function submitNew(values: FormValues): Promise<void> {
+  async function submitNew(workspaceId: string, values: FormValues): Promise<void> {
     if (values.name) {
       try {
-        await saved.save({ name: values.name, config: values.config, password: passwordUpdate(values, 'new') });
+        await saved.save({
+          workspaceId,
+          name: values.name,
+          config: values.config,
+          environment: values.environment,
+          password: passwordUpdate(values, 'new'),
+        });
       } catch {
         return; // Rendered from `saved.error`; connecting anyway would bury it.
       }
@@ -64,17 +100,165 @@ export default function ConnectScreen() {
     void session.connect({ ...values.config, password: values.password });
   }
 
-  async function submitEdit(id: string, values: FormValues): Promise<void> {
+  async function submitEdit(connection: SavedConnection, values: FormValues): Promise<void> {
     try {
-      await saved.save({ id, name: values.name, config: values.config, password: passwordUpdate(values, 'edit') });
-      go({ view: 'list' });
+      await saved.save({
+        id: connection.id,
+        // An edit does not move a connection between workspaces: you got here
+        // from inside one, and the form has no picker to say otherwise.
+        workspaceId: connection.workspaceId,
+        name: values.name,
+        config: values.config,
+        environment: values.environment,
+        password: passwordUpdate(values, 'edit'),
+      });
+      go({ view: 'list', workspaceId: connection.workspaceId });
     } catch {
       // Rendered from `saved.error`; stay on the form so it can be corrected.
     }
   }
 
-  const busy = session.connecting || saved.saving;
-  const error = session.error ?? saved.error;
+  async function submitWorkspace(id: string | undefined, values: WorkspaceFormValues): Promise<void> {
+    try {
+      const workspace = await workspaces.save({ id, ...values });
+      // A new workspace is empty, so its list would be an empty box: go where
+      // the user was heading anyway. An edit goes back to where it was opened.
+      go(id ? { view: 'workspaces' } : { view: 'new', workspaceId: workspace.id });
+    } catch {
+      // Rendered from `workspaces.error`; stay on the form to correct it.
+    }
+  }
+
+  const busy = session.connecting || saved.saving || workspaces.saving;
+  const error = session.error ?? saved.error ?? workspaces.error;
+
+  const workspaceById = (id: string): Workspace | undefined =>
+    workspaces.workspaces.find((w) => w.id === id);
+
+  /**
+   * A screen inside a workspace that is no longer there falls back to the picker
+   * rather than rendering an empty card. Resolved here rather than in each case,
+   * so there is one answer to "the workspace is gone" instead of two that could
+   * differ.
+   */
+  const resolved: Screen =
+    (view.view === 'list' || view.view === 'new') && !workspaceById(view.workspaceId)
+      ? { view: 'workspaces' }
+      : view;
+
+  function renderScreen() {
+    if (loading) return <p className="note note--muted">Loading…</p>;
+
+    switch (resolved.view) {
+      case 'workspaces':
+        return (
+          <WorkspacePicker
+            workspaces={workspaces.workspaces}
+            countFor={(id) => saved.connections.filter((c) => c.workspaceId === id).length}
+            busy={busy}
+            onPick={(w) => go({ view: 'list', workspaceId: w.id })}
+            onNew={() => go({ view: 'workspaceNew' })}
+            onEdit={(w) => go({ view: 'workspaceEdit', workspace: w })}
+            // Pinned before the delete lands, because `view` follows the data:
+            // deleting the second-to-last workspace re-derives the launch screen
+            // and would drop the user into the survivor's form mid-click.
+            onDelete={(id) => {
+              go({ view: 'workspaces' });
+              workspaces.remove(id);
+            }}
+          />
+        );
+
+      case 'workspaceNew':
+        return (
+          <WorkspaceForm
+            mode="new"
+            busy={busy}
+            onSubmit={(values) => void submitWorkspace(undefined, values)}
+            onCancel={() => go({ view: 'workspaces' })}
+          />
+        );
+
+      case 'workspaceEdit': {
+        const { workspace } = resolved;
+        return (
+          <WorkspaceForm
+            mode="edit"
+            initial={workspace}
+            busy={busy}
+            onSubmit={(values) => void submitWorkspace(workspace.id, values)}
+            onCancel={() => go({ view: 'workspaces' })}
+          />
+        );
+      }
+
+      case 'password': {
+        const { connection } = resolved;
+        return (
+          <PasswordPrompt
+            connection={connection}
+            connecting={session.connecting}
+            onSubmit={(password) => void session.connectSaved(connection.id, password)}
+            onCancel={() => go({ view: 'list', workspaceId: connection.workspaceId })}
+          />
+        );
+      }
+
+      case 'edit': {
+        const { connection } = resolved;
+        return (
+          <ConnectionForm
+            mode="edit"
+            initial={connection}
+            busy={busy}
+            onSubmit={(values) => void submitEdit(connection, values)}
+            onCancel={() => go({ view: 'list', workspaceId: connection.workspaceId })}
+          />
+        );
+      }
+
+      case 'new': {
+        const { workspaceId } = resolved;
+        const populated = saved.connections.some((c) => c.workspaceId === workspaceId);
+
+        return (
+          <ConnectionForm
+            mode="new"
+            busy={busy}
+            onSubmit={(values) => void submitNew(workspaceId, values)}
+            // Nothing to go back to when the workspace is empty: its list would
+            // be the empty box this form is standing in for.
+            onCancel={populated ? () => go({ view: 'list', workspaceId }) : () => go({ view: 'workspaces' })}
+          />
+        );
+      }
+
+      case 'list': {
+        // `resolved` guarantees this: a list whose workspace has gone became the
+        // picker above.
+        const workspace = workspaceById(resolved.workspaceId)!;
+
+        return (
+          <SavedConnectionList
+            workspace={workspace}
+            connections={saved.connections.filter((c) => c.workspaceId === workspace.id)}
+            connectingId={session.connecting ? connectingId : null}
+            busy={busy}
+            onPick={pick}
+            onEdit={(connection) => go({ view: 'edit', connection })}
+            // Pinned for the same reason as the picker's: deleting the last
+            // connection would otherwise re-derive this screen into the form.
+            onDelete={(id) => {
+              go({ view: 'list', workspaceId: workspace.id });
+              saved.remove(id);
+            }}
+            onNew={() => go({ view: 'new', workspaceId: workspace.id })}
+            onBack={() => go({ view: 'workspaces' })}
+          />
+        );
+      }
+    }
+  }
 
   return (
     <div className="connect">
@@ -84,42 +268,7 @@ export default function ConnectScreen() {
         </h1>
         <p className="connect__sub">A stupid simple SQL editor.</p>
 
-        {saved.loading ? (
-          <p className="note note--muted">Loading…</p>
-        ) : view.view === 'list' ? (
-          <SavedConnectionList
-            connections={saved.connections}
-            connectingId={session.connecting ? connectingId : null}
-            busy={busy}
-            onPick={pick}
-            onEdit={(connection) => go({ view: 'edit', connection })}
-            onDelete={saved.remove}
-            onNew={() => go({ view: 'new' })}
-          />
-        ) : view.view === 'password' ? (
-          <PasswordPrompt
-            connection={view.connection}
-            connecting={session.connecting}
-            onSubmit={(password) => void session.connectSaved(view.connection.id, password)}
-            onCancel={() => go({ view: 'list' })}
-          />
-        ) : view.view === 'edit' ? (
-          <ConnectionForm
-            mode="edit"
-            initial={view.connection}
-            busy={busy}
-            onSubmit={(values) => void submitEdit(view.connection.id, values)}
-            onCancel={() => go({ view: 'list' })}
-          />
-        ) : (
-          <ConnectionForm
-            mode="new"
-            busy={busy}
-            onSubmit={(values) => void submitNew(values)}
-            // Nothing to go back to on a first run; the list is empty.
-            onCancel={saved.connections.length > 0 ? () => go({ view: 'list' }) : undefined}
-          />
-        )}
+        {renderScreen()}
 
         {error && <div className="callout--error connect__error">{error}</div>}
       </div>

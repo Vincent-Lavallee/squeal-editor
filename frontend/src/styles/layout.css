@@ -306,6 +306,102 @@
   width: 100%;
 }
 
+/* ---------------- Workspaces ---------------- */
+
+/*
+ * The way back to the picker, and the only one -- with a single workspace the
+ * picker is skipped on launch, so this is what makes a second one reachable at
+ * all. It doubles as the heading naming which workspace the list below belongs
+ * to, which is why it is a bar rather than a button beside a title: one place
+ * names a thing.
+ */
+.ws-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  width: 100%;
+  margin-bottom: var(--gap-lg);
+  padding: var(--gap-sm) 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ws-bar:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.ws-bar:disabled {
+  cursor: default;
+}
+.ws-bar__name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--text-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Environments stack down the card; each is a label over its own bordered box. */
+.ws-group + .ws-group {
+  margin-top: var(--gap-lg);
+}
+.ws-group:last-of-type {
+  margin-bottom: var(--gap);
+}
+/* Not monospace: a count is prose, unlike the `user@host:port` it replaces. */
+.ws__count {
+  font-family: var(--font);
+}
+.ws__empty {
+  margin: 0 0 var(--gap);
+}
+
+/*
+ * The icon set a workspace's mark is picked from. The radio itself is hidden and
+ * the glyph is the control's face -- but it is still a real radio underneath, so
+ * arrow-key navigation and the roving tab stop come for free. `:focus-visible`
+ * is mirrored from the input onto the face, or focus would be invisible.
+ */
+.ws-icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm);
+}
+.ws-icons__pick {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ws-icons__pick:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.ws-icons__pick input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+/* --selected + --blue: this system's "this one", the same as an active tab. */
+.ws-icons__pick--on {
+  border-color: var(--blue);
+  background: var(--selected);
+  color: var(--blue);
+}
+.ws-icons__pick:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
 /* ---------------- Shell ---------------- */
 
 .app {

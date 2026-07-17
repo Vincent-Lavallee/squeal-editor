@@ -1,8 +1,9 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-import type { PasswordUpdate, SavedConnection, ServerConfig } from '../../../shared/protocol.ts';
+import type { Environment, PasswordUpdate, SavedConnection, ServerConfig } from '../../../shared/protocol.ts';
 import { call } from '../bridge.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
+import { deleteWorkspace } from './workspacesSlice.ts';
 
 /**
  * The connections the user has kept. They live in the extension's SQLite store,
@@ -38,8 +39,10 @@ export const loadSaved = createAppThunk('saved/load', async (_: void, { rejectWi
 export interface SaveArg {
   /** Absent to add; present to update in place. */
   id?: string;
+  workspaceId: string;
   name: string;
   config: ServerConfig;
+  environment: Environment;
   password: PasswordUpdate;
 }
 
@@ -110,6 +113,15 @@ const savedSlice = createSlice({
       })
       .addCase(deleteConnection.rejected, (state, action) => {
         state.error = action.payload ?? 'Could not delete that connection.';
+      })
+
+      // A deleted workspace took its connections with it in the store, so they
+      // go here too. This slice reacts to the event rather than the workspaces
+      // slice reaching in to prune it -- the same shape as `explorerSlice` and
+      // `resultsSlice` both handling `session/disconnect` without either knowing
+      // the other exists.
+      .addCase(deleteWorkspace.fulfilled, (state, action) => {
+        state.connections = state.connections.filter((c) => c.workspaceId !== action.payload);
       });
   },
 });

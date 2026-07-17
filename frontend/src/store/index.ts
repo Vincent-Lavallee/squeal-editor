@@ -5,6 +5,7 @@ import { resultsReducer } from './resultsSlice.ts';
 import { savedReducer } from './savedSlice.ts';
 import { sessionReducer } from './sessionSlice.ts';
 import { tabsReducer } from './tabsSlice.ts';
+import { workspacesReducer } from './workspacesSlice.ts';
 
 /**
  * State that crossed the bridge lives here -- and the keys that crossed values
@@ -22,6 +23,7 @@ import { tabsReducer } from './tabsSlice.ts';
 export const store = configureStore({
   reducer: {
     session: sessionReducer,
+    workspaces: workspacesReducer,
     saved: savedReducer,
     explorer: explorerReducer,
     results: resultsReducer,

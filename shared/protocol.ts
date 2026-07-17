@@ -39,11 +39,74 @@ export interface ServerConfig {
   user: string;
   /** Bootstrap database. Postgres must connect to one; MySQL may omit it. */
   database?: string;
+  /**
+   * Reach the server over TLS, verifying its certificate against the machine's
+   * trust store. Absent means plaintext.
+   *
+   * It is one flag rather than an engine's own ladder of modes -- and the flag
+   * means *verified* TLS, not merely encrypted, which is the only reading that
+   * survives being written down. Both engines' libraries would happily take
+   * `rejectUnauthorized: false` and hand back a channel that is encrypted
+   * against an observer and wide open to anyone in the middle of it; a
+   * connection like that would report "SSL" while guaranteeing nothing, which is
+   * the same lie as a `Date` that shifts an hour. So verification is not a
+   * second option here -- there is nothing to turn off.
+   *
+   * The cost is that a server whose certificate the machine does not already
+   * trust -- RDS, or any private CA -- cannot be reached with this on until a CA
+   * certificate can be named. That is a backlog item, and until it lands the
+   * failure is a refused connect that says so, not a silent downgrade.
+   */
+  ssl?: boolean;
 }
 
 /** A server plus the password to reach it. Only ever travels UI -> extension. */
 export interface ConnectionConfig extends ServerConfig {
   password: string;
+}
+
+/**
+ * Which deployment of a project a connection reaches.
+ *
+ * A fixed set for now, deliberately: the point is grouping a workspace's
+ * connections under headings that mean the same thing in every workspace, and
+ * a free-text field gives you `prod`, `Prod` and `production` as three groups.
+ * Any number of connections may share one -- these are labels, not slots.
+ */
+export type Environment = 'local' | 'dev' | 'staging' | 'production';
+
+/**
+ * A workspace's mark, as an id rather than a glyph.
+ *
+ * The store keeps the id and the UI resolves it to a drawing, which is the same
+ * rule as `SqlDialect` one step over: the extension carries a value it does not
+ * read. The set is small and deliberately disjoint from the chrome's own icons,
+ * so a workspace can never wear a table's or a view's glyph and be mistaken for
+ * one -- see `docs/design-system.md`.
+ */
+export type WorkspaceIconId =
+  | 'stack'
+  | 'cube'
+  | 'rocket'
+  | 'flask'
+  | 'building'
+  | 'cart'
+  | 'chart'
+  | 'globe'
+  | 'leaf';
+
+/**
+ * A project's connections, grouped.
+ *
+ * It groups and carries no behaviour of its own: nothing about connecting reads
+ * a workspace, and a connection works exactly the same whichever one it is in.
+ * The only rule it enforces is the one that follows from grouping at all -- a
+ * connection's name has to be unique within its workspace, not across the app.
+ */
+export interface Workspace {
+  id: string;
+  name: string;
+  icon: WorkspaceIconId;
 }
 
 /**
@@ -53,8 +116,11 @@ export interface ConnectionConfig extends ServerConfig {
  */
 export interface SavedConnection {
   id: string;
+  /** The workspace it belongs to. Deleting that workspace deletes this. */
+  workspaceId: string;
   name: string;
   config: ServerConfig;
+  environment: Environment;
   /** False when the user chose not to store one -- connecting must ask for it. */
   hasPassword: boolean;
 }
@@ -157,7 +223,14 @@ export interface Commands {
   };
   /** Omit `id` to add; pass one to update it in place. */
   'db.saved.save': {
-    req: { id?: string; name: string; config: ServerConfig; password: PasswordUpdate };
+    req: {
+      id?: string;
+      workspaceId: string;
+      name: string;
+      config: ServerConfig;
+      environment: Environment;
+      password: PasswordUpdate;
+    };
     res: { connection: SavedConnection };
   };
   'db.saved.delete': {
@@ -172,6 +245,29 @@ export interface Commands {
   'db.saved.connect': {
     req: { id: string; password?: string };
     res: { connectionId: string; databases: string[]; dialect: SqlDialect; config: ServerConfig };
+  };
+
+  /* -- Workspaces. The same store, and the thing connections hang off. --- */
+
+  'db.workspaces.list': {
+    req: Record<string, never>;
+    res: { workspaces: Workspace[] };
+  };
+  /** Omit `id` to add; pass one to update it in place. */
+  'db.workspaces.save': {
+    req: { id?: string; name: string; icon: WorkspaceIconId };
+    res: { workspace: Workspace };
+  };
+  /**
+   * Deletes the workspace *and every connection in it* -- the UI confirms
+   * against a count before asking, because this takes stored passwords with it.
+   *
+   * The last workspace is refused: connections hang off a workspace, so an app
+   * with none has nowhere to save one and no way back.
+   */
+  'db.workspaces.delete': {
+    req: { id: string };
+    res: { ok: true };
   };
 
   /* -- The window. Not a database, and deliberately here anyway. ---------- */

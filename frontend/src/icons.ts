@@ -1,10 +1,20 @@
 import {
   RiAddLine,
   RiArrowLeftSLine,
+  RiArrowLeftLine,
   RiArrowRightSLine,
+  RiBarChart2Line,
+  RiBox3Line,
+  RiBuilding2Line,
   RiCloseLine,
   RiCodeSSlashLine,
   RiEyeLine,
+  RiFlaskLine,
+  RiGlobalLine,
+  RiLeafLine,
+  RiRocketLine,
+  RiShoppingCartLine,
+  RiStackLine,
   RiTableLine,
 } from '@remixicon/react';
 
@@ -44,3 +54,27 @@ export const NextPageIcon = RiArrowRightSLine;
 export const QueryIcon = RiCodeSSlashLine;
 export const NewTabIcon = RiAddLine;
 export const CloseIcon = RiCloseLine;
+
+/** Leaving a workspace for the picker. Not `PrevPageIcon`: paging is not going back. */
+export const BackIcon = RiArrowLeftLine;
+
+/*
+ * The workspace marks.
+ *
+ * Deliberately disjoint from every kind above: a workspace is a group of
+ * connections, and one wearing a table's or a view's glyph would claim to be the
+ * thing it contains. Nothing here means anything on its own -- unlike `TableIcon`
+ * these are chosen by the user for their own project, so they are named after
+ * what they *draw* rather than after a kind, which is the one place in this file
+ * that rule does not apply. `workspaceIcons.ts` is what turns a stored id into
+ * one of these; see the note there about why a lookup is safe for this set.
+ */
+export const StackIcon = RiStackLine;
+export const CubeIcon = RiBox3Line;
+export const RocketIcon = RiRocketLine;
+export const FlaskIcon = RiFlaskLine;
+export const BuildingIcon = RiBuilding2Line;
+export const CartIcon = RiShoppingCartLine;
+export const ChartIcon = RiBarChart2Line;
+export const GlobeIcon = RiGlobalLine;
+export const LeafIcon = RiLeafLine;

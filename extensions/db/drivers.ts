@@ -74,6 +74,20 @@ function toDisplayValue(value: unknown): CellValue {
 
 const toDisplayRow = (row: unknown[]): CellValue[] => row.map(toDisplayValue);
 
+/**
+ * Both engines' TLS options, written out rather than left to a default.
+ *
+ * `rejectUnauthorized` is stated even though true is what both libraries would
+ * pick on their own: it is the entire meaning of the flag the user ticked, and a
+ * default that flipped in a minor version would turn verified TLS into the
+ * encrypted-but-unauthenticated channel `ServerConfig.ssl` promises it is not --
+ * silently, and identically to how it is supposed to look when it works.
+ *
+ * Saying it here also means the two engines cannot drift apart on it, which is
+ * the same reason quoting and dialects live in the drivers rather than the UI.
+ */
+const TLS_OPTIONS = { rejectUnauthorized: true } as const;
+
 const describeOk = (count: number) => `OK - ${count} row${count === 1 ? '' : 's'} affected`;
 
 export const mysqlDriver: Driver<MysqlConnection> = {
@@ -87,6 +101,9 @@ export const mysqlDriver: Driver<MysqlConnection> = {
       user: config.user,
       password: config.password,
       database: database || config.database || undefined,
+      // Undefined rather than false: mysql2 reads any `ssl` value as a request
+      // for TLS, so `ssl: false` is not "off", it is "on, with no options".
+      ssl: config.ssl ? TLS_OPTIONS : undefined,
       // Keep the door shut on stacked statements; the editor runs one at a time.
       multipleStatements: false,
       // Same reasoning as the Postgres parsers above: MySQL's DATETIME carries no
@@ -160,6 +177,9 @@ export const postgresDriver: Driver<pg.Client> = {
       user: config.user,
       password: config.password,
       database: database || config.database || 'postgres',
+      // False is pg's own spelling of "plaintext"; unlike mysql2 it does not
+      // read the presence of the key as a request for TLS.
+      ssl: config.ssl ? TLS_OPTIONS : false,
     });
     await client.connect();
     return client;

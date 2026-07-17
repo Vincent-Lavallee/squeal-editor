@@ -87,8 +87,10 @@ const savedRow = (name: string) => `
  *
  * The launch screen is the list once anything is saved, so this steps through
  * "+ New connection" when it is showing -- a no-op when the form is already up.
+ * With one workspace the picker is skipped, so there is never a step for it
+ * here; the workspace describe is what drives that screen.
  */
-async function connect(cfg: typeof PG | typeof MYSQL, name = ''): Promise<void> {
+async function connect(cfg: typeof PG | typeof MYSQL, name = '', environment?: string): Promise<void> {
   await app.reload();
   await app.evaluate(`document.querySelector('.saved__new')?.click(); true;`);
   await Bun.sleep(300);
@@ -105,6 +107,16 @@ async function connect(cfg: typeof PG | typeof MYSQL, name = ''): Promise<void> 
     setNative(document.querySelector('#password'), ${JSON.stringify(cfg.password)});
     true;`);
   await Bun.sleep(200);
+
+  if (environment) {
+    // Only reachable once the connection has a name: an unnamed one is never
+    // stored, so it is never under a heading and has no environment to set.
+    await app.evaluate(`${REACT_SETTERS}
+      setSelect(document.querySelector('#environment'), ${JSON.stringify(environment)});
+      true;`);
+    await Bun.sleep(200);
+  }
+
   await app.evaluate(`document.querySelector('.connect__submit').click(); true;`);
   await Bun.sleep(3000);
 }
@@ -749,6 +761,97 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(`${savedRow('pg-renamed')}.querySelectorAll('.saved__actions .btn')[0].click(); true;`);
       await Bun.sleep(800);
       expect(await app.evaluate<number>(`document.querySelectorAll('.saved__row').length`)).toBe(0);
+    });
+  });
+
+  // Last of all: these leave a second workspace behind, and every describe above
+  // is written against a launch screen that skips the picker.
+  describe('workspaces', () => {
+    const groupLabels = `[...document.querySelectorAll('.ws-group > .label')].map(e => e.textContent)`;
+    const names = `[...document.querySelectorAll('.saved__name')].map(e => e.textContent)`;
+
+    test('one workspace is skipped, and the bar names the one you are in', async () => {
+      await connect(PG, 'ws-local');
+      await disconnect();
+      await Bun.sleep(400);
+
+      // Straight to the connections: nothing was picked on the way in.
+      expect(await app.evaluate<string>(`document.querySelector('.ws-bar__name').textContent`)).toBe('Default');
+      expect(await app.evaluate<string[]>(names)).toEqual(['ws-local']);
+    });
+
+    test('connections sit under their environment, and empty ones are absent', async () => {
+      expect(await app.evaluate<string[]>(groupLabels)).toEqual(['Local']);
+
+      await connect(PG, 'ws-prod', 'production');
+      await disconnect();
+      await Bun.sleep(400);
+
+      // Local before Production, and no headings for the two nobody used.
+      expect(await app.evaluate<string[]>(groupLabels)).toEqual(['Local', 'Production']);
+      expect(await app.evaluate<string[]>(names)).toEqual(['ws-local', 'ws-prod']);
+    });
+
+    test('the bar is the way to the picker, which is how a second one is made', async () => {
+      await app.evaluate(`document.querySelector('.ws-bar').click(); true;`);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(names)).toEqual(['Default']);
+
+      await app.evaluate(`document.querySelector('.saved__new').click(); true;`);
+      await Bun.sleep(400);
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('#workspace-name'), 'Acme'); true;`);
+      await Bun.sleep(200);
+      await app.evaluate(`document.querySelector('.connect__submit').click(); true;`);
+      await Bun.sleep(1000);
+
+      // A new workspace is empty, so it opens on the form rather than an empty box.
+      expect(await app.evaluate<boolean>(`!!document.querySelector('#host')`)).toBe(true);
+    });
+
+    test('a second workspace makes the picker the way in, counting what each holds', async () => {
+      await app.reload();
+      await Bun.sleep(600);
+
+      expect(await app.evaluate<string[]>(names)).toEqual(['Acme', 'Default']);
+      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.ws__count')].map(e => e.textContent)`))
+        .toEqual(['0 connections', '2 connections']);
+    });
+
+    test('deleting one says what it will cost, then takes its connections with it', async () => {
+      // The second action is Delete; the first is Edit, as on a connection row.
+      await app.evaluate(`${savedRow('Default')}.querySelectorAll('.saved__actions .btn')[1].click(); true;`);
+      await Bun.sleep(400);
+      // The confirmation names the count because the connections go too -- and
+      // their stored passwords with them.
+      expect(await app.evaluate<string>(`${savedRow('Default')}.querySelector('.saved__hint').textContent`))
+        .toBe('Delete with its 2 connections?');
+
+      await app.evaluate(`${savedRow('Default')}.querySelectorAll('.saved__actions .btn')[0].click(); true;`);
+      await Bun.sleep(800);
+      expect(await app.evaluate<string[]>(names)).toEqual(['Acme']);
+
+      // Back to one workspace, so the picker is skipped again -- and Acme is
+      // empty, so the form is the screen, exactly as on a first run.
+      await app.reload();
+      await Bun.sleep(600);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('#host')`)).toBe(true);
+
+      // Default's two connections went with it rather than being orphaned onto
+      // Acme, which is the assertion the cascade is actually for.
+      await app.evaluate(`
+        [...document.querySelectorAll('.connect__actions .btn')]
+          .find(e => e.textContent === 'Cancel').click(); true;`);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.ws__count')].map(e => e.textContent)`))
+        .toEqual(['0 connections']);
+    });
+
+    test('the last workspace offers no Delete at all', async () => {
+      // Refusing it in the store is the guarantee; not offering it is what keeps
+      // the user from ever meeting the refusal.
+      expect(await app.evaluate<string[]>(
+        `[...${savedRow('Acme')}.querySelectorAll('.saved__actions .btn')].map(e => e.textContent)`
+      )).toEqual(['Edit']);
     });
   });
 });
