@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.1.2...v0.1.3) (2026-07-17)
+
+
+### Bug Fixes
+
+* compile the extension so the packaged app runs, and add a Windows installer ([f091e45](https://github.com/Vincent-Lavallee/squeal-editor/commit/f091e454121e623860e78380df47773338abee0c))
+
 ## [0.1.2](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.1.1...v0.1.2) (2026-07-17)
 
 
