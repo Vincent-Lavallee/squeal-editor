@@ -26,6 +26,7 @@ import type {
   SavedConnection,
   ServerConfig,
   Workspace,
+  WorkspaceColorId,
   WorkspaceIconId,
 } from '../../shared/protocol.ts';
 
@@ -56,9 +57,10 @@ function dataDir(): string {
 
 const WORKSPACES_SCHEMA = `
   CREATE TABLE IF NOT EXISTS workspaces (
-    id   TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    icon TEXT NOT NULL
+    id    TEXT PRIMARY KEY,
+    name  TEXT NOT NULL UNIQUE,
+    icon  TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT 'slate'
   );
 `;
 
@@ -94,6 +96,9 @@ const CONNECTIONS_SCHEMA = `
 /** What a store with no workspaces yet gets, so the feature can be ignored. */
 const DEFAULT_WORKSPACE_NAME = 'Default';
 const DEFAULT_WORKSPACE_ICON: WorkspaceIconId = 'stack';
+/** The neutral swatch: what a workspace wears until the user picks otherwise, and
+ *  what a row written before the colour column existed migrates to. */
+const DEFAULT_WORKSPACE_COLOR: WorkspaceColorId = 'slate';
 
 /**
  * What a connection saved before environments existed becomes.
@@ -132,6 +137,7 @@ interface WorkspaceRow {
   id: string;
   name: string;
   icon: string;
+  color: string;
 }
 
 let db: Database | null = null;
@@ -162,6 +168,17 @@ function migrate(database: Database): void {
   // so it has to be set on every open or the REFERENCES clause above is decor.
   database.run('PRAGMA foreign_keys = ON');
   database.run(WORKSPACES_SCHEMA);
+
+  /*
+   * A store whose workspaces predate the colour column. Plain ADD COLUMN, the
+   * same shape and reasoning as the `ssl` / `read_only` backfills below: nothing
+   * about the old table became wrong, a column is simply missing. It defaults to
+   * `slate`, the neutral swatch, so an existing workspace is never colourless and
+   * nothing it was not told to change moves -- the guess that costs least.
+   */
+  if (tableExists(database, 'workspaces') && !hasColumn(database, 'workspaces', 'color')) {
+    database.run("ALTER TABLE workspaces ADD COLUMN color TEXT NOT NULL DEFAULT 'slate'");
+  }
 
   const defaultId = ensureDefaultWorkspace(database);
 
@@ -242,10 +259,11 @@ function ensureDefaultWorkspace(database: Database): string {
   if (existing) return existing.id;
 
   const id = randomUUID();
-  database.run('INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)', [
+  database.run('INSERT INTO workspaces (id, name, icon, color) VALUES (?, ?, ?, ?)', [
     id,
     DEFAULT_WORKSPACE_NAME,
     DEFAULT_WORKSPACE_ICON,
+    DEFAULT_WORKSPACE_COLOR,
   ]);
   return id;
 }
@@ -332,6 +350,9 @@ const toWorkspace = (row: WorkspaceRow): Workspace => ({
   id: row.id,
   name: row.name,
   icon: row.icon as WorkspaceIconId,
+  // NOT NULL DEFAULT covers a migrated row, but the coalesce keeps a hand-edited
+  // NULL from reaching the UI as a colourless workspace.
+  color: (row.color as WorkspaceColorId) || DEFAULT_WORKSPACE_COLOR,
 });
 
 export function listWorkspaces(): Workspace[] {
@@ -343,9 +364,11 @@ export interface WorkspaceInput {
   id?: string;
   name: string;
   icon: WorkspaceIconId;
+  /** Optional for hand/JSON callers and migrated rows; defaulted to the neutral swatch. */
+  color?: WorkspaceColorId;
 }
 
-export function saveWorkspace({ id, name, icon }: WorkspaceInput): Workspace {
+export function saveWorkspace({ id, name, icon, color }: WorkspaceInput): Workspace {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('A workspace needs a name.');
 
@@ -361,11 +384,16 @@ export function saveWorkspace({ id, name, icon }: WorkspaceInput): Workspace {
     .get(trimmed, id ?? null) as { id: string } | null;
   if (clash) throw new Error(`A workspace named "${trimmed}" already exists.`);
 
-  const row: WorkspaceRow = { id: id ?? randomUUID(), name: trimmed, icon };
+  const row: WorkspaceRow = {
+    id: id ?? randomUUID(),
+    name: trimmed,
+    icon,
+    color: color ?? DEFAULT_WORKSPACE_COLOR,
+  };
   open().run(
-    `INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET name = excluded.name, icon = excluded.icon`,
-    [row.id, row.name, row.icon]
+    `INSERT INTO workspaces (id, name, icon, color) VALUES (?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET name = excluded.name, icon = excluded.icon, color = excluded.color`,
+    [row.id, row.name, row.icon, row.color]
   );
 
   return toWorkspace(row);
@@ -505,32 +533,39 @@ export function deleteSaved(id: string): void {
  * The saved server plus the password to reach it, decrypting the stored one
  * unless the caller supplied its own (which a connection storing none requires).
  *
- * `name`, `environment` and `readOnly` come along because the row is what knows
- * them. `name` and `environment` label and colour the session; `readOnly` the
- * extension acts on. They are kept beside the config rather than folded into it:
- * a `ServerConfig` is what it takes to reach a server, and none of these helps
- * you reach anything.
+ * `name`, `environment`, `workspaceId` and `readOnly` come along because the row
+ * is what knows them. `name` and `environment` label the session and
+ * `workspaceId` groups it on the rail; `readOnly` the extension acts on. They are
+ * kept beside the config rather than folded into it: a `ServerConfig` is what it
+ * takes to reach a server, and none of these helps you reach anything.
  */
 export async function resolveSaved(
   id: string,
   supplied?: string
-): Promise<{ config: ServerConfig; password: string; name: string; environment: Environment; readOnly: boolean }> {
+): Promise<{
+  config: ServerConfig;
+  password: string;
+  name: string;
+  environment: Environment;
+  workspaceId: string;
+  readOnly: boolean;
+}> {
   const row = findRow(id);
   if (!row) throw new Error('That connection no longer exists.');
 
-  const { config, name, environment, readOnly } = toSaved(row);
+  const { config, name, environment, workspaceId, readOnly } = toSaved(row);
 
   // An IAM connection has no password to resolve: the extension mints a token at
   // connect time from the profile and region in `config.iam`. The empty string
   // stands in for the field the drivers never read on this path.
   if (config.iam) {
-    return { config, password: '', name, environment, readOnly };
+    return { config, password: '', name, environment, workspaceId, readOnly };
   }
 
   const password = supplied ?? (row.password ? await decrypt(row.password) : null);
   if (password === null) throw new Error(`"${row.name}" does not store a password; one is needed to connect.`);
 
-  return { config, password, name, environment, readOnly };
+  return { config, password, name, environment, workspaceId, readOnly };
 }
 
 /** Tests only: the store is a process-lifetime singleton in the app itself. */

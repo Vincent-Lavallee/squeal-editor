@@ -44,10 +44,10 @@ const selectDatabase = (name: string) => `${REACT_SETTERS}
   setSelect(document.querySelector('.sidebar__head .select'), ${JSON.stringify(name)});
   true;`;
 
-/** The rail, top to bottom: one mark per open connection. */
-const railMarks = `[...document.querySelectorAll('.rail__mark')].map(e => e.textContent)`;
-/** The environment travels as data, so the test reads the fact and not a colour. */
-const railEnvs = `[...document.querySelectorAll('.rail__item')].map(e => e.dataset.env)`;
+/** The rail, top to bottom: one chip per open connection, named. */
+const railNames = `[...document.querySelectorAll('.rail__name')].map(e => e.textContent)`;
+/** The environment is a text tag now, not a colour: read the abbreviation. */
+const railEnvs = `[...document.querySelectorAll('.rail__env')].map(e => e.textContent)`;
 const activeRail = `
   [...document.querySelectorAll('.rail__item')]
     .findIndex(e => e.classList.contains('rail__item--active'))`;
@@ -125,7 +125,8 @@ const savedRow = (name: string) => `
     .find(e => e.querySelector('.saved__name').textContent === ${JSON.stringify(name)})`;
 
 /**
- * Fills the connect form and submits. A blank `name` connects without saving.
+ * Fills the connect form and submits. A `name` is required now -- every open
+ * connection is a saved, named member of a workspace -- so callers pass one.
  *
  * The launch screen is the list once anything is saved, so this steps through
  * "+ New connection" when it is showing -- a no-op when the form is already up.
@@ -134,7 +135,7 @@ const savedRow = (name: string) => `
  */
 async function fillConnectForm(
   cfg: typeof PG | typeof MYSQL,
-  name = '',
+  name: string,
   environment?: string
 ): Promise<void> {
   await app.evaluate(`document.querySelector('.saved__new')?.click(); true;`);
@@ -154,8 +155,8 @@ async function fillConnectForm(
   await Bun.sleep(200);
 
   if (environment) {
-    // Asked for whether or not the connection will be saved: it is the rail's
-    // colour now, not only a heading in a list an unnamed one never joins.
+    // Groups the connection under a heading in the list, tags its chip on the
+    // rail, and shows in the status bar for the active connection.
     await app.evaluate(`${REACT_SETTERS}
       setSelect(document.querySelector('#environment'), ${JSON.stringify(environment)});
       true;`);
@@ -178,12 +179,33 @@ async function connect(cfg: typeof PG | typeof MYSQL, name = '', environment?: s
  */
 async function addConnection(
   cfg: typeof PG | typeof MYSQL,
-  name = '',
+  name: string,
   environment?: string
 ): Promise<void> {
   await app.evaluate(`document.querySelector('.rail__add').click(); true;`);
   await Bun.sleep(500);
   await fillConnectForm(cfg, name, environment);
+}
+
+/**
+ * Empties the current workspace's saved connections from the connect screen.
+ *
+ * Every connection is saved now, so the smoke describes above leave rows behind;
+ * a describe that asserts an exact saved list starts by wiping to a clean slate.
+ * It reloads to the list, then deletes the first row until none remain (Delete is
+ * the second action, Yes the first once it confirms in place).
+ */
+async function clearSavedConnections(): Promise<void> {
+  await app.reload();
+  await Bun.sleep(600);
+  for (let guard = 0; guard < 20; guard++) {
+    const rows = await app.evaluate<number>(`document.querySelectorAll('.saved__row').length`);
+    if (rows === 0) break;
+    await app.evaluate(`document.querySelector('.saved__row').querySelectorAll('.saved__actions .btn')[1].click(); true;`);
+    await Bun.sleep(300);
+    await app.evaluate(`document.querySelector('.saved__row').querySelectorAll('.saved__actions .btn')[0].click(); true;`);
+    await Bun.sleep(600);
+  }
 }
 
 /**
@@ -223,7 +245,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
   describe('postgres', () => {
     beforeAll(async () => {
-      await connect(PG);
+      await connect(PG, 'pg-smoke');
     });
 
     test('connects and renders the shell', async () => {
@@ -648,7 +670,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
   describe('mysql', () => {
     beforeAll(async () => {
-      await connect(MYSQL);
+      await connect(MYSQL, 'mysql-smoke');
     });
 
     test('connects and shows the MySQL badge', async () => {
@@ -797,7 +819,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(`document.querySelector('.menu__trigger').click(); true;`);
       await Bun.sleep(200);
       expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.menu__item')].map(e => e.textContent)`))
-        .toEqual(['Disconnect', 'Exit']);
+        .toEqual(['Disconnect', 'Check for updates…', 'Exit']);
 
       await app.evaluate(
         `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true;`
@@ -808,8 +830,15 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
   });
 
   // The point of the feature: reach yesterday's database without retyping it.
-  // These run last because they are the only ones that write to the store.
+  // These run last because they are the only ones that assert on the store.
   describe('saved connections', () => {
+    // Every connection is saved now, so the smoke describes above left rows in the
+    // default workspace. Wipe them so the exact-list assertions below mean what
+    // they say.
+    beforeAll(async () => {
+      await clearSavedConnections();
+    });
+
     test('naming a connection saves it, and it survives a reload', async () => {
       await connect(PG, 'pg-fixture');
       expect(await app.evaluate<boolean>(`!!document.querySelector('.sidebar')`)).toBe(true);
@@ -819,9 +848,27 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         .toEqual(['pg-fixture']);
     });
 
-    test('an unnamed connection is not saved', async () => {
-      await connect(MYSQL);
+    test('the connect form will not connect without a name', async () => {
+      // The throwaway, workspace-less connection is gone: a name is required, so
+      // every open connection belongs to a workspace the rail can group it under.
+      await app.evaluate(`document.querySelector('.saved__new')?.click(); true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`${REACT_SETTERS}
+        setNative(document.querySelector('#host'), ${JSON.stringify(MYSQL.host)});
+        setNative(document.querySelector('#port'), ${JSON.stringify(String(MYSQL.port))});
+        setNative(document.querySelector('#user'), ${JSON.stringify(MYSQL.user)});
+        true;`);
+      await Bun.sleep(200);
+      // Disabled with no name...
+      expect(await app.evaluate<boolean>(`document.querySelector('.connect__submit').disabled`)).toBe(true);
+      // ...and enabled the moment one is typed.
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('#name'), 'needs-a-name'); true;`);
+      await Bun.sleep(200);
+      expect(await app.evaluate<boolean>(`document.querySelector('.connect__submit').disabled`)).toBe(false);
+
+      // Back to the list without connecting, so the row assertions below stand.
       await app.reload();
+      await Bun.sleep(400);
       expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.saved__name')].map(e => e.textContent)`))
         .toEqual(['pg-fixture']);
     });
@@ -994,21 +1041,27 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await addConnection(MYSQL, 'Shop prod', 'production');
     });
 
-    test('the rail lists both, in the order they were opened', async () => {
-      expect(await app.evaluate<string[]>(railMarks)).toEqual(['SD', 'SP']);
+    test('the rail lists both by name, in the order they were opened', async () => {
+      // Both are in the one workspace left standing, so they share a group and the
+      // name is what tells them apart -- the two-letter mark is gone.
+      expect(await app.evaluate<string[]>(railNames)).toEqual(['Shop dev', 'Shop prod']);
     });
 
-    test('each is coloured by its environment', async () => {
-      // The fact, not the colour: CSS picks the hue off this, so asserting the
-      // computed pixel would test the stylesheet rather than the app.
-      expect(await app.evaluate<string[]>(railEnvs)).toEqual(['dev', 'production']);
+    test('each chip carries its environment as a text tag', async () => {
+      // The abbreviation, not a colour: the rail's colour is the workspace's now,
+      // and the environment reads as a word (and again in the status bar).
+      expect(await app.evaluate<string[]>(railEnvs)).toEqual(['Dev.', 'Prod.']);
     });
 
-    test('opening the second lands you on it, and the titlebar follows', async () => {
+    test('opening the second lands you on it, and the titlebar and status bar follow', async () => {
       expect(await app.evaluate<number>(activeRail)).toBe(1);
       // The rail says which; the titlebar says what. Neither repeats the other.
       expect(await app.evaluate<string>(`document.querySelector('.titlebar__title').textContent`))
         .toBe(`${MYSQL.user}@${MYSQL.host}:${MYSQL.port}`);
+      // The status bar names the active connection's environment in full -- the
+      // rail's tag abbreviates it, this spells it out.
+      expect(await app.evaluate<string>(`document.querySelector('.statusbar__env').textContent`))
+        .toBe('Production');
     });
 
     test('each connection keeps its own tabs, numbered from its own Query 1', async () => {
@@ -1085,7 +1138,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await disconnect();
       await Bun.sleep(600);
 
-      expect(await app.evaluate<string[]>(railMarks)).toEqual(['SP']);
+      expect(await app.evaluate<string[]>(railNames)).toEqual(['Shop prod']);
       expect(await app.evaluate<number>(activeRail)).toBe(0);
       // Its tabs are still its own, and still both of them: closing one
       // connection is not closing the app.

@@ -134,17 +134,43 @@ export type WorkspaceIconId =
   | 'leaf';
 
 /**
+ * A workspace's colour, as an id rather than a hex.
+ *
+ * Same rule as `WorkspaceIconId` above and `SqlDialect` one step over: the
+ * extension carries a value it does not read, and the UI resolves the id to a
+ * swatch. The hex lives in `tokens.css`, the one place a colour is written; this
+ * is only the name of the swatch chosen. A fixed palette, picked beside the icon,
+ * with `slate` the neutral default so a workspace made before this -- or edited
+ * by hand -- is never colourless.
+ */
+export type WorkspaceColorId =
+  | 'slate'
+  | 'blue'
+  | 'cyan'
+  | 'green'
+  | 'amber'
+  | 'orange'
+  | 'red'
+  | 'pink'
+  | 'purple';
+
+/**
  * A project's connections, grouped.
  *
  * It groups and carries no behaviour of its own: nothing about connecting reads
  * a workspace, and a connection works exactly the same whichever one it is in.
  * The only rule it enforces is the one that follows from grouping at all -- a
  * connection's name has to be unique within its workspace, not across the app.
+ *
+ * The `icon` and `colour` are how the rail tells one workspace's group from
+ * another once its connections are open; both are ids the UI resolves to a
+ * drawing and a swatch.
  */
 export interface Workspace {
   id: string;
   name: string;
   icon: WorkspaceIconId;
+  color: WorkspaceColorId;
 }
 
 /**
@@ -365,10 +391,12 @@ export interface Commands {
    * extension decrypts its own otherwise. Echoes the config back rather than
    * letting the UI seed its session from a list row that may be stale.
    *
-   * `name` and `environment` come back for that same reason, and they are what a
-   * session is labelled and coloured by once more than one can be open. Neither
-   * is anything the extension does with a connection -- it carries them the way
-   * it carries `dialect`, because the row they live in is its to read.
+   * `name`, `environment` and `workspaceId` come back for that same reason, and
+   * they are what a session is labelled and grouped by once more than one can be
+   * open. None is anything the extension does with a connection -- it carries
+   * them the way it carries `dialect`, because the row they live in is its to
+   * read. `workspaceId` is what lets the rail group the connection under its
+   * workspace and tint it with that workspace's colour.
    *
    * `readOnly` is the exception that *is* acted on: it is the stored row's, so it
    * comes back rather than being recomputed up top, and the extension has already
@@ -383,6 +411,7 @@ export interface Commands {
       config: ServerConfig;
       name: string;
       environment: Environment;
+      workspaceId: string;
       readOnly: boolean;
     };
   };
@@ -395,7 +424,7 @@ export interface Commands {
   };
   /** Omit `id` to add; pass one to update it in place. */
   'db.workspaces.save': {
-    req: { id?: string; name: string; icon: WorkspaceIconId };
+    req: { id?: string; name: string; icon: WorkspaceIconId; color: WorkspaceColorId };
     res: { workspace: Workspace };
   };
   /**

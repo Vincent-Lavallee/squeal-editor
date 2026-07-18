@@ -1,7 +1,8 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-import type { Workspace, WorkspaceIconId } from '../../../shared/protocol.ts';
+import type { Workspace, WorkspaceColorId, WorkspaceIconId } from '../../../shared/protocol.ts';
 import { call } from '../bridge.ts';
+import type { RootState } from './index.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
 /**
@@ -42,6 +43,7 @@ export interface SaveWorkspaceArg {
   id?: string;
   name: string;
   icon: WorkspaceIconId;
+  color: WorkspaceColorId;
 }
 
 export const saveWorkspace = createAppThunk(
@@ -124,3 +126,12 @@ const workspacesSlice = createSlice({
 
 export const { errorDismissed } = workspacesSlice.actions;
 export const workspacesReducer = workspacesSlice.reducer;
+
+/**
+ * The workspace list, for anything outside the connect screen that has to resolve
+ * a connection's `workspaceId` to a name, an icon and a colour -- the rail groups
+ * open connections by it. It is a store selector rather than the connect screen's
+ * `useWorkspaces` hook, because the rail is a feature and features never import
+ * each other: the workspaces are app state, read here the way the session is.
+ */
+export const selectWorkspaces = (s: RootState): Workspace[] => s.workspaces.workspaces;

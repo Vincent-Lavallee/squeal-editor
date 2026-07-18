@@ -15,13 +15,20 @@ import type { Environment } from '../../shared/protocol.ts';
 export interface EnvironmentOption {
   value: Environment;
   label: string;
+  /**
+   * The short form the rail's chip wears -- there is room for a word, not a full
+   * label, beside a connection name in a 32px-tall row. `Local` fits whole; the
+   * rest abbreviate. It is the tag that replaced the environment *colour* the rail
+   * used to carry, now that the colour is the workspace's.
+   */
+  abbrev: string;
 }
 
 export const ENVIRONMENTS: EnvironmentOption[] = [
-  { value: 'local', label: 'Local' },
-  { value: 'dev', label: 'Dev' },
-  { value: 'staging', label: 'Staging' },
-  { value: 'production', label: 'Production' },
+  { value: 'local', label: 'Local', abbrev: 'Local' },
+  { value: 'dev', label: 'Dev', abbrev: 'Dev.' },
+  { value: 'staging', label: 'Staging', abbrev: 'Stag.' },
+  { value: 'production', label: 'Production', abbrev: 'Prod.' },
 ];
 
 /**
@@ -34,3 +41,6 @@ export const DEFAULT_ENVIRONMENT: Environment = 'local';
 
 export const environmentLabel = (value: Environment): string =>
   ENVIRONMENTS.find((e) => e.value === value)?.label ?? ENVIRONMENTS[0]!.label;
+
+export const environmentAbbrev = (value: Environment): string =>
+  ENVIRONMENTS.find((e) => e.value === value)?.abbrev ?? ENVIRONMENTS[0]!.abbrev;

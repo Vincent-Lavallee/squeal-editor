@@ -94,30 +94,32 @@ export default function ConnectScreen({ onCancel }: Props) {
     void session.connectSaved(connection.id);
   }
 
-  /** Named connections are saved before connecting, so a name clash stops here. */
+  /**
+   * Every connection is saved and named now -- the throwaway, workspace-less
+   * connection is gone, so the rail can group every open connection under its
+   * workspace. Save first, so a name clash stops here before we connect.
+   */
   async function submitNew(workspaceId: string, values: FormValues): Promise<void> {
-    if (values.name) {
-      try {
-        await saved.save({
-          workspaceId,
-          name: values.name,
-          config: values.config,
-          environment: values.environment,
-          readOnly: values.readOnly,
-          password: passwordUpdate(values, 'new'),
-        });
-      } catch {
-        return; // Rendered from `saved.error`; connecting anyway would bury it.
-      }
+    try {
+      await saved.save({
+        workspaceId,
+        name: values.name,
+        config: values.config,
+        environment: values.environment,
+        readOnly: values.readOnly,
+        password: passwordUpdate(values, 'new'),
+      });
+    } catch {
+      return; // Rendered from `saved.error`; connecting anyway would bury it.
     }
-    // The name, environment and read-only mode are the form's, not the store's:
-    // this path covers the connection nobody saved, so there is no row to read
-    // them back off. An unnamed one carries an empty name, and the rail falls
-    // back to the server for it.
+    // The name, environment and workspace are the form's, not read back off the
+    // row: this path has them in hand from the save above, and the workspace it
+    // was created in is what the rail groups the open connection by.
     void session.connect(
       { ...values.config, password: values.password },
       values.name,
       values.environment,
+      workspaceId,
       values.readOnly
     );
   }

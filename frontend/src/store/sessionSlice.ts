@@ -25,13 +25,24 @@ export interface OpenConnection {
    */
   dialect: SqlDialect;
   /**
-   * What the rail labels this one, and what it colours it by.
-   *
-   * The name is the *connection's* -- empty for a connection nobody named, which
-   * is what the rail falls back to a server label for. It is deliberately not
-   * the server: the titlebar names that, and one place names a thing.
+   * What the rail labels this one. The name is the *connection's* -- every open
+   * connection is a saved, named one now, so it is always set. It is deliberately
+   * not the server: the titlebar names that, and one place names a thing.
    */
   name: string;
+  /**
+   * Which workspace this connection belongs to, so the rail can group it under
+   * that workspace and tint it with the workspace's colour. Every open connection
+   * has one -- connecting goes through a workspace-scoped form -- which is what
+   * lets the rail group by it without an "ungrouped" case.
+   */
+  workspaceId: string;
+  /**
+   * Which deployment this reaches. It used to be the rail's colour; now the rail
+   * is coloured by the workspace and this shows as a text tag on the chip and in
+   * the status bar. Still the connection's own fact, carried from the row or the
+   * form.
+   */
   environment: Environment;
   /**
    * Whether the server is refusing writes on this connection.
@@ -90,17 +101,25 @@ interface Opened extends OpenConnection {
 }
 
 /**
- * Connect to a server the user typed out, saved or not.
+ * Connect to a server the user just typed out and saved.
  *
- * The environment is the form's rather than the extension's: nothing was stored,
- * so there is no row to read it back off. It does not cross the bridge in this
- * direction at all -- the extension has no use for one, and a field it ignores
- * is a field that would drift.
+ * The name, environment and workspace are the form's rather than the extension's:
+ * this path connects a row the UI has in hand, so it labels the session from what
+ * it already knows rather than reading it back over the bridge. None of the three
+ * crosses toward the extension on `db.connect` -- it has no use for them, and a
+ * field it ignores is a field that would drift. They ride the payload the same
+ * way, which is exactly how `connectSaved` gets them back off the stored row.
  */
 export const connect = createAppThunk(
   'session/connect',
   async (
-    arg: { config: ConnectionConfig; name: string; environment: Environment; readOnly: boolean },
+    arg: {
+      config: ConnectionConfig;
+      name: string;
+      environment: Environment;
+      workspaceId: string;
+      readOnly: boolean;
+    },
     { rejectWithValue }
   ): Promise<Opened | ReturnType<typeof rejectWithValue>> => {
     try {
@@ -112,6 +131,7 @@ export const connect = createAppThunk(
         databases: res.databases,
         dialect: res.dialect,
         name: arg.name,
+        workspaceId: arg.workspaceId,
         environment: arg.environment,
         readOnly: arg.readOnly,
       };
@@ -139,6 +159,7 @@ export const connectSaved = createAppThunk(
         databases: res.databases,
         dialect: res.dialect,
         name: res.name,
+        workspaceId: res.workspaceId,
         environment: res.environment,
         readOnly: res.readOnly,
       };
@@ -251,9 +272,17 @@ const sessionSlice = createSlice({
         state.error = null;
       })
       .addMatcher(sessionOpened, (state, action) => {
-        const { connectionId, config, dialect, name, environment, readOnly } = action.payload;
+        const { connectionId, config, dialect, name, workspaceId, environment, readOnly } = action.payload;
         state.connecting = false;
-        state.connections[connectionId] = { connectionId, config, dialect, name, environment, readOnly };
+        state.connections[connectionId] = {
+          connectionId,
+          config,
+          dialect,
+          name,
+          workspaceId,
+          environment,
+          readOnly,
+        };
         state.order.push(connectionId);
         // Opening one puts you on it. Anything else means connecting to a server
         // and then having to go and find it.
@@ -312,8 +341,13 @@ export function useSession() {
     connected: activeConnectionId !== null,
     serverLabel: active ? serverLabel(active.config) : '',
     connect: useCallback(
-      (config: ConnectionConfig, name: string, environment: Environment, readOnly: boolean) =>
-        dispatch(connect({ config, name, environment, readOnly })),
+      (
+        config: ConnectionConfig,
+        name: string,
+        environment: Environment,
+        workspaceId: string,
+        readOnly: boolean
+      ) => dispatch(connect({ config, name, environment, workspaceId, readOnly })),
       [dispatch]
     ),
     connectSaved: useCallback(

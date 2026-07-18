@@ -469,12 +469,57 @@
   outline-offset: 1px;
 }
 
+/*
+ * The colour set a workspace's tint is picked from. The same hidden-radio group
+ * as `.ws-icons`, so it inherits the same keyboard behaviour -- each pick's face
+ * is a swatch filled with --swatch, the token `workspaceColors.ts` resolved for
+ * that id and set on the label in the component. No hue is written here.
+ */
+.ws-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm);
+}
+.ws-colors__pick {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.ws-colors__pick:hover {
+  background: var(--hover);
+}
+.ws-colors__pick input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.ws-colors__swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--swatch);
+}
+/* --selected + --blue: this system's "this one", the same as the icon picker. */
+.ws-colors__pick--on {
+  border-color: var(--blue);
+  background: var(--selected);
+}
+.ws-colors__pick:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
 /* ---------------- Shell ---------------- */
 
 /*
- * A column: the shell grid, then the status bar under all of it. The bar spans
- * the rail, the sidebar and the main pane rather than living inside one of them,
- * because the read-only lock it carries is a fact about the whole connection.
+ * A column: the connection rail on top, then the sidebar + main grid, then the
+ * status bar under all of it. Rail and status bar each span the full width rather
+ * than living inside a column, because what they carry -- which connections are
+ * open, and whether the active one is read-only -- is true of the whole shell.
  */
 .shell {
   display: flex;
@@ -485,7 +530,7 @@
 
 .app {
   display: grid;
-  grid-template-columns: var(--rail-w) 240px 1fr;
+  grid-template-columns: 240px 1fr;
   flex: 1;
   min-height: 0;
 }
@@ -501,9 +546,9 @@
   border-top: 1px solid var(--border);
 }
 /*
- * The lock. Grayscale chrome: the environment's colour is the rail's job and
- * only the rail reads --env-*, so a red lock here would be a second, quieter
- * voice for a thing the rail already says loudly. Shape carries the state.
+ * The lock. Grayscale, like this whole bar: the read-only state is told by the
+ * lock's *shape* (open vs closed), not by a hue -- a red lock would invent a
+ * colour where the rest of the bar, including the environment beside it, is text.
  */
 .statusbar__lock {
   display: flex;
@@ -522,94 +567,161 @@
   background: var(--hover);
   color: var(--text);
 }
+/*
+ * The active connection's environment, as a word. It used to be the rail's
+ * colour; the rail is the workspace's colour now, so it reads here instead --
+ * grayscale like the rest of this bar, divided from the lock by a 1px rule.
+ */
+.statusbar__env {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 var(--gap);
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-badge);
+}
 
 /* ---------------- Connection rail ---------------- */
 
 /*
- * The open connections. One background and a 1px rule, like every other divider
- * here -- it is a column of the shell, not a thing floating beside it.
+ * The open connections, grouped by workspace -- a full-width bar on top of the
+ * shell. Each group stacks the workspace's tinted label on top of a row of
+ * connection badges; the groups sit side by side, parted by a vertical rule, and
+ * the bar scrolls sideways if more connections are open than fit. One background,
+ * a 1px bottom rule like every other bar.
  */
 .rail {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--gap-xs);
-  padding: var(--gap-sm) 0;
-  min-height: 0;
-  border-right: 1px solid var(--border);
+  align-items: stretch;
+  flex: none;
+  height: var(--rail-h);
+  padding: 0 var(--gap-sm);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
 }
-.rail__list {
+.rail__groups {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--gap-xs);
-  min-height: 0;
-  overflow-y: auto;
+  align-items: stretch;
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.rail__item,
+/* The workspace label rides on top of its badges -- a two-row stack centred in
+   the bar. */
+.rail__group {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 var(--gap);
+}
+.rail__group:first-child {
+  padding-left: 0;
+}
+/*
+ * A workspace break is a 1px vertical rule -- the same structural language as
+ * every divider here -- and with the tinted label above, that is what makes one
+ * group read as separate from the next.
+ */
+.rail__group + .rail__group {
+  border-left: 1px solid var(--border);
+}
+/*
+ * The workspace's colour, and the only colour on the rail: on its label, on top.
+ * The badges below stay grayscale so the active one can say "this one" without a
+ * second hue to fight it. --ws-tint is set on the group in the component,
+ * resolved from the workspace's stored colour id.
+ */
+.rail__group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  color: var(--ws-tint);
+  font-size: var(--text-micro);
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.rail__list {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/*
+ * A connection is a badge, pill-shaped -- the name and its environment tag inside
+ * one pill, nothing truncated. It wears its workspace's colour (--ws-tint, set on
+ * the group in the component): a 1px solid border of that hue over a flat, lighter
+ * wash of the same hue (color-mix onto transparent, so it lands over the one
+ * background rather than an opaque surface). The active one fills solid with the
+ * hue and takes dark text -- this system's "this one", in the workspace's own
+ * colour rather than blue, because every pill is already tinted.
+ */
+.rail__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--gap-xs);
+  padding: 1px var(--gap-xs);
+  border: 1px solid var(--ws-tint);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--ws-tint) 12%, transparent);
+  color: var(--text-muted);
+  font: inherit;
+  /* No line leading: the pill is one short row, so the body font's ~1.4 leading
+     is dead height inside it. Stripping it shrinks the content stack and leaves
+     the added rail height as padding around it. */
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rail__item:hover {
+  color: var(--text);
+}
+.rail__item--active {
+  background: var(--ws-tint);
+  color: var(--bg);
+}
+/* On the solid active fill the env tag can no longer be a light gray -- it goes
+   dark like the name, just quieter. */
+.rail__item--active .rail__env {
+  color: color-mix(in srgb, var(--bg) 65%, transparent);
+}
+.rail__name {
+  font-size: var(--text-label);
+  font-weight: 500;
+}
+/* The environment tag, inside the badge after the name: quieter than it, and
+   grayscale -- the environment is not a colour here, it is a word. */
+.rail__env {
+  font-size: var(--text-micro);
+  color: var(--text-faint);
+}
+
+/* Pushed to the far right, past the groups it does not belong to. */
 .rail__add {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: none;
   color: var(--text-muted);
-  cursor: pointer;
-}
-.rail__item:hover,
-.rail__add:hover {
-  background: var(--hover);
-}
-/*
- * --selected is this system's word for "this one" -- the same language as an
- * active tree row and an active tab. It cannot be a lighter surface, because
- * there is one background.
- */
-.rail__item--active {
-  background: var(--selected);
-}
-.rail__mark {
-  font-size: var(--text-badge);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-/*
- * The environment, and the only colour on this rail.
- *
- * On the mark rather than the whole button: the row's background is already
- * saying "this one", and two colours fighting over one 32px square would leave
- * neither legible. The border is what carries it at a glance; the letters are
- * what you read.
- */
-.rail__item[data-env='local'] {
-  border-color: var(--env-local);
-  color: var(--env-local);
-}
-.rail__item[data-env='dev'] {
-  border-color: var(--env-dev);
-  color: var(--env-dev);
-}
-.rail__item[data-env='staging'] {
-  border-color: var(--env-staging);
-  color: var(--env-staging);
-}
-.rail__item[data-env='production'] {
-  border-color: var(--env-production);
-  color: var(--env-production);
-}
-
-/* Pushed to the bottom, away from the list it does not belong to. */
-.rail__add {
-  margin-top: auto;
-  border-color: var(--border-strong);
   font-size: 16px;
   line-height: 1;
+  cursor: pointer;
+}
+.rail__add:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 /* ---------------- Sidebar ---------------- */

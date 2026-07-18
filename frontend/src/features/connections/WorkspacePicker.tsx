@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import type { Workspace } from '../../../../shared/protocol.ts';
+import { workspaceColor } from '../../workspaceColors.ts';
 import { workspaceGlyph } from '../../workspaceIcons.ts';
 
 interface Props {
@@ -46,7 +47,12 @@ export default function WorkspacePicker({
             <li className="saved__row" key={w.id}>
               <button className="saved__pick" onClick={() => onPick(w)} disabled={busy} title={w.name}>
                 <span className="saved__head">
-                  <Glyph className="icon" />
+                  {/* The workspace's colour marks it here. On the wrapper, not the
+                      glyph -- icons inherit their colour, so recolour the box and
+                      the mark follows; the name stays default text. */}
+                  <span className="ws__mark" style={{ color: workspaceColor(w.color) }}>
+                    <Glyph className="icon" />
+                  </span>
                   <span className="saved__name">{w.name}</span>
                 </span>
                 <span className="saved__server ws__count">{countLabel(count)}</span>

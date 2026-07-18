@@ -229,6 +229,7 @@ describe('connecting from a saved connection', () => {
       config: typeof PG_SERVER;
       name: string;
       environment: string;
+      workspaceId: string;
     };
 
     expect(res.databases).toContain(FIXTURE_DB);
@@ -236,10 +237,12 @@ describe('connecting from a saved connection', () => {
     expect(res.config).not.toHaveProperty('password');
 
     // Echoed back off the row for the same reason the config is: the UI labels
-    // and colours the session by these, and a list row it seeded them from may
-    // be stale. Neither is anything the extension does with the connection.
+    // the session by these and the rail groups it by `workspaceId`, and a list row
+    // it seeded them from may be stale. None is anything the extension does with
+    // the connection.
     expect(res.name).toBe('with-password');
     expect(res.environment).toBe('local');
+    expect(res.workspaceId).toBe(DEFAULT_WS);
 
     // The connection it hands back must be a working one, not just an id.
     const query = (await h.ok('db.query', {
@@ -460,15 +463,24 @@ describe('workspaces', () => {
     if (!res.ok) expect(res.error).toMatch(/already exists/i);
   });
 
-  test('the name and the icon survive a round trip, and an edit is in place', async () => {
-    const made = await saveWorkspace({ name: 'Acme', icon: 'rocket' });
+  test('the name, icon and colour survive a round trip, and an edit is in place', async () => {
+    const made = await saveWorkspace({ name: 'Acme', icon: 'rocket', color: 'cyan' });
     expect(made.icon).toBe('rocket');
+    expect(made.color).toBe('cyan');
 
-    const edited = await saveWorkspace({ id: made.id, name: 'Acme Corp', icon: 'flask' });
+    const edited = await saveWorkspace({ id: made.id, name: 'Acme Corp', icon: 'flask', color: 'orange' });
     expect(edited.id).toBe(made.id);
     expect(edited.name).toBe('Acme Corp');
     expect(edited.icon).toBe('flask');
+    expect(edited.color).toBe('orange');
     expect((await workspaces()).filter((w) => w.id === made.id)).toHaveLength(1);
+  });
+
+  test('a workspace saved without a colour gets the neutral default', async () => {
+    // The UI always sends one, but a hand/JSON caller may not -- and a colourless
+    // workspace must never reach the rail. The store defaults it, as `slate`.
+    const made = await saveWorkspace({ name: 'Colourless', icon: 'cube' });
+    expect(made.color).toBe('slate');
   });
 
   test('a connection name only has to be unique within its workspace', async () => {
@@ -719,5 +731,36 @@ describe('migrating a store written before read-only connections', () => {
     const res = (await h.ok('db.saved.connect', { id: migrated.id })) as { connectionId: string };
     expect(res.connectionId).toBeTruthy();
     await h.ok('db.disconnect', { connectionId: res.connectionId });
+  });
+});
+
+/**
+ * The workspace colour arrived the same way SSL and read-only did, but on the
+ * `workspaces` table: a plain ADD COLUMN onto a store that already has workspaces.
+ * Downgraded from the live file so the migration meets a real row.
+ */
+describe('migrating a store written before workspace colours', () => {
+  test('every workspace comes back the neutral default, and is still usable', async () => {
+    const made = await saveWorkspace({ name: 'Pre-colour', icon: 'globe', color: 'purple' });
+    expect(made.color).toBe('purple');
+    await h.stop();
+
+    // Drop the column back off the live file, leaving the rows as they were.
+    const db = new Database(DB_FILE);
+    db.run('ALTER TABLE workspaces DROP COLUMN color');
+    const columns = (db.query('PRAGMA table_info(workspaces)').all() as { name: string }[]).map((c) => c.name);
+    db.close();
+    expect(columns).not.toContain('color');
+
+    h = await startHarness(ENV);
+
+    const migrated = (await workspaces()).find((w) => w.name === 'Pre-colour')!;
+    // Slate, not the stored purple: a workspace that predates the column never had
+    // a colour, and the neutral default is the guess that costs least -- what the
+    // ADD COLUMN backfills. A workspace is never colourless when it reaches the UI.
+    expect(migrated.color).toBe('slate');
+    // Still writable through the normal path, colour and all.
+    const edited = await saveWorkspace({ id: migrated.id, name: 'Pre-colour', icon: 'globe', color: 'green' });
+    expect(edited.color).toBe('green');
   });
 });

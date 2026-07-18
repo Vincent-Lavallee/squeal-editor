@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { environmentLabel } from '../../environments.ts';
 import { ReadOnlyIcon, WritableIcon } from '../../icons.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import ReadOnlyConfirm from './ReadOnlyConfirm.tsx';
@@ -13,6 +14,11 @@ import ReadOnlyConfirm from './ReadOnlyConfirm.tsx';
  * It reads the *active* connection: switching the rail switches which lock this
  * shows, because read-only is per connection. Locking is free; unlocking asks
  * the connection's environment name back, which the modal handles.
+ *
+ * It also names the active connection's environment. The rail used to carry that
+ * as a colour; now the rail's colour is the workspace's, so the environment shows
+ * here as text -- grayscale like everything in this bar, since the rail no longer
+ * has a hue to duplicate.
  */
 export default function StatusBar() {
   const { connectionId, readOnly, environment, name, setReadOnly } = useSession();
@@ -42,6 +48,10 @@ export default function StatusBar() {
         <Icon className="icon" />
         {readOnly ? 'Read-only' : 'Writable'}
       </button>
+
+      <span className="statusbar__env" title="The environment this connection is in">
+        {environmentLabel(environment)}
+      </span>
 
       {confirming && (
         <ReadOnlyConfirm

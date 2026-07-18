@@ -1,77 +1,109 @@
+import type { Workspace } from '../../../../shared/protocol.ts';
+import { environmentAbbrev, environmentLabel } from '../../environments.ts';
+import { useAppSelector } from '../../store/hooks.ts';
 import { serverLabel, useSession, type OpenConnection } from '../../store/sessionSlice.ts';
-import { environmentLabel } from '../../environments.ts';
+import { selectWorkspaces } from '../../store/workspacesSlice.ts';
+import { DEFAULT_WORKSPACE_COLOR, workspaceColor } from '../../workspaceColors.ts';
+import { workspaceGlyph } from '../../workspaceIcons.ts';
 
 interface Props {
   /** Routes to the connect screen with everything here left open. `App` owns that. */
   onAdd: () => void;
 }
 
-/**
- * What a connection reads as. Its name if it has one -- an ad-hoc connection is
- * saved nowhere and may not -- and the server otherwise, which is the only other
- * thing that tells two of them apart.
- */
-const label = (c: OpenConnection): string => c.name || serverLabel(c.config);
-
-/**
- * The mark on the rail: at most two letters, from the label's first two words.
- *
- * A drawing would be better and there is nothing to draw -- a connection is not
- * a workspace, it has no icon anyone picked. So the mark is derived, the
- * environment's colour tells the two "Billing" connections apart, and the name
- * is a breath away in the tooltip.
- */
-function initials(name: string): string {
-  const words = name.split(/[\s._-]+/).filter(Boolean);
-  if (words.length === 0) return '?';
-  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
-  return (words[0]![0]! + words[1]![0]!).toUpperCase();
+/** One workspace's heading plus the connections open under it, in open order. */
+interface Group {
+  /** Absent only if the workspace was deleted while a connection stayed open. */
+  workspace: Workspace | undefined;
+  connections: OpenConnection[];
 }
 
 /**
- * The open connections, and the way between them.
+ * Group the open connections by their workspace, keeping both the workspaces and
+ * the connections within each in the order they were opened. Deriving this from
+ * `connections` (which follows the session's order) rather than from the
+ * workspace list means the rail reads top-to-bottom in the order you opened
+ * things, and a workspace with nothing open has no heading.
+ */
+function groupByWorkspace(connections: OpenConnection[], workspaces: Workspace[]): Group[] {
+  const groups: Group[] = [];
+  const indexOf = new Map<string, number>();
+  for (const c of connections) {
+    let at = indexOf.get(c.workspaceId);
+    if (at === undefined) {
+      at = groups.length;
+      indexOf.set(c.workspaceId, at);
+      groups.push({ workspace: workspaces.find((w) => w.id === c.workspaceId), connections: [] });
+    }
+    groups[at]!.connections.push(c);
+  }
+  return groups;
+}
+
+/**
+ * The open connections, grouped by workspace and tinted with each workspace's
+ * colour.
  *
  * It names the *connection*; the titlebar names the server the active one is on.
  * Those are two different facts, so neither repeats the other -- the rail says
- * which, the titlebar says what.
+ * which, the titlebar says what. The environment is a small tag on each chip
+ * (Local, Dev., Stag., Prod.) and shows in full in the status bar for the active
+ * one -- it is no longer a colour, because the colour belongs to the workspace.
  *
- * Switching is all it does. Disconnecting is the titlebar's Disconnect, which
- * has always meant "the one in front" and still does: a close button per row
- * would be a second way to do it, in 44px, for the connection you are least
- * likely to be looking at.
+ * Switching is all it does. Disconnecting is the titlebar's Disconnect, which has
+ * always meant "the one in front".
  */
 export default function ConnectionRail({ onAdd }: Props) {
   const { connections, activeConnectionId, activate } = useSession();
+  const workspaces = useAppSelector(selectWorkspaces);
+  const groups = groupByWorkspace(connections, workspaces);
 
   return (
     <nav className="rail" aria-label="Open connections">
-      <ul className="rail__list">
-        {connections.map((c) => {
-          const name = label(c);
-          const active = c.connectionId === activeConnectionId;
+      <ul className="rail__groups">
+        {groups.map(({ workspace, connections: conns }, i) => {
+          const Glyph = workspaceGlyph(workspace?.icon ?? 'stack');
+          const tint = workspaceColor(workspace?.color ?? DEFAULT_WORKSPACE_COLOR);
+          // A workspace that was deleted with a connection still open has no row
+          // to name it; the connections stay reachable under a neutral heading.
+          const name = workspace?.name ?? 'Workspace';
+
+          // The colour rides in as a custom property and CSS spends it, so no hue
+          // is written in this component -- the same discipline the icon lookup
+          // keeps. `workspaceColor` resolves the stored id to a token reference.
           return (
-            <li key={c.connectionId}>
-              <button
-                type="button"
-                className={`rail__item ${active ? 'rail__item--active' : ''}`}
-                // The environment travels as data and CSS picks the colour off
-                // it. Building `var(--env-${c.environment})` in here would be a
-                // colour in a component, one `if` away from a hardcoded one.
-                data-env={c.environment}
-                aria-current={active ? 'true' : undefined}
-                onClick={() => activate(c.connectionId)}
-                title={`${name} — ${environmentLabel(c.environment)} — ${serverLabel(c.config)}`}
-              >
-                <span className="rail__mark" aria-hidden="true">
-                  {initials(name)}
-                </span>
-                {/* The tooltip is not reachable without a pointer, and the mark
-                    is two letters of a name. This is what a screen reader and a
-                    keyboard get instead. */}
-                <span className="sr-only">
-                  {name}, {environmentLabel(c.environment)}, {serverLabel(c.config)}
-                </span>
-              </button>
+            <li className="rail__group" key={workspace?.id ?? `missing-${i}`} style={{ '--ws-tint': tint } as React.CSSProperties}>
+              <div className="rail__group-head">
+                <Glyph className="icon" />
+                <span className="rail__group-name">{name}</span>
+              </div>
+
+              <ul className="rail__list">
+                {conns.map((c) => {
+                  const active = c.connectionId === activeConnectionId;
+                  return (
+                    <li key={c.connectionId}>
+                      <button
+                        type="button"
+                        className={`rail__item ${active ? 'rail__item--active' : ''}`}
+                        aria-current={active ? 'true' : undefined}
+                        onClick={() => activate(c.connectionId)}
+                        title={`${c.name} — ${environmentLabel(c.environment)} — ${serverLabel(c.config)}`}
+                      >
+                        <span className="rail__name">{c.name}</span>
+                        <span className="rail__env" aria-hidden="true">
+                          {environmentAbbrev(c.environment)}
+                        </span>
+                        {/* The tooltip needs a pointer and the tag is abbreviated.
+                            This is what a screen reader and keyboard get instead. */}
+                        <span className="sr-only">
+                          {c.name}, {name}, {environmentLabel(c.environment)}, {serverLabel(c.config)}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </li>
           );
         })}

@@ -18,17 +18,17 @@
 
 :root {
   /* ---- Surface: one background, borders do the work ---- */
-  --bg: #111113;              /* slate-1: every surface */
-  --border: #272a2d;          /* slate-4: panel dividers, table rules */
-  --border-strong: #363a3f;   /* card + input outlines */
+  --bg: #111113; /* slate-1: every surface */
+  --border: #272a2d; /* slate-4: panel dividers, table rules */
+  --border-strong: #363a3f; /* card + input outlines */
   /*
    * Hex, including the alpha, rather than rgba(): a token is not only read by
    * CSS. The extension is handed --bg to paint the window frame and Monaco is
    * handed these to build its theme, and neither parses rgba(). Identical
    * colours; #RRGGBBAA is the form that travels.
    */
-  --hover: #ffffff0a;         /* white at 4% */
-  --selected: #669cff24;      /* --blue at 14% */
+  --hover: #ffffff0a; /* white at 4% */
+  --selected: #669cff24; /* --blue at 14% */
   /*
    * The dim behind a modal. The one place a shade is allowed: it is not a lighter
    * surface *inside* the app breaking "one background", it is the app itself
@@ -38,28 +38,28 @@
   --scrim: #00000099;
 
   /* ---- Text ---- */
-  --text: #edeef0;            /* slate-12: primary */
-  --text-muted: #b0b4ba;      /* slate-11: labels, axes, secondary */
-  --text-faint: #696e77;      /* slate-9: disabled, placeholders */
+  --text: #edeef0; /* slate-12: primary */
+  --text-muted: #b0b4ba; /* slate-11: labels, axes, secondary */
+  --text-faint: #696e77; /* slate-9: disabled, placeholders */
 
   /* ---- Interactive (the only non-semantic hue) ---- */
   --blue: #669cff;
-  --blue-bg: #182449;         /* indigo-3: badge/chip background */
-  --on-blue: #0b1020;         /* solid blue buttons take DARK text */
+  --blue-bg: #182449; /* indigo-3: badge/chip background */
+  --on-blue: #0b1020; /* solid blue buttons take DARK text */
 
   /* ---- Semantic. Badge pattern is always: step-3 bg + step-11 text ---- */
-  --red: #e5484d;             /* red-9: error borders/solids */
-  --red-bg: #3b1219;          /* red-3 */
-  --red-text: #ff9592;        /* red-11 */
+  --red: #e5484d; /* red-9: error borders/solids */
+  --red-bg: #3b1219; /* red-3 */
+  --red-text: #ff9592; /* red-11 */
 
-  --green: #3dd68c;           /* green-11: success */
-  --green-bg: #132d21;        /* green-3 */
+  --green: #3dd68c; /* green-11: success */
+  --green-bg: #132d21; /* green-3 */
 
-  --amber: #ffca16;           /* amber-11: warning */
-  --amber-bg: #341c00;        /* amber-3 */
+  --amber: #ffca16; /* amber-11: warning */
+  --amber-bg: #341c00; /* amber-3 */
 
-  --purple: #bf7af0;          /* purple-11 */
-  --purple-bg: #301c3b;       /* purple-3 */
+  --purple: #bf7af0; /* purple-11 */
+  --purple-bg: #301c3b; /* purple-3 */
 
   /*
    * ---- Syntax: the one place colour describes content, not chrome ----
@@ -71,43 +71,51 @@
    * Same Radix dark lineage, so they land on the same steps today.
    */
   --syntax-keyword: var(--blue);
-  --syntax-string: #3dd68c;   /* green-11 */
-  --syntax-number: #ffca16;   /* amber-11 */
+  --syntax-string: #3dd68c; /* green-11 */
+  --syntax-number: #ffca16; /* amber-11 */
   --syntax-comment: var(--text-faint);
   --syntax-punctuation: var(--text-muted);
 
   /*
-   * ---- Environments: which server you are about to run this against ----
+   * ---- Workspaces: whose project a connection belongs to ----
    *
-   * Its own ramp for the same reason --syntax-* is its own: an environment is
-   * not a status. Retuning --red for an error must not repaint the rail, and a
-   * production connection is not "an error" -- it is the one you want to notice
-   * before you type. Same Radix dark lineage, so they land on the same steps as
-   * the semantic hues today, which is not the same as being them.
+   * Its own ramp for the same reason --syntax-* and the retired --env-* were:
+   * a workspace's identity is not a status. Retuning --green for a callout must
+   * not repaint a workspace that happens to be green. Same Radix dark lineage
+   * (~step-11), so they land near the semantic hues, which is not being them.
    *
-   * The order is the ramp: neutral, go, caution, danger. That is what makes this
-   * colour mean something rather than decorate -- read down the list and it is
-   * the deployment pipeline, which is the order ENVIRONMENTS is already in.
+   * Unlike --env-*, this is not an ordered ramp -- a workspace's colour means
+   * nothing but "this project", so the set is a palette to tell one from another,
+   * not a pipeline to read down. --ws-slate is the neutral default. The id-to-hue
+   * map lives in `workspaceColors.ts`; this is the one place the hues are written.
    */
-  --env-local: #b0b4ba;       /* slate-11: your own machine, nothing at stake */
-  --env-dev: #3dd68c;         /* green-11 */
-  --env-staging: #ffca16;     /* amber-11 */
-  --env-production: #e5484d;  /* red-9 */
+  --ws-slate: #b0b4ba; /* slate-11: the neutral default */
+  --ws-blue: #5eb0ef; /* blue-11 */
+  --ws-cyan: #4ccce6; /* cyan-11 */
+  --ws-green: #3dd68c; /* green-11 */
+  --ws-amber: #ffca16; /* amber-11 */
+  --ws-orange: #ffa057; /* orange-11 */
+  --ws-red: #ff9592; /* red-11 */
+  --ws-pink: #ff8dcc; /* pink-11 */
+  --ws-purple: #bf7af0; /* purple-11 */
 
   /* ---- Shape: pills for status, 6-8px for everything else ---- */
-  --radius-pill: 999px;       /* badges, chips, filter controls, search */
-  --radius: 6px;              /* buttons, inputs */
-  --radius-lg: 8px;           /* cards, panels */
+  --radius-pill: 999px; /* badges, chips, filter controls, search */
+  --radius: 6px; /* buttons, inputs */
+  --radius-lg: 8px; /* cards, panels */
 
   /* ---- Type ---- */
-  --font: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+  --font: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
 
-  --text-page: 24px;          /* page titles, stat numbers -- bold */
-  --text-title: 15px;         /* card titles -- semibold */
-  --text-body: 13px;          /* body, table cells */
-  --text-badge: 12px;         /* badges, secondary */
-  --text-label: 11px;         /* uppercase section labels, letter-spaced, muted */
+  --text-page: 24px; /* page titles, stat numbers -- bold */
+  --text-title: 15px; /* card titles -- semibold */
+  --text-body: 13px; /* body, table cells */
+  --text-badge: 12px; /* badges, secondary */
+  --text-label: 11px; /* uppercase section labels, letter-spaced, muted */
+  --text-micro: 10px; /* the connection rail only: a compact chrome bar whose
+                         labels sit below the general UI's floor -- not for body
+                         copy, which never goes under --text-label */
 
   --tracking-label: 0.04em;
 
@@ -123,8 +131,8 @@
   --icon: 16px;
 
   /* ---- Density ---- */
-  --titlebar-h: 32px;         /* the window's own titlebar: Windows' own height */
-  --bar-h: 44px;              /* top bar */
+  --titlebar-h: 32px; /* the window's own titlebar: Windows' own height */
+  --bar-h: 44px; /* top bar */
   /*
    * The tab strip. Its own token although it matches --titlebar-h today: that
    * one means "the height Windows draws a titlebar", which is not a fact about
@@ -135,12 +143,13 @@
      you act in -- it carries status, and today just the read-only lock. */
   --statusbar-h: 26px;
   /*
-   * The connection rail. Narrower than the reference's 68px icon rail, which it
-   * is otherwise the same idea as: that one carried a flyout, this one carries
-   * two letters and a colour.
+   * The connection rail. A full-width horizontal bar on top of the shell, above
+   * the sidebar and the tabs: each workspace's label sits over a row of connection
+   * badges, grouped left to right. Nothing truncates, unlike the narrow column it
+   * replaced.
    */
-  --rail-w: 44px;
-  --row-h: 44px;              /* reference table row height */
+  --rail-h: 48px;
+  --row-h: 44px; /* reference table row height */
   /*
    * Deviation from the reference: its 44px rows suit a dashboard table of a
    * dozen rows. A SQL result grid is a data grid -- 100 rows at 44px is nothing

@@ -148,8 +148,15 @@ const COMMANDS: Handlers = {
   },
 
   async 'db.saved.connect'({ id, password }) {
-    const { config, password: secret, name, environment, readOnly } = await resolveSaved(id, password);
-    return { ...(await establish({ ...config, password: secret }, readOnly)), config, name, environment, readOnly };
+    const { config, password: secret, name, environment, workspaceId, readOnly } = await resolveSaved(id, password);
+    return {
+      ...(await establish({ ...config, password: secret }, readOnly)),
+      config,
+      name,
+      environment,
+      workspaceId,
+      readOnly,
+    };
   },
 
   /* -- Workspaces (store.ts owns the grouping and the cascade) --------- */
@@ -158,8 +165,8 @@ const COMMANDS: Handlers = {
     return { workspaces: listWorkspaces() };
   },
 
-  async 'db.workspaces.save'({ id, name, icon }) {
-    return { workspace: saveWorkspace({ id, name, icon }) };
+  async 'db.workspaces.save'({ id, name, icon, color }) {
+    return { workspace: saveWorkspace({ id, name, icon, color }) };
   },
 
   async 'db.workspaces.delete'({ id }) {

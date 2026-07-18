@@ -116,9 +116,9 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
   }
 
   const named = form.name.trim() !== '';
-  // Nothing is stored without a name, so neither the password decision nor the
-  // environment has anything to be true of: an unnamed connection is used once
-  // and forgotten, and it never appears under a heading.
+  // A name is required now -- every connection is saved and belongs to a
+  // workspace -- so a connection is always stored. `named` still gates the
+  // save-password checkbox so it does not flash before a name is typed.
   const willBeStored = mode === 'edit' || named;
   const iam = form.authMethod === 'iam';
   // When editing, the password is only ever stored, never used to connect.
@@ -158,10 +158,7 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
     <form className="connect__form" onSubmit={handleSubmit}>
       <div className="field">
         <label className="label" htmlFor="name">
-          Name{' '}
-          <span className="field__hint">
-            {mode === 'edit' ? '(required)' : "(optional — blank won't be saved)"}
-          </span>
+          Name <span className="field__hint">(required)</span>
         </label>
         <input
           id="name"
@@ -169,21 +166,16 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
           value={form.name}
           autoFocus
           placeholder={mode === 'edit' ? '' : 'prod-analytics'}
-          required={mode === 'edit'}
+          required
           onChange={(e) => set('name', e.target.value)}
         />
       </div>
 
       {/*
-       * Asked for whether or not this will be kept, which the password checkbox
-       * below is still gated on and this no longer is.
-       *
-       * It used to be: an environment was a heading in the workspace's list, and
-       * a nameless connection is never in that list, so there was nothing for it
-       * to be true of. An environment is also the rail's colour now, and every
-       * open connection is on the rail -- so a nameless one has somewhere to say
-       * this, and "the connection I opened once to check something" is exactly
-       * the one worth colouring red.
+       * Which deployment this reaches. It groups the connection under a heading in
+       * the workspace's list, tags the chip on the rail (Local, Dev., Stag.,
+       * Prod.), and shows in the status bar for the connection you are on. It also
+       * sets the read-only default just below.
        */}
       <div className="field">
         <label className="label" htmlFor="environment">
@@ -417,7 +409,11 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
             Cancel
           </button>
         )}
-        <button type="submit" className="btn btn--primary connect__submit" disabled={busy}>
+        <button
+          type="submit"
+          className="btn btn--primary connect__submit"
+          disabled={busy || !form.name.trim()}
+        >
           {mode === 'edit' ? (busy ? 'Saving…' : 'Save changes') : busy ? 'Connecting…' : 'Connect'}
         </button>
       </div>

@@ -74,12 +74,14 @@ function ShellLayout({ onAddConnection }: Props) {
   // asks the same question the editor pane does: is there a query here at all.
   const showEditor = activeTab?.kind === 'editor';
 
-  // A column so the status bar spans the full width beneath the shell -- the rail,
-  // the sidebar and the main pane -- rather than sitting inside any one of them.
+  // A column: the connection rail spans the full width on top so a connection's
+  // name has room to breathe, then the sidebar + main row, then the status bar
+  // spanning the width beneath. None of the three sits inside another.
   return (
     <div className="shell">
+      <ConnectionRail onAdd={onAddConnection} />
+
       <div className="app">
-        <ConnectionRail onAdd={onAddConnection} />
         <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} />
 
         <main className={`main ${showEditor ? '' : 'main--grid'}`}>
