@@ -1,6 +1,6 @@
 {
   "name": "squeal-editor",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "private": true,
   "description": "A stupid simple multi-database SQL editor built with Neutralino + React",
   "workspaces": [
