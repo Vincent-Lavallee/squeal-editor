@@ -251,7 +251,7 @@ export default function EditorPane({ onRun, running }: Props) {
   return (
     <>
       <div className="toolbar">
-        {config && <span className="badge badge--blue">{engineLabel(config.type)}</span>}
+        {config && <span className="badge badge--accent">{engineLabel(config.type)}</span>}
         <div className="toolbar__spacer" />
         <button className="btn" onClick={format}>
           Format

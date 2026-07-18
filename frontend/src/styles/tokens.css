@@ -11,9 +11,9 @@
  * shadows. All structure comes from 1px borders and spacing. Do not introduce a
  * lighter "card gray" -- it breaks the system immediately.
  *
- * Second rule: chrome is grayscale. The only non-gray in the chrome is --blue for
- * interactive things. Every other hue is semantic (error/success/warning), never
- * decorative.
+ * Second rule: chrome is grayscale. The only non-gray in the chrome is --accent
+ * (teal) for interactive things. Every other hue is semantic
+ * (error/success/warning), never decorative.
  */
 
 :root {
@@ -28,7 +28,7 @@
    * colours; #RRGGBBAA is the form that travels.
    */
   --hover: #ffffff0a; /* white at 4% */
-  --selected: #669cff24; /* --blue at 14% */
+  --selected: #0eb39e24; /* --accent at 14% */
   /*
    * The dim behind a modal. The one place a shade is allowed: it is not a lighter
    * surface *inside* the app breaking "one background", it is the app itself
@@ -43,9 +43,9 @@
   --text-faint: #696e77; /* slate-9: disabled, placeholders */
 
   /* ---- Interactive (the only non-semantic hue) ---- */
-  --blue: #669cff;
-  --blue-bg: #182449; /* indigo-3: badge/chip background */
-  --on-blue: #0b1020; /* solid blue buttons take DARK text */
+  --accent: #0eb39e; /* teal-10: the one chrome accent */
+  --accent-bg: #0d2d2a; /* teal-3: badge/chip background */
+  --on-accent: #0d1514; /* teal-1: solid accent buttons take DARK text */
 
   /* ---- Semantic. Badge pattern is always: step-3 bg + step-11 text ---- */
   --red: #e5484d; /* red-9: error borders/solids */
@@ -70,7 +70,7 @@
    * is not a warning: retuning --green for a callout must not repaint the SQL.
    * Same Radix dark lineage, so they land on the same steps today.
    */
-  --syntax-keyword: var(--blue);
+  --syntax-keyword: var(--accent);
   --syntax-string: #3dd68c; /* green-11 */
   --syntax-number: #ffca16; /* amber-11 */
   --syntax-comment: var(--text-faint);

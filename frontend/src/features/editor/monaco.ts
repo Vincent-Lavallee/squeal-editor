@@ -92,7 +92,7 @@ export function defineTheme(): void {
       // The cursor's line is marked by a brighter number, not by a lit surface
       // (see renderLineHighlight in EditorPane) -- one background, still.
       'editorLineNumber.activeForeground': token('--text'),
-      'editorCursor.foreground': token('--blue'),
+      'editorCursor.foreground': token('--accent'),
       'editor.selectionBackground': token('--selected'),
       /*
        * Every match wears the same tint; the one you are on is told apart by a
@@ -101,7 +101,7 @@ export function defineTheme(): void {
        * borders here too.
        */
       'editor.findMatchBackground': token('--selected'),
-      'editor.findMatchBorder': token('--blue'),
+      'editor.findMatchBorder': token('--accent'),
       'editor.findMatchHighlightBackground': token('--selected'),
       'editor.selectionHighlightBackground': token('--selected'),
       /*
@@ -109,8 +109,8 @@ export function defineTheme(): void {
        * amber on a gray rule -- amber means warning here, and it would be the
        * one thing on screen wearing a colour this palette never issued.
        */
-      'editorOverviewRuler.findMatchForeground': token('--blue'),
-      'editorOverviewRuler.selectionHighlightForeground': token('--blue'),
+      'editorOverviewRuler.findMatchForeground': token('--accent'),
+      'editorOverviewRuler.selectionHighlightForeground': token('--accent'),
       'editorOverviewRuler.border': token('--border'),
       'editorIndentGuide.background1': token('--border'),
       /*
@@ -128,11 +128,11 @@ export function defineTheme(): void {
       'editorSuggestWidget.foreground': token('--text'),
       'editorSuggestWidget.selectedBackground': token('--selected'),
       'editorSuggestWidget.selectedForeground': token('--text'),
-      // The letters you have actually typed, inside each label. --blue is what
+      // The letters you have actually typed, inside each label. --accent is what
       // this system paints the interactive part of a thing, which is what these
       // are: the reason the row is in the list at all.
-      'editorSuggestWidget.highlightForeground': token('--blue'),
-      'editorSuggestWidget.focusHighlightForeground': token('--blue'),
+      'editorSuggestWidget.highlightForeground': token('--accent'),
+      'editorSuggestWidget.focusHighlightForeground': token('--accent'),
       'editorSuggestWidget.selectedIconForeground': token('--text-muted'),
       /*
        * Monaco marks each suggestion by kind, and ships a *colour* per kind --
@@ -150,7 +150,7 @@ export function defineTheme(): void {
       'input.background': token('--bg'),
       'input.foreground': token('--text'),
       'input.border': token('--border-strong'),
-      'focusBorder': token('--blue'),
+      'focusBorder': token('--accent'),
       'scrollbarSlider.background': token('--border'),
       'scrollbarSlider.hoverBackground': token('--border-strong'),
       'scrollbarSlider.activeBackground': token('--border-strong'),

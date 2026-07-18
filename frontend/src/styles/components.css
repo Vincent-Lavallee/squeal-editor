@@ -3,7 +3,7 @@
  *
  * Recipes, so new components stay on-system:
  *   badge/status  -> pill radius, step-3 bg, step-11 text, 12px
- *   button        -> 6px radius; solid blue takes DARK text (--on-blue)
+ *   button        -> 6px radius; solid accent takes DARK text (--on-accent)
  *   card/panel    -> --bg + 1px --border-strong + 8px radius. NEVER a shadow.
  *   section label -> 11px, uppercase, --tracking-label, --text-muted
  *   identifiers   -> --mono (SQL, column names, cell values)
@@ -23,7 +23,7 @@
  *
  * Colour is inherited, never set: the icons default to `currentColor`, so an
  * icon is the colour of the text it sits beside and follows it into hover,
- * --blue on an active row, and --red on a destructive one -- for free, and
+ * --accent on an active row, and --red on a destructive one -- for free, and
  * without this file learning every place an icon can appear. Recolour the row,
  * not the icon.
  */
@@ -59,20 +59,22 @@
   cursor: default;
 }
 
-/* Solid blue with dark text -- the reference's signature primary. */
+/* Solid accent with dark text -- the reference's signature primary, now teal. */
 .btn--primary {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: var(--on-blue);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
 }
+/* Hover brightens the accent -- mixed toward white rather than hardcoded, so it
+   tracks --accent instead of pinning a second hue that drifts when the accent moves. */
 .btn--primary:hover:not(:disabled) {
-  background: #7aabff;
+  background: color-mix(in srgb, var(--accent) 85%, white);
 }
 .btn--primary:disabled {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: var(--on-blue);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
   opacity: 0.45;
 }
 
@@ -99,9 +101,9 @@
   line-height: 1.5;
   white-space: nowrap;
 }
-.badge--blue {
-  background: var(--blue-bg);
-  color: var(--blue);
+.badge--accent {
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 .badge--green {
   background: var(--green-bg);
@@ -170,7 +172,7 @@
   width: 13px;
   height: 13px;
   margin: 0;
-  accent-color: var(--blue);
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
@@ -196,7 +198,7 @@
 .input:focus,
 .select:focus {
   outline: none;
-  border-color: var(--blue);
+  border-color: var(--accent);
 }
 
 /* ---------------- Card ---------------- */

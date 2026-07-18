@@ -12,7 +12,7 @@ import type { WorkspaceColorId } from '../../shared/protocol.ts';
  * It maps each id to a `var(--ws-*)` *reference*, not a hex: the hex lives in
  * `tokens.css`, the one place a colour is written, and the extension and Monaco
  * both parse tokens -- so this file names the token and never the colour. That is
- * the same discipline as `--syntax-keyword: var(--blue)`.
+ * the same discipline as `--syntax-keyword: var(--accent)`.
  *
  * The order is the picker's layout, so it is a list rather than a `Record`: the
  * id-to-token map falls out of it, but an object's key order would carry the

@@ -79,7 +79,7 @@ export default function SavedConnectionList({
                   >
                     <span className="saved__head">
                       <span className="saved__name">{c.name}</span>
-                      <span className="badge badge--blue">{engineLabel(c.config.type)}</span>
+                      <span className="badge badge--accent">{engineLabel(c.config.type)}</span>
                     </span>
                     <span className="saved__server">
                       {connectingId === c.id ? 'Connecting…' : serverLabel(c.config)}

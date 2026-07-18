@@ -97,7 +97,7 @@
   font-size: var(--text-badge);
 }
 .update-banner .icon {
-  color: var(--blue);
+  color: var(--accent);
 }
 .update-banner__msg {
   margin-right: auto;
@@ -111,7 +111,7 @@
   font-size: var(--text-badge);
 }
 /*
- * The download bar. A track and a fill, both flat: the fill is --blue, the track
+ * The download bar. A track and a fill, both flat: the fill is --accent, the track
  * a 1px-thin --border, in keeping with structure-from-borders. Width is the
  * percentage when known.
  */
@@ -126,7 +126,7 @@
 .update-banner__fill {
   height: 100%;
   border-radius: inherit;
-  background: var(--blue);
+  background: var(--accent);
   transition: width 0.15s linear;
 }
 /* No length from the server: a stripe that sweeps rather than a false percentage. */
@@ -458,14 +458,14 @@
   opacity: 0;
   pointer-events: none;
 }
-/* --selected + --blue: this system's "this one", the same as an active tab. */
+/* --selected + --accent: this system's "this one", the same as an active tab. */
 .ws-icons__pick--on {
-  border-color: var(--blue);
+  border-color: var(--accent);
   background: var(--selected);
-  color: var(--blue);
+  color: var(--accent);
 }
 .ws-icons__pick:has(input:focus-visible) {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -503,13 +503,13 @@
   border-radius: var(--radius-pill);
   background: var(--swatch);
 }
-/* --selected + --blue: this system's "this one", the same as the icon picker. */
+/* --selected + --accent: this system's "this one", the same as the icon picker. */
 .ws-colors__pick--on {
-  border-color: var(--blue);
+  border-color: var(--accent);
   background: var(--selected);
 }
 .ws-colors__pick:has(input:focus-visible) {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -659,7 +659,7 @@
  * wash of the same hue (color-mix onto transparent, so it lands over the one
  * background rather than an opaque surface). The active one fills solid with the
  * hue and takes dark text -- this system's "this one", in the workspace's own
- * colour rather than blue, because every pill is already tinted.
+ * colour rather than the accent, because every pill is already tinted.
  */
 .rail__item {
   display: inline-flex;
@@ -855,7 +855,7 @@
  */
 .tabs__tab--active {
   background: var(--selected);
-  color: var(--blue);
+  color: var(--accent);
 }
 .tabs__tab--active:hover {
   background: var(--selected);
