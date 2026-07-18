@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.1.3...v0.2.0) (2026-07-18)
+
+
+### Features
+
+* user-initiated auto-updater ([94d8350](https://github.com/Vincent-Lavallee/squeal-editor/commit/94d8350163b8a9719fc99b820f3962c576a1e996))
+
 ## [0.1.3](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.1.2...v0.1.3) (2026-07-17)
 
 
