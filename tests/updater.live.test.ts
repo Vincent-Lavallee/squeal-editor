@@ -72,14 +72,28 @@ describe.skipIf(!isWindows)('checkForUpdate against a live release', () => {
   test('a newer release with all three assets is offered', async () => {
     const status = await checkForUpdate('0.0.0');
     expect(status.supported).toBe(true);
+    expect(status.checked).toBe(true);
     expect(status.latestVersion).toBe('9.9.9');
     expect(status.hasUpdate).toBe(true);
     expect(status.notes).toBe('Notes for 9.9.9');
   });
 
-  test('the same version is not an update', async () => {
+  test('the same version is checked but not an update', async () => {
     const status = await checkForUpdate('9.9.9');
+    expect(status.checked).toBe(true);
     expect(status.hasUpdate).toBe(false);
+  });
+
+  test('a check that cannot reach the releases reports checked:false', async () => {
+    const good = process.env.SQUEAL_UPDATE_RELEASE_URL;
+    process.env.SQUEAL_UPDATE_RELEASE_URL = `${base}/does-not-exist`; // the mock 404s here
+    const status = await checkForUpdate('0.0.0');
+    process.env.SQUEAL_UPDATE_RELEASE_URL = good;
+    // The distinction the "couldn't check" message rests on: not an update, but
+    // not because we are current -- because we never found out.
+    expect(status.checked).toBe(false);
+    expect(status.hasUpdate).toBe(false);
+    expect(status.latestVersion).toBeNull();
   });
 });
 

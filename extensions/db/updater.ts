@@ -146,6 +146,7 @@ function sha256Hex(bytes: Buffer): string {
 export async function checkForUpdate(currentVersion: string): Promise<UpdateStatus> {
   const base: UpdateStatus = {
     supported: process.platform === 'win32',
+    checked: false,
     currentVersion,
     latestVersion: null,
     hasUpdate: false,
@@ -158,8 +159,11 @@ export async function checkForUpdate(currentVersion: string): Promise<UpdateStat
     });
     if (!res.ok) return base;
 
+    // Past here the check reached the releases and got an answer, so it counts
+    // as checked even when the answer is "nothing for you".
+    const checked = true;
     const release = (await res.json()) as GitHubRelease;
-    if (release.draft || release.prerelease) return base;
+    if (release.draft || release.prerelease) return { ...base, checked };
 
     const latestVersion = release.tag_name.replace(/^v/, '');
     const { installer, signature, checksums } = selectAssets(release.assets ?? []);
@@ -180,7 +184,7 @@ export async function checkForUpdate(currentVersion: string): Promise<UpdateStat
           }
         : null;
 
-    return { ...base, latestVersion, hasUpdate, notes: release.body ?? undefined };
+    return { ...base, checked, latestVersion, hasUpdate, notes: release.body ?? undefined };
   } catch {
     // Offline, rate-limited, or a shape we did not expect: a check never nags.
     return base;

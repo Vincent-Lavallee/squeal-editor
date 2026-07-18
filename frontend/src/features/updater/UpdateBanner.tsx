@@ -14,7 +14,25 @@ import { useUpdater } from './useUpdater.ts';
  * about a percentage.
  */
 export default function UpdateBanner() {
-  const { phase, status, progress, dismissed, upToDate, error, download, apply, dismiss } = useUpdater();
+  const { phase, status, progress, dismissed, upToDate, checkFailed, error, check, download, apply, dismiss } =
+    useUpdater();
+
+  // A manual check that could not reach the releases: say so, rather than
+  // claiming you are current when we never found out.
+  if (checkFailed) {
+    return (
+      <div className="update-banner" role="status">
+        <UpdateIcon className="icon" />
+        <span className="update-banner__msg">Couldn't check for updates.</span>
+        <button type="button" className="btn" onClick={() => check(true)}>
+          Try again
+        </button>
+        <button type="button" className="btn btn--ghost" onClick={dismiss}>
+          Dismiss
+        </button>
+      </div>
+    );
+  }
 
   // A manual check that found nothing: a small, dismissible acknowledgement.
   if (upToDate) {

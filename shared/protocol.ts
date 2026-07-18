@@ -214,6 +214,14 @@ export interface TablePage {
 export interface UpdateStatus {
   /** False off Windows, the only platform the swap-on-restart flow is built for. */
   supported: boolean;
+  /**
+   * Whether the check actually reached the releases and got an answer. False
+   * when the request failed -- offline, rate-limited, or a shape we did not
+   * expect. It is what lets the UI tell "you are up to date" from "I could not
+   * check": a failed check reports `hasUpdate: false` like a successful empty
+   * one, and only this distinguishes them.
+   */
+  checked: boolean;
   currentVersion: string;
   /** Null when nothing newer was found, or the check could not be made. */
   latestVersion: string | null;

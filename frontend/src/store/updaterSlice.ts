@@ -28,6 +28,13 @@ interface UpdaterState {
    * the menu action owes the user who asked.
    */
   upToDate: boolean;
+  /**
+   * A manual check could not reach the releases at all. Kept apart from
+   * `upToDate` because "you are current" and "I could not check" are different
+   * answers, and reporting the second as the first is a quiet lie. Manual only,
+   * for the same reason `upToDate` is.
+   */
+  checkFailed: boolean;
   error: string | null;
 }
 
@@ -37,6 +44,7 @@ const initialState: UpdaterState = {
   progress: null,
   dismissed: false,
   upToDate: false,
+  checkFailed: false,
   error: null,
 };
 
@@ -82,6 +90,7 @@ const updaterSlice = createSlice({
     dismissed(state) {
       state.dismissed = true;
       state.upToDate = false;
+      state.checkFailed = false;
     },
     progressReceived(state, action: PayloadAction<UpdateProgress>) {
       state.progress = action.payload;
@@ -91,31 +100,43 @@ const updaterSlice = createSlice({
     builder
       .addCase(checkForUpdate.pending, (state) => {
         state.phase = 'checking';
+        state.upToDate = false;
+        state.checkFailed = false;
         state.error = null;
       })
       .addCase(checkForUpdate.fulfilled, (state, action) => {
         state.status = action.payload;
         state.phase = action.payload.hasUpdate ? 'available' : 'idle';
+        const manual = action.meta.arg?.manual ?? false;
         if (action.payload.hasUpdate) {
           // A check that found something un-dismisses the banner, so asking again
           // from the menu surfaces it even after an earlier "Later".
           state.dismissed = false;
           state.upToDate = false;
+          state.checkFailed = false;
+        } else if (!action.payload.checked) {
+          // Reached nobody. Only a manual check says so; the launch check that
+          // cannot reach GitHub still stays silent.
+          state.checkFailed = manual;
+          state.upToDate = false;
         } else {
-          // Only a manual check earns the "you're up to date" note; the launch
-          // check that finds nothing says nothing.
-          state.upToDate = action.meta.arg?.manual ?? false;
+          // Genuinely nothing newer. Only a manual check earns the acknowledgement.
+          state.upToDate = manual;
+          state.checkFailed = false;
         }
       })
-      .addCase(checkForUpdate.rejected, (state) => {
-        // A check never nags: a failed one is silent, not an error on screen.
+      .addCase(checkForUpdate.rejected, (state, action) => {
+        // The bridge itself failed (timeout, extension down). Same rule as a
+        // failed check: silent on launch, "couldn't check" when asked.
         state.phase = 'idle';
+        state.checkFailed = action.meta.arg?.manual ?? false;
       })
 
       .addCase(downloadUpdate.pending, (state) => {
         state.phase = 'downloading';
         state.progress = null;
         state.upToDate = false;
+        state.checkFailed = false;
         state.error = null;
       })
       .addCase(downloadUpdate.fulfilled, (state) => {
