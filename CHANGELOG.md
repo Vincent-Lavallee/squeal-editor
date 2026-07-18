@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.2.0...v0.2.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* removed hint ([40eefab](https://github.com/Vincent-Lavallee/squeal-editor/commit/40eefab779b389553185e0c590db176ca657c10c))
+
 ## [0.2.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.1.3...v0.2.0) (2026-07-18)
 
 
