@@ -256,7 +256,6 @@ export default function EditorPane({ onRun, running }: Props) {
         <button className="btn" onClick={format}>
           Format
         </button>
-        <span className="toolbar__hint">Ctrl/⌘ + Enter</span>
         <button className="btn btn--primary" onClick={() => onRun(sql)} disabled={running}>
           {running ? 'Running…' : 'Run'}
         </button>

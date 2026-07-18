@@ -841,10 +841,6 @@
 .toolbar__spacer {
   flex: 1;
 }
-.toolbar__hint {
-  font-size: var(--text-label);
-  color: var(--text-faint);
-}
 
 /*
  * Monaco owns everything inside this box -- its own colours come from the theme
