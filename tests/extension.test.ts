@@ -119,6 +119,15 @@ describe.each([
     expect(columns.find((c) => c.name === 'id')?.dataType).toMatch(/int/i);
   });
 
+  test('flags the primary-key column', async () => {
+    // The tree marks it and the editable grid needs it; both engines read it
+    // from the catalog, so both must answer the same way about the same table.
+    const columns = await columnsOf('users');
+
+    expect(columns.find((c) => c.name === 'id')?.primaryKey).toBe(true);
+    expect(columns.find((c) => c.name === 'name')?.primaryKey).toBe(false);
+  });
+
   test('a view has columns like a table does', async () => {
     // The editor completes against a view exactly as it does a table, so the
     // catalog query must not quietly be tables-only.

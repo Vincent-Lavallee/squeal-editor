@@ -190,7 +190,9 @@ export const mysqlDriver: Driver<MysqlConnection> = {
         // COLUMN_TYPE, not DATA_TYPE: the former is MySQL's own full rendering
         // ('varchar(255)', 'bigint unsigned'), the latter drops the length and
         // the sign. Showing what the server said is the rule here too.
-        sql: `SELECT COLUMN_NAME, COLUMN_TYPE
+        // COLUMN_KEY is 'PRI' for a primary-key column, which is what the tree
+        // marks when a table is expanded.
+        sql: `SELECT COLUMN_NAME, COLUMN_TYPE, COLUMN_KEY
                 FROM information_schema.COLUMNS
                WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
                ORDER BY ORDINAL_POSITION`,
@@ -199,7 +201,7 @@ export const mysqlDriver: Driver<MysqlConnection> = {
       [database, table]
     )) as [string[][], FieldPacket[]];
 
-    return rows.map((r) => ({ name: r[0] as string, dataType: r[1] as string }));
+    return rows.map((r) => ({ name: r[0] as string, dataType: r[1] as string, primaryKey: r[2] === 'PRI' }));
   },
 
   async query(client, sql) {
@@ -313,10 +315,18 @@ export const postgresDriver: Driver<pg.Client> = {
       // its own, so a display string would have to be reassembled out here --
       // guessing at which types take a length and how each one spells it.
       // format_type is Postgres rendering its own type, which is the answer.
-      text: `SELECT a.attname, format_type(a.atttypid, a.atttypmod)
+      //
+      // The LEFT JOIN to pg_index picks up the primary key: a table has at most
+      // one primary index, so a column matches at most one row and non-key
+      // columns match none -- COALESCE turns that absence into false.
+      text: `SELECT a.attname,
+                    format_type(a.atttypid, a.atttypmod),
+                    COALESCE(i.indisprimary, false)
                FROM pg_attribute a
                JOIN pg_class c ON c.oid = a.attrelid
                JOIN pg_namespace n ON n.oid = c.relnamespace
+               LEFT JOIN pg_index i
+                 ON i.indrelid = c.oid AND i.indisprimary AND a.attnum = ANY(i.indkey)
               WHERE n.nspname = $1 AND c.relname = $2
                 -- attnum <= 0 is a system column (ctid, xmin); attisdropped
                 -- rows are the corpses of DROP COLUMN, which pg keeps.
@@ -326,7 +336,11 @@ export const postgresDriver: Driver<pg.Client> = {
       rowMode: 'array',
     });
 
-    return (res.rows as string[][]).map((r) => ({ name: r[0] as string, dataType: r[1] as string }));
+    return (res.rows as unknown[][]).map((r) => ({
+      name: r[0] as string,
+      dataType: r[1] as string,
+      primaryKey: r[2] === true,
+    }));
   },
 
   async query(client, sql) {

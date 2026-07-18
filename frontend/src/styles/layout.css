@@ -753,24 +753,56 @@
   padding: var(--gap-sm) 6px;
 }
 
+/* A row is a container now, not a button: the chevron toggles and the name
+   browses, and a <button> cannot hold a <button> -- the tab strip's structure
+   exactly. The hover highlight lives on the whole row so both halves share it. */
 .tree__row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
   height: var(--row-h-dense);
-  padding: 0 6px;
-  border: none;
   border-radius: var(--radius);
+}
+.tree__row:hover {
+  background: var(--hover);
+}
+/* The chevron sits at the row's edge, a fixed lane so every name lines up
+   whether its row is a leaf's caret or not. */
+.tree__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+/* Closed points right; a quarter turn points it down when the row is open. A
+   caret is --text-faint, quieter than the glyph beside the name. */
+.tree__chevron {
+  transition: transform 0.12s ease;
+}
+.tree__chevron--open {
+  transform: rotate(90deg);
+}
+.tree__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 6px 0 0;
+  border: none;
   background: none;
   color: var(--text);
   font: inherit;
   font-size: var(--text-body);
   text-align: left;
   cursor: pointer;
-}
-.tree__row:hover {
-  background: var(--hover);
 }
 .tree__label {
   overflow: hidden;
@@ -782,10 +814,50 @@
 .tree__icon {
   color: var(--text-muted);
 }
+
+/* The columns revealed under an expanded row, indented to sit under the name. */
+.tree__columns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tree__col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--row-h-dense);
+  /* Indent past the chevron lane and the row icon, so a column name lines up
+     under its table's name. */
+  padding: 0 6px 0 30px;
+}
+.tree__col-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-badge);
+  color: var(--text);
+}
+/* The key mark: shape, not colour -- muted like every other tree glyph. */
+.tree__key {
+  flex: none;
+  color: var(--text-muted);
+}
+/* The type trails at the row's end, quieter than the name it describes. */
+.tree__col-type {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+}
 .tree__note {
   padding: 5px 8px;
   font-size: var(--text-badge);
   color: var(--text-muted);
+}
+.tree__note--nested {
+  padding-left: 30px;
 }
 .tree__note--error {
   color: var(--red-text);

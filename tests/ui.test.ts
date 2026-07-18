@@ -33,11 +33,23 @@ const KEYCHAIN_SERVICE = `squeal-ui-test-${Bun.randomUUIDv7()}`;
 
 let app: AppSession;
 
-/** The tree is one database's tables, flat: a row is a table and nothing else. */
+/** A tree row is a table now: a chevron that reveals its columns, plus the name
+    that browses. Clicking the name is what opens the grid. */
 const clickTable = (label: string) => `
   [...document.querySelectorAll('.tree__row')]
     .find(e => e.querySelector('.tree__label').textContent === ${JSON.stringify(label)})
-    .click(); true;`;
+    .querySelector('.tree__name').click(); true;`;
+
+/** The chevron is the other half of the row: it reveals the columns in place. */
+const toggleTable = (label: string) => `
+  [...document.querySelectorAll('.tree__row')]
+    .find(e => e.querySelector('.tree__label').textContent === ${JSON.stringify(label)})
+    .querySelector('.tree__toggle').click(); true;`;
+
+/** The one item whose name is `label`, so its revealed columns can be read. */
+const treeItem = (label: string) => `
+  [...document.querySelectorAll('.tree__item')]
+    .find(e => e.querySelector('.tree__label')?.textContent === ${JSON.stringify(label)})`;
 
 /** The database is picked from a select now, so React's own setter is the way in. */
 const selectDatabase = (name: string) => `${REACT_SETTERS}
@@ -277,6 +289,39 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       );
       expect(tables).toContain('users');
       expect(tables).toContain('reporting.daily_stats');
+    });
+
+    test('orders every table above every view', async () => {
+      // shop holds one view (active_users) among its tables, so ordering tables
+      // first means the view is last -- no heading, the icon tells them apart.
+      const labels = await app.evaluate<string[]>(
+        `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`
+      );
+      expect(labels[labels.length - 1]).toBe('active_users');
+    });
+
+    test('a table expands in place to show its columns, marking the primary key', async () => {
+      await app.evaluate(toggleTable('users'));
+      await Bun.sleep(1000);
+
+      const item = treeItem('users');
+      const cols = await app.evaluate<string[]>(
+        `[...${item}.querySelectorAll('.tree__col-name')].map(e => e.textContent)`
+      );
+      expect(cols).toContain('email');
+
+      // The key mark lands on the primary key and on nothing else -- the whole
+      // point of carrying the flag rather than guessing from the name.
+      const hasKey = (name: string) => `!![...${item}.querySelectorAll('.tree__col')]
+        .find(c => c.querySelector('.tree__col-name').textContent === ${JSON.stringify(name)})
+        .querySelector('.tree__key')`;
+      expect(await app.evaluate<boolean>(hasKey('id'))).toBe(true);
+      expect(await app.evaluate<boolean>(hasKey('email'))).toBe(false);
+
+      // Collapse again, so the tree is the flat list the later tests expect.
+      await app.evaluate(toggleTable('users'));
+      await Bun.sleep(200);
+      expect(await app.evaluate<number>(`${item}.querySelectorAll('.tree__col').length`)).toBe(0);
     });
 
     /*

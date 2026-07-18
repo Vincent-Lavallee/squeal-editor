@@ -12,6 +12,7 @@ import {
   RiEyeLine,
   RiFlaskLine,
   RiGlobalLine,
+  RiKey2Line,
   RiLeafLine,
   RiLockLine,
   RiLockUnlockLine,
@@ -40,6 +41,18 @@ import {
  */
 export const TableIcon = RiTableLine;
 export const ViewIcon = RiEyeLine;
+
+/**
+ * The disclosure chevron on a tree row: closed points right, and CSS rotates it
+ * a quarter turn when the row is open. A kind of its own rather than
+ * `NextPageIcon`, though they share a glyph today -- expanding a row is not
+ * paging, and giving one an arrow of its own must not silently flip the other.
+ */
+export const DisclosureIcon = RiArrowRightSLine;
+
+/** Marks a primary-key column in an expanded tree row. Shape, not colour: it
+ *  reads as muted as any other tree glyph. */
+export const KeyIcon = RiKey2Line;
 
 /*
  * Paging. A binding each although the two are mirror images: "previous page" and

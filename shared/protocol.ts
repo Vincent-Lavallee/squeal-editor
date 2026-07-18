@@ -229,10 +229,17 @@ export interface TableInfo {
  * be a second place that has to know what MySQL means, and the value is only
  * ever *shown*, beside a column name in the editor's completion. Nothing reads
  * it, so carrying it is not knowing it -- the `SqlDialect` rule exactly.
+ *
+ * `primaryKey` is the one flag here that is a fact about the column and not just
+ * its rendering: the tree marks a key column when a table is expanded, and the
+ * editable grid needs to know which columns identify a row. Each driver reads it
+ * from the catalog beside the type -- `COLUMN_KEY` in MySQL, `pg_index` in
+ * Postgres -- so the two never drift on what "primary" means.
  */
 export interface ColumnInfo {
   name: string;
   dataType: string;
+  primaryKey: boolean;
 }
 
 export interface QueryResult {

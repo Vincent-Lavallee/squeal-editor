@@ -1,5 +1,7 @@
+import { useMemo, useState } from 'react';
+
 import type { TableInfo } from '../../../../shared/protocol.ts';
-import { TableIcon, ViewIcon } from '../../icons.ts';
+import { DisclosureIcon, KeyIcon, TableIcon, ViewIcon } from '../../icons.ts';
 import { useExplorer } from './useExplorer.ts';
 
 interface Props {
@@ -10,7 +12,33 @@ interface Props {
 }
 
 export default function Sidebar({ onSelectTable, onSelectDatabase }: Props) {
-  const { databases, database, hasTab, tables, loading, error } = useExplorer();
+  const { databases, database, hasTab, tables, columnsFor, loadTableColumns, loading, error } = useExplorer();
+
+  // Which rows are open. Webview-only UI state -- it never crossed the bridge --
+  // so it lives here rather than in a slice. Keyed by table name, which is all a
+  // tree of one database ever shows at once.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+
+  const toggle = (name: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else {
+        next.add(name);
+        // Fetch on open; the thunk's condition dedupes, so an already-completed
+        // table costs nothing and a re-open never re-hits the bridge.
+        if (database) loadTableColumns(database, name);
+      }
+      return next;
+    });
+  };
+
+  // Tables above views. A stable sort keeps the server's within-group order (by
+  // name) -- no heading, since the view icon already tells the two kinds apart.
+  const sorted = useMemo(
+    () => (tables ? [...tables].sort((a, b) => (a.kind === 'view' ? 1 : 0) - (b.kind === 'view' ? 1 : 0)) : tables),
+    [tables]
+  );
 
   return (
     <aside className="sidebar">
@@ -56,25 +84,66 @@ export default function Sidebar({ onSelectTable, onSelectDatabase }: Props) {
         {/* An error renders where its action was taken: listing tables failed, so
             it belongs in the tree, not in a pane about query results. */}
         {error && <div className="tree__note tree__note--error">{error}</div>}
-        {tables?.length === 0 && <div className="tree__note">No tables</div>}
+        {sorted?.length === 0 && <div className="tree__note">No tables</div>}
 
         {database &&
-          tables?.map((t) => (
-            <button
-              key={t.name}
-              className="tree__row"
-              onClick={() => onSelectTable(database, t)}
-              title={`${t.name} — click to browse`}
-            >
-              {t.kind === 'view' ? (
-                <ViewIcon className="icon tree__icon" aria-hidden="true" />
-              ) : (
-                <TableIcon className="icon tree__icon" aria-hidden="true" />
-              )}
-              <span className="tree__label">{t.name}</span>
-            </button>
-          ))}
+          sorted?.map((t) => {
+            const open = expanded.has(t.name);
+            return (
+              <div key={t.name} className="tree__item">
+                <div className="tree__row">
+                  {/* The chevron toggles the columns; the name still browses. Two
+                      buttons because one cannot nest in the other -- the tab
+                      strip's structure exactly. */}
+                  <button
+                    className="tree__toggle"
+                    onClick={() => toggle(t.name)}
+                    aria-expanded={open}
+                    aria-label={open ? `Collapse ${t.name}` : `Expand ${t.name}`}
+                  >
+                    <DisclosureIcon
+                      className={`icon tree__chevron${open ? ' tree__chevron--open' : ''}`}
+                      aria-hidden="true"
+                    />
+                  </button>
+                  <button className="tree__name" onClick={() => onSelectTable(database, t)} title={`${t.name} — click to browse`}>
+                    {t.kind === 'view' ? (
+                      <ViewIcon className="icon tree__icon" aria-hidden="true" />
+                    ) : (
+                      <TableIcon className="icon tree__icon" aria-hidden="true" />
+                    )}
+                    <span className="tree__label">{t.name}</span>
+                  </button>
+                </div>
+
+                {open && <Columns columns={columnsFor(database, t.name)} />}
+              </div>
+            );
+          })}
       </nav>
     </aside>
+  );
+}
+
+/**
+ * The columns revealed under an expanded row. The three states are the cache's
+ * own: `undefined`/`null` is still loading (or a fetch that failed, which the
+ * completion also leaves silent), an array is the answer. A key mark on the
+ * primary key, muted like every tree glyph -- shape, not colour.
+ */
+function Columns({ columns }: { columns: ReturnType<ReturnType<typeof useExplorer>['columnsFor']> }) {
+  if (columns == null) return <div className="tree__note tree__note--nested">Loading…</div>;
+  if (columns.length === 0) return <div className="tree__note tree__note--nested">No columns</div>;
+
+  return (
+    <ul className="tree__columns">
+      {columns.map((c) => (
+        <li key={c.name} className="tree__col" title={`${c.name} ${c.dataType}${c.primaryKey ? ' · primary key' : ''}`}>
+          <span className="tree__col-name mono">{c.name}</span>
+          {c.primaryKey && <KeyIcon className="icon tree__key" aria-label="primary key" />}
+          <span className="tree__col-type">{c.dataType}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

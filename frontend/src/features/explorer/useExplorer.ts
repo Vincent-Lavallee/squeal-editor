@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 
+import type { ColumnInfo } from '../../../../shared/protocol.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
-import { loadTables } from '../../store/explorerSlice.ts';
+import { loadColumns, loadTables } from '../../store/explorerSlice.ts';
 
 /**
  * A connection with nothing fetched yet, and a tab pointed at nothing, read the
@@ -14,7 +15,7 @@ const NO_DATABASES: string[] = [];
 /** The explorer's whole public surface. Its components use nothing else. */
 export function useExplorer() {
   const dispatch = useAppDispatch();
-  const { databases, tables, loadingTables, error } = useAppSelector((s) => s.explorer);
+  const { databases, tables, columns, loadingTables, error } = useAppSelector((s) => s.explorer);
   const connectionId = useAppSelector((s) => s.session.activeConnectionId);
   const { activeTab } = useTabs();
   const database = activeTab?.database ?? null;
@@ -37,7 +38,31 @@ export function useExplorer() {
     if (database) void dispatch(loadTables(database));
   }, [database, connectionId, dispatch]);
 
+  /*
+   * The tree fetches a table's columns the same way the completion does -- the
+   * same thunk, the same cache -- so expanding a row the editor has already
+   * completed against costs nothing. `loadColumns`' condition dedupes, so the
+   * caller may ask on every expand without guarding it here.
+   *
+   * `undefined` means never asked, `null` means asked (in flight, or failed),
+   * and an array is the answer -- the same three states the cache holds, passed
+   * straight through so the tree can tell "loading" from "empty".
+   */
+  const columnsFor = useCallback(
+    (db: string, table: string): ColumnInfo[] | null | undefined =>
+      connectionId ? columns[connectionId]?.[db]?.[table] : undefined,
+    [columns, connectionId]
+  );
+  const loadTableColumns = useCallback(
+    (db: string, table: string) => {
+      void dispatch(loadColumns({ database: db, table }));
+    },
+    [dispatch]
+  );
+
   return {
+    columnsFor,
+    loadTableColumns,
     databases: connectionId ? (databases[connectionId] ?? NO_DATABASES) : NO_DATABASES,
     database,
     /** With nothing open there is no tab to point, so there is nothing to pick. */
