@@ -2,8 +2,8 @@ import { useCallback } from 'react';
 
 import type { TableInfo } from '../../shared/protocol.ts';
 import { useTabs } from './store/tabsSlice.ts';
-import { EditorPane, EditorProvider } from './features/editor/index.ts';
-import { Sidebar } from './features/explorer/index.ts';
+import { EditorPane, EditorProvider, useEditor } from './features/editor/index.ts';
+import { Sidebar, useExplorer } from './features/explorer/index.ts';
 import { ConnectionRail } from './features/rail/index.ts';
 import { ResultsTable, useResults } from './features/results/index.ts';
 import { StatusBar } from './features/statusbar/index.ts';
@@ -33,8 +33,10 @@ export default function Shell({ onAddConnection }: Props) {
 }
 
 function ShellLayout({ onAddConnection }: Props) {
-  const { activeTab, openGridTab, selectDatabase } = useTabs();
+  const { activeTab, openGridTab, openEditorTab, selectDatabase } = useTabs();
   const { run, running, browseIn } = useResults();
+  const { fetchDdl } = useExplorer();
+  const { setSql } = useEditor();
 
   // Clicking a table opens a grid tab of its own and browses into it, so the
   // query being written is never eaten. There is no editor on that tab by
@@ -53,6 +55,32 @@ function ShellLayout({ onAddConnection }: Props) {
       if (tabId) browseIn(tabId, table.name, 0);
     },
     [openGridTab, browseIn]
+  );
+
+  // "Open definition" spans three features: the explorer fetches the DDL, tabs
+  // mints an editor tab for it, and the editor holds the text. So the shell owns
+  // it, the same as opening a table.
+  //
+  // The text is seeded *before* the tab's Monaco model is created -- `setSql`
+  // runs in the same commit as `openEditorTab`, so the model is born holding it
+  // (see `EditorPane.modelFor`). That is why the DDL is fetched first and the tab
+  // opened only once it is in hand: a model already created cannot be written
+  // into without throwing the cursor to the top. A failed fetch still opens a tab
+  // -- there is nowhere else for the news to go -- carrying the reason as a
+  // comment, which is the honest thing to put where the answer would have been.
+  const showDefinition = useCallback(
+    async (database: string, table: TableInfo) => {
+      let text: string;
+      try {
+        text = await fetchDdl(database, table.name, table.kind);
+      } catch (err) {
+        const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err);
+        text = `-- Could not load the definition of ${table.name}:\n-- ${reason}\n`;
+      }
+      const tabId = openEditorTab(database, table.name);
+      if (tabId) setSql(tabId, text);
+    },
+    [fetchDdl, openEditorTab, setSql]
   );
 
   // The dropdown moves the active tab and no other -- that is the whole point of
@@ -82,7 +110,7 @@ function ShellLayout({ onAddConnection }: Props) {
       <ConnectionRail onAdd={onAddConnection} />
 
       <div className="app">
-        <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} />
+        <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} onShowDefinition={showDefinition} />
 
         <main className={`main ${showEditor ? '' : 'main--grid'}`}>
           <TabStrip />

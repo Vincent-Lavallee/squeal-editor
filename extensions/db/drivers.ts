@@ -75,6 +75,24 @@ export interface Driver<C> {
    * connection opens (see `connection.ts`).
    */
   setReadOnly(client: C, readOnly: boolean): Promise<void>;
+  /**
+   * A relation's `CREATE` statement, faithful to what the server holds.
+   *
+   * Per-engine like quoting, and for the same reason: MySQL hands back its own
+   * `SHOW CREATE TABLE`, while Postgres has no such command and the statement is
+   * reassembled from the catalog -- columns via `format_type`, table constraints
+   * via `pg_get_constraintdef`, secondary indexes via `pg_get_indexdef`. Each is
+   * the engine rendering its own definition, which is the answer here the same
+   * way `format_type` was for a column's type. `kind` selects table-vs-view.
+   */
+  tableDdl(client: C, table: string, kind: 'table' | 'view'): Promise<string>;
+  /**
+   * Drop a relation. `DROP TABLE` and `DROP VIEW` differ per kind and the
+   * identifier is quoted per engine, which is why the UI names one and never
+   * writes the SQL. No `CASCADE`: a relation something else depends on stays put,
+   * refused by the server, rather than taking its dependents with it silently.
+   */
+  dropRelation(client: C, table: string, kind: 'table' | 'view'): Promise<void>;
   quoteIdent(name: string): string;
 }
 
@@ -226,6 +244,26 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     await client.query(readOnly ? 'SET SESSION TRANSACTION READ ONLY' : 'SET SESSION TRANSACTION READ WRITE');
   },
 
+  async tableDdl(client, table, kind) {
+    // MySQL renders its own DDL, so take it verbatim -- the same call the mysql
+    // CLI's own `SHOW CREATE` makes. The statement is the second column for both
+    // a table and a view (a view's row carries extra charset columns after it),
+    // so index 1 is the definition either way. The client is already pinned to
+    // the right database, so a bare name resolves there.
+    const verb = kind === 'view' ? 'SHOW CREATE VIEW' : 'SHOW CREATE TABLE';
+    const [rows] = (await client.query({ sql: `${verb} ${this.quoteIdent(table)}`, rowsAsArray: true })) as [
+      unknown[][],
+      FieldPacket[],
+    ];
+    const ddl = rows[0]?.[1];
+    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of ${table}.`);
+    return ddl;
+  },
+
+  async dropRelation(client, table, kind) {
+    await client.query(`DROP ${kind === 'view' ? 'VIEW' : 'TABLE'} ${this.quoteIdent(table)}`);
+  },
+
   quoteIdent(name) {
     return `\`${String(name).replace(/`/g, '``')}\``;
   },
@@ -368,6 +406,100 @@ export const postgresDriver: Driver<pg.Client> = {
         ? 'SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY'
         : 'SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE'
     );
+  },
+
+  async tableDdl(client, table, kind) {
+    // Qualify explicitly so `::regclass` resolves regardless of search_path --
+    // `listTables` leaves public bare, so an unqualified name means public.
+    const { schema, relation } = splitRelation(table);
+    const qualified = `${this.quoteIdent(schema)}.${this.quoteIdent(relation)}`;
+
+    if (kind === 'view') {
+      // pg has no SHOW CREATE; pg_get_viewdef is it rendering the view back.
+      const res = await client.query({
+        text: 'SELECT pg_get_viewdef($1::regclass, true)',
+        values: [qualified],
+        rowMode: 'array',
+      });
+      const def = (res.rows[0] as string[] | undefined)?.[0];
+      if (typeof def !== 'string') throw new Error(`Could not read the definition of ${table}.`);
+      return `CREATE VIEW ${qualified} AS\n${def}`;
+    }
+
+    // Columns, in ordinal order. format_type renders the type; pg_get_expr the
+    // default; attidentity/attgenerated distinguish an IDENTITY or a generated
+    // column from a plain DEFAULT, so a serial's `nextval(...)` still shows as
+    // the default pg actually stores rather than being invented back into
+    // `serial`. Showing what the catalog holds is the rule here too.
+    const cols = await client.query({
+      text: `SELECT a.attname,
+                    format_type(a.atttypid, a.atttypmod),
+                    a.attnotnull,
+                    pg_get_expr(ad.adbin, ad.adrelid),
+                    a.attidentity,
+                    a.attgenerated
+               FROM pg_attribute a
+               LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+              WHERE a.attrelid = $1::regclass AND a.attnum > 0 AND NOT a.attisdropped
+              ORDER BY a.attnum`,
+      values: [qualified],
+      rowMode: 'array',
+    });
+
+    const columnLines = (cols.rows as unknown[][]).map((r) => {
+      const name = this.quoteIdent(r[0] as string);
+      const type = r[1] as string;
+      const notNull = r[2] === true;
+      const defExpr = r[3] as string | null;
+      const identity = r[4] as string; // '' | 'a' (always) | 'd' (by default)
+      const generated = r[5] as string; // '' | 's' (stored)
+      let line = `  ${name} ${type}`;
+      if (identity) line += ` GENERATED ${identity === 'a' ? 'ALWAYS' : 'BY DEFAULT'} AS IDENTITY`;
+      else if (generated === 's' && defExpr) line += ` GENERATED ALWAYS AS (${defExpr}) STORED`;
+      else if (defExpr != null) line += ` DEFAULT ${defExpr}`;
+      if (notNull) line += ' NOT NULL';
+      return line;
+    });
+
+    // Table constraints, rendered by pg itself. Ordered PK, unique, check, FK for
+    // a readable result rather than catalog order.
+    const cons = await client.query({
+      text: `SELECT conname, pg_get_constraintdef(oid, true)
+               FROM pg_constraint
+              WHERE conrelid = $1::regclass
+              ORDER BY CASE contype WHEN 'p' THEN 0 WHEN 'u' THEN 1 WHEN 'c' THEN 2 WHEN 'f' THEN 3 ELSE 4 END,
+                       conname`,
+      values: [qualified],
+      rowMode: 'array',
+    });
+    const constraintLines = (cons.rows as unknown[][]).map(
+      (r) => `  CONSTRAINT ${this.quoteIdent(r[0] as string)} ${r[1] as string}`
+    );
+
+    const body = [...columnLines, ...constraintLines].join(',\n');
+
+    // Secondary indexes only: the ones backing the primary key or a unique
+    // constraint are already spelled out above, so exclude any index a
+    // constraint owns to avoid printing it twice.
+    const idx = await client.query({
+      text: `SELECT pg_get_indexdef(i.indexrelid)
+               FROM pg_index i
+              WHERE i.indrelid = $1::regclass
+                AND NOT i.indisprimary
+                AND i.indexrelid NOT IN (
+                  SELECT conindid FROM pg_constraint WHERE conrelid = $1::regclass AND conindid <> 0
+                )
+              ORDER BY i.indexrelid`,
+      values: [qualified],
+      rowMode: 'array',
+    });
+    const indexLines = (idx.rows as unknown[][]).map((r) => `${r[0] as string};`);
+
+    return [`CREATE TABLE ${qualified} (\n${body}\n);`, ...indexLines].join('\n');
+  },
+
+  async dropRelation(client, table, kind) {
+    await client.query(`DROP ${kind === 'view' ? 'VIEW' : 'TABLE'} ${this.quoteIdent(table)}`);
   },
 
   quoteIdent(name) {

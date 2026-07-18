@@ -34,6 +34,10 @@ export interface ConnectionHandle {
   listColumns(database: string, table: string): Promise<ColumnInfo[]>;
   query(database: string | undefined, sql: string): Promise<QueryOutcome>;
   browse(database: string, table: string, offset: number): Promise<TableRows>;
+  /** A relation's `CREATE` statement, for the context menu's "open definition". */
+  tableDdl(database: string, table: string, kind: 'table' | 'view'): Promise<string>;
+  /** Drop a relation. Not undoable -- the UI guards it behind a typed confirmation. */
+  dropRelation(database: string, table: string, kind: 'table' | 'view'): Promise<void>;
   /**
    * Turn read-only on or off across every client this connection holds, and
    * remember it for every client opened afterwards. Both halves matter: one
@@ -156,6 +160,14 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
         pageSize: PAGE_SIZE,
         hasMore,
       };
+    },
+
+    async tableDdl(database, table, kind) {
+      return driver.tableDdl(await getClient(database), table, kind);
+    },
+
+    async dropRelation(database, table, kind) {
+      await driver.dropRelation(await getClient(database), table, kind);
     },
 
     async setReadOnly(value) {

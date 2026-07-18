@@ -51,6 +51,24 @@ const treeItem = (label: string) => `
   [...document.querySelectorAll('.tree__item')]
     .find(e => e.querySelector('.tree__label')?.textContent === ${JSON.stringify(label)})`;
 
+/** Summon the context menu on a row, at its own top-left corner. */
+const rightClickTable = (label: string) => `
+  (() => {
+    const row = [...document.querySelectorAll('.tree__row')]
+      .find(e => e.querySelector('.tree__label').textContent === ${JSON.stringify(label)});
+    const r = row.getBoundingClientRect();
+    row.dispatchEvent(new MouseEvent('contextmenu',
+      { bubbles: true, cancelable: true, clientX: r.left + 5, clientY: r.top + 5 }));
+    return true;
+  })()`;
+
+/** The menu's items, top to bottom. */
+const menuItemLabels = `[...document.querySelectorAll('.context-menu .menu__item')].map(e => e.textContent)`;
+const contextItem = (label: string) => `
+  [...document.querySelectorAll('.context-menu .menu__item')].find(e => e.textContent === ${JSON.stringify(label)})`;
+const clickContextItem = (label: string) => `${contextItem(label)}.click(); true;`;
+const pressEscape = `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true;`;
+
 /** The database is picked from a select now, so React's own setter is the way in. */
 const selectDatabase = (name: string) => `${REACT_SETTERS}
   setSelect(document.querySelector('.sidebar__head .select'), ${JSON.stringify(name)});
@@ -710,6 +728,117 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(300);
       await app.evaluate(selectDatabase('shop'));
       await Bun.sleep(1200);
+    });
+
+    /*
+     * Right-clicking a table used to do nothing; now it is the surface the
+     * per-table actions hang off. The three are asserted as one list because the
+     * menu being the whole surface is the point -- a stray fourth entry, or a
+     * missing one, is the regression. We are on `shop` with `users` in the tree
+     * from the test above.
+     */
+    test('right-clicking a table opens its action menu', async () => {
+      await app.evaluate(rightClickTable('users'));
+      await Bun.sleep(200);
+      expect(await app.evaluate<string[]>(menuItemLabels)).toEqual(['Copy name', 'Open definition', 'Drop table']);
+      // Dismisses on Escape, like every floating thing here.
+      await app.evaluate(pressEscape);
+      await Bun.sleep(150);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.context-menu').length`)).toBe(0);
+    });
+
+    test('the menu names a view a view', async () => {
+      // A view is a relation too, so it gets the menu -- with the drop reading
+      // "Drop view", because that is the statement it will run.
+      await app.evaluate(rightClickTable('active_users'));
+      await Bun.sleep(200);
+      expect(await app.evaluate<string[]>(menuItemLabels)).toContain('Drop view');
+      await app.evaluate(pressEscape);
+      await Bun.sleep(150);
+    });
+
+    /*
+     * The interesting seam: the DDL is fetched, a new editor tab is minted for
+     * it, and its Monaco model is born holding the text -- seeded before the
+     * model exists, never written into a live one. The tab is named for the
+     * table, and the text is the engine's own CREATE.
+     */
+    test('"Open definition" opens the CREATE in a new named editor tab', async () => {
+      const before = await app.evaluate<number>(`document.querySelectorAll('.tabs__tab').length`);
+
+      await app.evaluate(rightClickTable('users'));
+      await Bun.sleep(200);
+      await app.evaluate(clickContextItem('Open definition'));
+      await Bun.sleep(1500);
+
+      expect(await app.evaluate<number>(`document.querySelectorAll('.tabs__tab').length`)).toBe(before + 1);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe('users');
+      expect(await app.evaluate<string | null>(editorText)).toContain('CREATE TABLE');
+
+      // Close the definition tab (it is the active one) to hand the next test a
+      // clean strip.
+      await app.evaluate(`document.querySelector('.tabs__tab--active .tabs__close').click(); true;`);
+      await Bun.sleep(300);
+    });
+
+    /*
+     * Drop is guarded by the typed-name modal, the same friction as leaving
+     * read-only. This drives it up to the point of confirmation and cancels: the
+     * actual DROP is covered against the real server in the extension suite, and
+     * dropping a fixture object here would break the suite's re-runnability.
+     */
+    test('dropping asks for the name typed back, and cancels cleanly', async () => {
+      await app.evaluate(rightClickTable('users'));
+      await Bun.sleep(200);
+      await app.evaluate(clickContextItem('Drop table'));
+      await Bun.sleep(300);
+
+      expect(await app.evaluate<boolean>(`!!document.querySelector('.modal')`)).toBe(true);
+      const confirmDisabled = `document.querySelector('.modal .connect__submit').disabled`;
+      expect(await app.evaluate<boolean>(confirmDisabled)).toBe(true);
+
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('.modal .input'), 'not-the-name'); true;`);
+      await Bun.sleep(150);
+      expect(await app.evaluate<boolean>(confirmDisabled)).toBe(true);
+
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('.modal .input'), 'users'); true;`);
+      await Bun.sleep(150);
+      expect(await app.evaluate<boolean>(confirmDisabled)).toBe(false);
+
+      // Cancel: the table is untouched, and the modal is gone.
+      await app.evaluate(`[...document.querySelectorAll('.modal .btn')].find(e => e.textContent === 'Cancel').click(); true;`);
+      await Bun.sleep(300);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('.modal')`)).toBe(false);
+      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`))
+        .toContain('users');
+    });
+
+    /*
+     * A read-only connection refuses a drop from the UI: read-only is the server
+     * refusing writes, but it does not reliably cover DDL, so the menu is where
+     * that intent is honoured for a DROP. Locking is immediate; unlocking wants
+     * the environment typed back, which the status bar spells out.
+     */
+    test('a read-only connection disables Drop', async () => {
+      const env = await app.evaluate<string>(`document.querySelector('.statusbar__env').textContent`);
+
+      // Lock it -- turning read-only on is the safe direction, so it is immediate.
+      await app.evaluate(`document.querySelector('.statusbar__lock').click(); true;`);
+      await Bun.sleep(500);
+
+      await app.evaluate(rightClickTable('users'));
+      await Bun.sleep(200);
+      expect(await app.evaluate<boolean>(`${contextItem('Drop table')}.disabled`)).toBe(true);
+      await app.evaluate(pressEscape);
+      await Bun.sleep(150);
+
+      // Unlock again, so the connection is left as it was found.
+      await app.evaluate(`document.querySelector('.statusbar__lock').click(); true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('.modal .input'), ${JSON.stringify(env)}); true;`);
+      await Bun.sleep(150);
+      await app.evaluate(`document.querySelector('.modal .connect__submit').click(); true;`);
+      await Bun.sleep(400);
     });
   });
 

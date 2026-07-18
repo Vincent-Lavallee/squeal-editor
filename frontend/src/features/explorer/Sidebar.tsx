@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 
 import type { TableInfo } from '../../../../shared/protocol.ts';
 import { DisclosureIcon, KeyIcon, TableIcon, ViewIcon } from '../../icons.ts';
+import DropTableConfirm from './DropTableConfirm.tsx';
+import TableContextMenu from './TableContextMenu.tsx';
 import { useExplorer } from './useExplorer.ts';
 
 interface Props {
@@ -9,15 +11,28 @@ interface Props {
   onSelectTable: (database: string, table: TableInfo) => void;
   /** So does pointing a tab at another database -- and what that means depends on the tab. */
   onSelectDatabase: (database: string) => void;
+  /** Its definition opens in a new editor tab, which spans the bridge, tabs and editor. */
+  onShowDefinition: (database: string, table: TableInfo) => void;
 }
 
-export default function Sidebar({ onSelectTable, onSelectDatabase }: Props) {
-  const { databases, database, hasTab, tables, columnsFor, loadTableColumns, loading, error } = useExplorer();
+export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition }: Props) {
+  const { databases, database, hasTab, tables, columnsFor, loadTableColumns, dropTable, readOnly, loading, error } =
+    useExplorer();
 
   // Which rows are open. Webview-only UI state -- it never crossed the bridge --
   // so it lives here rather than in a slice. Keyed by table name, which is all a
   // tree of one database ever shows at once.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+
+  // The context menu (a table plus where it was summoned) and the drop it may
+  // lead to. Both are webview-only, so both live here rather than in a slice.
+  const [menu, setMenu] = useState<{ table: TableInfo; x: number; y: number } | null>(null);
+  const [dropping, setDropping] = useState<TableInfo | null>(null);
+
+  // Copy is a plain webview clipboard write -- it never crosses the bridge, the
+  // same as the window chrome calls, so it does not go through the explorer's
+  // hook or a thunk.
+  const copyName = (name: string) => void Neutralino.clipboard.writeText(name);
 
   const toggle = (name: string) => {
     setExpanded((prev) => {
@@ -91,7 +106,13 @@ export default function Sidebar({ onSelectTable, onSelectDatabase }: Props) {
             const open = expanded.has(t.name);
             return (
               <div key={t.name} className="tree__item">
-                <div className="tree__row">
+                <div
+                  className="tree__row"
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setMenu({ table: t, x: e.clientX, y: e.clientY });
+                  }}
+                >
                   {/* The chevron toggles the columns; the name still browses. Two
                       buttons because one cannot nest in the other -- the tab
                       strip's structure exactly. */}
@@ -121,6 +142,30 @@ export default function Sidebar({ onSelectTable, onSelectDatabase }: Props) {
             );
           })}
       </nav>
+
+      {menu && database && (
+        <TableContextMenu
+          table={menu.table}
+          x={menu.x}
+          y={menu.y}
+          readOnly={readOnly}
+          onCopyName={() => copyName(menu.table.name)}
+          onShowDefinition={() => onShowDefinition(database, menu.table)}
+          onDrop={() => setDropping(menu.table)}
+          onClose={() => setMenu(null)}
+        />
+      )}
+
+      {dropping && database && (
+        <DropTableConfirm
+          table={dropping}
+          onConfirm={async () => {
+            await dropTable(database, dropping.name, dropping.kind);
+            setDropping(null);
+          }}
+          onCancel={() => setDropping(null)}
+        />
+      )}
     </aside>
   );
 }

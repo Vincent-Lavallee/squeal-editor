@@ -352,6 +352,34 @@ export interface Commands {
     req: { connectionId: string; database: string; table: string; offset: number };
     res: TablePage;
   };
+  /**
+   * A relation's `CREATE` statement, for the context menu's "open definition".
+   *
+   * The UI names a table and a kind and never the catalog query, the same rule
+   * as `db.browse` and `db.columns`: reconstructing a faithful `CREATE TABLE` is
+   * per-engine (MySQL reads `SHOW CREATE TABLE`; Postgres reassembles it from the
+   * catalog with `format_type`, `pg_get_constraintdef` and `pg_get_indexdef`), so
+   * only this side may write it. `kind` decides table-vs-view because Postgres
+   * takes a different path for each, and the UI already holds it.
+   */
+  'db.ddl': {
+    req: { connectionId: string; database: string; table: string; kind: 'table' | 'view' };
+    res: { ddl: string };
+  };
+  /**
+   * Drop a relation. Guarded up top by a modal that wants the name typed back --
+   * the same friction as leaving read-only -- because it is DDL and nothing rolls
+   * it back.
+   *
+   * A driver method rather than a `db.query` the UI wrote, for the reason browse
+   * is: `DROP TABLE` and `DROP VIEW` differ, the identifier is quoted per engine,
+   * and the UI may not author SQL. No `CASCADE`: the server's default refusal to
+   * drop something depended on is the safe answer, surfaced as a failed drop.
+   */
+  'db.drop': {
+    req: { connectionId: string; database: string; table: string; kind: 'table' | 'view' };
+    res: { ok: true };
+  };
   'db.disconnect': {
     req: { connectionId: string };
     res: { ok: true };

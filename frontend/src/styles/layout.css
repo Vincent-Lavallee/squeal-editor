@@ -196,6 +196,39 @@
 .menu__item:hover {
   background: var(--hover);
 }
+/* Destructive, so it wears this system's destructive hue -- like the titlebar's
+   close, red means "this one deletes". Its icon-free label keeps the row plain. */
+.menu__item--danger {
+  color: var(--red-text);
+}
+.menu__item--danger:hover:not(:disabled) {
+  background: var(--red-bg);
+}
+.menu__item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+.menu__item:disabled:hover {
+  background: none;
+}
+
+/*
+ * The table context menu: the file menu's list, summoned at the cursor. Fixed
+ * rather than absolute because it is positioned in viewport coordinates (the
+ * pointer's), and outlined not raised for the same reason every floating thing
+ * here is -- there is one background.
+ */
+.context-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: var(--gap-xs);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
 
 /* ---------------- Connect screen ---------------- */
 

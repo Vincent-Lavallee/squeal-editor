@@ -3,7 +3,8 @@ import { useCallback, useEffect } from 'react';
 import type { ColumnInfo } from '../../../../shared/protocol.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
-import { loadColumns, loadTables } from '../../store/explorerSlice.ts';
+import { selectActiveConnection } from '../../store/sessionSlice.ts';
+import { dropTable as dropTableThunk, fetchDdl as fetchDdlThunk, loadColumns, loadTables } from '../../store/explorerSlice.ts';
 
 /**
  * A connection with nothing fetched yet, and a tab pointed at nothing, read the
@@ -17,6 +18,10 @@ export function useExplorer() {
   const dispatch = useAppDispatch();
   const { databases, tables, columns, loadingTables, error } = useAppSelector((s) => s.explorer);
   const connectionId = useAppSelector((s) => s.session.activeConnectionId);
+  // The active connection's lock, so the menu can refuse a drop on a connection
+  // the user has held read-only -- read-only does not reliably cover DDL at the
+  // server, so honouring that intent for a DROP is the UI's to do. See decisions.
+  const readOnly = useAppSelector((s) => selectActiveConnection(s)?.readOnly ?? false);
   const { activeTab } = useTabs();
   const database = activeTab?.database ?? null;
 
@@ -60,9 +65,29 @@ export function useExplorer() {
     [dispatch]
   );
 
+  // The context menu's two bridge-crossing actions. Each returns the thunk's
+  // unwrapped result, so the caller sees the DDL string or the rejection reason
+  // directly -- a failed drop surfaces in the confirm modal, where it was asked.
+  const fetchDdl = useCallback(
+    (db: string, table: string, kind: 'table' | 'view'): Promise<string> =>
+      dispatch(fetchDdlThunk({ database: db, table, kind }))
+        .unwrap()
+        .then((r) => r.ddl),
+    [dispatch]
+  );
+  const dropTable = useCallback(
+    (db: string, table: string, kind: 'table' | 'view'): Promise<unknown> =>
+      dispatch(dropTableThunk({ database: db, table, kind })).unwrap(),
+    [dispatch]
+  );
+
   return {
     columnsFor,
     loadTableColumns,
+    fetchDdl,
+    dropTable,
+    /** The active connection is read-only; a drop is disabled and says why. */
+    readOnly,
     databases: connectionId ? (databases[connectionId] ?? NO_DATABASES) : NO_DATABASES,
     database,
     /** With nothing open there is no tab to point, so there is nothing to pick. */

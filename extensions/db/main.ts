@@ -122,6 +122,15 @@ const COMMANDS: Handlers = {
     return { result: { columns, rows, durationMs: Date.now() - startedAt }, ...page };
   },
 
+  async 'db.ddl'({ connectionId, database, table, kind }) {
+    return { ddl: await getConnection(connectionId).tableDdl(database, table, kind) };
+  },
+
+  async 'db.drop'({ connectionId, database, table, kind }) {
+    await getConnection(connectionId).dropRelation(database, table, kind);
+    return { ok: true };
+  },
+
   async 'db.disconnect'({ connectionId }) {
     await closeConnection(connectionId);
     return { ok: true };

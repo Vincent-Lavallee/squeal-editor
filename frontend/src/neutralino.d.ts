@@ -37,6 +37,11 @@ declare namespace Neutralino {
     function exit(code?: number): Promise<void>;
   }
 
+  namespace clipboard {
+    /** Copy a table's name from the context menu. A webview API, not the bridge. */
+    function writeText(text: string): Promise<void>;
+  }
+
   namespace window {
     interface SizeOptions {
       width?: number;

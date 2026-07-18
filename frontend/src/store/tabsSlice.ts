@@ -109,9 +109,20 @@ const tabsSlice = createSlice({
   reducers: {
     tabOpened(
       state,
-      action: PayloadAction<{ connectionId: string; kind: Tab['kind']; database?: string | null; table?: string }>
+      action: PayloadAction<{
+        connectionId: string;
+        kind: Tab['kind'];
+        database?: string | null;
+        table?: string;
+        /**
+         * A title for an `editor` tab. Given only when the tab is opened *for*
+         * something -- a table's definition -- so it is named for it and does not
+         * consume a `Query N`. Absent for a blank query tab, which numbers itself.
+         */
+        title?: string;
+      }>
     ) {
-      const { connectionId, kind, table } = action.payload;
+      const { connectionId, kind, table, title } = action.payload;
       // A tab opens on the database the caller named, and on this connection's
       // default when it named none -- which is the empty state's case, and the
       // one that strands you if the answer is null.
@@ -119,6 +130,12 @@ const tabsSlice = createSlice({
 
       if (kind === 'grid') {
         mint(state, { connectionId, kind, database, table, title: table ?? 'Table' });
+        return;
+      }
+      // A named editor tab keeps its name and leaves the query counter alone; an
+      // unnamed one is the next Query N.
+      if (title) {
+        mint(state, { connectionId, kind, database, title });
         return;
       }
       const no = state.nextQueryNo[connectionId] ?? 1;
@@ -210,7 +227,6 @@ export function useTabs() {
   const store = useStore<RootState>();
   const tabs = useAppSelector(selectTabs);
   const activeTab = useAppSelector(selectActiveTab);
-  const connectionId = useAppSelector((s) => s.session.activeConnectionId);
   const activeTabId = activeTab?.id ?? null;
 
   /*
@@ -244,12 +260,20 @@ export function useTabs() {
      * it points at a database and then queries it.
      */
     openGridTab,
-    /** On the database given, or this connection's default when there is no tab to inherit from. */
+    /**
+     * On the database given, or this connection's default when there is no tab to
+     * inherit from. Returns the minted id -- the same reason `openGridTab` does:
+     * opening a definition tab means seeding its editor text right after, and only
+     * the reducer knows the id. `title` names a tab opened *for* something.
+     */
     openEditorTab: useCallback(
-      (database?: string | null) => {
-        if (connectionId) dispatch(tabOpened({ connectionId, kind: 'editor', database }));
+      (database?: string | null, title?: string): string | null => {
+        const id = store.getState().session.activeConnectionId;
+        if (!id) return null;
+        dispatch(tabOpened({ connectionId: id, kind: 'editor', database, title }));
+        return store.getState().tabs.activeTabId[id]!;
       },
-      [dispatch, connectionId]
+      [dispatch, store]
     ),
     closeTab: useCallback((id: string) => dispatch(tabClosed({ id })), [dispatch]),
     activateTab: useCallback((id: string) => dispatch(tabActivated({ id })), [dispatch]),

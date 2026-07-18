@@ -33,7 +33,7 @@ declare global {
 export default function EditorPane({ onRun, running }: Props) {
   const { config, dialect } = useSession();
   const { tabs, activeTab } = useTabs();
-  const { sqlByTab, setSql } = useEditor();
+  const { sqlByTab, setSql, peekSql } = useEditor();
 
   const activeTabId = activeTab?.id ?? null;
   const isEditorTab = activeTab?.kind === 'editor';
@@ -68,8 +68,8 @@ export default function EditorPane({ onRun, running }: Props) {
    * has to run whatever the *current* handler, text and tab are -- capturing
    * them would pin it to the first render and run the empty query forever.
    */
-  const latest = useRef({ sql, onRun, dialect, activeTabId });
-  latest.current = { sql, onRun, dialect, activeTabId };
+  const latest = useRef({ sql, onRun, dialect, activeTabId, peekSql });
+  latest.current = { sql, onRun, dialect, activeTabId, peekSql };
 
   // The button is the same action the shortcut and the context menu run, not a
   // second path into the formatter: reach for Monaco's registered action rather
@@ -81,10 +81,18 @@ export default function EditorPane({ onRun, running }: Props) {
   const modelFor = useCallback((tabId: string): monaco.editor.ITextModel => {
     const existing = models.current.get(tabId);
     if (existing) return existing;
+    // Seeded from the tab's text if it already has some -- a tab opened *for* a
+    // table's definition sets `sqlByTab` before it becomes active, so the model
+    // is born holding it. This is the sanctioned way to write the editor from
+    // outside: not `setValue` on a live model (which throws the cursor to the top
+    // -- see `docs/decisions.md`), but the model's initial content, so the seed
+    // and `sqlByTab` agree from the first frame and text still only flows *out*
+    // after. A blank query tab has no entry and is born empty, as before.
+    //
     // Born in the dialect the engine reported, and kept in it by the effect
     // below -- a tab opened while another is showing must not come back
     // highlighted as plain SQL.
-    const created = monaco.editor.createModel('', latest.current.dialect);
+    const created = monaco.editor.createModel(latest.current.peekSql(tabId) ?? '', latest.current.dialect);
     models.current.set(tabId, created);
     return created;
   }, []);

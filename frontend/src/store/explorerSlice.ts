@@ -169,6 +169,56 @@ export const loadColumns = createAppThunk(
   }
 );
 
+/** A relation the context menu is acting on. Kind decides table-vs-view for both. */
+interface RelationArg {
+  database: string;
+  table: string;
+  kind: 'table' | 'view';
+}
+
+/**
+ * Fetch a relation's `CREATE` statement, for "open definition".
+ *
+ * A thunk even though it lands in no slice: it crosses the bridge, so it has a
+ * result the caller keeps (the DDL, dropped straight into a new editor tab) and
+ * a failure that must be renderable -- which is exactly what a thunk is for. It
+ * is deliberately not cached: a definition is a snapshot the user then edits, and
+ * re-asking should re-read the server rather than hand back a stale copy.
+ */
+export const fetchDdl = createAppThunk(
+  'explorer/fetchDdl',
+  async ({ database, table, kind }: RelationArg, { getState, rejectWithValue }) => {
+    const connectionId = getState().session.activeConnectionId;
+    if (!connectionId) return rejectWithValue('Not connected.');
+    try {
+      const { ddl } = await call('db.ddl', { connectionId, database, table, kind });
+      return { ddl };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  }
+);
+
+/**
+ * Drop a relation, then forget it. On success the table leaves the tree by
+ * dropping out of the cache here -- no refetch, since a drop removes exactly one
+ * known name. A failure (a dependent view, a permission) is `rejectWithValue`'d
+ * for the confirmation modal to show, where the action was taken.
+ */
+export const dropTable = createAppThunk(
+  'explorer/dropTable',
+  async ({ database, table, kind }: RelationArg, { getState, rejectWithValue }) => {
+    const connectionId = getState().session.activeConnectionId;
+    if (!connectionId) return rejectWithValue('Not connected.');
+    try {
+      await call('db.drop', { connectionId, database, table, kind });
+      return { connectionId, database, table };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  }
+);
+
 const explorerSlice = createSlice({
   name: 'explorer',
   initialState,
@@ -231,6 +281,17 @@ const explorerSlice = createSlice({
       // request left behind stays exactly where it is, which is what says "asked
       // once, and it did not answer" -- handling it to clear the marker would
       // put the retry back on every keystroke.
+      .addCase(dropTable.fulfilled, (state, action) => {
+        const { connectionId, database, table } = action.payload;
+        // Drop the one name from both caches. The tables array may not be
+        // fetched (the menu can drop from a tree that was never expanded past its
+        // list) -- only touch what is there, and never resurrect a connection a
+        // disconnect cleared while the drop was in flight.
+        const list = state.tables[connectionId]?.[database];
+        if (list) state.tables[connectionId]![database] = list.filter((t) => t.name !== table);
+        const byTable = state.columns[connectionId]?.[database];
+        if (byTable) delete byTable[table];
+      })
       //
       // The database list arrives with the connection itself, so the explorer
       // reads it off the session's event rather than fetching it again. Matching

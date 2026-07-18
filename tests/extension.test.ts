@@ -246,6 +246,61 @@ describe.each([
     expect(typeof (await browse('users')).result.durationMs).toBe('number');
   });
 
+  const ddlOf = async (table: string, kind: 'table' | 'view' = 'table'): Promise<string> =>
+    ((await h.ok('db.ddl', { connectionId, database: FIXTURE_DB, table, kind })) as { ddl: string }).ddl;
+
+  test('renders a faithful CREATE TABLE, engine-rendered', async () => {
+    // MySQL hands back SHOW CREATE TABLE; Postgres reassembles it from the
+    // catalog. Both must name the table, its columns and its primary key -- the
+    // asserts are symmetric because the goal is, even though the text is not.
+    const ddl = await ddlOf('users');
+    expect(ddl).toMatch(/create table/i);
+    expect(ddl).toContain('users');
+    expect(ddl).toContain('email');
+    expect(ddl).toMatch(/primary key/i);
+  });
+
+  test('renders a view definition', async () => {
+    // A view has no CREATE TABLE; MySQL gives SHOW CREATE VIEW, Postgres wraps
+    // pg_get_viewdef. Both carry the projected columns.
+    const ddl = await ddlOf('active_users', 'view');
+    expect(ddl).toMatch(/view/i);
+    expect(ddl).toContain('name');
+  });
+
+  test.if(expectSchemaQualified)('renders DDL for a schema-qualified relation', async () => {
+    // The name arrives as db.tables reported it; split wrong and regclass would
+    // resolve public.daily_stats, which does not exist.
+    const ddl = await ddlOf('reporting.daily_stats');
+    expect(ddl).toMatch(/create table/i);
+    expect(ddl).toContain('hits');
+  });
+
+  test('drops a table, and it is gone afterwards', async () => {
+    // Create-then-drop so the suite re-runs cleanly: the fixture is never the
+    // thing dropped, and a leftover from a crashed run is cleared first.
+    await query('DROP TABLE IF EXISTS zz_drop_test');
+    await query('CREATE TABLE zz_drop_test (id int)');
+
+    await h.ok('db.drop', { connectionId, database: FIXTURE_DB, table: 'zz_drop_test', kind: 'table' });
+
+    const { tables } = (await h.ok('db.tables', { connectionId, database: FIXTURE_DB })) as { tables: TableInfo[] };
+    expect(tables.map((t) => t.name)).not.toContain('zz_drop_test');
+  });
+
+  test('a failed drop does not kill the connection', async () => {
+    const bad = await h.dispatch('db.drop', {
+      connectionId,
+      database: FIXTURE_DB,
+      table: 'zz_never_existed',
+      kind: 'table',
+    });
+    expect(bad.ok).toBe(false);
+
+    const after = await query('SELECT 1 AS ok');
+    expect(Number(after.rows[0]![0])).toBe(1);
+  });
+
   test('NULL survives as null rather than a string', async () => {
     const res = await query('SELECT name, email FROM users ORDER BY id');
     const grace = res.rows.find((r) => r[0] === 'Grace')!;
