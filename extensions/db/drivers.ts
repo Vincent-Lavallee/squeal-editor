@@ -3,6 +3,8 @@ import type { Connection as MysqlConnection, FieldPacket } from 'mysql2/promise'
 import pg from 'pg';
 
 import type { CellValue, ColumnInfo, ConnectionConfig, EngineType, SqlDialect } from '../../shared/protocol.ts';
+// Amazon's published RDS CA bundle, folded into the compiled binary as text.
+import rdsCaBundle from './rds-global-bundle.pem' with { type: 'text' };
 
 const { Client: PgClient, types: pgTypes } = pg;
 
@@ -107,6 +109,25 @@ const toDisplayRow = (row: unknown[]): CellValue[] => row.map(toDisplayValue);
  */
 const TLS_OPTIONS = { rejectUnauthorized: true } as const;
 
+/**
+ * The verified-TLS options for a connection, with the right trust anchor.
+ *
+ * A password connection may be reaching anything, so it verifies against the
+ * machine's own trust store -- `TLS_OPTIONS` alone. An IAM connection reaches
+ * RDS, whose certificate chains to Amazon's *own* CAs rather than a public root
+ * that a default trust store carries -- so it fails with "unable to get local
+ * issuer certificate" unless the RDS bundle is the anchor. `ca` here is the
+ * complete chain to those roots, so an RDS cert verifies without weakening
+ * anything: `rejectUnauthorized` stays on, it is the trusted set that changed,
+ * not whether trust is checked. See `docs/decisions.md`.
+ *
+ * Only IAM gets the bundle: a non-IAM SSL connection to RDS is a case the user
+ * can already meet by trusting the CA at the OS level, and quietly trusting
+ * Amazon's roots for *every* SSL connection is a wider change than this is.
+ */
+const tlsOptions = (config: ConnectionConfig) =>
+  config.iam ? { rejectUnauthorized: true, ca: rdsCaBundle } : TLS_OPTIONS;
+
 const describeOk = (count: number) => `OK - ${count} row${count === 1 ? '' : 's'} affected`;
 
 export const mysqlDriver: Driver<MysqlConnection> = {
@@ -122,7 +143,7 @@ export const mysqlDriver: Driver<MysqlConnection> = {
       database: database || config.database || undefined,
       // Undefined rather than false: mysql2 reads any `ssl` value as a request
       // for TLS, so `ssl: false` is not "off", it is "on, with no options".
-      ssl: config.ssl ? TLS_OPTIONS : undefined,
+      ssl: config.ssl ? tlsOptions(config) : undefined,
       // Keep the door shut on stacked statements; the editor runs one at a time.
       multipleStatements: false,
       // Same reasoning as the Postgres parsers above: MySQL's DATETIME carries no
@@ -245,7 +266,7 @@ export const postgresDriver: Driver<pg.Client> = {
       database: database || config.database || 'postgres',
       // False is pg's own spelling of "plaintext"; unlike mysql2 it does not
       // read the presence of the key as a request for TLS.
-      ssl: config.ssl ? TLS_OPTIONS : false,
+      ssl: config.ssl ? tlsOptions(config) : false,
     });
     await client.connect();
     return client;

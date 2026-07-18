@@ -34,6 +34,8 @@ interface Props {
   busy: boolean;
 }
 
+type AuthMethod = 'password' | 'iam';
+
 interface FormState {
   name: string;
   type: EngineType;
@@ -47,6 +49,10 @@ interface FormState {
   readOnly: boolean;
   savePassword: boolean;
   passwordTouched: boolean;
+  /** Password auth, or an RDS IAM token minted from an AWS profile. */
+  authMethod: AuthMethod;
+  awsProfile: string;
+  awsRegion: string;
 }
 
 /**
@@ -71,6 +77,9 @@ function initialState(initial?: SavedConnection): FormState {
       readOnly: readOnlyDefault(DEFAULT_ENVIRONMENT),
       savePassword: true,
       passwordTouched: false,
+      authMethod: 'password',
+      awsProfile: '',
+      awsRegion: '',
     };
   }
 
@@ -90,6 +99,11 @@ function initialState(initial?: SavedConnection): FormState {
     password: '',
     savePassword: initial.hasPassword,
     passwordTouched: false,
+    // The profile and region are not secret and do come back, so an IAM
+    // connection edits with them in place.
+    authMethod: initial.config.iam ? 'iam' : 'password',
+    awsProfile: initial.config.iam?.profile ?? '',
+    awsRegion: initial.config.iam?.region ?? '',
   };
 }
 
@@ -106,8 +120,14 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
   // environment has anything to be true of: an unnamed connection is used once
   // and forgotten, and it never appears under a heading.
   const willBeStored = mode === 'edit' || named;
+  const iam = form.authMethod === 'iam';
   // When editing, the password is only ever stored, never used to connect.
   const passwordUsed = mode === 'new' || form.savePassword;
+
+  /** Choosing IAM forces SSL on -- the extension refuses IAM without it. */
+  function setAuthMethod(method: AuthMethod): void {
+    setForm((prev) => ({ ...prev, authMethod: method, ssl: method === 'iam' ? true : prev.ssl }));
+  }
 
   function handleSubmit(e: React.FormEvent): void {
     e.preventDefault();
@@ -120,12 +140,16 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
         port: Number(form.port) || engine.defaultPort,
         user: form.user || engine.defaultUser,
         database: form.database || undefined,
-        ssl: form.ssl,
+        // IAM carries its TLS with it; the extension refuses it plaintext.
+        ssl: iam ? true : form.ssl,
+        ...(iam ? { iam: { profile: form.awsProfile.trim(), region: form.awsRegion.trim() } } : {}),
       },
       environment: form.environment,
       readOnly: form.readOnly,
-      password: form.password,
-      savePassword: willBeStored && form.savePassword,
+      // An IAM connection has no password and nothing to store for one, so the
+      // screen's `passwordUpdate` resolves to "none" off `savePassword: false`.
+      password: iam ? '' : form.password,
+      savePassword: iam ? false : willBeStored && form.savePassword,
       passwordTouched: form.passwordTouched,
     });
   }
@@ -224,6 +248,28 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
         </select>
       </div>
 
+      {/*
+       * Authentication method. Password is the ordinary case; IAM mints a
+       * short-lived RDS token from a local AWS profile at connect time, so the
+       * password fields give way to a profile and region and nothing secret is
+       * ever stored. It forces SSL, because the token is a bearer secret the
+       * extension refuses to send in the clear.
+       */}
+      <div className="field">
+        <label className="label" htmlFor="authMethod">
+          Authentication
+        </label>
+        <select
+          id="authMethod"
+          className="select"
+          value={form.authMethod}
+          onChange={(e) => setAuthMethod(e.target.value as AuthMethod)}
+        >
+          <option value="password">Password</option>
+          <option value="iam">AWS IAM (RDS)</option>
+        </select>
+      </div>
+
       <div className="connect__row">
         <div className="field">
           <label className="label" htmlFor="host">
@@ -257,11 +303,16 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
           <input
             id="ssl"
             type="checkbox"
-            checked={form.ssl}
+            checked={iam ? true : form.ssl}
+            disabled={iam}
             onChange={(e) => set('ssl', e.target.checked)}
           />
           Connect over SSL
-          <span className="field__hint">— the server's certificate must be one this machine trusts</span>
+          <span className="field__hint">
+            {iam
+              ? '— required for IAM authentication'
+              : "— the server's certificate must be one this machine trusts"}
+          </span>
         </label>
       </div>
 
@@ -278,35 +329,74 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
         />
       </div>
 
-      <div className="field">
-        <label className="label" htmlFor="password">
-          Password
-        </label>
-        <input
-          id="password"
-          className="input"
-          type="password"
-          value={form.password}
-          disabled={!passwordUsed}
-          placeholder={mode === 'edit' && initial?.hasPassword ? 'unchanged' : ''}
-          onChange={(e) => {
-            set('password', e.target.value);
-            set('passwordTouched', true);
-          }}
-        />
-        {willBeStored && (
-          <label className="check" htmlFor="savePassword">
-            <input
-              id="savePassword"
-              type="checkbox"
-              checked={form.savePassword}
-              onChange={(e) => set('savePassword', e.target.checked)}
-            />
-            Save the password
-            <span className="field__hint">— otherwise you are asked for it each time</span>
+      {!iam && (
+        <div className="field">
+          <label className="label" htmlFor="password">
+            Password
           </label>
-        )}
-      </div>
+          <input
+            id="password"
+            className="input"
+            type="password"
+            value={form.password}
+            disabled={!passwordUsed}
+            placeholder={mode === 'edit' && initial?.hasPassword ? 'unchanged' : ''}
+            onChange={(e) => {
+              set('password', e.target.value);
+              set('passwordTouched', true);
+            }}
+          />
+          {willBeStored && (
+            <label className="check" htmlFor="savePassword">
+              <input
+                id="savePassword"
+                type="checkbox"
+                checked={form.savePassword}
+                onChange={(e) => set('savePassword', e.target.checked)}
+              />
+              Save the password
+              <span className="field__hint">— otherwise you are asked for it each time</span>
+            </label>
+          )}
+        </div>
+      )}
+
+      {/*
+       * IAM credentials: the AWS profile that mints the token and the region the
+       * instance is in. Neither is a secret, so unlike the password both are
+       * stored and edit with the connection. No token is ever kept -- it is
+       * minted fresh at connect time and expires in minutes.
+       */}
+      {iam && (
+        <div className="connect__row">
+          <div className="field">
+            <label className="label" htmlFor="awsProfile">
+              AWS profile
+            </label>
+            <input
+              id="awsProfile"
+              className="input"
+              value={form.awsProfile}
+              placeholder="default"
+              required
+              onChange={(e) => set('awsProfile', e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label className="label" htmlFor="awsRegion">
+              Region
+            </label>
+            <input
+              id="awsRegion"
+              className="input"
+              value={form.awsRegion}
+              placeholder="us-east-1"
+              required
+              onChange={(e) => set('awsRegion', e.target.value)}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="field">
         <label className="label" htmlFor="database">

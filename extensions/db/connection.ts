@@ -1,5 +1,6 @@
 import type { CellValue, ColumnInfo, ConnectionConfig, SqlDialect, TableInfo } from '../../shared/protocol.ts';
 import { withDriver, type Driver, type QueryOutcome } from './drivers.ts';
+import { rdsAuthToken } from './iam.ts';
 
 /**
  * Rows per page when browsing a table. Lives here because this is where the page
@@ -51,6 +52,12 @@ export interface ConnectionHandle {
  * open, so a connection asked to be read-only is never briefly writable.
  */
 export async function openConnection(config: ConnectionConfig, readOnly: boolean): Promise<ConnectionHandle> {
+  // An IAM token is a bearer secret; sending it in the clear would hand it to
+  // anyone on the wire. Refused here as well as in the UI, so the extension is
+  // never the thing that lets an unencrypted IAM connection through.
+  if (config.iam && !config.ssl) {
+    throw new Error('AWS IAM authentication requires SSL. Enable SSL on this connection.');
+  }
   const handle = withDriver(config.type, (driver) => build(driver, config, readOnly));
   // Force the default client open now; throws here if the server rejects us.
   await handle.listDatabases();
@@ -76,7 +83,11 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
     const existing = clients.get(key);
     if (existing) return existing;
 
-    const client = await driver.createClient(config, database);
+    // For an IAM connection the "password" is a freshly minted token, good for
+    // ~15 minutes -- so it is resolved here, per client opened, not baked into
+    // `config` once at connect. A password connection uses its stored secret.
+    const resolved = config.iam ? { ...config, password: await rdsAuthToken(config) } : config;
+    const client = await driver.createClient(resolved, database);
     // Apply before it is cached and handed out, so a read-only connection's new
     // database is read-only from its first query -- not just the ones open when
     // the toggle happened.

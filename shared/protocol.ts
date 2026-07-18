@@ -24,6 +24,30 @@ export type EngineType = 'mysql' | 'postgres';
 export type SqlDialect = 'mysql' | 'pgsql' | 'sql';
 
 /**
+ * Reach the server with an RDS IAM auth token rather than a stored password.
+ *
+ * Its presence on a `ServerConfig` *is* the auth method -- there is no separate
+ * `auth: 'password' | 'iam'` flag, because a second field saying what these two
+ * already say is two sources for one fact. The extension mints a short-lived
+ * token from the SSO-backed profile at connect time and uses it as the password;
+ * the token is never stored and never crosses the bridge, only the `profile` and
+ * `region` that mint it do.
+ *
+ * IAM auth is refused without `ssl`: an unencrypted IAM token is a bearer secret
+ * sent in the clear, so the extension will not open the connection and the UI
+ * forces `ssl` on when this is chosen. Unlike a password connection, the TLS is
+ * verified against a committed Amazon RDS CA bundle rather than the machine's
+ * trust store, because RDS certificates chain to Amazon's own authorities that a
+ * default trust store does not carry -- see `docs/decisions.md`.
+ */
+export interface AwsIamAuth {
+  /** The named AWS profile (from `~/.aws/config`) whose credentials sign the token. */
+  profile: string;
+  /** The region the RDS instance is in; the token is scoped to it. */
+  region: string;
+}
+
+/**
  * Everything needed to reach a server *except* the secret.
  *
  * The split is what lets the password stay out of places that have no business
@@ -58,9 +82,23 @@ export interface ServerConfig {
    * failure is a refused connect that says so, not a silent downgrade.
    */
   ssl?: boolean;
+  /**
+   * Present when the connection authenticates with an RDS IAM token instead of a
+   * password. It requires `ssl` and carries no secret of its own -- the token is
+   * minted at connect time from the profile and region here. Absent means the
+   * ordinary password auth every other connection uses.
+   */
+  iam?: AwsIamAuth;
 }
 
-/** A server plus the password to reach it. Only ever travels UI -> extension. */
+/**
+ * A server plus the password to reach it. Only ever travels UI -> extension.
+ *
+ * For an IAM connection (`config.iam` set) there is no password to carry -- the
+ * extension mints the token itself -- so `password` is an empty string the
+ * drivers never read. The field stays required rather than optional so the
+ * password path keeps its compile-time guarantee that a secret is present.
+ */
 export interface ConnectionConfig extends ServerConfig {
   password: string;
 }

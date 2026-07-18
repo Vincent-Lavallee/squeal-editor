@@ -278,6 +278,65 @@ describe('connecting from a saved connection', () => {
   });
 });
 
+/*
+ * IAM authentication, store side. The token-minting happy path needs an
+ * SSO-backed profile and a live RDS instance -- neither is in the fixtures, so it
+ * is verified by hand. What the store *can* be held to is that an IAM row keeps
+ * its profile and region, keeps no password, and does not send connecting down
+ * the "ask for a password" path -- and that the extension refuses it without SSL.
+ *
+ * Each test cleans up its own rows: the `lists by name` assertion above pins the
+ * whole list, so a stray connection here would fail a test that is not about IAM.
+ */
+describe('IAM authentication', () => {
+  const IAM_CONFIG = { ...PG_SERVER, ssl: true, iam: { profile: 'squeal-test', region: 'us-east-1' } };
+
+  test('an IAM connection keeps its profile and region, and stores no password', async () => {
+    const saved = await save({ name: 'iam-conn', config: IAM_CONFIG, password: { mode: 'none' } });
+
+    expect(saved.config.iam).toEqual({ profile: 'squeal-test', region: 'us-east-1' });
+    expect(saved.config.ssl).toBe(true);
+    // No password is stored for IAM, which is the whole point -- so `hasPassword`
+    // is false, and nothing secret is on the wire toward the UI.
+    expect(saved.hasPassword).toBe(false);
+
+    // Read back through the list rather than the save's own answer: the columns
+    // are on disk and `toSaved` rebuilds `iam` from them.
+    const listed = (await list()).find((c) => c.id === saved.id)!;
+    expect(listed.config.iam).toEqual({ profile: 'squeal-test', region: 'us-east-1' });
+    expect(listed.hasPassword).toBe(false);
+
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+
+  test('connecting one is not refused for a missing password -- there is none to miss', async () => {
+    const saved = await save({ name: 'iam-connect', config: IAM_CONFIG, password: { mode: 'none' } });
+
+    // It will fail to mint a token (no such profile in CI), but the failure must
+    // be about AWS, never "does not store a password" -- that would mean
+    // resolveSaved sent an IAM connection down the password path.
+    const res = await h.dispatch('db.saved.connect', { id: saved.id });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).not.toMatch(/does not store a password/i);
+
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+
+  test('IAM without SSL is refused, because the token would go in the clear', async () => {
+    const saved = await save({
+      name: 'iam-nossl',
+      config: { ...PG_SERVER, ssl: false, iam: { profile: 'squeal-test', region: 'us-east-1' } },
+      password: { mode: 'none' },
+    });
+
+    const res = await h.dispatch('db.saved.connect', { id: saved.id });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/requires ssl/i);
+
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+});
+
 describe('editing', () => {
   test('`keep` leaves the stored password usable', async () => {
     const before = (await list()).find((c) => c.name === 'with-password')!;

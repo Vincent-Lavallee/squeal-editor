@@ -84,6 +84,8 @@ const CONNECTIONS_SCHEMA = `
     environment      TEXT NOT NULL,
     ssl              INTEGER NOT NULL DEFAULT 0,
     read_only        INTEGER NOT NULL DEFAULT 0,
+    aws_profile      TEXT,
+    aws_region       TEXT,
     password         BLOB,
     UNIQUE (workspace_id, name)
   );
@@ -115,6 +117,14 @@ interface Row {
   ssl: number;
   /** SQLite has no boolean; 0 or 1. Open the connection refusing writes. */
   read_only: number;
+  /**
+   * Both null for a password connection; both set for an IAM one. Their presence
+   * is the auth method -- there is no separate flag, because a third column
+   * saying what these two already say is two sources for one fact. An IAM row
+   * stores no password, so `password` stays null and `hasPassword` is false.
+   */
+  aws_profile: string | null;
+  aws_region: string | null;
   password: Uint8Array | null;
 }
 
@@ -207,6 +217,19 @@ function migrate(database: Database): void {
   if (!hasColumn(database, 'saved_connections', 'read_only')) {
     database.run('ALTER TABLE saved_connections ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0');
   }
+
+  /*
+   * A store written before IAM authentication existed. Plain ADD COLUMNs for the
+   * same reason as `ssl` and `read_only`: nothing about the old table became
+   * wrong, two nullable columns are simply missing. They default to NULL, which
+   * is exactly what a password connection carries -- so every existing row stays
+   * a password connection, which is what it has always been. No backfill is
+   * possible or wanted: nobody said any old row was an IAM one.
+   */
+  if (!hasColumn(database, 'saved_connections', 'aws_profile')) {
+    database.run('ALTER TABLE saved_connections ADD COLUMN aws_profile TEXT');
+    database.run('ALTER TABLE saved_connections ADD COLUMN aws_region TEXT');
+  }
 }
 
 /**
@@ -280,9 +303,14 @@ const toSaved = (row: Row): SavedConnection => ({
     user: row.username,
     database: row.default_database ?? undefined,
     ssl: row.ssl !== 0,
+    // Both columns are set together or not at all, so profile alone is the test.
+    ...(row.aws_profile ? { iam: { profile: row.aws_profile, region: row.aws_region ?? '' } } : {}),
   },
   environment: row.environment as Environment,
   readOnly: row.read_only !== 0,
+  // An IAM row stores no password, so this is false for it -- but the UI must not
+  // read that as "prompt for one": there is nothing to prompt for. `config.iam`
+  // is what tells the two apart. See ConnectScreen's `pick`.
   hasPassword: row.password !== null,
 });
 
@@ -429,18 +457,25 @@ export async function saveConnection({
     environment,
     ssl: config.ssl ? 1 : 0,
     read_only: readOnly ? 1 : 0,
-    password: await nextPassword(password, existing),
+    aws_profile: config.iam?.profile ?? null,
+    aws_region: config.iam?.region ?? null,
+    // An IAM connection carries no password, so whatever `password` update the UI
+    // sent is moot -- nextPassword resolves `none` to null, which is what the UI
+    // sends for it. Kept as one call rather than a special case, since the result
+    // is the same null either way.
+    password: config.iam ? null : await nextPassword(password, existing),
   };
 
   open().run(
     `INSERT INTO saved_connections
-       (id, workspace_id, name, engine, host, port, username, default_database, environment, ssl, read_only, password)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, workspace_id, name, engine, host, port, username, default_database, environment, ssl, read_only, aws_profile, aws_region, password)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        workspace_id = excluded.workspace_id, name = excluded.name, engine = excluded.engine,
        host = excluded.host, port = excluded.port, username = excluded.username,
        default_database = excluded.default_database, environment = excluded.environment,
-       ssl = excluded.ssl, read_only = excluded.read_only, password = excluded.password`,
+       ssl = excluded.ssl, read_only = excluded.read_only,
+       aws_profile = excluded.aws_profile, aws_region = excluded.aws_region, password = excluded.password`,
     [
       row.id,
       row.workspace_id,
@@ -453,6 +488,8 @@ export async function saveConnection({
       row.environment,
       row.ssl,
       row.read_only,
+      row.aws_profile,
+      row.aws_region,
       row.password,
     ]
   );
@@ -481,10 +518,18 @@ export async function resolveSaved(
   const row = findRow(id);
   if (!row) throw new Error('That connection no longer exists.');
 
+  const { config, name, environment, readOnly } = toSaved(row);
+
+  // An IAM connection has no password to resolve: the extension mints a token at
+  // connect time from the profile and region in `config.iam`. The empty string
+  // stands in for the field the drivers never read on this path.
+  if (config.iam) {
+    return { config, password: '', name, environment, readOnly };
+  }
+
   const password = supplied ?? (row.password ? await decrypt(row.password) : null);
   if (password === null) throw new Error(`"${row.name}" does not store a password; one is needed to connect.`);
 
-  const { config, name, environment, readOnly } = toSaved(row);
   return { config, password, name, environment, readOnly };
 }
 

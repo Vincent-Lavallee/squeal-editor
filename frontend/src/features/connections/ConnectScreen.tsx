@@ -84,7 +84,11 @@ export default function ConnectScreen({ onCancel }: Props) {
   }
 
   function pick(connection: SavedConnection): void {
-    if (!connection.hasPassword) return go({ view: 'password', connection });
+    // An IAM connection stores no password and needs none -- the extension mints
+    // a token at connect. Its `hasPassword` is false like a connection that just
+    // did not save one, so `config.iam` is what tells "prompt for it" apart from
+    // "there is nothing to prompt for".
+    if (!connection.hasPassword && !connection.config.iam) return go({ view: 'password', connection });
     session.dismissError();
     setConnectingId(connection.id);
     void session.connectSaved(connection.id);

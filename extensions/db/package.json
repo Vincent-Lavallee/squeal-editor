@@ -6,6 +6,8 @@
   "description": "Neutralino extension: holds the MySQL/Postgres connections and runs queries",
   "main": "main.ts",
   "dependencies": {
+    "@aws-sdk/credential-providers": "^3.717.0",
+    "@aws-sdk/rds-signer": "^3.717.0",
     "mysql2": "^3.11.5",
     "pg": "^8.13.1",
     "ws": "^8.18.0"
