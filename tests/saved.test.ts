@@ -14,10 +14,11 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { MIGRATIONS } from '../extensions/db/migrations/index.ts';
 import type { SavedConnection, Workspace } from '../shared/protocol.ts';
 import { FIXTURE_DB, PG } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
@@ -557,6 +558,131 @@ describe('workspaces', () => {
   });
 });
 
+/*
+ * The real list, imported rather than restated. Migrations are named by their
+ * timestamp, and a test that hardcoded `20260717075921` would be unreadable and
+ * would rot the day the list changes -- so everything below names a migration
+ * and looks its version up.
+ */
+const ALL_VERSIONS = MIGRATIONS.map((m) => m.version);
+
+/*
+ * The migration files actually on disk, oldest first.
+ *
+ * Read rather than restated, because this is the one thing that catches a
+ * migration file that exists but was never imported into `index.ts`. That step
+ * is by hand and has to stay that way -- a directory scan in the app itself
+ * would ship a store with no tables, see the note in `index.ts` -- so the hand
+ * step needs something watching it, and the app cannot be what watches.
+ */
+const MIGRATION_FILES = readdirSync(join(import.meta.dir, '..', 'extensions', 'db', 'migrations'))
+  .filter((f) => /^\d+-/.test(f))
+  .sort();
+const versionOf = (name: string): number => {
+  const found = MIGRATIONS.find((m) => m.name === name);
+  if (!found) throw new Error(`No migration named "${name}" -- was it renamed?`);
+  return found.version;
+};
+
+interface Stamp {
+  version: number;
+  name: string;
+  origin: string;
+}
+
+const stamps = (): Stamp[] => {
+  const db = new Database(DB_FILE);
+  const rows = db.query('SELECT version, name, origin FROM schema_migrations ORDER BY version').all() as Stamp[];
+  db.close();
+  return rows;
+};
+
+/** What each migration would have to undo, for the rewind below. Newest first. */
+const UNDO: Record<string, string[]> = {
+  'workspace-colour': ['ALTER TABLE workspaces DROP COLUMN color'],
+  'connection-aws-iam': [
+    'ALTER TABLE saved_connections DROP COLUMN aws_profile',
+    'ALTER TABLE saved_connections DROP COLUMN aws_region',
+  ],
+  'connection-read-only': ['ALTER TABLE saved_connections DROP COLUMN read_only'],
+  'connection-ssl': ['ALTER TABLE saved_connections DROP COLUMN ssl'],
+};
+
+/**
+ * Put the live file back to the state just after `name` ran, stamps and all, so
+ * the next open meets a store that genuinely looks like that version wrote it.
+ *
+ * Two halves, and each is load-bearing:
+ *
+ * - **The stamp goes back with the columns.** A file still claiming the latest
+ *   version is one the sequence skips entirely, so a test that dropped only the
+ *   column would open a *broken* store and assert against it -- passing or
+ *   failing for reasons unrelated to the migration it names.
+ * - **The columns come off from the top down, all of them.** Everything above
+ *   the target re-runs, and a migration that finds its column already there
+ *   fails on a duplicate. Which is the honest shape anyway: a store that
+ *   predates SSL never had the IAM columns either.
+ */
+function rewindTo(name: string, { forgetVersion = false } = {}): { connections: string[]; workspaces: string[] } {
+  const target = versionOf(name);
+
+  const db = new Database(DB_FILE);
+  db.run('PRAGMA foreign_keys = OFF');
+  for (const migration of [...MIGRATIONS].reverse()) {
+    if (migration.version <= target) break;
+    // Not `?? []`. A migration added above one of these tests without an undo
+    // would otherwise be skipped silently, leaving its columns in place for the
+    // re-run to trip over -- as a duplicate-column error a long way from here.
+    const undo = UNDO[migration.name];
+    if (!undo) throw new Error(`No undo for "${migration.name}", which a rewind to "${name}" has to pass.`);
+    for (const sql of undo) db.run(sql);
+  }
+
+  // `forgetVersion` is the shipped case: every store written before this app
+  // recorded versions arrives with no table at all, and has to be placed in the
+  // list by its shape alone.
+  if (forgetVersion) db.run('DROP TABLE schema_migrations');
+  else db.run('DELETE FROM schema_migrations WHERE version > ?', [target]);
+
+  const columns = (table: string) =>
+    (db.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+  const shape = { connections: columns('saved_connections'), workspaces: columns('workspaces') };
+  db.close();
+  return shape;
+}
+
+describe('the schema version', () => {
+  test('a store built from nothing has run every migration, in order', () => {
+    const rows = stamps();
+    expect(rows.map((r) => r.version)).toEqual(ALL_VERSIONS);
+    // Applied, not adopted: this file was created by this suite, so every step
+    // actually ran. `adopted` here would mean the inference guessed at a store it
+    // should have built.
+    expect(rows.every((r) => r.origin === 'applied')).toBe(true);
+    expect(rows[0]!.name).toBe('saved-connections');
+  });
+
+  test('the versions are epoch seconds, in ascending order', () => {
+    // The ordering guard in migrations/index.ts, asserted from outside it: the
+    // list is maintained by hand, and everything here reads it as a sequence.
+    expect(ALL_VERSIONS).toEqual([...ALL_VERSIONS].sort((a, b) => a - b));
+    expect(new Set(ALL_VERSIONS).size).toBe(ALL_VERSIONS.length);
+
+    for (const v of ALL_VERSIONS) {
+      // Seconds, not milliseconds and not YYYYMMDDHHMMSS -- both of which would
+      // pass a bare "is it big" check while sorting against the ten-digit
+      // filenames differently. Pinning the width is what pins the format.
+      expect(String(v)).toHaveLength(10);
+      // Sane as a date: after 2001 and before 2100, so a bad paste is caught.
+      expect(v).toBeGreaterThan(1_000_000_000);
+      expect(v).toBeLessThan(4_102_444_800);
+    }
+
+    // The filename is the version. Nothing enforces that but this.
+    expect(MIGRATIONS.map((m) => `${m.version}-${m.name}.ts`)).toEqual(MIGRATION_FILES);
+  });
+});
+
 /**
  * The migration, exercised the way it will actually happen: a real store written
  * by the version before workspaces, opened by this one.
@@ -585,8 +711,10 @@ describe('migrating a store written before workspaces', () => {
     await h.stop();
 
     // Rewind the file to the old schema, keeping the rows and their real
-    // ciphertext. Dropping `workspaces` is what makes the next open look like a
-    // first sighting of this store.
+    // ciphertext. This is the one downgrade that drops `schema_migrations`
+    // outright rather than rewinding it: a store this old predates there being a
+    // version to record, so the next open has to *infer* one from the shape of
+    // the file. That inference is what runs here, and it can only ever run once.
     const db = new Database(DB_FILE);
     db.run('PRAGMA foreign_keys = OFF');
     db.transaction(() => {
@@ -598,6 +726,7 @@ describe('migrating a store written before workspaces', () => {
       );
       db.run('DROP TABLE current_connections');
       db.run('DROP TABLE workspaces');
+      db.run('DROP TABLE schema_migrations');
     })();
     const legacyNames = (db.query('SELECT name FROM saved_connections').all() as { name: string }[]).map((r) => r.name);
     db.close();
@@ -608,6 +737,18 @@ describe('migrating a store written before workspaces', () => {
     const all = await workspaces();
     expect(all).toHaveLength(1);
     expect(all[0]!.name).toBe('Default');
+
+    // Read after a command, never straight after the restart: the extension opens
+    // the store on first use, so nothing has migrated yet at launch.
+    //
+    // The store was recognised as version 1 and walked up from there: the first
+    // migration is marked adopted (its table was already on disk), everything
+    // above it genuinely ran.
+    const rows = stamps();
+    const first = versionOf('saved-connections');
+    expect(rows.map((r) => r.version)).toEqual(ALL_VERSIONS);
+    expect(rows.find((r) => r.version === first)!.origin).toBe('adopted');
+    expect(rows.filter((r) => r.version > first).every((r) => r.origin === 'applied')).toBe(true);
 
     const migrated = await list();
     // Nothing was dropped on the way: the rebuild is the part that could.
@@ -667,15 +808,13 @@ describe('migrating a store written before SSL', () => {
     expect(before.config.ssl).toBe(false);
     await h.stop();
 
-    // Drop the column back off the live file. The rows, and the real ciphertext
-    // in them, stay exactly as the current version wrote them.
-    const db = new Database(DB_FILE);
-    db.run('ALTER TABLE saved_connections DROP COLUMN ssl');
-    const columns = (db.query('PRAGMA table_info(saved_connections)').all() as { name: string }[]).map((c) => c.name);
-    db.close();
+    // Back to version 2, the last one before TLS was an option. The rows, and
+    // the real ciphertext in them, stay exactly as the current version wrote
+    // them.
+    const { connections } = rewindTo('workspaces');
     // The downgrade has to have actually happened, or this test passes by
     // migrating nothing and asserting the default it never needed.
-    expect(columns).not.toContain('ssl');
+    expect(connections).not.toContain('ssl');
 
     h = await startHarness(ENV);
 
@@ -712,13 +851,13 @@ describe('migrating a store written before read-only connections', () => {
     expect(before.readOnly).toBe(true);
     await h.stop();
 
-    // Drop the column back off the live file, leaving the row and its real
-    // ciphertext exactly as the current version wrote them.
-    const db = new Database(DB_FILE);
-    db.run('ALTER TABLE saved_connections DROP COLUMN read_only');
-    const columns = (db.query('PRAGMA table_info(saved_connections)').all() as { name: string }[]).map((c) => c.name);
-    db.close();
-    expect(columns).not.toContain('read_only');
+    // Back to version 3, the last one before read-only connections, leaving the
+    // row and its real ciphertext exactly as the current version wrote them.
+    const { connections } = rewindTo('connection-ssl');
+    expect(connections).not.toContain('read_only');
+    // The rewind stopped where it was told: this is the rung above the one the
+    // describe before this tested, and the two must not collapse into each other.
+    expect(connections).toContain('ssl');
 
     h = await startHarness(ENV);
 
@@ -745,11 +884,9 @@ describe('migrating a store written before workspace colours', () => {
     expect(made.color).toBe('purple');
     await h.stop();
 
-    // Drop the column back off the live file, leaving the rows as they were.
-    const db = new Database(DB_FILE);
-    db.run('ALTER TABLE workspaces DROP COLUMN color');
-    const columns = (db.query('PRAGMA table_info(workspaces)').all() as { name: string }[]).map((c) => c.name);
-    db.close();
+    // Back to version 5, the last one before workspaces had a colour, leaving
+    // the rows as they were.
+    const { workspaces: columns } = rewindTo('connection-aws-iam');
     expect(columns).not.toContain('color');
 
     h = await startHarness(ENV);
@@ -762,5 +899,64 @@ describe('migrating a store written before workspace colours', () => {
     // Still writable through the normal path, colour and all.
     const edited = await saveWorkspace({ id: migrated.id, name: 'Pre-colour', icon: 'globe', color: 'green' });
     expect(edited.color).toBe('green');
+  });
+});
+
+/**
+ * The upgrade the largest number of real stores will actually perform: one
+ * written by a shipped version that had workspaces, TLS and read-only but no IAM
+ * columns and no colour -- and, because it predates this whole mechanism, no
+ * record of its own version.
+ *
+ * That makes it the test for the inference rather than for any one column. It is
+ * the only part of the sequence that reads a schema to decide what has already
+ * happened, it gets exactly one chance to be right about a file it did not
+ * write, and being wrong means either a duplicate-column crash on launch or a
+ * migration silently skipped.
+ */
+describe('adopting a store written before there were versions', () => {
+  test('it is placed by its shape, then walked to the top', async () => {
+    const ws = (await workspaces())[0]!.id;
+    const before = await save({
+      workspaceId: ws,
+      name: 'unversioned-conn',
+      config: PG_SERVER,
+      password: { mode: 'store', password: PG_PASSWORD },
+    });
+    await h.stop();
+
+    const { connections } = rewindTo('connection-read-only', { forgetVersion: true });
+    expect(connections).toContain('read_only');
+    expect(connections).not.toContain('aws_profile');
+
+    h = await startHarness(ENV);
+
+    const migrated = (await list()).find((c) => c.name === 'unversioned-conn')!;
+
+    const rows = stamps();
+    // Placed on rung 4 and walked up: the four steps whose work was already on
+    // disk are adopted, and only the two genuinely missing ones ran. Marking any
+    // of the first four `applied` would mean re-running them, which is the
+    // duplicate-column crash this inference exists to avoid.
+    const readOnly = versionOf('connection-read-only');
+    expect(rows.map((r) => r.version)).toEqual(ALL_VERSIONS);
+    expect(rows.filter((r) => r.version <= readOnly).every((r) => r.origin === 'adopted')).toBe(true);
+    expect(rows.filter((r) => r.version > readOnly).every((r) => r.origin === 'applied')).toBe(true);
+
+    // Untouched by the columns arriving around it, and still reachable.
+    expect(migrated.id).toBe(before.id);
+    expect(migrated.config).toEqual({ ...PG_SERVER, ssl: false });
+    expect(migrated.readOnly).toBe(false);
+    expect(migrated.hasPassword).toBe(true);
+    const res = (await h.ok('db.saved.connect', { id: migrated.id })) as { connectionId: string };
+    expect(res.connectionId).toBeTruthy();
+    await h.ok('db.disconnect', { connectionId: res.connectionId });
+
+    // A second open must be a no-op: the store now records where it is, so the
+    // inference above can never run again on this file.
+    await h.stop();
+    h = await startHarness(ENV);
+    await workspaces();
+    expect(stamps().map((r) => r.version)).toEqual(ALL_VERSIONS);
   });
 });

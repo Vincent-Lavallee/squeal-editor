@@ -29,6 +29,7 @@ import type {
   WorkspaceColorId,
   WorkspaceIconId,
 } from '../../shared/protocol.ts';
+import { runMigrations } from './migrations/runner.ts';
 
 /*
  * Both are overridden by the tests, which must not read, write or delete the
@@ -55,43 +56,16 @@ function dataDir(): string {
   return join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'squeal-editor');
 }
 
-const WORKSPACES_SCHEMA = `
-  CREATE TABLE IF NOT EXISTS workspaces (
-    id    TEXT PRIMARY KEY,
-    name  TEXT NOT NULL UNIQUE,
-    icon  TEXT NOT NULL,
-    color TEXT NOT NULL DEFAULT 'slate'
-  );
-`;
-
 /*
- * `database` is a reserved word in SQLite and `user` reads like one, so the
- * columns are named to avoid quoting every statement in this file.
+ * The tables are not declared here. `migrations.ts` owns the schema outright --
+ * it is what running that list from nothing produces -- because a `CREATE TABLE`
+ * kept beside the migrations is a second answer to "what shape is this file?"
+ * that drifts from the first the moment either is edited alone.
  *
- * The name is unique *per workspace*, not globally: grouping connections by
- * project is the whole point, and a project having the same server again in
- * each environment means `api` in Dev and `api` in Production are two different
- * connections that a global constraint would refuse to let coexist.
+ * Two shapes the rest of this file leans on, both made there: a connection's
+ * name is unique *per workspace* rather than globally, and its `workspace_id`
+ * references `workspaces` ON DELETE CASCADE.
  */
-const CONNECTIONS_SCHEMA = `
-  CREATE TABLE IF NOT EXISTS saved_connections (
-    id               TEXT PRIMARY KEY,
-    workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    name             TEXT NOT NULL,
-    engine           TEXT NOT NULL,
-    host             TEXT NOT NULL,
-    port             INTEGER NOT NULL,
-    username         TEXT NOT NULL,
-    default_database TEXT,
-    environment      TEXT NOT NULL,
-    ssl              INTEGER NOT NULL DEFAULT 0,
-    read_only        INTEGER NOT NULL DEFAULT 0,
-    aws_profile      TEXT,
-    aws_region       TEXT,
-    password         BLOB,
-    UNIQUE (workspace_id, name)
-  );
-`;
 
 /** What a store with no workspaces yet gets, so the feature can be ignored. */
 const DEFAULT_WORKSPACE_NAME = 'Default';
@@ -99,14 +73,6 @@ const DEFAULT_WORKSPACE_ICON: WorkspaceIconId = 'stack';
 /** The neutral swatch: what a workspace wears until the user picks otherwise, and
  *  what a row written before the colour column existed migrates to. */
 const DEFAULT_WORKSPACE_COLOR: WorkspaceColorId = 'slate';
-
-/**
- * What a connection saved before environments existed becomes.
- *
- * Local is the only honest answer: nobody said what these are, and the guess
- * that costs least is the one that never labels an unclassified row Production.
- */
-const MIGRATED_ENVIRONMENT: Environment = 'local';
 
 interface Row {
   id: string;
@@ -146,107 +112,19 @@ function open(): Database {
   if (db) return db;
   mkdirSync(dataDir(), { recursive: true });
   db = new Database(join(dataDir(), 'connections.db'));
-  migrate(db);
-  return db;
-}
 
-const hasColumn = (database: Database, table: string, column: string): boolean =>
-  (database.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
-
-const tableExists = (database: Database, table: string): boolean =>
-  database.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== null;
-
-/**
- * Bring the file up to the current schema, whatever it was.
- *
- * Order matters: `saved_connections` references `workspaces`, and a migrated row
- * needs a workspace to land in, so the table and its default row both have to
- * exist before any connection is touched.
- */
-function migrate(database: Database): void {
   // Off by default in SQLite, and per-connection rather than stored in the file,
-  // so it has to be set on every open or the REFERENCES clause above is decor.
-  database.run('PRAGMA foreign_keys = ON');
-  database.run(WORKSPACES_SCHEMA);
+  // so it has to be set on every open or the REFERENCES clause is decoration.
+  // Before the migrations, so a rebuild among them runs under the same rules the
+  // app does.
+  db.run('PRAGMA foreign_keys = ON');
+  runMigrations(db);
 
-  /*
-   * A store whose workspaces predate the colour column. Plain ADD COLUMN, the
-   * same shape and reasoning as the `ssl` / `read_only` backfills below: nothing
-   * about the old table became wrong, a column is simply missing. It defaults to
-   * `slate`, the neutral swatch, so an existing workspace is never colourless and
-   * nothing it was not told to change moves -- the guess that costs least.
-   */
-  if (tableExists(database, 'workspaces') && !hasColumn(database, 'workspaces', 'color')) {
-    database.run("ALTER TABLE workspaces ADD COLUMN color TEXT NOT NULL DEFAULT 'slate'");
-  }
-
-  const defaultId = ensureDefaultWorkspace(database);
-
-  // A store written before workspaces existed: the table is there, without the
-  // columns, and holding a UNIQUE(name) that is now wrong. SQLite cannot drop a
-  // constraint, so the table is rebuilt rather than altered.
-  if (tableExists(database, 'saved_connections') && !hasColumn(database, 'saved_connections', 'workspace_id')) {
-    database.transaction(() => {
-      database.run('ALTER TABLE saved_connections RENAME TO saved_connections_legacy');
-      database.run(CONNECTIONS_SCHEMA);
-      // `ssl` and `read_only` are left out of both lists so their column defaults
-      // apply -- see the backfills below for why off is the only safe answer for
-      // a row that predates the column.
-      database.run(
-        `INSERT INTO saved_connections
-           (id, workspace_id, name, engine, host, port, username, default_database, environment, password)
-         SELECT id, ?, name, engine, host, port, username, default_database, ?, password
-         FROM saved_connections_legacy`,
-        [defaultId, MIGRATED_ENVIRONMENT]
-      );
-      database.run('DROP TABLE saved_connections_legacy');
-    })();
-  } else {
-    database.run(CONNECTIONS_SCHEMA);
-  }
-
-  /*
-   * A store written before TLS was an option. Unlike the workspace migration
-   * above this is a plain ADD COLUMN: nothing about the old table became wrong,
-   * there is simply a column missing, and rebuilding to add one would put every
-   * stored password through a copy for no reason.
-   *
-   * Off, and not merely because it is the column default: these rows connect in
-   * plaintext today, so anything else migrates a working connection into a
-   * broken one -- and would do it to every row at once, on the launch after an
-   * update, with no way to tell that the app had changed its mind rather than
-   * the server having gone. Same rule as `local` for a migrated environment: the
-   * guess that costs least is the one that changes nothing it was not told to.
-   */
-  if (!hasColumn(database, 'saved_connections', 'ssl')) {
-    database.run('ALTER TABLE saved_connections ADD COLUMN ssl INTEGER NOT NULL DEFAULT 0');
-  }
-
-  /*
-   * A store written before read-only connections existed. Plain ADD COLUMN for
-   * the same reasons as `ssl` above: nothing about the old table became wrong,
-   * and off is the only safe default -- these rows connect read-write today, so
-   * defaulting them read-only would break a working connection on the launch
-   * after an update, and it would read as the server refusing writes rather than
-   * the app having changed the rules. The guess that costs least changes nothing
-   * it was not told to.
-   */
-  if (!hasColumn(database, 'saved_connections', 'read_only')) {
-    database.run('ALTER TABLE saved_connections ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0');
-  }
-
-  /*
-   * A store written before IAM authentication existed. Plain ADD COLUMNs for the
-   * same reason as `ssl` and `read_only`: nothing about the old table became
-   * wrong, two nullable columns are simply missing. They default to NULL, which
-   * is exactly what a password connection carries -- so every existing row stays
-   * a password connection, which is what it has always been. No backfill is
-   * possible or wanted: nobody said any old row was an IAM one.
-   */
-  if (!hasColumn(database, 'saved_connections', 'aws_profile')) {
-    database.run('ALTER TABLE saved_connections ADD COLUMN aws_profile TEXT');
-    database.run('ALTER TABLE saved_connections ADD COLUMN aws_region TEXT');
-  }
+  // A data invariant rather than a schema one, so it lives here and not in a
+  // migration: the migration that introduced workspaces made the first one, but
+  // "there is always at least one" has to hold on every launch, not once.
+  ensureDefaultWorkspace(db);
+  return db;
 }
 
 /**
@@ -254,18 +132,16 @@ function migrate(database: Database): void {
  * with none has nowhere to put a connection -- which is also why deleting the
  * last one is refused rather than handled by recreating this on next launch.
  */
-function ensureDefaultWorkspace(database: Database): string {
+function ensureDefaultWorkspace(database: Database): void {
   const existing = database.query('SELECT id FROM workspaces LIMIT 1').get() as { id: string } | null;
-  if (existing) return existing.id;
+  if (existing) return;
 
-  const id = randomUUID();
   database.run('INSERT INTO workspaces (id, name, icon, color) VALUES (?, ?, ?, ?)', [
-    id,
+    randomUUID(),
     DEFAULT_WORKSPACE_NAME,
     DEFAULT_WORKSPACE_ICON,
     DEFAULT_WORKSPACE_COLOR,
   ]);
-  return id;
 }
 
 /* ------------------------------------------------------------------ *
