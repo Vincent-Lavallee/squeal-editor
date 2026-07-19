@@ -12,6 +12,7 @@ import {
   RiCodeSSlashLine,
   RiDownloadCloud2Line,
   RiEyeLine,
+  RiFileCopyLine,
   RiFlaskLine,
   RiGlobalLine,
   RiKey2Line,
@@ -87,6 +88,9 @@ export const BackIcon = RiArrowLeftLine;
 
 /** A new version waiting to come down, in the update banner. */
 export const UpdateIcon = RiDownloadCloud2Line;
+
+/** Copying text to the clipboard, on an error card or a result cell. */
+export const CopyIcon = RiFileCopyLine;
 
 /*
  * The read-only lock in the status bar. Two kinds, told apart by shape the way a

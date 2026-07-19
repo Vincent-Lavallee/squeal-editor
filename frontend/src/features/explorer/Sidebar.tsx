@@ -42,11 +42,11 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
 
   return (
     <aside data-testid="sidebar" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, borderRight: `1px solid ${t.BORDER}` }}>
-      <div data-testid="sidebar-head" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, height: t.BAR_H, padding: `0 ${t.GAP}px`, borderBottom: collapsed ? 'none' : `1px solid ${t.BORDER}`, flex: 'none', ...(collapsed ? { justifyContent: 'center', padding: 0 } : {}) }}>
+      <div data-testid="sidebar-head" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, height: t.TAB_H, padding: `0 ${t.GAP}px`, borderBottom: collapsed ? 'none' : `1px solid ${t.BORDER}`, flex: 'none', ...(collapsed ? { justifyContent: 'center', padding: 0 } : {}) }}>
         <Select value={database ?? ''} onChange={(e) => onSelectDatabase(e.target.value)}
           disabled={!hasTab || databases.length === 0} aria-label="Database"
           data-testid="sidebar-db-select"
-          style={{ flex: 1, minWidth: 0, display: collapsed ? 'none' : undefined }}>
+          style={{ flex: 1, minWidth: 0, border: '1px solid transparent', background: 'transparent', display: collapsed ? 'none' : undefined }}>
           {database === null && <option value="" disabled>{databases.length === 0 ? 'No databases' : 'Select a database…'}</option>}
           {databases.map((db) => (<option key={db} value={db}>{db}</option>))}
         </Select>

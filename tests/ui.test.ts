@@ -253,12 +253,7 @@ async function clearSavedConnections(): Promise<void> {
  * so clicking the trigger and the item in the same turn finds nothing.
  */
 async function disconnect(): Promise<void> {
-  await app.evaluate(`document.querySelector('[data-testid="menu-trigger"]').click(); true;`);
-  await Bun.sleep(200);
-  await app.evaluate(`
-    [...document.querySelectorAll('[data-testid="menu-item"]')]
-      .find(e => e.textContent === 'Disconnect')
-      .click(); true;`);
+  await app.evaluate(`document.querySelector('[data-testid="statusbar-disconnect"]').click(); true;`);
   await Bun.sleep(800);
 }
 
@@ -1129,14 +1124,12 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     test('the File menu opens, and closes on Escape', async () => {
-      // Disconnect is only offered with a session open; say so rather than
-      // inherit it from whichever describe ran last.
       expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="sidebar"]')`)).toBe(true);
 
       await app.evaluate(`document.querySelector('[data-testid="menu-trigger"]').click(); true;`);
       await Bun.sleep(200);
       expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="menu-item"]')].map(e => e.textContent)`))
-        .toEqual(['Disconnect', 'Check for updates…', 'Exit']);
+        .toEqual(['Check for updates…', 'Exit']);
 
       await app.evaluate(
         `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true;`

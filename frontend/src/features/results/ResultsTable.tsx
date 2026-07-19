@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { CellValue } from '../../../../shared/protocol.ts';
-import { NextPageIcon, PrevPageIcon } from '../../common/icons/icons.ts';
+import { CopyIcon, NextPageIcon, PrevPageIcon } from '../../common/icons/icons.ts';
 import CellContextMenu, { type CellMenuItem } from './CellContextMenu.tsx';
 import { useResults } from './useResults.ts';
 import Button from '../../common/components/Button.tsx';
@@ -29,11 +29,33 @@ export default function ResultsTable() {
 
   useEffect(() => { setSelected(new Set()); setEditing(null); setMenu(null); anchor.current = null; }, [result]);
 
-  if (running) return <Note kind="muted">Running…</Note>;
-  if (error) return <Note kind="error">{error}</Note>;
-  if (!result) return <Note kind="muted">Run a query to see results.</Note>;
+  const emptyCtr: React.CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 0, padding: t.GAP_XL, textAlign: 'center' };
 
-  if (result.columns.length === 0) return <Note kind="ok">{result.message}</Note>;
+  if (running) return <div style={emptyCtr}><Note kind="muted">Running…</Note></div>;
+  if (error) return (
+    <div style={emptyCtr}>
+      <div data-testid="note-error" style={{ position: 'relative', maxWidth: 560, width: '100%', padding: t.GAP, border: `1px solid ${t.RED}`, borderRadius: t.RADIUS_LG, background: t.RED_BG, color: t.RED_TEXT, fontSize: t.TEXT_BODY, fontFamily: t.MONO, whiteSpace: 'pre-wrap', wordBreak: 'break-word', textAlign: 'left' }}>
+        {error}
+        <button type="button" style={{ position: 'absolute', top: t.GAP_SM, right: t.GAP_SM, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, padding: 0, border: 'none', borderRadius: t.RADIUS, background: 'transparent', color: t.RED_TEXT, cursor: 'pointer' }}
+          onClick={() => void Neutralino.clipboard.writeText(error)} title="Copy error">
+          <CopyIcon style={iconSvg} />
+        </button>
+      </div>
+    </div>
+  );
+  if (!result) return (
+    <div style={emptyCtr}>
+      <div style={{ color: t.TEXT_FAINT, fontSize: t.TEXT_TITLE, fontWeight: 500, marginBottom: t.GAP_XS }}>No results yet</div>
+      <Note kind="muted">Run a query to see results.</Note>
+    </div>
+  );
+
+  if (result.columns.length === 0) return (
+    <div style={emptyCtr}>
+      <div style={{ color: t.GREEN, fontSize: t.TEXT_TITLE, fontWeight: 500, marginBottom: t.GAP_XS }}>Query finished</div>
+      <Note kind="ok">{result.message}</Note>
+    </div>
+  );
 
   const count = result.rows.length;
   const firstRow = browse ? browse.offset + 1 : 1;

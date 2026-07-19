@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { engineLabel } from '../../common/db/engines.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
-import Badge from '../../common/components/Badge.tsx';
 import Button from '../../common/components/Button.tsx';
 import * as t from '../../common/tokens';
 import { useEditor } from './EditorContext.tsx';
@@ -53,7 +51,7 @@ declare global {
 }
 
 export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
-  const { config, dialect } = useSession();
+  const { dialect } = useSession();
   const { tabs, activeTab } = useTabs();
   const { sqlByTab, setSql, peekSql } = useEditor();
 
@@ -295,7 +293,6 @@ export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
   return (
     <>
       <div className="toolbar" style={toolbar}>
-        {config && <Badge kind="accent">{engineLabel(config.type)}</Badge>}
         <div style={spacer} />
         <Button onClick={format}>
           Format

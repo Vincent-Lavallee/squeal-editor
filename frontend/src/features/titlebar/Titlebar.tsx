@@ -8,11 +8,10 @@ interface Props { onCheckForUpdates: () => void; }
 
 export default function Titlebar({ onCheckForUpdates }: Props) {
   const { maximized, minimize, toggleMaximize, close, dragProps } = useWindowChrome();
-  const { connected, serverLabel, disconnect } = useSession();
+  const { connected, serverLabel } = useSession();
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
 
   const items = [
-    ...(connected ? [{ label: 'Disconnect', onSelect: disconnect }] : []),
     { label: 'Check for updates…', onSelect: onCheckForUpdates },
     { label: 'Exit', onSelect: close },
   ];
