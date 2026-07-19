@@ -2,6 +2,10 @@ import { useState } from 'react';
 
 import type { SavedConnection } from '../../../../shared/protocol.ts';
 import { serverLabel } from '../../store/sessionSlice.ts';
+import Button from '../../common/components/Button.tsx';
+import Input from '../../common/components/Input.tsx';
+import Field from '../../common/components/Field.tsx';
+import * as t from '../../common/tokens';
 
 interface Props {
   connection: SavedConnection;
@@ -10,39 +14,38 @@ interface Props {
   onCancel: () => void;
 }
 
-/** Where a connection that stores no password asks for one, and never keeps it. */
 export default function PasswordPrompt({ connection, connecting, onSubmit, onCancel }: Props) {
   const [password, setPassword] = useState('');
 
   return (
     <form
-      className="connect__form"
+      style={{ display: 'flex', flexDirection: 'column', gap: t.GAP }}
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit(password);
       }}
     >
-      <div className="field">
-        <label className="label" htmlFor="prompt-password">
-          Password for <span className="field__hint">{serverLabel(connection.config)}</span>
-        </label>
-        <input
+      <Field
+        label="Password for"
+        htmlFor="prompt-password"
+        hint={<span style={{ color: t.TEXT_FAINT }}>{serverLabel(connection.config)}</span>}
+      >
+        <Input
           id="prompt-password"
-          className="input"
           type="password"
           value={password}
           autoFocus
           onChange={(e) => setPassword(e.target.value)}
         />
-      </div>
+      </Field>
 
-      <div className="connect__actions">
-        <button type="button" className="btn" onClick={onCancel} disabled={connecting}>
+      <div style={{ display: 'flex', gap: t.GAP_SM, marginTop: t.GAP_XS }}>
+        <Button onClick={onCancel} disabled={connecting}>
           Cancel
-        </button>
-        <button type="submit" className="btn btn--primary connect__submit" disabled={connecting}>
+        </Button>
+        <Button type="submit" variant="primary" style={{ justifyContent: 'center', height: 34, flex: 1 }} disabled={connecting}>
           {connecting ? 'Connecting…' : `Connect to ${connection.name}`}
-        </button>
+        </Button>
       </div>
     </form>
   );

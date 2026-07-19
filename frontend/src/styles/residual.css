@@ -1,0 +1,152 @@
+/**
+ * Residual CSS — things inline styles cannot express.
+ *
+ * CSS custom properties, pseudo-elements, @keyframes, :has() rules, and
+ * compound selectors. Everything else is inline styles sourced from tokens.ts.
+ */
+
+/* ---- Design tokens (CSS custom properties) ---- */
+/* Monaco's theme and useWindowChrome read these at runtime via
+   getComputedStyle(). They must exist on :root. Keep in sync with tokens.ts. */
+:root {
+  --bg: #111113;
+  --border: #272a2d;
+  --border-strong: #363a3f;
+  --hover: #ffffff0a;
+  --selected: #0eb39e24;
+  --scrim: #00000099;
+  --text: #edeef0;
+  --text-muted: #b0b4ba;
+  --text-faint: #696e77;
+  --accent: #0eb39e;
+  --accent-bg: #0d2d2a;
+  --on-accent: #0d1514;
+  --red: #e5484d;
+  --red-bg: #3b1219;
+  --red-text: #ff9592;
+  --green: #3dd68c;
+  --green-bg: #132d21;
+  --amber: #ffca16;
+  --amber-bg: #341c00;
+  --purple: #bf7af0;
+  --purple-bg: #301c3b;
+  --syntax-keyword: var(--accent);
+  --syntax-string: #3dd68c;
+  --syntax-number: #ffca16;
+  --syntax-comment: var(--text-faint);
+  --syntax-punctuation: var(--text-muted);
+  --ws-slate: #b0b4ba;
+  --ws-blue: #5eb0ef;
+  --ws-cyan: #4ccce6;
+  --ws-green: #3dd68c;
+  --ws-amber: #ffca16;
+  --ws-orange: #ffa057;
+  --ws-red: #ff9592;
+  --ws-pink: #ff8dcc;
+  --ws-purple: #bf7af0;
+  --radius-pill: 999px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --font: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --text-page: 24px;
+  --text-title: 15px;
+  --text-body: 13px;
+  --text-badge: 12px;
+  --text-label: 11px;
+  --text-micro: 10px;
+  --tracking-label: 0.04em;
+  --icon: 16px;
+  --titlebar-h: 32px;
+  --bar-h: 44px;
+  --tab-h: 32px;
+  --statusbar-h: 26px;
+  --rail-h: 48px;
+  --row-h: 44px;
+  --row-h-dense: 30px;
+  --gap-xs: 4px;
+  --gap-sm: 8px;
+  --gap: 12px;
+  --gap-lg: 16px;
+  --gap-xl: 24px;
+}
+
+/* ---- Reset ---- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+button, label, th { user-select: none; }
+
+/* ---- Focus-visible (global, no inline equivalent) ---- */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- Scrollbars (pseudo-elements, no inline equivalent) ---- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+.tabs::-webkit-scrollbar { display: none; }
+
+/* ---- Placeholder (browser pseudo-element, no inline equivalent) ---- */
+input::placeholder { color: var(--text-faint); }
+
+/* ---- Animations (@keyframes, no inline equivalent) ---- */
+@keyframes update-banner-sweep {
+  from { margin-left: -40%; }
+  to { margin-left: 100%; }
+}
+.update-banner__bar--indeterminate .update-banner__fill {
+  width: 40%;
+  animation: update-banner-sweep 1.1s ease-in-out infinite;
+}
+
+/* ---- :has() rules (no inline equivalent) ---- */
+.ws-icons__pick:has(input:focus-visible),
+.ws-colors__pick:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- Grid compound selectors (noisy to inline) ---- */
+.grid tbody tr:hover td { background: var(--hover); }
+.grid tbody tr.grid__row--selected td,
+.grid tbody tr.grid__row--selected .gutter {
+  background: var(--selected);
+}
+.grid tbody tr.grid__row--deleted td,
+.grid tbody tr.grid__row--deleted .gutter {
+  background: var(--red-bg);
+  color: var(--red-text);
+  text-decoration: line-through;
+}
+.grid__cell--editing {
+  box-shadow: inset 0 -1.5px 0 var(--accent);
+}
+.grid__cell--dirty {
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent);
+}
+
+/* ---- Grid tab hides editor chrome (Monaco stays mounted) ---- */
+.main--grid .toolbar,
+.main--grid .editor { display: none; }
+
+/* ---- Layout (flex fill for routing + root flex column) ---- */
+.app-body { flex: 1; min-height: 0; }
+#root { display: flex; flex-direction: column; }

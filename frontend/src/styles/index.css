@@ -1,5 +1,0 @@
-/* Load order matters: tokens define the variables everything else consumes. */
-@import './tokens.css';
-@import './base.css';
-@import './components.css';
-@import './layout.css';

@@ -1,110 +1,71 @@
 import { UpdateIcon } from '../../common/icons/icons.ts';
 import { useUpdater } from './useUpdater.ts';
+import Button from '../../common/components/Button.tsx';
+import * as t from '../../common/tokens';
 
-/**
- * The one strip that carries an update, under the titlebar.
- *
- * It never blocks: the whole flow is user-initiated, so this is a banner you can
- * wave away, not a modal that stops the app. It obeys the design system -- one
- * background, a single 1px rule under it, the accent only on the primary action;
- * no shadow, no lighter surface.
- *
- * The download bar is determinate only when the server sent a length; otherwise
- * `totalBytes` is 0 and it shows the indeterminate stripe rather than lying
- * about a percentage.
- */
+const iconSvg = { flex: 'none', width: 16, height: 16, color: t.ACCENT };
+
 export default function UpdateBanner() {
-  const { phase, status, progress, dismissed, upToDate, checkFailed, error, check, download, apply, dismiss } =
-    useUpdater();
+  const { phase, status, progress, dismissed, upToDate, checkFailed, error, check, download, apply, dismiss } = useUpdater();
 
-  // A manual check that could not reach the releases: say so, rather than
-  // claiming you are current when we never found out.
   if (checkFailed) {
     return (
-      <div className="update-banner" role="status">
-        <UpdateIcon className="icon" />
-        <span className="update-banner__msg">Couldn't check for updates.</span>
-        <button type="button" className="btn" onClick={() => check(true)}>
-          Try again
-        </button>
-        <button type="button" className="btn btn--ghost" onClick={dismiss}>
-          Dismiss
-        </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `${t.GAP_XS}px ${t.GAP}px`, borderBottom: `1px solid ${t.BORDER}`, color: t.TEXT, fontSize: t.TEXT_BADGE }} role="status">
+        <UpdateIcon style={iconSvg} />
+        <span style={{ marginRight: 'auto' }}>Couldn't check for updates.</span>
+        <Button onClick={() => check(true)}>Try again</Button>
+        <Button variant="ghost" onClick={dismiss}>Dismiss</Button>
       </div>
     );
   }
 
-  // A manual check that found nothing: a small, dismissible acknowledgement.
   if (upToDate) {
     return (
-      <div className="update-banner" role="status">
-        <UpdateIcon className="icon" />
-        <span className="update-banner__msg">You're on the latest version.</span>
-        <button type="button" className="btn btn--ghost" onClick={dismiss}>
-          Dismiss
-        </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `${t.GAP_XS}px ${t.GAP}px`, borderBottom: `1px solid ${t.BORDER}`, color: t.TEXT, fontSize: t.TEXT_BADGE }} role="status">
+        <UpdateIcon style={iconSvg} />
+        <span style={{ marginRight: 'auto' }}>You're on the latest version.</span>
+        <Button variant="ghost" onClick={dismiss}>Dismiss</Button>
       </div>
     );
   }
 
-  // Everything else hangs off a found update; nothing to show without one.
   if (!status?.hasUpdate || dismissed) return null;
   const version = status.latestVersion;
 
-  const percent =
-    progress && progress.totalBytes > 0
-      ? Math.round((progress.receivedBytes / progress.totalBytes) * 100)
-      : null;
+  const percent = progress && progress.totalBytes > 0 ? Math.round((progress.receivedBytes / progress.totalBytes) * 100) : null;
+
+  const barStyle: React.CSSProperties = { flex: 1, maxWidth: 240, height: 4, borderRadius: t.RADIUS_PILL, background: t.BORDER, overflow: 'hidden' };
+  const fillStyle: React.CSSProperties = { height: '100%', borderRadius: 'inherit', background: t.ACCENT, transition: 'width 0.15s linear', ...(percent !== null ? { width: `${percent}%` } : {}) };
 
   return (
-    <div className="update-banner" role="status">
-      <UpdateIcon className="icon" />
+    <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `${t.GAP_XS}px ${t.GAP}px`, borderBottom: `1px solid ${t.BORDER}`, color: t.TEXT, fontSize: t.TEXT_BADGE }} role="status">
+      <UpdateIcon style={iconSvg} />
 
       {phase === 'downloading' ? (
         <>
-          <span className="update-banner__msg">Downloading Squeal {version}…</span>
-          <div
-            className={`update-banner__bar ${percent === null ? 'update-banner__bar--indeterminate' : ''}`}
-            role="progressbar"
-            aria-valuenow={percent ?? undefined}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div className="update-banner__fill" style={percent === null ? undefined : { width: `${percent}%` }} />
+          <span style={{ marginRight: 'auto' }}>Downloading Squeal {version}…</span>
+          <div className={`update-banner__bar${percent === null ? ' update-banner__bar--indeterminate' : ''}`} style={barStyle} role="progressbar" aria-valuenow={percent ?? undefined} aria-valuemin={0} aria-valuemax={100}>
+            <div className="update-banner__fill" style={fillStyle} />
           </div>
-          {percent !== null && <span className="update-banner__pct mono">{percent}%</span>}
+          {percent !== null && <span style={{ flex: 'none', color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, fontFamily: t.MONO }}>{percent}%</span>}
         </>
       ) : phase === 'ready' ? (
         <>
-          <span className="update-banner__msg">Squeal {version} is ready to install.</span>
-          <button type="button" className="btn btn--primary" onClick={apply}>
-            Restart to update
-          </button>
-          <button type="button" className="btn btn--ghost" onClick={dismiss}>
-            Later
-          </button>
+          <span style={{ marginRight: 'auto' }}>Squeal {version} is ready to install.</span>
+          <Button variant="primary" onClick={apply}>Restart to update</Button>
+          <Button variant="ghost" onClick={dismiss}>Later</Button>
         </>
       ) : phase === 'error' ? (
         <>
-          <span className="update-banner__msg update-banner__msg--error">
-            {error ?? 'The update could not be installed.'}
-          </span>
-          <button type="button" className="btn" onClick={download}>
-            Try again
-          </button>
-          <button type="button" className="btn btn--ghost" onClick={dismiss}>
-            Dismiss
-          </button>
+          <span style={{ marginRight: 'auto', color: t.RED_TEXT }}>{error ?? 'The update could not be installed.'}</span>
+          <Button onClick={download}>Try again</Button>
+          <Button variant="ghost" onClick={dismiss}>Dismiss</Button>
         </>
       ) : (
         <>
-          <span className="update-banner__msg">Squeal {version} is available.</span>
-          <button type="button" className="btn btn--primary" onClick={download}>
-            Download
-          </button>
-          <button type="button" className="btn btn--ghost" onClick={dismiss}>
-            Later
-          </button>
+          <span style={{ marginRight: 'auto' }}>Squeal {version} is available.</span>
+          <Button variant="primary" onClick={download}>Download</Button>
+          <Button variant="ghost" onClick={dismiss}>Later</Button>
         </>
       )}
     </div>

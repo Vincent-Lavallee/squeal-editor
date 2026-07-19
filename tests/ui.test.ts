@@ -36,26 +36,26 @@ let app: AppSession;
 /** A tree row is a table now: a chevron that reveals its columns, plus the name
     that browses. Clicking the name is what opens the grid. */
 const clickTable = (label: string) => `
-  [...document.querySelectorAll('.tree__row')]
-    .find(e => e.querySelector('.tree__label').textContent === ${JSON.stringify(label)})
-    .querySelector('.tree__name').click(); true;`;
+  [...document.querySelectorAll('[data-testid="tree-row"]')]
+    .find(e => e.querySelector('[data-testid="tree-label"]').textContent === ${JSON.stringify(label)})
+    .querySelector('[data-testid="tree-name"]').click(); true;`;
 
 /** The chevron is the other half of the row: it reveals the columns in place. */
 const toggleTable = (label: string) => `
-  [...document.querySelectorAll('.tree__row')]
-    .find(e => e.querySelector('.tree__label').textContent === ${JSON.stringify(label)})
-    .querySelector('.tree__toggle').click(); true;`;
+  [...document.querySelectorAll('[data-testid="tree-row"]')]
+    .find(e => e.querySelector('[data-testid="tree-label"]').textContent === ${JSON.stringify(label)})
+    .querySelector('[data-testid="tree-toggle"]').click(); true;`;
 
 /** The one item whose name is `label`, so its revealed columns can be read. */
 const treeItem = (label: string) => `
-  [...document.querySelectorAll('.tree__item')]
-    .find(e => e.querySelector('.tree__label')?.textContent === ${JSON.stringify(label)})`;
+  [...document.querySelectorAll('[data-testid="tree-item"]')]
+    .find(e => e.querySelector('[data-testid="tree-label"]')?.textContent === ${JSON.stringify(label)})`;
 
 /** Summon the context menu on a row, at its own top-left corner. */
 const rightClickTable = (label: string) => `
   (() => {
-    const row = [...document.querySelectorAll('.tree__row')]
-      .find(e => e.querySelector('.tree__label').textContent === ${JSON.stringify(label)});
+    const row = [...document.querySelectorAll('[data-testid="tree-row"]')]
+      .find(e => e.querySelector('[data-testid="tree-label"]').textContent === ${JSON.stringify(label)});
     const r = row.getBoundingClientRect();
     row.dispatchEvent(new MouseEvent('contextmenu',
       { bubbles: true, cancelable: true, clientX: r.left + 5, clientY: r.top + 5 }));
@@ -63,37 +63,37 @@ const rightClickTable = (label: string) => `
   })()`;
 
 /** The menu's items, top to bottom. */
-const menuItemLabels = `[...document.querySelectorAll('.context-menu .menu__item')].map(e => e.textContent)`;
+const menuItemLabels = `[...document.querySelectorAll('[data-testid="context-menu-item"]')].map(e => e.textContent)`;
 const contextItem = (label: string) => `
-  [...document.querySelectorAll('.context-menu .menu__item')].find(e => e.textContent === ${JSON.stringify(label)})`;
+  [...document.querySelectorAll('[data-testid="context-menu-item"]')].find(e => e.textContent === ${JSON.stringify(label)})`;
 const clickContextItem = (label: string) => `${contextItem(label)}.click(); true;`;
 const pressEscape = `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true;`;
 
 /** The database is picked from a select now, so React's own setter is the way in. */
 const selectDatabase = (name: string) => `${REACT_SETTERS}
-  setSelect(document.querySelector('.sidebar__head .select'), ${JSON.stringify(name)});
+  setSelect(document.querySelector('[data-testid="sidebar-db-select"]'), ${JSON.stringify(name)});
   true;`;
 
 /** The rail, top to bottom: one chip per open connection, named. */
-const railNames = `[...document.querySelectorAll('.rail__name')].map(e => e.textContent)`;
+const railNames = `[...document.querySelectorAll('[data-testid="rail-name"]')].map(e => e.textContent)`;
 /** The environment is a text tag now, not a colour: read the abbreviation. */
-const railEnvs = `[...document.querySelectorAll('.rail__env')].map(e => e.textContent)`;
+const railEnvs = `[...document.querySelectorAll('[data-testid="rail-env"]')].map(e => e.textContent)`;
 const activeRail = `
-  [...document.querySelectorAll('.rail__item')]
-    .findIndex(e => e.classList.contains('rail__item--active'))`;
-const clickRail = (i: number) => `document.querySelectorAll('.rail__item')[${i}].click(); true;`;
+  [...document.querySelectorAll('[data-testid="rail-item"]')]
+    .findIndex(e => e.getAttribute('aria-current') === 'true')`;
+const clickRail = (i: number) => `document.querySelectorAll('[data-testid="rail-item"]')[${i}].click(); true;`;
 
 /** The tab strip, left to right. */
-const tabLabels = `[...document.querySelectorAll('.tabs__label')].map(e => e.textContent)`;
-const activeTabLabel = `document.querySelector('.tabs__tab--active .tabs__label')?.textContent ?? ''`;
+const tabLabels = `[...document.querySelectorAll('[data-testid="tab-label"]')].map(e => e.textContent)`;
+const activeTabLabel = `document.querySelector('[data-testid="tab-pick"][aria-selected="true"] [data-testid="tab-label"]')?.textContent ?? ''`;
 
 /** Tabs are matched on exact label text, same rule as every other selector here. */
 const tab = (label: string) => `
-  [...document.querySelectorAll('.tabs__tab')]
-    .find(e => e.querySelector('.tabs__label').textContent === ${JSON.stringify(label)})`;
-const clickTab = (label: string) => `${tab(label)}.querySelector('.tabs__pick').click(); true;`;
-const closeTab = (label: string) => `${tab(label)}.querySelector('.tabs__close').click(); true;`;
-const newTab = `document.querySelector('.tabs__new').click(); true;`;
+  [...document.querySelectorAll('[data-testid="tab"]')]
+    .find(e => e.querySelector('[data-testid="tab-label"]').textContent === ${JSON.stringify(label)})`;
+const clickTab = (label: string) => `${tab(label)}.querySelector('[data-testid="tab-pick"]').click(); true;`;
+const closeTab = (label: string) => `${tab(label)}.querySelector('[data-testid="tab-close"]').click(); true;`;
+const newTab = `document.querySelector('[data-testid="tab-new"]').click(); true;`;
 
 /*
  * The editor is Monaco, so its text is in a model rather than in a DOM value:
@@ -142,11 +142,11 @@ async function suggest(sql: string): Promise<string[]> {
 }
 
 /** The results bar's label: which table, and which rows of it are on screen. */
-const barText = `document.querySelector('.results__bar span').textContent`;
+const barText = `document.querySelector('[data-testid="results-bar"]').textContent`;
 
 /** Prev/Next carry an icon beside the word, so match the trimmed text. */
 const pagerBtn = (label: 'Prev' | 'Next') => `
-  [...document.querySelectorAll('.results__pager .btn')]
+  [...document.querySelectorAll('[data-testid="results-pager"] button')]
     .find(e => e.textContent.trim() === ${JSON.stringify(label)})`;
 
 /** A data cell (past the row-number gutter) at row r, column c of the grid. */
@@ -156,12 +156,12 @@ const gridCell = (r: number, c: number) =>
 const dblClick = (expr: string) => `${expr}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); true;`;
 /** A save-bar action button by its trimmed text (Save / Discard). */
 const saveAction = (label: 'Save' | 'Discard') =>
-  `[...document.querySelectorAll('.results__saveactions .btn')].find(e => e.textContent.trim() === ${JSON.stringify(label)})`;
+  `[...document.querySelectorAll('[data-testid="results-save-actions"] button')].find(e => e.textContent.trim() === ${JSON.stringify(label)})`;
 
 /** A saved row by exact name -- `.includes` would match a longer neighbour. */
 const savedRow = (name: string) => `
-  [...document.querySelectorAll('.saved__row')]
-    .find(e => e.querySelector('.saved__name').textContent === ${JSON.stringify(name)})`;
+  [...document.querySelectorAll('[data-testid="saved-row"]')]
+    .find(e => e.querySelector('[data-testid="saved-name"]').textContent === ${JSON.stringify(name)})`;
 
 /**
  * Fills the connect form and submits. A `name` is required now -- every open
@@ -177,7 +177,7 @@ async function fillConnectForm(
   name: string,
   environment?: string
 ): Promise<void> {
-  await app.evaluate(`document.querySelector('.saved__new')?.click(); true;`);
+  await app.evaluate(`document.querySelector('[data-testid="saved-new"]')?.click(); true;`);
   await Bun.sleep(300);
 
   await app.evaluate(`${REACT_SETTERS}
@@ -202,7 +202,7 @@ async function fillConnectForm(
     await Bun.sleep(200);
   }
 
-  await app.evaluate(`document.querySelector('.connect__submit').click(); true;`);
+  await app.evaluate(`document.querySelector('[data-testid="connect-submit"]').click(); true;`);
   await Bun.sleep(3000);
 }
 
@@ -221,7 +221,7 @@ async function addConnection(
   name: string,
   environment?: string
 ): Promise<void> {
-  await app.evaluate(`document.querySelector('.rail__add').click(); true;`);
+  await app.evaluate(`document.querySelector('[data-testid="rail-add"]').click(); true;`);
   await Bun.sleep(500);
   await fillConnectForm(cfg, name, environment);
 }
@@ -238,11 +238,11 @@ async function clearSavedConnections(): Promise<void> {
   await app.reload();
   await Bun.sleep(600);
   for (let guard = 0; guard < 20; guard++) {
-    const rows = await app.evaluate<number>(`document.querySelectorAll('.saved__row').length`);
+    const rows = await app.evaluate<number>(`document.querySelectorAll('[data-testid="saved-row"]').length`);
     if (rows === 0) break;
-    await app.evaluate(`document.querySelector('.saved__row').querySelectorAll('.saved__actions .btn')[1].click(); true;`);
+    await app.evaluate(`document.querySelector('[data-testid="saved-row"]').querySelectorAll('[data-testid="saved-actions"] button')[1].click(); true;`);
     await Bun.sleep(300);
-    await app.evaluate(`document.querySelector('.saved__row').querySelectorAll('.saved__actions .btn')[0].click(); true;`);
+    await app.evaluate(`document.querySelector('[data-testid="saved-row"]').querySelectorAll('[data-testid="saved-actions"] button')[0].click(); true;`);
     await Bun.sleep(600);
   }
 }
@@ -253,10 +253,10 @@ async function clearSavedConnections(): Promise<void> {
  * so clicking the trigger and the item in the same turn finds nothing.
  */
 async function disconnect(): Promise<void> {
-  await app.evaluate(`document.querySelector('.menu__trigger').click(); true;`);
+  await app.evaluate(`document.querySelector('[data-testid="menu-trigger"]').click(); true;`);
   await Bun.sleep(200);
   await app.evaluate(`
-    [...document.querySelectorAll('.menu__item')]
+    [...document.querySelectorAll('[data-testid="menu-item"]')]
       .find(e => e.textContent === 'Disconnect')
       .click(); true;`);
   await Bun.sleep(800);
@@ -288,10 +288,10 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     test('connects and renders the shell', async () => {
-      const shell = await app.evaluate<boolean>(`!!document.querySelector('.sidebar')`);
+      const shell = await app.evaluate<boolean>(`!!document.querySelector('[data-testid="sidebar"]')`);
       if (!shell) {
         throw new Error(
-          await app.evaluate<string>(`document.querySelector('.callout--error')?.textContent ?? 'no error shown'`)
+          await app.evaluate<string>(`document.querySelector('[data-testid="callout"]')?.textContent ?? 'no error shown'`)
         );
       }
       expect(shell).toBe(true);
@@ -303,7 +303,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
     test('offers the databases in the picker', async () => {
       const dbs = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.sidebar__head .select option')].map(e => e.textContent)`
+        `[...document.querySelectorAll('[data-testid="sidebar-db-select"] option')].map(e => e.textContent)`
       );
       expect(dbs).toContain('shop');
     });
@@ -312,7 +312,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(selectDatabase('shop'));
       await Bun.sleep(1500);
       const tables = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`
+        `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`
       );
       expect(tables).toContain('users');
       expect(tables).toContain('reporting.daily_stats');
@@ -322,7 +322,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // shop holds one view (active_users) among its tables, so ordering tables
       // first means the view is last -- no heading, the icon tells them apart.
       const labels = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`
+        `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`
       );
       expect(labels[labels.length - 1]).toBe('active_users');
     });
@@ -333,22 +333,22 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       const item = treeItem('users');
       const cols = await app.evaluate<string[]>(
-        `[...${item}.querySelectorAll('.tree__col-name')].map(e => e.textContent)`
+        `[...${item}.querySelectorAll('[data-testid="tree-col-name"]')].map(e => e.textContent)`
       );
       expect(cols).toContain('email');
 
       // The key mark lands on the primary key and on nothing else -- the whole
       // point of carrying the flag rather than guessing from the name.
-      const hasKey = (name: string) => `!![...${item}.querySelectorAll('.tree__col')]
-        .find(c => c.querySelector('.tree__col-name').textContent === ${JSON.stringify(name)})
-        .querySelector('.tree__key')`;
+      const hasKey = (name: string) => `!![...${item}.querySelectorAll('[data-testid="tree-col"]')]
+        .find(c => c.querySelector('[data-testid="tree-col-name"]').textContent === ${JSON.stringify(name)})
+        .querySelector('[data-testid="tree-key"]')`;
       expect(await app.evaluate<boolean>(hasKey('id'))).toBe(true);
       expect(await app.evaluate<boolean>(hasKey('email'))).toBe(false);
 
       // Collapse again, so the tree is the flat list the later tests expect.
       await app.evaluate(toggleTable('users'));
       await Bun.sleep(200);
-      expect(await app.evaluate<number>(`${item}.querySelectorAll('.tree__col').length`)).toBe(0);
+      expect(await app.evaluate<number>(`${item}.querySelectorAll('[data-testid="tree-col"]').length`)).toBe(0);
     });
 
     /*
@@ -371,13 +371,13 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<string>(activeTabLabel)).toBe('users');
 
       const headers = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.grid__col-name')].map(e => e.textContent)`
+        `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`
       );
       expect(headers).toContain('email');
       expect(await app.evaluate<number>(`document.querySelectorAll('.grid tbody tr').length`)).toBe(2);
 
       // A grid tab spends none of the screen on an editor nobody asked for.
-      expect(await app.evaluate<boolean>(`!!document.querySelector('.main--grid')`)).toBe(true);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="main-grid"]')`)).toBe(true);
       expect(await app.evaluate<string | null>(editorText)).toBe(null);
 
       await app.evaluate(clickTab('Query 1'));
@@ -416,10 +416,10 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(300);
       await app.evaluate(setEditorText('SELECT 42 AS answer'));
       await Bun.sleep(200);
-      await app.evaluate(`document.querySelector('.toolbar .btn--primary').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
       await Bun.sleep(1500);
 
-      const headers = `[...document.querySelectorAll('.grid__col-name')].map(e => e.textContent)`;
+      const headers = `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`;
       expect(await app.evaluate<string[]>(headers)).toEqual(['answer']);
 
       // The grid tab still holds the table it browsed, not this query's row.
@@ -439,7 +439,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(400);
 
       expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
-      const note = await app.evaluate<string>(`document.querySelector('.results .note--muted')?.textContent ?? ''`);
+      const note = await app.evaluate<string>(`document.querySelector('[data-testid="note-muted"]')?.textContent ?? ''`);
       expect(note).toContain('Nothing open');
     });
 
@@ -458,11 +458,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(1500);
 
       // Not stranded: the picker names a real database and can be used.
-      expect(await app.evaluate<boolean>(`document.querySelector('.sidebar__head .select').disabled`)).toBe(false);
-      const picked = await app.evaluate<string>(`document.querySelector('.sidebar__head .select').value`);
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="sidebar-db-select"]').disabled`)).toBe(false);
+      const picked = await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').value`);
       expect(picked).not.toBe('');
       const options = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.sidebar__head .select option')].map(e => e.value)`
+        `[...document.querySelectorAll('[data-testid="sidebar-db-select"] option')].map(e => e.value)`
       );
       expect(options).toContain(picked);
 
@@ -472,7 +472,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // maintenance one -- so this asks for an answer, not for rows.
       expect(
         await app.evaluate<boolean>(
-          `document.querySelectorAll('.tree__row').length > 0 || !!document.querySelector('.tree__note')`
+          `document.querySelectorAll('[data-testid="tree-row"]').length > 0 || !!document.querySelector('[data-testid="tree-note"]')`
         )
       ).toBe(true);
 
@@ -481,7 +481,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(selectDatabase('shop'));
       await Bun.sleep(1500);
       const tables = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`
+        `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`
       );
       expect(tables).toContain('users');
     });
@@ -506,7 +506,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     test('a table that fits on one page has no pager', async () => {
       await app.evaluate(clickTable('users'));
       await Bun.sleep(2000);
-      expect(await app.evaluate<number>(`document.querySelectorAll('.results__pager').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="results-pager"]').length`)).toBe(0);
       await app.evaluate(closeTab('users'));
       await Bun.sleep(300);
     });
@@ -544,7 +544,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // neighbour paging away to another table should fail that test, not this.
       await app.evaluate(clickTable('users'));
       await Bun.sleep(2000);
-      expect(await app.evaluate<boolean>(`!!document.querySelector('.grid .null')`)).toBe(true);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="null-value"]')`)).toBe(true);
     });
 
     /*
@@ -574,13 +574,13 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(1500);
 
       const headers = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.grid__col-name')].map(e => e.textContent)`
+        `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`
       );
       expect(headers).toEqual(['name', 'email']);
 
       // The grid now holds SQL the user wrote, and the extension will not
       // rewrite that to reach page 2 -- so there is no page 2 to offer.
-      expect(await app.evaluate<number>(`document.querySelectorAll('.results__pager').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="results-pager"]').length`)).toBe(0);
     });
 
     /*
@@ -593,14 +593,14 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(clickTable('logs'));
       await Bun.sleep(1500);
 
-      expect(await app.evaluate<string>(`document.querySelector('.results__ro')?.textContent ?? ''`)).toMatch(
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="results-ro"]')?.textContent ?? ''`)).toMatch(
         /no primary or unique key/i
       );
 
       // Double-clicking a cell must not open an editor on a read-only grid.
       await app.evaluate(dblClick(gridCell(0, 0)));
       await Bun.sleep(300);
-      expect(await app.evaluate<number>(`document.querySelectorAll('.cell-edit__input').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="cell-edit-input"]').length`)).toBe(0);
 
       await app.evaluate(closeTab('logs'));
       await Bun.sleep(300);
@@ -611,7 +611,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(1500);
 
       // A table with a key shows no read-only reason.
-      expect(await app.evaluate<number>(`document.querySelectorAll('.results__ro').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="results-ro"]').length`)).toBe(0);
 
       // Edit the first row's weight to a value guaranteed different from what is
       // there, so a real change is always staged and the test re-runs cleanly
@@ -622,16 +622,16 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(dblClick(gridCell(0, 1)));
       await Bun.sleep(300);
       await app.evaluate(`${REACT_SETTERS}
-        setNative(document.querySelector('.cell-edit__input'), ${JSON.stringify(next)});
+        setNative(document.querySelector('[data-testid="cell-edit-input"]'), ${JSON.stringify(next)});
         true;`);
       await Bun.sleep(200);
       await app.evaluate(
-        `document.querySelector('.cell-edit__input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); true;`
+        `document.querySelector('[data-testid="cell-edit-input"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); true;`
       );
       await Bun.sleep(300);
 
       // Staged: the save bar counts one change and the cell is marked dirty.
-      expect(await app.evaluate<string>(`document.querySelector('.results__savebar span').textContent`)).toMatch(
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="results-savebar"] span').textContent`)).toMatch(
         /1 unsaved change/
       );
       expect(await app.evaluate<boolean>(`!!document.querySelector('.grid__cell--dirty')`)).toBe(true);
@@ -642,7 +642,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // Saved: the bar is gone and the re-browsed grid carries the new value.
       // Asserted across the column rather than at row 0, since a re-browsed row
       // can change place (Postgres moves an updated tuple).
-      expect(await app.evaluate<number>(`document.querySelectorAll('.results__savebar').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="results-savebar"]').length`)).toBe(0);
       const weights = await app.evaluate<string[]>(
         `[...document.querySelectorAll('.grid tbody tr')].map(tr => tr.querySelectorAll('td:not(.gutter)')[1].textContent)`
       );
@@ -660,16 +660,16 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(dblClick(gridCell(0, 1)));
       await Bun.sleep(300);
       await app.evaluate(
-        `document.querySelector('.cell-edit__null').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true;`
+        `document.querySelector('[data-testid="cell-edit-null"]').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true;`
       );
       await Bun.sleep(300);
-      expect(await app.evaluate<boolean>(`!!${gridCell(0, 1)}.querySelector('.null')`)).toBe(true);
+      expect(await app.evaluate<boolean>(`!!${gridCell(0, 1)}.querySelector('[data-testid="null-value"]')`)).toBe(true);
 
       // Stage a delete on the second row: select its gutter, press Delete.
       await app.evaluate(`document.querySelectorAll('.grid tbody tr')[1].querySelector('.gutter').click(); true;`);
       await Bun.sleep(150);
       await app.evaluate(
-        `document.querySelector('.grid-scroll').dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })); true;`
+        `document.querySelector('[data-testid="grid-scroll"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })); true;`
       );
       await Bun.sleep(200);
       expect(await app.evaluate<number>(`document.querySelectorAll('.grid__row--deleted').length`)).toBe(1);
@@ -677,9 +677,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // Discard drops every staged change without touching the database.
       await app.evaluate(`${saveAction('Discard')}.click(); true;`);
       await Bun.sleep(300);
-      expect(await app.evaluate<number>(`document.querySelectorAll('.results__savebar').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="results-savebar"]').length`)).toBe(0);
       expect(await app.evaluate<number>(`document.querySelectorAll('.grid__row--deleted').length`)).toBe(0);
-      expect(await app.evaluate<number>(`document.querySelectorAll('.grid .null').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="null-value"]').length`)).toBe(0);
 
       await app.evaluate(closeTab('tags'));
       await Bun.sleep(300);
@@ -697,7 +697,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
           .dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })); true;`);
       await Bun.sleep(150);
       await app.evaluate(
-        `document.querySelector('.grid-scroll').dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true })); true;`
+        `document.querySelector('[data-testid="grid-scroll"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true })); true;`
       );
       await Bun.sleep(300);
 
@@ -721,7 +721,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
     test('keywords are highlighted, not left as plain text', async () => {
       await app.evaluate(setEditorText("SELECT 'x' -- comment"));
-      await Bun.sleep(400);
+      await Bun.sleep(800);
       // Monaco classifies each token into a category (keyword, string, comment,
       // etc.) and assigns a distinct class per category. One class across every
       // span means no grammar ran — every token reads as plain text.
@@ -810,10 +810,10 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     test('a SQL error is surfaced in the results pane', async () => {
       await app.evaluate(setEditorText('SELECT * FROM does_not_exist'));
       await Bun.sleep(200);
-      await app.evaluate(`document.querySelector('.toolbar .btn--primary').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
       await Bun.sleep(1500);
 
-      const err = await app.evaluate<string>(`document.querySelector('.note--error')?.textContent ?? ''`);
+      const err = await app.evaluate<string>(`document.querySelector('[data-testid="note-error"]')?.textContent ?? ''`);
       expect(err).toMatch(/does_not_exist/);
     });
 
@@ -830,15 +830,15 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await app.evaluate(selectDatabase('postgres'));
       await Bun.sleep(1200);
-      expect(await app.evaluate<string>(`document.querySelector('.sidebar__head .select').value`)).toBe('postgres');
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').value`)).toBe('postgres');
 
       // Back to the first tab: it never moved, so the picker still reads `shop`
       // and the tree is still showing shop's tables.
       await app.evaluate(clickTab('Query 3'));
       await Bun.sleep(1200);
-      expect(await app.evaluate<string>(`document.querySelector('.sidebar__head .select').value`)).toBe('shop');
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').value`)).toBe('shop');
       const tables = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`
+        `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`
       );
       expect(tables).toContain('users');
 
@@ -858,7 +858,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await app.evaluate(selectDatabase('postgres'));
       await Bun.sleep(2000);
-      const err = await app.evaluate<string>(`document.querySelector('.note--error')?.textContent ?? ''`);
+      const err = await app.evaluate<string>(`document.querySelector('[data-testid="note-error"]')?.textContent ?? ''`);
       expect(err).toMatch(/users/);
 
       await app.evaluate(closeTab('users'));
@@ -881,7 +881,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // Dismisses on Escape, like every floating thing here.
       await app.evaluate(pressEscape);
       await Bun.sleep(150);
-      expect(await app.evaluate<number>(`document.querySelectorAll('.context-menu').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="context-menu"]').length`)).toBe(0);
     });
 
     test('the menu names a view a view', async () => {
@@ -901,20 +901,20 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * table, and the text is the engine's own CREATE.
      */
     test('"Open definition" opens the CREATE in a new named editor tab', async () => {
-      const before = await app.evaluate<number>(`document.querySelectorAll('.tabs__tab').length`);
+      const before = await app.evaluate<number>(`document.querySelectorAll('[data-testid="tab"]').length`);
 
       await app.evaluate(rightClickTable('users'));
       await Bun.sleep(200);
       await app.evaluate(clickContextItem('Open definition'));
       await Bun.sleep(1500);
 
-      expect(await app.evaluate<number>(`document.querySelectorAll('.tabs__tab').length`)).toBe(before + 1);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="tab"]').length`)).toBe(before + 1);
       expect(await app.evaluate<string>(activeTabLabel)).toBe('users');
       expect(await app.evaluate<string | null>(editorText)).toContain('CREATE TABLE');
 
       // Close the definition tab (it is the active one) to hand the next test a
       // clean strip.
-      await app.evaluate(`document.querySelector('.tabs__tab--active .tabs__close').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="tab-pick"][aria-selected="true"]').parentElement.querySelector('[data-testid="tab-close"]').click(); true;`);
       await Bun.sleep(300);
     });
 
@@ -930,23 +930,23 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(clickContextItem('Drop table'));
       await Bun.sleep(300);
 
-      expect(await app.evaluate<boolean>(`!!document.querySelector('.modal')`)).toBe(true);
-      const confirmDisabled = `document.querySelector('.modal .connect__submit').disabled`;
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="modal"]')`)).toBe(true);
+      const confirmDisabled = `document.querySelector('[data-testid="modal-submit"]').disabled`;
       expect(await app.evaluate<boolean>(confirmDisabled)).toBe(true);
 
-      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('.modal .input'), 'not-the-name'); true;`);
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('[data-testid="modal-input"]'), 'not-the-name'); true;`);
       await Bun.sleep(150);
       expect(await app.evaluate<boolean>(confirmDisabled)).toBe(true);
 
-      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('.modal .input'), 'users'); true;`);
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('[data-testid="modal-input"]'), 'users'); true;`);
       await Bun.sleep(150);
       expect(await app.evaluate<boolean>(confirmDisabled)).toBe(false);
 
       // Cancel: the table is untouched, and the modal is gone.
-      await app.evaluate(`[...document.querySelectorAll('.modal .btn')].find(e => e.textContent === 'Cancel').click(); true;`);
+      await app.evaluate(`[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === 'Cancel').click(); true;`);
       await Bun.sleep(300);
-      expect(await app.evaluate<boolean>(`!!document.querySelector('.modal')`)).toBe(false);
-      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`))
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="modal"]')`)).toBe(false);
+      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`))
         .toContain('users');
     });
 
@@ -957,10 +957,10 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * the environment typed back, which the status bar spells out.
      */
     test('a read-only connection disables Drop', async () => {
-      const env = await app.evaluate<string>(`document.querySelector('.statusbar__env').textContent`);
+      const env = await app.evaluate<string>(`document.querySelector('[data-testid="statusbar-env"]').textContent`);
 
       // Lock it -- turning read-only on is the safe direction, so it is immediate.
-      await app.evaluate(`document.querySelector('.statusbar__lock').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="statusbar-lock"]').click(); true;`);
       await Bun.sleep(500);
 
       await app.evaluate(rightClickTable('users'));
@@ -970,11 +970,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(150);
 
       // Unlock again, so the connection is left as it was found.
-      await app.evaluate(`document.querySelector('.statusbar__lock').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="statusbar-lock"]').click(); true;`);
       await Bun.sleep(300);
-      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('.modal .input'), ${JSON.stringify(env)}); true;`);
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('[data-testid="modal-input"]'), ${JSON.stringify(env)}); true;`);
       await Bun.sleep(150);
-      await app.evaluate(`document.querySelector('.modal .connect__submit').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="modal-submit"]').click(); true;`);
       await Bun.sleep(400);
     });
   });
@@ -985,8 +985,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     test('connects and shows the MySQL badge', async () => {
-      expect(await app.evaluate<boolean>(`!!document.querySelector('.sidebar')`)).toBe(true);
-      expect(await app.evaluate<string>(`document.querySelector('.badge').textContent`)).toBe('MySQL');
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="sidebar"]')`)).toBe(true);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="engine-badge"]').textContent`)).toBe('MySQL');
     });
 
     /*
@@ -1002,7 +1002,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(2000);
 
       const headers = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.grid__col-name')].map(e => e.textContent)`
+        `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`
       );
       expect(headers).toContain('email');
     });
@@ -1037,7 +1037,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
            [...tr.querySelectorAll('td')].slice(1).map(td => td.textContent))`
       );
       const headers = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.grid__col-name')].map(e => e.textContent)`
+        `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`
       );
       expect(cells[0]![headers.indexOf('big')]).toBe('9007199254740993');
     });
@@ -1106,37 +1106,43 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     // The bar is the only place the server is named now that the tree's header
     // stopped repeating it.
     test('names the connected server', async () => {
-      expect(await app.evaluate<string>(`document.querySelector('.titlebar__title').textContent`))
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="titlebar-title"]').textContent`))
         .toBe(`${MYSQL.user}@${MYSQL.host}:${MYSQL.port}`);
     });
 
     test('the maximise button maximises the real window, and restores it', async () => {
-      const clickMaximise = `[...document.querySelectorAll('.titlebar__btn')][1].click(); true;`;
+      // Start from a known state: restore first so maximise always goes up.
+      const max = await app.evaluate<boolean>(`Neutralino.window.isMaximized()`);
+      if (max) {
+        await app.evaluate(`[...document.querySelectorAll('[data-testid="titlebar-btn"]')][1].click(); true;`);
+        await Bun.sleep(800);
+      }
 
+      const clickMaximise = `[...document.querySelectorAll('[data-testid="titlebar-btn"]')][1].click(); true;`;
       await app.evaluate(clickMaximise);
-      await Bun.sleep(600);
+      await Bun.sleep(800);
       expect(await app.evaluate<boolean>(`Neutralino.window.isMaximized()`)).toBe(true);
 
       await app.evaluate(clickMaximise);
-      await Bun.sleep(600);
+      await Bun.sleep(800);
       expect(await app.evaluate<boolean>(`Neutralino.window.isMaximized()`)).toBe(false);
     });
 
     test('the File menu opens, and closes on Escape', async () => {
       // Disconnect is only offered with a session open; say so rather than
       // inherit it from whichever describe ran last.
-      expect(await app.evaluate<boolean>(`!!document.querySelector('.sidebar')`)).toBe(true);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="sidebar"]')`)).toBe(true);
 
-      await app.evaluate(`document.querySelector('.menu__trigger').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="menu-trigger"]').click(); true;`);
       await Bun.sleep(200);
-      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.menu__item')].map(e => e.textContent)`))
+      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="menu-item"]')].map(e => e.textContent)`))
         .toEqual(['Disconnect', 'Check for updates…', 'Exit']);
 
       await app.evaluate(
         `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true;`
       );
       await Bun.sleep(200);
-      expect(await app.evaluate<number>(`document.querySelectorAll('.menu__item').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="menu-item"]').length`)).toBe(0);
     });
   });
 
@@ -1152,17 +1158,17 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
     test('naming a connection saves it, and it survives a reload', async () => {
       await connect(PG, 'pg-fixture');
-      expect(await app.evaluate<boolean>(`!!document.querySelector('.sidebar')`)).toBe(true);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="sidebar"]')`)).toBe(true);
 
       await app.reload();
-      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.saved__name')].map(e => e.textContent)`))
+      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="saved-name"]')].map(e => e.textContent)`))
         .toEqual(['pg-fixture']);
     });
 
     test('the connect form will not connect without a name', async () => {
       // The throwaway, workspace-less connection is gone: a name is required, so
       // every open connection belongs to a workspace the rail can group it under.
-      await app.evaluate(`document.querySelector('.saved__new')?.click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="saved-new"]')?.click(); true;`);
       await Bun.sleep(300);
       await app.evaluate(`${REACT_SETTERS}
         setNative(document.querySelector('#host'), ${JSON.stringify(MYSQL.host)});
@@ -1171,37 +1177,37 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         true;`);
       await Bun.sleep(200);
       // Disabled with no name...
-      expect(await app.evaluate<boolean>(`document.querySelector('.connect__submit').disabled`)).toBe(true);
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="connect-submit"]').disabled`)).toBe(true);
       // ...and enabled the moment one is typed.
       await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('#name'), 'needs-a-name'); true;`);
       await Bun.sleep(200);
-      expect(await app.evaluate<boolean>(`document.querySelector('.connect__submit').disabled`)).toBe(false);
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="connect-submit"]').disabled`)).toBe(false);
 
       // Back to the list without connecting, so the row assertions below stand.
       await app.reload();
       await Bun.sleep(400);
-      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.saved__name')].map(e => e.textContent)`))
+      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="saved-name"]')].map(e => e.textContent)`))
         .toEqual(['pg-fixture']);
     });
 
     test('the row shows the server it will reach', async () => {
-      const label = await app.evaluate<string>(`${savedRow('pg-fixture')}.querySelector('.saved__server').textContent`);
+      const label = await app.evaluate<string>(`${savedRow('pg-fixture')}.querySelector('[data-testid="saved-server"]').textContent`);
       expect(label).toContain(`${PG.user}@${PG.host}:${PG.port}`);
     });
 
     test('picking it connects with no password typed', async () => {
-      await app.evaluate(`${savedRow('pg-fixture')}.querySelector('.saved__pick').click(); true;`);
+      await app.evaluate(`${savedRow('pg-fixture')}.querySelector('[data-testid="saved-pick"]').click(); true;`);
       await Bun.sleep(3000);
 
-      const shell = await app.evaluate<boolean>(`!!document.querySelector('.sidebar')`);
+      const shell = await app.evaluate<boolean>(`!!document.querySelector('[data-testid="sidebar"]')`);
       if (!shell) {
         throw new Error(
-          await app.evaluate<string>(`document.querySelector('.callout--error')?.textContent ?? 'no error shown'`)
+          await app.evaluate<string>(`document.querySelector('[data-testid="callout"]')?.textContent ?? 'no error shown'`)
         );
       }
       // It must be a real session, not just a routed screen.
       const dbs = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.sidebar__head .select option')].map(e => e.textContent)`
+        `[...document.querySelectorAll('[data-testid="sidebar-db-select"] option')].map(e => e.textContent)`
       );
       expect(dbs).toContain('shop');
     });
@@ -1210,34 +1216,34 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await disconnect();
       await Bun.sleep(400);
 
-      await app.evaluate(`${savedRow('pg-fixture')}.querySelector('.saved__actions .btn').click(); true;`);
+      await app.evaluate(`${savedRow('pg-fixture')}.querySelector('[data-testid="saved-actions"] button').click(); true;`);
       await Bun.sleep(500);
       await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('#name'), 'pg-renamed'); true;`);
       await Bun.sleep(200);
-      await app.evaluate(`document.querySelector('.connect__submit').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="connect-submit"]').click(); true;`);
       await Bun.sleep(1500);
 
-      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.saved__name')].map(e => e.textContent)`))
+      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="saved-name"]')].map(e => e.textContent)`))
         .toEqual(['pg-renamed']);
     });
 
     test('the kept password still connects after an edit that never saw it', async () => {
-      await app.evaluate(`${savedRow('pg-renamed')}.querySelector('.saved__pick').click(); true;`);
+      await app.evaluate(`${savedRow('pg-renamed')}.querySelector('[data-testid="saved-pick"]').click(); true;`);
       await Bun.sleep(3000);
-      expect(await app.evaluate<boolean>(`!!document.querySelector('.sidebar')`)).toBe(true);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="sidebar"]')`)).toBe(true);
       await disconnect();
     });
 
     test('deleting asks first, then removes it', async () => {
       // The second action button is Delete; it confirms in place rather than in a dialog.
-      await app.evaluate(`${savedRow('pg-renamed')}.querySelectorAll('.saved__actions .btn')[1].click(); true;`);
+      await app.evaluate(`${savedRow('pg-renamed')}.querySelectorAll('[data-testid="saved-actions"] button')[1].click(); true;`);
       await Bun.sleep(400);
-      expect(await app.evaluate<string>(`${savedRow('pg-renamed')}.querySelector('.saved__hint').textContent`))
+      expect(await app.evaluate<string>(`${savedRow('pg-renamed')}.querySelector('[data-testid="saved-hint"]').textContent`))
         .toBe('Delete?');
 
-      await app.evaluate(`${savedRow('pg-renamed')}.querySelectorAll('.saved__actions .btn')[0].click(); true;`);
+      await app.evaluate(`${savedRow('pg-renamed')}.querySelectorAll('[data-testid="saved-actions"] button')[0].click(); true;`);
       await Bun.sleep(800);
-      expect(await app.evaluate<number>(`document.querySelectorAll('.saved__row').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="saved-row"]').length`)).toBe(0);
     });
   });
 
@@ -1246,8 +1252,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
   // the picker. They end on a single empty workspace, which is what the describe
   // below then launches into.
   describe('workspaces', () => {
-    const groupLabels = `[...document.querySelectorAll('.ws-group > .label')].map(e => e.textContent)`;
-    const names = `[...document.querySelectorAll('.saved__name')].map(e => e.textContent)`;
+    const groupLabels = `[...document.querySelectorAll('[data-testid="ws-group-label"]')].map(e => e.textContent)`;
+    const names = `[...document.querySelectorAll('[data-testid="saved-name"]')].map(e => e.textContent)`;
 
     test('one workspace is skipped, and the bar names the one you are in', async () => {
       await connect(PG, 'ws-local');
@@ -1255,7 +1261,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(400);
 
       // Straight to the connections: nothing was picked on the way in.
-      expect(await app.evaluate<string>(`document.querySelector('.ws-bar__name').textContent`)).toBe('Default');
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="ws-bar-name"]').textContent`)).toBe('Default');
       expect(await app.evaluate<string[]>(names)).toEqual(['ws-local']);
     });
 
@@ -1272,15 +1278,15 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     test('the bar is the way to the picker, which is how a second one is made', async () => {
-      await app.evaluate(`document.querySelector('.ws-bar').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="ws-bar"]').click(); true;`);
       await Bun.sleep(400);
       expect(await app.evaluate<string[]>(names)).toEqual(['Default']);
 
-      await app.evaluate(`document.querySelector('.saved__new').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="saved-new"]').click(); true;`);
       await Bun.sleep(400);
       await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('#workspace-name'), 'Acme'); true;`);
       await Bun.sleep(200);
-      await app.evaluate(`document.querySelector('.connect__submit').click(); true;`);
+      await app.evaluate(`document.querySelector('[data-testid="connect-submit"]').click(); true;`);
       await Bun.sleep(1000);
 
       // A new workspace is empty, so it opens on the form rather than an empty box.
@@ -1292,20 +1298,20 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(600);
 
       expect(await app.evaluate<string[]>(names)).toEqual(['Acme', 'Default']);
-      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.ws__count')].map(e => e.textContent)`))
+      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="ws-count"]')].map(e => e.textContent)`))
         .toEqual(['0 connections', '2 connections']);
     });
 
     test('deleting one says what it will cost, then takes its connections with it', async () => {
       // The second action is Delete; the first is Edit, as on a connection row.
-      await app.evaluate(`${savedRow('Default')}.querySelectorAll('.saved__actions .btn')[1].click(); true;`);
+      await app.evaluate(`${savedRow('Default')}.querySelectorAll('[data-testid="saved-actions"] button')[1].click(); true;`);
       await Bun.sleep(400);
       // The confirmation names the count because the connections go too -- and
       // their stored passwords with them.
-      expect(await app.evaluate<string>(`${savedRow('Default')}.querySelector('.saved__hint').textContent`))
+      expect(await app.evaluate<string>(`${savedRow('Default')}.querySelector('[data-testid="saved-hint"]').textContent`))
         .toBe('Delete with its 2 connections?');
 
-      await app.evaluate(`${savedRow('Default')}.querySelectorAll('.saved__actions .btn')[0].click(); true;`);
+      await app.evaluate(`${savedRow('Default')}.querySelectorAll('[data-testid="saved-actions"] button')[0].click(); true;`);
       await Bun.sleep(800);
       expect(await app.evaluate<string[]>(names)).toEqual(['Acme']);
 
@@ -1318,10 +1324,10 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // Default's two connections went with it rather than being orphaned onto
       // Acme, which is the assertion the cascade is actually for.
       await app.evaluate(`
-        [...document.querySelectorAll('.connect__actions .btn')]
+        [...document.querySelectorAll('[data-testid="connect-actions"] button')]
           .find(e => e.textContent === 'Cancel').click(); true;`);
       await Bun.sleep(400);
-      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('.ws__count')].map(e => e.textContent)`))
+      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="ws-count"]')].map(e => e.textContent)`))
         .toEqual(['0 connections']);
     });
 
@@ -1329,7 +1335,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // Refusing it in the store is the guarantee; not offering it is what keeps
       // the user from ever meeting the refusal.
       expect(await app.evaluate<string[]>(
-        `[...${savedRow('Acme')}.querySelectorAll('.saved__actions .btn')].map(e => e.textContent)`
+        `[...${savedRow('Acme')}.querySelectorAll('[data-testid="saved-actions"] button')].map(e => e.textContent)`
       )).toEqual(['Edit']);
     });
   });
@@ -1345,7 +1351,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
    * the collision, and it is a real one rather than a contrived name.
    */
   describe('multiple connections', () => {
-    const treeLabels = `[...document.querySelectorAll('.tree__label')].map(e => e.textContent)`;
+    const treeLabels = `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`;
 
     beforeAll(async () => {
       await connect(PG, 'Shop dev', 'dev');
@@ -1367,11 +1373,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     test('opening the second lands you on it, and the titlebar and status bar follow', async () => {
       expect(await app.evaluate<number>(activeRail)).toBe(1);
       // The rail says which; the titlebar says what. Neither repeats the other.
-      expect(await app.evaluate<string>(`document.querySelector('.titlebar__title').textContent`))
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="titlebar-title"]').textContent`))
         .toBe(`${MYSQL.user}@${MYSQL.host}:${MYSQL.port}`);
       // The status bar names the active connection's environment in full -- the
       // rail's tag abbreviates it, this spells it out.
-      expect(await app.evaluate<string>(`document.querySelector('.statusbar__env').textContent`))
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="statusbar-env"]').textContent`))
         .toBe('Production');
     });
 
@@ -1454,15 +1460,15 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // Its tabs are still its own, and still both of them: closing one
       // connection is not closing the app.
       expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'Query 2']);
-      expect(await app.evaluate<string>(`document.querySelector('.titlebar__title').textContent`))
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="titlebar-title"]').textContent`))
         .toBe(`${MYSQL.user}@${MYSQL.host}:${MYSQL.port}`);
     });
 
     test('disconnecting the last one is the way back to the connect screen', async () => {
       await disconnect();
       await Bun.sleep(600);
-      expect(await app.evaluate<boolean>(`!!document.querySelector('.rail')`)).toBe(false);
-      expect(await app.evaluate<boolean>(`!!document.querySelector('.saved__row, #host')`)).toBe(true);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="rail"]')`)).toBe(false);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="saved-row"], #host')`)).toBe(true);
     });
   });
 });

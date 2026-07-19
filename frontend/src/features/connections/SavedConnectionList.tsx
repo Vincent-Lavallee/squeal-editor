@@ -6,12 +6,24 @@ import { ENVIRONMENTS } from '../../common/db/environments.ts';
 import { BackIcon } from '../../common/icons/icons.ts';
 import { serverLabel } from '../../store/sessionSlice.ts';
 import { workspaceGlyph } from '../../common/icons/workspaceIcons.ts';
+import Badge from '../../common/components/Badge.tsx';
+import Button from '../../common/components/Button.tsx';
+import Note from '../../common/components/Note.tsx';
+import * as t from '../../common/tokens';
+
+const iconSvg = { flex: 'none', width: 16, height: 16 };
+
+const wsBar: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: t.GAP_SM, width: '100%', marginBottom: t.GAP_LG, padding: `${t.GAP_SM}px 10px`, border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, background: 'none', color: t.TEXT_MUTED, font: 'inherit', textAlign: 'left', cursor: 'pointer' };
+
+const labelRow: React.CSSProperties = { fontSize: t.TEXT_LABEL, textTransform: 'uppercase', letterSpacing: t.TRACKING_LABEL, color: t.TEXT_MUTED, fontWeight: 500, display: 'block', marginBottom: t.GAP_SM };
+
+const saved: React.CSSProperties = { display: 'flex', flexDirection: 'column', margin: `0 0 ${t.GAP}px`, padding: 0, listStyle: 'none', border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, overflow: 'hidden' };
+
+const savedRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: t.GAP_SM, paddingRight: t.GAP_SM };
 
 interface Props {
-  /** The one being shown. Its connections are all this list ever holds. */
   workspace: Workspace;
   connections: SavedConnection[];
-  /** Which row is mid-connect, so the click has visible consequences. */
   connectingId: string | null;
   busy: boolean;
   onPick: (connection: SavedConnection) => void;
@@ -21,116 +33,75 @@ interface Props {
   onBack: () => void;
 }
 
-export default function SavedConnectionList({
-  workspace,
-  connections,
-  connectingId,
-  busy,
-  onPick,
-  onEdit,
-  onDelete,
-  onNew,
-  onBack,
-}: Props) {
-  // Deleting confirms in place rather than through a dialog: the app has no
-  // modal, and a saved connection is cheap enough to lose that a whole overlay
-  // would cost more than the mistake.
+export default function SavedConnectionList({ workspace, connections, connectingId, busy, onPick, onEdit, onDelete, onNew, onBack }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
-
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const WorkspaceGlyph = workspaceGlyph(workspace.icon);
 
-  // Empty environments are simply absent: a heading over nothing announces four
-  // groups to someone who has one, which is the flat list's problem again.
-  const groups = ENVIRONMENTS.map((env) => ({
-    ...env,
-    connections: connections.filter((c) => c.environment === env.value),
-  })).filter((g) => g.connections.length > 0);
+  const groups = ENVIRONMENTS.map((env) => ({ ...env, connections: connections.filter((c) => c.environment === env.value) })).filter((g) => g.connections.length > 0);
 
   return (
     <>
-      {/*
-       * Always here, even though the picker is skipped when there is only one
-       * workspace: it is the only way *to* the picker, so without it a first-run
-       * user could never reach the screen that makes a second one.
-       */}
-      <button className="ws-bar" onClick={onBack} disabled={busy} title="All workspaces">
-        <BackIcon className="icon" />
-        <WorkspaceGlyph className="icon" />
-        <span className="ws-bar__name">{workspace.name}</span>
+      <button data-testid="ws-bar" style={wsBar} onClick={onBack} disabled={busy} title="All workspaces">
+        <BackIcon style={iconSvg} />
+        <WorkspaceGlyph style={iconSvg} />
+        <span data-testid="ws-bar-name" style={{ overflow: 'hidden', color: t.TEXT, fontSize: t.TEXT_BODY, fontWeight: 500, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{workspace.name}</span>
       </button>
 
       {groups.length === 0 ? (
-        <p className="note note--muted ws__empty">No connections in this workspace yet.</p>
+        <Note kind="muted">No connections in this workspace yet.</Note>
       ) : (
         groups.map((group) => (
-          <div className="ws-group" key={group.value}>
-            <div className="label saved__label">{group.label}</div>
+          <div data-testid="ws-group" key={group.value}>
+            <div data-testid="ws-group-label" style={labelRow}>{group.label}</div>
 
-            <ul className="saved">
-              {group.connections.map((c) => (
-                <li className="saved__row" key={c.id}>
-                  <button
-                    className="saved__pick"
-                    onClick={() => onPick(c)}
-                    disabled={busy}
-                    // Names and hosts can outrun the row; the tooltip is where the
-                    // ellipsised tail stays reachable.
-                    title={`${c.name} — ${serverLabel(c.config)}`}
-                  >
-                    <span className="saved__head">
-                      <span className="saved__name">{c.name}</span>
-                      <span className="badge badge--accent">{engineLabel(c.config.type)}</span>
-                    </span>
-                    <span className="saved__server">
-                      {connectingId === c.id ? 'Connecting…' : serverLabel(c.config)}
-                      {!c.hasPassword && connectingId !== c.id && (
-                        <span className="saved__hint"> · asks for a password</span>
+            <ul style={saved}>
+              {group.connections.map((c, i) => {
+                const hovered = hoveredId === c.id;
+                const open = confirmingId === c.id || hovered;
+
+                return (
+                  <li data-testid="saved-row" style={{ ...savedRow, ...(i > 0 ? { borderTop: `1px solid ${t.BORDER}` } : {}), ...(hovered ? { background: t.HOVER } : {}) }}
+                    key={c.id}
+                    onMouseEnter={() => setHoveredId(c.id)}
+                    onMouseLeave={() => setHoveredId(null)}>
+                    <button data-testid="saved-pick" style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: 3, minWidth: 0, padding: `${t.GAP_SM}px 10px`, border: 'none', background: 'none', color: t.TEXT, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+                      onClick={() => onPick(c)} disabled={busy} title={`${c.name} — ${serverLabel(c.config)}`}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, minWidth: 0 }}>
+                        <span data-testid="saved-name" style={{ overflow: 'hidden', fontSize: t.TEXT_BODY, fontWeight: 500, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                        <Badge kind="accent">{engineLabel(c.config.type)}</Badge>
+                      </span>
+                      <span data-testid="saved-server" style={{ overflow: 'hidden', color: t.TEXT_MUTED, fontFamily: t.MONO, fontSize: t.TEXT_BADGE, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {connectingId === c.id ? 'Connecting…' : serverLabel(c.config)}
+                        {!c.hasPassword && connectingId !== c.id && <span style={{ color: t.TEXT_FAINT, fontFamily: t.FONT, fontSize: t.TEXT_BADGE }}> · asks for a password</span>}
+                      </span>
+                    </button>
+
+                    <div data-testid="saved-actions" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none' }}>
+                      {confirmingId === c.id ? (
+                        <>
+                          <span data-testid="saved-hint" style={{ color: t.TEXT_FAINT, fontFamily: t.FONT, fontSize: t.TEXT_BADGE }}>Delete?</span>
+                          <Button variant="ghost" onClick={() => { onDelete(c.id); setConfirmingId(null); }}>Yes</Button>
+                          <Button variant="ghost" onClick={() => setConfirmingId(null)}>No</Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button variant="ghost" onClick={() => onEdit(c)} disabled={busy}>Edit</Button>
+                          <Button variant="ghost" onClick={() => setConfirmingId(c.id)} disabled={busy}>Delete</Button>
+                        </>
                       )}
-                    </span>
-                  </button>
-
-                  <div className={`saved__actions${confirmingId === c.id ? ' saved__actions--open' : ''}`}>
-                    {confirmingId === c.id ? (
-                      <>
-                        <span className="saved__hint">Delete?</span>
-                        <button
-                          className="btn btn--ghost"
-                          onClick={() => {
-                            onDelete(c.id);
-                            setConfirmingId(null);
-                          }}
-                        >
-                          Yes
-                        </button>
-                        <button className="btn btn--ghost" onClick={() => setConfirmingId(null)}>
-                          No
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="btn btn--ghost" onClick={() => onEdit(c)} disabled={busy}>
-                          Edit
-                        </button>
-                        <button
-                          className="btn btn--ghost"
-                          onClick={() => setConfirmingId(c.id)}
-                          disabled={busy}
-                        >
-                          Delete
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </li>
-              ))}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         ))
       )}
 
-      <button className="btn saved__new" onClick={onNew} disabled={busy}>
+      <Button data-testid="saved-new" style={{ justifyContent: 'center', width: '100%' }} onClick={onNew} disabled={busy}>
         + New connection
-      </button>
+      </Button>
     </>
   );
 }

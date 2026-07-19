@@ -3,16 +3,20 @@ import { useState } from 'react';
 import type { Workspace, WorkspaceColorId, WorkspaceIconId } from '../../../../shared/protocol.ts';
 import { DEFAULT_WORKSPACE_COLOR, WORKSPACE_COLORS } from '../../common/icons/workspaceColors.ts';
 import { DEFAULT_WORKSPACE_ICON, WORKSPACE_ICONS } from '../../common/icons/workspaceIcons.ts';
+import Button from '../../common/components/Button.tsx';
+import Input from '../../common/components/Input.tsx';
+import Field from '../../common/components/Field.tsx';
+import SrOnly from '../../common/components/SrOnly.tsx';
+import * as t from '../../common/tokens';
 
-export interface WorkspaceFormValues {
-  name: string;
-  icon: WorkspaceIconId;
-  color: WorkspaceColorId;
-}
+const iconSvg = { flex: 'none', width: 16, height: 16 };
+const hiddenRadio: React.CSSProperties = { position: 'absolute', opacity: 0, pointerEvents: 'none' };
+const pickBase: React.CSSProperties = { display: 'grid', placeItems: 'center', width: 34, height: 34, border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, cursor: 'pointer' };
+
+export interface WorkspaceFormValues { name: string; icon: WorkspaceIconId; color: WorkspaceColorId; }
 
 interface Props {
   mode: 'new' | 'edit';
-  /** The workspace being edited; absent when adding. */
   initial?: Workspace;
   onSubmit: (values: WorkspaceFormValues) => void;
   onCancel: () => void;
@@ -25,91 +29,46 @@ export default function WorkspaceForm({ mode, initial, onSubmit, onCancel, busy 
   const [color, setColor] = useState<WorkspaceColorId>(initial?.color ?? DEFAULT_WORKSPACE_COLOR);
 
   return (
-    <form
-      className="connect__form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSubmit({ name: name.trim(), icon, color });
-      }}
-    >
-      <div className="field">
-        <label className="label" htmlFor="workspace-name">
-          Name
-        </label>
-        <input
-          id="workspace-name"
-          className="input"
-          value={name}
-          autoFocus
-          required
-          placeholder="Acme"
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
+    <form style={{ display: 'flex', flexDirection: 'column', gap: t.GAP }}
+      onSubmit={(e) => { e.preventDefault(); onSubmit({ name: name.trim(), icon, color }); }}>
+      <Field label="Name" htmlFor="workspace-name">
+        <Input id="workspace-name" value={name} autoFocus required placeholder="Acme" onChange={(e) => setName(e.target.value)} />
+      </Field>
 
-      <div className="field">
-        <span className="label">Icon</span>
-        {/*
-         * Radios rather than buttons: this is a single choice out of a fixed set,
-         * which is what a radio group *is* -- and it brings arrow-key navigation
-         * and the roving tab stop with it. The same rule as `.check` and
-         * `.select`: take the platform's keyboard behaviour rather than rebuild
-         * it out of divs and lose it. The input itself is hidden; the glyph
-         * beside it is the control's face.
-         */}
-        <div className="ws-icons" role="radiogroup" aria-label="Icon">
-          {WORKSPACE_ICONS.map(({ id, Glyph }) => (
-            <label key={id} className={`ws-icons__pick${icon === id ? ' ws-icons__pick--on' : ''}`}>
-              <input
-                type="radio"
-                name="workspace-icon"
-                value={id}
-                checked={icon === id}
-                onChange={() => setIcon(id)}
-              />
-              <Glyph className="icon" />
-            </label>
-          ))}
+      <Field label="Icon">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: t.GAP_SM }} role="radiogroup" aria-label="Icon">
+          {WORKSPACE_ICONS.map(({ id, Glyph }) => {
+            const on = icon === id;
+            return (
+              <label key={id} style={{ ...pickBase, color: t.TEXT_MUTED, ...(on ? { borderColor: t.ACCENT, background: t.SELECTED, color: t.ACCENT } : {}) }}>
+                <input type="radio" name="workspace-icon" value={id} checked={on} onChange={() => setIcon(id)} style={hiddenRadio} />
+                <Glyph style={iconSvg} />
+              </label>
+            );
+          })}
         </div>
-      </div>
+      </Field>
 
-      <div className="field">
-        <span className="label">Colour</span>
-        {/*
-         * The same radio group as the icon picker, and for the same reason: a
-         * single choice out of a fixed set is what a radio group is, and it brings
-         * arrow-key navigation and the roving tab stop for free. Each swatch's face
-         * is its own colour; --swatch carries it in from `workspaceColors.ts`,
-         * which resolves the id to a token -- no hue is written in this component.
-         */}
-        <div className="ws-colors" role="radiogroup" aria-label="Colour">
-          {WORKSPACE_COLORS.map(({ id, token }) => (
-            <label
-              key={id}
-              className={`ws-colors__pick${color === id ? ' ws-colors__pick--on' : ''}`}
-              style={{ '--swatch': token } as React.CSSProperties}
-            >
-              <input
-                type="radio"
-                name="workspace-color"
-                value={id}
-                checked={color === id}
-                onChange={() => setColor(id)}
-              />
-              <span className="ws-colors__swatch" aria-hidden="true" />
-              <span className="sr-only">{id}</span>
-            </label>
-          ))}
+      <Field label="Colour">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: t.GAP_SM }} role="radiogroup" aria-label="Colour">
+          {WORKSPACE_COLORS.map(({ id, value: hex }) => {
+            const on = color === id;
+            return (
+              <label key={id} style={{ ...pickBase, ...(on ? { borderColor: t.ACCENT, background: t.SELECTED } : {}) }}>
+                <input type="radio" name="workspace-color" value={id} checked={on} onChange={() => setColor(id)} style={hiddenRadio} />
+                <span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: t.RADIUS_PILL, background: hex }} />
+                <SrOnly>{id}</SrOnly>
+              </label>
+            );
+          })}
         </div>
-      </div>
+      </Field>
 
-      <div className="connect__actions">
-        <button type="button" className="btn" onClick={onCancel} disabled={busy}>
-          Cancel
-        </button>
-        <button type="submit" className="btn btn--primary connect__submit" disabled={busy || !name.trim()}>
+      <div style={{ display: 'flex', gap: t.GAP_SM, marginTop: t.GAP_XS }}>
+        <Button onClick={onCancel} disabled={busy}>Cancel</Button>
+        <Button type="submit" data-testid="connect-submit" variant="primary" style={{ justifyContent: 'center', height: 34, flex: 1 }} disabled={busy || !name.trim()}>
           {busy ? 'Saving…' : mode === 'edit' ? 'Save changes' : 'Create workspace'}
-        </button>
+        </Button>
       </div>
     </form>
   );

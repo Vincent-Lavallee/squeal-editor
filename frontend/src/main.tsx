@@ -7,7 +7,7 @@ import App from './App.tsx';
 import { store } from './store/index.ts';
 import { progressReceived } from './store/updaterSlice.ts';
 import { initBridge } from './common/bridge/bridge.ts';
-import './styles/index.css';
+import './styles/residual.css';
 
 initBridge();
 

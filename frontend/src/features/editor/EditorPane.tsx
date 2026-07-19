@@ -3,10 +3,30 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { engineLabel } from '../../common/db/engines.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
+import Badge from '../../common/components/Badge.tsx';
+import Button from '../../common/components/Button.tsx';
+import * as t from '../../common/tokens';
 import { useEditor } from './EditorContext.tsx';
 import { defineTheme, monaco, px, THEME, token } from './monaco.ts';
 import { useSqlCompletion } from './useSqlCompletion.ts';
 import { useSqlFormatter } from './useSqlFormatter.ts';
+
+const toolbar: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  padding: `0 ${t.GAP_LG}px`,
+  borderBottom: `1px solid ${t.BORDER}`,
+};
+
+const spacer: React.CSSProperties = {
+  flex: 1,
+};
+
+const editorBox: React.CSSProperties = {
+  minHeight: 0,
+  overflow: 'hidden',
+};
 
 interface Props {
   /** Running belongs to the results feature, so the shell supplies both. */
@@ -274,18 +294,18 @@ export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
 
   return (
     <>
-      <div className="toolbar">
-        {config && <span className="badge badge--accent">{engineLabel(config.type)}</span>}
-        <div className="toolbar__spacer" />
-        <button className="btn" onClick={format}>
+      <div className="toolbar" style={toolbar}>
+        {config && <Badge kind="accent">{engineLabel(config.type)}</Badge>}
+        <div style={spacer} />
+        <Button onClick={format}>
           Format
-        </button>
-        <button className="btn btn--primary" onClick={() => onRun(sql)} disabled={running}>
+        </Button>
+        <Button data-testid="run-btn" variant="primary" onClick={() => onRun(sql)} disabled={running}>
           {running ? 'Running…' : 'Run'}
-        </button>
+        </Button>
       </div>
 
-      <div className="editor" ref={host} />
+      <div className="editor" style={editorBox} ref={host} />
     </>
   );
 }

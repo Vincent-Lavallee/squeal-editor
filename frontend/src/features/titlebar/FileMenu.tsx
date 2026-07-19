@@ -1,70 +1,41 @@
 import { useEffect, useRef, useState } from 'react';
+import * as t from '../../common/tokens';
 
-interface Item {
-  label: string;
-  onSelect: () => void;
-}
+interface Item { label: string; onSelect: () => void; }
+interface Props { items: Item[]; }
 
-interface Props {
-  items: Item[];
-}
+const itemBase: React.CSSProperties = {
+  padding: '6px 8px', border: 'none', borderRadius: t.RADIUS,
+  background: 'none', color: t.TEXT, font: 'inherit',
+  fontSize: t.TEXT_BODY, textAlign: 'left', cursor: 'pointer',
+};
 
-/**
- * The topbar's one menu.
- *
- * Deliberately not a menu *bar*: the app has two globally-true actions, and a
- * row of mostly-empty menus is the kind of furniture the design system exists to
- * keep out. A second menu earns its place when it has something to hold.
- */
 export default function FileMenu({ items }: Props) {
   const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
 
-  // An open menu outlives the click that opened it, so it has to watch the
-  // whole document to know when it is no longer wanted.
   useEffect(() => {
     if (!open) return;
-
-    function onPointerDown(e: PointerEvent): void {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
-    }
-    function onKeyDown(e: KeyboardEvent): void {
-      if (e.key === 'Escape') setOpen(false);
-    }
-
+    function onPointerDown(e: PointerEvent): void { if (!root.current?.contains(e.target as Node)) setOpen(false); }
+    function onKeyDown(e: KeyboardEvent): void { if (e.key === 'Escape') setOpen(false); }
     document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
+    return () => { document.removeEventListener('pointerdown', onPointerDown); document.removeEventListener('keydown', onKeyDown); };
   }, [open]);
 
   return (
-    <div className="menu" ref={root}>
-      <button
-        className={`menu__trigger ${open ? 'menu__trigger--open' : ''}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        File
-      </button>
-
+    <div style={{ position: 'relative', flex: 'none' }} ref={root}>
+      <button data-testid="menu-trigger"
+        style={{ height: t.TITLEBAR_H, padding: `0 ${t.GAP_SM}px`, border: 'none', borderRadius: t.RADIUS, background: open ? t.HOVER : 'none', color: open ? t.TEXT : t.TEXT_MUTED, font: 'inherit', fontSize: t.TEXT_BADGE, cursor: 'pointer' }}
+        aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>File</button>
       {open && (
-        <div className="menu__list" role="menu">
+        <div style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0, display: 'flex', flexDirection: 'column', minWidth: 160, padding: t.GAP_XS, border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, background: t.BG }} role="menu">
           {items.map((item) => (
-            <button
-              key={item.label}
-              className="menu__item"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                item.onSelect();
-              }}
-            >
-              {item.label}
-            </button>
+            <button key={item.label} data-testid="menu-item" role="menuitem"
+              style={{ ...itemBase, ...(hovered === item.label ? { background: t.HOVER } : {}) }}
+              onMouseEnter={() => setHovered(item.label)} onMouseLeave={() => setHovered(null)}
+              onClick={() => { setOpen(false); item.onSelect(); }}>{item.label}</button>
           ))}
         </div>
       )}

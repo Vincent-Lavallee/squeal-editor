@@ -3,10 +3,19 @@ import { useState } from 'react';
 import type { Workspace } from '../../../../shared/protocol.ts';
 import { workspaceColor } from '../../common/icons/workspaceColors.ts';
 import { workspaceGlyph } from '../../common/icons/workspaceIcons.ts';
+import Button from '../../common/components/Button.tsx';
+import * as t from '../../common/tokens';
+
+const iconSvg = { flex: 'none', width: 16, height: 16 };
+
+const labelRow: React.CSSProperties = { fontSize: t.TEXT_LABEL, textTransform: 'uppercase', letterSpacing: t.TRACKING_LABEL, color: t.TEXT_MUTED, fontWeight: 500, display: 'block', marginBottom: t.GAP_SM };
+
+const saved: React.CSSProperties = { display: 'flex', flexDirection: 'column', margin: `0 0 ${t.GAP}px`, padding: 0, listStyle: 'none', border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, overflow: 'hidden' };
+
+const savedRow: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: t.GAP_SM, paddingRight: t.GAP_SM };
 
 interface Props {
   workspaces: Workspace[];
-  /** How many connections each holds, so deleting can say what it costs. */
   countFor: (workspaceId: string) => number;
   busy: boolean;
   onPick: (workspace: Workspace) => void;
@@ -15,87 +24,53 @@ interface Props {
   onDelete: (id: string) => void;
 }
 
-/** "3 connections", "1 connection" -- the number is the point of the sentence. */
 const countLabel = (n: number): string => `${n} connection${n === 1 ? '' : 's'}`;
 
-export default function WorkspacePicker({
-  workspaces,
-  countFor,
-  busy,
-  onPick,
-  onNew,
-  onEdit,
-  onDelete,
-}: Props) {
+export default function WorkspacePicker({ workspaces, countFor, busy, onPick, onNew, onEdit, onDelete }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
-
-  // There is always at least one workspace -- a connection hangs off one, so an
-  // app with none has nowhere to save one. The store refuses to delete the last;
-  // hiding the button means the user never meets that refusal.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const canDelete = workspaces.length > 1;
 
   return (
     <>
-      <div className="label saved__label">Workspaces</div>
+      <div style={labelRow}>Workspaces</div>
 
-      <ul className="saved">
-        {workspaces.map((w) => {
+      <ul style={saved}>
+        {workspaces.map((w, i) => {
           const Glyph = workspaceGlyph(w.icon);
           const count = countFor(w.id);
+          const hovered = hoveredId === w.id;
+          const open = confirmingId === w.id || hovered;
 
           return (
-            <li className="saved__row" key={w.id}>
-              <button className="saved__pick" onClick={() => onPick(w)} disabled={busy} title={w.name}>
-                <span className="saved__head">
-                  {/* The workspace's colour marks it here. On the wrapper, not the
-                      glyph -- icons inherit their colour, so recolour the box and
-                      the mark follows; the name stays default text. */}
-                  <span className="ws__mark" style={{ color: workspaceColor(w.color) }}>
-                    <Glyph className="icon" />
+            <li data-testid="saved-row" style={{ ...savedRow, ...(i > 0 ? { borderTop: `1px solid ${t.BORDER}` } : {}), ...(hovered ? { background: t.HOVER } : {}) }}
+              key={w.id}
+              onMouseEnter={() => setHoveredId(w.id)}
+              onMouseLeave={() => setHoveredId(null)}>
+              <button data-testid="saved-pick" style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: 3, minWidth: 0, padding: `${t.GAP_SM}px 10px`, border: 'none', background: 'none', color: t.TEXT, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+                onClick={() => onPick(w)} disabled={busy} title={w.name}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, minWidth: 0 }}>
+                  <span style={{ color: workspaceColor(w.color) }}>
+                    <Glyph style={iconSvg} />
                   </span>
-                  <span className="saved__name">{w.name}</span>
+                  <span data-testid="saved-name" style={{ overflow: 'hidden', fontSize: t.TEXT_BODY, fontWeight: 500, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
                 </span>
-                <span className="saved__server ws__count">{countLabel(count)}</span>
+                <span data-testid="ws-count" style={{ overflow: 'hidden', color: t.TEXT_MUTED, fontFamily: t.FONT, fontSize: t.TEXT_BADGE, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{countLabel(count)}</span>
               </button>
 
-              <div className={`saved__actions${confirmingId === w.id ? ' saved__actions--open' : ''}`}>
+              <div data-testid="saved-actions" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none' }}>
                 {confirmingId === w.id ? (
                   <>
-                    {/*
-                     * Deleting a workspace deletes its connections, and their
-                     * stored passwords with them -- so unlike a connection's own
-                     * Delete, this one says what it costs before it is taken.
-                     */}
-                    <span className="saved__hint">
+                    <span data-testid="saved-hint" style={{ color: t.TEXT_FAINT, fontFamily: t.FONT, fontSize: t.TEXT_BADGE }}>
                       {count > 0 ? `Delete with its ${countLabel(count)}?` : 'Delete?'}
                     </span>
-                    <button
-                      className="btn btn--ghost"
-                      onClick={() => {
-                        onDelete(w.id);
-                        setConfirmingId(null);
-                      }}
-                    >
-                      Yes
-                    </button>
-                    <button className="btn btn--ghost" onClick={() => setConfirmingId(null)}>
-                      No
-                    </button>
+                    <Button variant="ghost" onClick={() => { onDelete(w.id); setConfirmingId(null); }}>Yes</Button>
+                    <Button variant="ghost" onClick={() => setConfirmingId(null)}>No</Button>
                   </>
                 ) : (
                   <>
-                    <button className="btn btn--ghost" onClick={() => onEdit(w)} disabled={busy}>
-                      Edit
-                    </button>
-                    {canDelete && (
-                      <button
-                        className="btn btn--ghost"
-                        onClick={() => setConfirmingId(w.id)}
-                        disabled={busy}
-                      >
-                        Delete
-                      </button>
-                    )}
+                    <Button variant="ghost" onClick={() => onEdit(w)} disabled={busy}>Edit</Button>
+                    {canDelete && <Button variant="ghost" onClick={() => setConfirmingId(w.id)} disabled={busy}>Delete</Button>}
                   </>
                 )}
               </div>
@@ -104,9 +79,9 @@ export default function WorkspacePicker({
         })}
       </ul>
 
-      <button className="btn saved__new" onClick={onNew} disabled={busy}>
+      <Button data-testid="saved-new" style={{ justifyContent: 'center', width: '100%' }} onClick={onNew} disabled={busy}>
         + New workspace
-      </button>
+      </Button>
     </>
   );
 }
