@@ -23,7 +23,7 @@ import {
   type QueryResult,
   type SqlDialect,
 } from '../../shared/protocol.ts';
-import { matchWindowFrame } from './chrome.ts';
+import { fitMaximizedToWorkArea, matchWindowFrame } from './chrome.ts';
 import { applyUpdate, checkForUpdate, downloadUpdate } from './updater.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';
 import {
@@ -191,6 +191,10 @@ const COMMANDS: Handlers = {
 
   async 'window.matchFrame'({ pid, colour }) {
     return { applied: matchWindowFrame(pid, colour) };
+  },
+
+  async 'window.fitMaximized'({ pid }) {
+    return { applied: fitMaximizedToWorkArea(pid) };
   },
 
   /* -- The updater (updater.ts explains why this lives here too) -------- */

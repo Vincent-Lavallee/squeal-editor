@@ -50,6 +50,20 @@ export function useWindowChrome() {
     void (async () => {
       await Neutralino.window.setSize({ resizable: true });
 
+      /*
+       * Re-adding WS_THICKFRAME insets the client area by the resize border
+       * (7px a side), but the webview child keeps the full-window size it was
+       * created at -- so the right and bottom ~14px of the app, the close
+       * button and the status bar among them, sit clipped behind the frame
+       * until a real resize makes Neutralino refit it. Nothing but an actual
+       * size change triggers that refit, so cause one: a pixel out and back.
+       * Both calls keep `resizable` on -- that option is what holds
+       * WS_THICKFRAME itself, and a bare setSize would drop it.
+       */
+      const { width, height } = await Neutralino.window.getSize();
+      await Neutralino.window.setSize({ width: width + 1, height, resizable: true });
+      await Neutralino.window.setSize({ width, height, resizable: true });
+
       const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg');
       // Best-effort chrome: a window that keeps its own frame colour is a
       // cosmetic loss, and not something to fail startup or shout about.
@@ -58,7 +72,25 @@ export function useWindowChrome() {
   }, []);
 
   const sync = useCallback(async (): Promise<void> => {
-    setMaximized(await Neutralino.window.isMaximized());
+    const isMaximized = await Neutralino.window.isMaximized();
+    setMaximized(isMaximized);
+
+    /*
+     * Windows maximises a caption-less window over the whole monitor: taskbar
+     * covered, resize borders offscreen, and the outermost pixels of the app --
+     * the close button, the status bar -- clipped with them. The extension
+     * clamps it back onto the work area (see chrome.ts for the measurements).
+     *
+     * It hangs off sync rather than off our own button because the OS has
+     * maximise gestures of its own -- snap-to-top, Win+Up -- and every one of
+     * them resizes the webview, which is what brings them all through here.
+     * The clamp itself resizes the window once more, so sync runs again; the
+     * extension no-ops on a window already fitted, which is what stops that
+     * echo from becoming a loop.
+     */
+    if (isMaximized) {
+      await call('window.fitMaximized', { pid: NL_PID }).catch(() => undefined);
+    }
   }, []);
 
   /*

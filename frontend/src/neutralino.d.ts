@@ -51,6 +51,7 @@ declare namespace Neutralino {
       resizable?: boolean;
     }
     function setSize(options: SizeOptions): Promise<void>;
+    function getSize(): Promise<{ width: number; height: number }>;
     function minimize(): Promise<void>;
     function maximize(): Promise<void>;
     function unmaximize(): Promise<void>;

@@ -558,6 +558,25 @@ export interface Commands {
     res: { applied: boolean };
   };
 
+  /**
+   * Clamp the maximised window onto its monitor's work area. Windows maximises
+   * a caption-less window -- which ours is, see the titlebar decision -- over
+   * the whole monitor with the resize borders hanging offscreen: the taskbar is
+   * covered and the outermost ~7px of the app (the close button, the status
+   * bar) are clipped. Where the work area is and where the window sits are
+   * native facts the webview cannot read or set, so the extension repositions
+   * it -- the `window.matchFrame` rule again.
+   *
+   * `pid` is `NL_PID`, for the same reason as `window.matchFrame`. The UI calls
+   * this whenever it observes the window maximised, whichever gesture did it.
+   * `applied` is false off Windows, when the window is not maximised, or when
+   * it cannot be found -- none of which is an error.
+   */
+  'window.fitMaximized': {
+    req: { pid: number };
+    res: { applied: boolean };
+  };
+
   /* -- The updater. Not a database either, and here for the same reason. --- */
 
   /**
