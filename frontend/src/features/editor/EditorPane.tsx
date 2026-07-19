@@ -200,12 +200,19 @@ export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
     // closing, and its model is disposed moments later by the effect below.
     if (!activeTabId || !isEditorTab) {
       ed.setModel(null);
+      ed.updateOptions({ placeholder: 'SELECT * FROM …' });
       shownTabId.current = null;
       return;
     }
 
     const switching = shownTabId.current !== null && shownTabId.current !== activeTabId;
-    ed.setModel(modelFor(activeTabId));
+    const model = modelFor(activeTabId);
+    ed.setModel(model);
+    // Monaco's placeholder widget does not reliably re-evaluate when `setModel`
+    // replaces the model with one that already has content, so the grey prompt
+    // text can stay visible underneath a pasted definition. Clear it explicitly
+    // when the model is non-empty; restore it when the editor is blank.
+    ed.updateOptions({ placeholder: model.getValueLength() > 0 ? undefined : 'SELECT * FROM …' });
     ed.layout();
 
     const saved = viewStates.current.get(activeTabId);

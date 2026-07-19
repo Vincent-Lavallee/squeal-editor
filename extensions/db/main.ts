@@ -227,7 +227,10 @@ function send(event: string, data: unknown): void {
       method: 'app.broadcast',
       accessToken,
       data: { event, data },
-    })
+    }),
+    (err) => {
+      if (err) process.stderr.write(`[squeal-db] send error: ${err.message}\n`);
+    }
   );
 }
 
@@ -292,6 +295,7 @@ function start(init: ExtensionInit): void {
   ws.on('message', handleMessage);
   ws.on('error', (err) => {
     process.stderr.write(`[squeal-db] socket error: ${err.message}\n`);
+    void shutdown(1);
   });
   // Belt and braces: exit on a clean close too, without waiting for the heartbeat.
   ws.on('close', () => void shutdown(0));
@@ -312,3 +316,16 @@ process.stdin.on('data', (chunk: Buffer) => {
 
 process.on('SIGINT', () => void shutdown(0));
 process.on('SIGTERM', () => void shutdown(0));
+
+// Unhandled errors that reach the process would otherwise kill the extension
+// without closing database connections. Log and shut down so the connections
+// are released before the process exits.
+process.on('uncaughtException', (err) => {
+  process.stderr.write(`[squeal-db] uncaught exception: ${err.message}\n`);
+  void shutdown(1);
+});
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  process.stderr.write(`[squeal-db] unhandled rejection: ${message}\n`);
+  void shutdown(1);
+});

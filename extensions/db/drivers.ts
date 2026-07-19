@@ -273,6 +273,71 @@ async function runWrites(
   return affected;
 }
 
+/**
+ * Extract the Nth expression from the SELECT clause of `sql`.
+ *
+ * When Postgres returns `?column?` for an un-aliased expression like `SELECT 1`,
+ * this gives us the expression text to show in the result header instead. It is a
+ * positional scan, not a parser -- the text is a query that already ran, so a
+ * parse error here just means we keep the `?column?` the server gave us.
+ *
+ * Handles nested parentheses (CASE, function calls, subqueries) and stops at the
+ * top-level FROM. Returns `null` when the SELECT clause cannot be located.
+ */
+function selectExpressionAt(sql: string, index: number): string | null {
+  // Find the outermost SELECT keyword. Step past CTEs (`WITH … AS (…) SELECT`).
+  const selectMatch = /\bSELECT\b/i.exec(sql);
+  if (!selectMatch) return null;
+
+  const selStart = selectMatch.index + selectMatch[0].length;
+
+  // Walk from after SELECT until the top-level FROM, tracking paren depth.
+  // Collect the range of each top-level expression.
+  const exprs: { start: number; end: number }[] = [];
+  let depth = 0;
+  let exprStart = selStart;
+
+  // We need a rough end: find FROM/WHERE/GROUP/HAVING/ORDER/LIMIT/OFFSET/UNION/;
+  // at the top level of the SELECT clause.
+  const clauseRe = /\b(FROM|WHERE|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|OFFSET|UNION|INTERSECT|EXCEPT|;)\b/gi;
+  const clauseEnd = (() => {
+    clauseRe.lastIndex = selStart;
+    let pos = selStart;
+    let d = 0;
+    let m: RegExpExecArray | null;
+    while ((m = clauseRe.exec(sql)) !== null) {
+      // Count parens between last position and this match
+      for (let i = pos; i < m.index; i++) {
+        if (sql[i] === '(') d++;
+        else if (sql[i] === ')') d--;
+      }
+      pos = m.index;
+      if (d === 0) return m.index;
+    }
+    return sql.length;
+  })();
+
+  for (let i = selStart; i < clauseEnd; i++) {
+    const ch = sql[i];
+    if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+    } else if (ch === ',' && depth === 0) {
+      exprs.push({ start: exprStart, end: i });
+      exprStart = i + 1;
+    }
+  }
+  // The last (or only) expression: after the last comma to the clause end.
+  if (exprStart < clauseEnd) {
+    exprs.push({ start: exprStart, end: clauseEnd });
+  }
+
+  if (index < 0 || index >= exprs.length) return null;
+  const expr = exprs[index]!;
+  return sql.slice(expr.start, expr.end).trim().replace(/\s+/g, ' ');
+}
+
 export const mysqlDriver: Driver<MysqlConnection> = {
   defaultPort: 3306,
   dialect: 'mysql',
@@ -572,7 +637,17 @@ export const postgresDriver: Driver<pg.Client> = {
       | pg.QueryArrayResult[];
     const res: pg.QueryArrayResult = Array.isArray(raw) ? raw[raw.length - 1]! : raw;
 
-    const columns = (res.fields ?? []).map((f) => f.name);
+    const columns = (res.fields ?? []).map((f, i) => {
+      // Postgres returns `?column?` for un-aliased expressions like `SELECT 1`.
+      // Replace it with the expression text from the query so the result header
+      // is meaningful. `tableID === 0` confirms this is an expression column
+      // rather than a real table column named `?column?` (unlikely but possible).
+      if (f.name === '?column?' && f.tableID === 0) {
+        const expr = selectExpressionAt(sql, i);
+        if (expr) return expr;
+      }
+      return f.name;
+    });
     if (columns.length === 0) {
       const affectedRows = res.rowCount ?? 0;
       return { columns: [], rows: [], affectedRows, message: describeOk(affectedRows) };
