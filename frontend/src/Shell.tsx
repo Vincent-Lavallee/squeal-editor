@@ -5,7 +5,7 @@ import { useTabs } from './store/tabsSlice.ts';
 import { EditorPane, EditorProvider, useEditor } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
 import { ConnectionRail } from './features/rail/index.ts';
-import { ResultsTable, useResults } from './features/results/index.ts';
+import { ResultsProvider, ResultsTable, useResults } from './features/results/index.ts';
 import { StatusBar } from './features/statusbar/index.ts';
 import { TabStrip } from './features/tabs/index.ts';
 
@@ -27,7 +27,9 @@ interface Props {
 export default function Shell({ onAddConnection }: Props) {
   return (
     <EditorProvider>
-      <ShellLayout onAddConnection={onAddConnection} />
+      <ResultsProvider>
+        <ShellLayout onAddConnection={onAddConnection} />
+      </ResultsProvider>
     </EditorProvider>
   );
 }

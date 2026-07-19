@@ -1,4 +1,12 @@
-import type { CellValue, ColumnInfo, ConnectionConfig, SqlDialect, TableInfo } from '../../shared/protocol.ts';
+import type {
+  CellValue,
+  ColumnInfo,
+  ConnectionConfig,
+  RowDelete,
+  RowEdit,
+  SqlDialect,
+  TableInfo,
+} from '../../shared/protocol.ts';
 import { withDriver, type Driver, type QueryOutcome } from './drivers.ts';
 import { rdsAuthToken } from './iam.ts';
 
@@ -16,6 +24,10 @@ export interface TableRows {
   offset: number;
   pageSize: number;
   hasMore: boolean;
+  /** The columns that identify a row, or null when nothing does -- see `rowKey`. */
+  keyColumns: string[] | null;
+  /** The table's columns as the catalog describes them, for the grid's header. */
+  columnInfo: ColumnInfo[];
 }
 
 /**
@@ -38,6 +50,14 @@ export interface ConnectionHandle {
   tableDdl(database: string, table: string, kind: 'table' | 'view'): Promise<string>;
   /** Drop a relation. Not undoable -- the UI guards it behind a typed confirmation. */
   dropRelation(database: string, table: string, kind: 'table' | 'view'): Promise<void>;
+  /**
+   * Write edited and deleted rows back to a browsed table, as one atomic batch,
+   * returning the total rows affected. Refused for a table with no row identity:
+   * the key is recomputed here, not taken from the UI, so a keyless table cannot
+   * be written even if the caller supplies one. Each op must carry every key
+   * column, or it could not target a row.
+   */
+  write(database: string, table: string, edits: RowEdit[], deletes: RowDelete[]): Promise<number>;
   /**
    * Turn read-only on or off across every client this connection holds, and
    * remember it for every client opened afterwards. Both halves matter: one
@@ -144,12 +164,19 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
       // table name is quoted by the driver for the same reason.
       const from = Math.max(0, Math.floor(Number(offset) || 0));
 
+      const client = await getClient(database);
       // Ask for one row past the page, so "is there more" is answered by whether
-      // it came back rather than inferred from the page being full.
+      // it came back rather than inferred from the page being full. The row
+      // identity and the column catalog are fetched on the same call, so the grid
+      // learns whether it may write this table back, which columns target a row,
+      // and each column's type -- all sequentially, because one client cannot run
+      // two queries at once (pg queues and warns, mysql2 would interleave).
       const outcome = await driver.query(
-        await getClient(database),
+        client,
         `SELECT * FROM ${driver.quoteIdent(table)} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`
       );
+      const keyColumns = await driver.rowKey(client, database, table);
+      const columnInfo = await driver.listColumns(client, database, table);
 
       const hasMore = outcome.rows.length > PAGE_SIZE;
       return {
@@ -159,6 +186,8 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
         offset: from,
         pageSize: PAGE_SIZE,
         hasMore,
+        keyColumns,
+        columnInfo,
       };
     },
 
@@ -168,6 +197,25 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
 
     async dropRelation(database, table, kind) {
       await driver.dropRelation(await getClient(database), table, kind);
+    },
+
+    async write(database, table, edits, deletes) {
+      const client = await getClient(database);
+      // The identity is recomputed here rather than trusted from the UI: which
+      // columns legitimately name a row is the server's fact, and a keyless table
+      // has no write to apply. Refused before a transaction is even opened.
+      const keyColumns = await driver.rowKey(client, database, table);
+      if (!keyColumns) throw new Error(`${table} has no primary or unique key, so it cannot be edited.`);
+
+      // Every op must carry all of the key columns, or its WHERE could not target
+      // a single row -- a stale grid handing back a partial key is a bug up top,
+      // and applying it would risk hitting rows the user never saw.
+      for (const op of [...edits, ...deletes]) {
+        const missing = keyColumns.filter((c) => !(c in op.key));
+        if (missing.length > 0) throw new Error(`A row is missing its key column${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`);
+      }
+
+      return driver.applyWrites(client, table, keyColumns, edits, deletes);
     },
 
     async setReadOnly(value) {

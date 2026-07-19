@@ -1106,3 +1106,38 @@
   height: 24px;
   padding: 0 6px;
 }
+
+/* Why a browsed grid is read-only, muted inline beside the row count. */
+.results__ro {
+  color: var(--text-faint);
+}
+
+/*
+ * The save bar shows only when there is something staged (or a save failed): a
+ * strip between the results bar and the grid, the change count at one end and
+ * Discard/Save at the other. One background, a 1px rule beneath like every bar.
+ */
+.results__savebar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+  flex: none;
+  padding: 0 var(--gap-lg);
+  height: 34px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-badge);
+  color: var(--text-muted);
+}
+.results__saveactions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  margin-left: auto;
+}
+.results__saveactions .btn {
+  height: 24px;
+  padding: 0 10px;
+}
+.results__saveerr {
+  color: var(--red-text);
+}

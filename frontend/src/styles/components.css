@@ -319,6 +319,84 @@
   font-style: italic;
 }
 
+/* ---------------- Editable grid ---------------- */
+
+/* The type trails its column name in the header, quieter than the name -- the
+   tree's rule, applied to the grid. */
+.grid__col-type {
+  margin-left: var(--gap-sm);
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+/* An edited cell: an accent ring and accent text, "this changed" said with an
+   outline rather than a fill -- the same language as a current find match. */
+.grid__cell--dirty {
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent);
+}
+
+/* Selecting rows for copy or delete. The gutter tints with its row so the
+   sticky number does not sit one background behind the selection. The full
+   ancestor chain is spelled out so the tint outranks the row-hover rule above
+   and reads through hover rather than being masked by it. */
+.gutter--select {
+  cursor: pointer;
+}
+.grid tbody tr.grid__row--selected td,
+.grid tbody tr.grid__row--selected .gutter {
+  background: var(--selected);
+}
+
+/* A row staged for deletion goes red -- background, not just a strike -- and
+   holds it through hover, still on screen so the deletion is visible and
+   undoable until Save. */
+.grid tbody tr.grid__row--deleted td,
+.grid tbody tr.grid__row--deleted .gutter {
+  background: var(--red-bg);
+  color: var(--red-text);
+  text-decoration: line-through;
+}
+
+/* The in-place editor is seamless: the cell's own text turning editable, not a
+   box dropped into it. A transparent input over the one background, an accent
+   caret, and a hairline accent underline on the cell to show it is active -- no
+   border, no fill. The ∅ button sets NULL, the distinction an empty box does not
+   make; it is absent on a key column, which has no NULL to take. */
+.grid__cell--editing {
+  box-shadow: inset 0 -1.5px 0 var(--accent);
+}
+.cell-edit {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  width: 100%;
+}
+.cell-edit__input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: var(--text-body);
+  caret-color: var(--accent);
+}
+.cell-edit__null {
+  flex: none;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: var(--text-body);
+  cursor: pointer;
+}
+.cell-edit__null:hover {
+  color: var(--accent);
+}
+
 /* ---------------- Notes ---------------- */
 
 .note {

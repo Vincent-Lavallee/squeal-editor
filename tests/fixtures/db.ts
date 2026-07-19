@@ -11,6 +11,10 @@
  * `events` is sized for paging: 150 rows is more than one 100-row page, and it
  * makes the case that broke the old row-count guess reachable without a second
  * table -- page from row 51 and a *full* page comes back with nothing after it.
+ *
+ * `tags` and `logs` are for the editable grid's row identity: `tags` has a
+ * UNIQUE NOT NULL column and no primary key (so its identity is the unique key),
+ * and `logs` has neither (so the grid must stay read-only against it).
  */
 
 import { $ } from 'bun';
@@ -34,6 +38,10 @@ CREATE TABLE reporting.daily_stats (day date, hits bigint);
 INSERT INTO reporting.daily_stats VALUES ('2026-01-05', 9007199254740993);
 CREATE TABLE events (id serial primary key, label text);
 INSERT INTO events (label) SELECT 'e' || g FROM generate_series(1, 150) g;
+CREATE TABLE tags (label text NOT NULL UNIQUE, weight int);
+INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
+CREATE TABLE logs (msg text);
+INSERT INTO logs (msg) VALUES ('one'), ('two');
 `;
 
 const MYSQL_SEED = `
@@ -58,6 +66,10 @@ WITH RECURSIVE series AS (
   SELECT 1 AS n UNION ALL SELECT n + 1 FROM series WHERE n < 150
 )
 SELECT CONCAT('e', n) FROM series;
+CREATE TABLE tags (label varchar(50) NOT NULL UNIQUE, weight int);
+INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
+CREATE TABLE logs (msg varchar(100));
+INSERT INTO logs (msg) VALUES ('one'), ('two');
 `;
 
 async function waitFor(label: string, probe: () => Promise<boolean>, tries = 60): Promise<void> {

@@ -149,6 +149,15 @@ const pagerBtn = (label: 'Prev' | 'Next') => `
   [...document.querySelectorAll('.results__pager .btn')]
     .find(e => e.textContent.trim() === ${JSON.stringify(label)})`;
 
+/** A data cell (past the row-number gutter) at row r, column c of the grid. */
+const gridCell = (r: number, c: number) =>
+  `document.querySelectorAll('.grid tbody tr')[${r}].querySelectorAll('td:not(.gutter)')[${c}]`;
+/** Double-click an element expression -- how a cell opens its editor. */
+const dblClick = (expr: string) => `${expr}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); true;`;
+/** A save-bar action button by its trimmed text (Save / Discard). */
+const saveAction = (label: 'Save' | 'Discard') =>
+  `[...document.querySelectorAll('.results__saveactions .btn')].find(e => e.textContent.trim() === ${JSON.stringify(label)})`;
+
 /** A saved row by exact name -- `.includes` would match a longer neighbour. */
 const savedRow = (name: string) => `
   [...document.querySelectorAll('.saved__row')]
@@ -572,6 +581,133 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // The grid now holds SQL the user wrote, and the extension will not
       // rewrite that to reach page 2 -- so there is no page 2 to offer.
       expect(await app.evaluate<number>(`document.querySelectorAll('.results__pager').length`)).toBe(0);
+    });
+
+    /*
+     * The editable grid. `tags` has a unique NOT NULL key, so it can be edited;
+     * `logs` has no key, so it must stay read-only and say why. The write path
+     * itself is proven on both engines in the extension suite -- here the job is
+     * the UI wiring: the editor, the staging, the save bar, and the clipboard.
+     */
+    test('a keyless table is read-only and says why', async () => {
+      await app.evaluate(clickTable('logs'));
+      await Bun.sleep(1500);
+
+      expect(await app.evaluate<string>(`document.querySelector('.results__ro')?.textContent ?? ''`)).toMatch(
+        /no primary or unique key/i
+      );
+
+      // Double-clicking a cell must not open an editor on a read-only grid.
+      await app.evaluate(dblClick(gridCell(0, 0)));
+      await Bun.sleep(300);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.cell-edit__input').length`)).toBe(0);
+
+      await app.evaluate(closeTab('logs'));
+      await Bun.sleep(300);
+    });
+
+    test('an editable table stages an edit and saves it', async () => {
+      await app.evaluate(clickTable('tags'));
+      await Bun.sleep(1500);
+
+      // A table with a key shows no read-only reason.
+      expect(await app.evaluate<number>(`document.querySelectorAll('.results__ro').length`)).toBe(0);
+
+      // Edit the first row's weight to a value guaranteed different from what is
+      // there, so a real change is always staged and the test re-runs cleanly
+      // whichever way it left the row last time.
+      const cur = await app.evaluate<string>(`${gridCell(0, 1)}.textContent`);
+      const next = cur === '111' ? '222' : '111';
+
+      await app.evaluate(dblClick(gridCell(0, 1)));
+      await Bun.sleep(300);
+      await app.evaluate(`${REACT_SETTERS}
+        setNative(document.querySelector('.cell-edit__input'), ${JSON.stringify(next)});
+        true;`);
+      await Bun.sleep(200);
+      await app.evaluate(
+        `document.querySelector('.cell-edit__input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); true;`
+      );
+      await Bun.sleep(300);
+
+      // Staged: the save bar counts one change and the cell is marked dirty.
+      expect(await app.evaluate<string>(`document.querySelector('.results__savebar span').textContent`)).toMatch(
+        /1 unsaved change/
+      );
+      expect(await app.evaluate<boolean>(`!!document.querySelector('.grid__cell--dirty')`)).toBe(true);
+
+      await app.evaluate(`${saveAction('Save')}.click(); true;`);
+      await Bun.sleep(1500);
+
+      // Saved: the bar is gone and the re-browsed grid carries the new value.
+      // Asserted across the column rather than at row 0, since a re-browsed row
+      // can change place (Postgres moves an updated tuple).
+      expect(await app.evaluate<number>(`document.querySelectorAll('.results__savebar').length`)).toBe(0);
+      const weights = await app.evaluate<string[]>(
+        `[...document.querySelectorAll('.grid tbody tr')].map(tr => tr.querySelectorAll('td:not(.gutter)')[1].textContent)`
+      );
+      expect(weights).toContain(next);
+
+      await app.evaluate(closeTab('tags'));
+      await Bun.sleep(300);
+    });
+
+    test('Set NULL and Delete stage on the grid, and Discard clears them', async () => {
+      await app.evaluate(clickTable('tags'));
+      await Bun.sleep(1500);
+
+      // Set a cell to NULL through the editor's ∅ button -- distinct from empty.
+      await app.evaluate(dblClick(gridCell(0, 1)));
+      await Bun.sleep(300);
+      await app.evaluate(
+        `document.querySelector('.cell-edit__null').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true;`
+      );
+      await Bun.sleep(300);
+      expect(await app.evaluate<boolean>(`!!${gridCell(0, 1)}.querySelector('.null')`)).toBe(true);
+
+      // Stage a delete on the second row: select its gutter, press Delete.
+      await app.evaluate(`document.querySelectorAll('.grid tbody tr')[1].querySelector('.gutter').click(); true;`);
+      await Bun.sleep(150);
+      await app.evaluate(
+        `document.querySelector('.grid-scroll').dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })); true;`
+      );
+      await Bun.sleep(200);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid__row--deleted').length`)).toBe(1);
+
+      // Discard drops every staged change without touching the database.
+      await app.evaluate(`${saveAction('Discard')}.click(); true;`);
+      await Bun.sleep(300);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.results__savebar').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid__row--deleted').length`)).toBe(0);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid .null').length`)).toBe(0);
+
+      await app.evaluate(closeTab('tags'));
+      await Bun.sleep(300);
+    });
+
+    test('copies selected rows as tab-separated text', async () => {
+      await app.evaluate(clickTable('tags'));
+      await Bun.sleep(1500);
+
+      // Select both rows through the gutter (click, then shift-click) and copy.
+      await app.evaluate(`document.querySelectorAll('.grid tbody tr')[0].querySelector('.gutter').click(); true;`);
+      await Bun.sleep(150);
+      await app.evaluate(`
+        document.querySelectorAll('.grid tbody tr')[1].querySelector('.gutter')
+          .dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })); true;`);
+      await Bun.sleep(150);
+      await app.evaluate(
+        `document.querySelector('.grid-scroll').dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(300);
+
+      const clip = await app.evaluate<string>(`Neutralino.clipboard.readText()`);
+      // Two rows, columns tab-separated -- label then weight.
+      expect(clip.split('\n')).toHaveLength(2);
+      expect(clip).toContain('\t');
+
+      await app.evaluate(closeTab('tags'));
+      await Bun.sleep(300);
     });
 
     /*

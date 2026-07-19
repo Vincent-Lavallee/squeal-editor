@@ -2,7 +2,15 @@ import mysql from 'mysql2/promise';
 import type { Connection as MysqlConnection, FieldPacket } from 'mysql2/promise';
 import pg from 'pg';
 
-import type { CellValue, ColumnInfo, ConnectionConfig, EngineType, SqlDialect } from '../../shared/protocol.ts';
+import type {
+  CellValue,
+  ColumnInfo,
+  ConnectionConfig,
+  EngineType,
+  RowDelete,
+  RowEdit,
+  SqlDialect,
+} from '../../shared/protocol.ts';
 // Amazon's published RDS CA bundle, folded into the compiled binary as text.
 import rdsCaBundle from './rds-global-bundle.pem' with { type: 'text' };
 
@@ -93,6 +101,36 @@ export interface Driver<C> {
    * refused by the server, rather than taking its dependents with it silently.
    */
   dropRelation(client: C, table: string, kind: 'table' | 'view'): Promise<void>;
+  /**
+   * The columns that identify a row of a table, or `null` when nothing does.
+   *
+   * The primary key if there is one, else a unique index over columns that are
+   * all `NOT NULL` -- a nullable unique column is not an identity, because two
+   * rows may both be NULL there and a `WHERE` over it would match both. `null`
+   * for a keyless table or a view, which is what makes the editable grid stay
+   * read-only. Per-engine like quoting: the catalog query differs, and only this
+   * side may write it. The names come back in key order.
+   */
+  rowKey(client: C, database: string, table: string): Promise<string[] | null>;
+  /**
+   * Apply staged edits and deletes as one atomic transaction, returning the
+   * total rows affected.
+   *
+   * Per-engine because both the quoting *and* the placeholder syntax differ
+   * (`?` for mysql2, `$n` for pg). Each row is targeted by its `keyColumns`
+   * values, bound as parameters -- and every value in `set` is bound as a
+   * parameter too, so the server parses the text and no value is reformatted
+   * through a `Date` or a `Number`. An op that would touch more than one row
+   * means the key was not unique after all: the batch rolls back and throws,
+   * rather than editing rows the user never saw.
+   */
+  applyWrites(
+    client: C,
+    table: string,
+    keyColumns: string[],
+    edits: RowEdit[],
+    deletes: RowDelete[]
+  ): Promise<number>;
   quoteIdent(name: string): string;
 }
 
@@ -147,6 +185,93 @@ const tlsOptions = (config: ConnectionConfig) =>
   config.iam ? { rejectUnauthorized: true, ca: rdsCaBundle } : TLS_OPTIONS;
 
 const describeOk = (count: number) => `OK - ${count} row${count === 1 ? '' : 's'} affected`;
+
+/** One column's membership in one index, as the catalog reports it. */
+interface KeyPart {
+  index: string;
+  /** Null for a functional/expression index column, which cannot be a plain key. */
+  column: string | null;
+  primary: boolean;
+  unique: boolean;
+  nullable: boolean;
+}
+
+/**
+ * Picks a table's row-identity columns out of its index catalog: the primary
+ * key, else the first unique index whose every column is present and `NOT NULL`.
+ *
+ * A nullable unique column is rejected on purpose -- two rows may both be NULL
+ * there, so a `WHERE` over it is not a single-row target. Shared by both engines
+ * so "what counts as an identity" has one answer; each driver only has to shape
+ * its catalog rows into `KeyPart`s, ordered within an index by key position.
+ */
+function pickRowKey(parts: KeyPart[]): string[] | null {
+  const byIndex = new Map<string, KeyPart[]>();
+  for (const p of parts) {
+    const list = byIndex.get(p.index) ?? [];
+    list.push(p);
+    byIndex.set(p.index, list);
+  }
+  const usable = (cols: KeyPart[]) => cols.length > 0 && cols.every((c) => c.column !== null && !c.nullable);
+
+  for (const cols of byIndex.values()) {
+    if (cols[0]!.primary && usable(cols)) return cols.map((c) => c.column as string);
+  }
+  for (const cols of byIndex.values()) {
+    if (!cols[0]!.primary && cols.every((c) => c.unique) && usable(cols)) {
+      return cols.map((c) => c.column as string);
+    }
+  }
+  return null;
+}
+
+/**
+ * Assembles and runs the parameterized `UPDATE`/`DELETE` statements for a batch
+ * of edits and deletes, returning the total rows affected.
+ *
+ * Shared between the engines so the statement assembly and the more-than-one-row
+ * guard cannot drift; the two things that differ are callbacks -- how a
+ * placeholder is spelled (`?` vs `$n`) and how an affected-row count is read off
+ * a result. The transaction around it is the caller's, because `BEGIN`/`COMMIT`
+ * runs on the concrete client. Every value in `set` and `key` is bound as a
+ * parameter, so the server parses the text and nothing is reformatted.
+ */
+async function runWrites(
+  table: string,
+  keyColumns: string[],
+  edits: RowEdit[],
+  deletes: RowDelete[],
+  quoteIdent: (name: string) => string,
+  placeholder: (position: number) => string,
+  exec: (sql: string, params: CellValue[]) => Promise<number>
+): Promise<number> {
+  const tooMany = (n: number, verb: string) =>
+    new Error(`${verb} matched ${n} rows where one was expected -- the row's key is not unique.`);
+
+  let affected = 0;
+  for (const edit of edits) {
+    const setCols = Object.keys(edit.set);
+    // An edit that changes nothing has nothing to issue -- the UI should not send
+    // one, but a no-op statement would be `SET  WHERE`, which is a syntax error.
+    if (setCols.length === 0) continue;
+    let p = 0;
+    const set = setCols.map((c) => `${quoteIdent(c)} = ${placeholder(++p)}`).join(', ');
+    const where = keyColumns.map((c) => `${quoteIdent(c)} = ${placeholder(++p)}`).join(' AND ');
+    const params: CellValue[] = [...setCols.map((c) => edit.set[c] ?? null), ...keyColumns.map((c) => edit.key[c] ?? null)];
+    const n = await exec(`UPDATE ${quoteIdent(table)} SET ${set} WHERE ${where}`, params);
+    if (n > 1) throw tooMany(n, 'Edit');
+    affected += n;
+  }
+  for (const del of deletes) {
+    let p = 0;
+    const where = keyColumns.map((c) => `${quoteIdent(c)} = ${placeholder(++p)}`).join(' AND ');
+    const params: CellValue[] = keyColumns.map((c) => del.key[c] ?? null);
+    const n = await exec(`DELETE FROM ${quoteIdent(table)} WHERE ${where}`, params);
+    if (n > 1) throw tooMany(n, 'Delete');
+    affected += n;
+  }
+  return affected;
+}
 
 export const mysqlDriver: Driver<MysqlConnection> = {
   defaultPort: 3306,
@@ -262,6 +387,65 @@ export const mysqlDriver: Driver<MysqlConnection> = {
 
   async dropRelation(client, table, kind) {
     await client.query(`DROP ${kind === 'view' ? 'VIEW' : 'TABLE'} ${this.quoteIdent(table)}`);
+  },
+
+  async rowKey(client, database, table) {
+    // STATISTICS is MySQL's index catalog; COLUMNS carries nullability. A
+    // functional index has a NULL COLUMN_NAME (its EXPRESSION is set instead),
+    // which pickRowKey drops -- an expression is no plain key. PRIMARY is the
+    // reserved name of the primary key's index.
+    const [rows] = (await client.query(
+      {
+        sql: `SELECT s.INDEX_NAME, s.COLUMN_NAME, s.NON_UNIQUE, c.IS_NULLABLE
+                FROM information_schema.STATISTICS s
+                JOIN information_schema.COLUMNS c
+                  ON c.TABLE_SCHEMA = s.TABLE_SCHEMA
+                 AND c.TABLE_NAME = s.TABLE_NAME
+                 AND c.COLUMN_NAME = s.COLUMN_NAME
+               WHERE s.TABLE_SCHEMA = ? AND s.TABLE_NAME = ?
+               ORDER BY s.INDEX_NAME, s.SEQ_IN_INDEX`,
+        rowsAsArray: true,
+      },
+      [database, table]
+    )) as [unknown[][], FieldPacket[]];
+
+    return pickRowKey(
+      rows.map((r) => ({
+        index: r[0] as string,
+        column: (r[1] as string | null) ?? null,
+        primary: r[0] === 'PRIMARY',
+        // NON_UNIQUE is 0 for a unique index; guard the string form too.
+        unique: r[2] === 0 || r[2] === '0',
+        nullable: r[3] === 'YES',
+      }))
+    );
+  },
+
+  async applyWrites(client, table, keyColumns, edits, deletes) {
+    // The whole batch is one transaction: it all lands or none does. Under a
+    // read-only session this START TRANSACTION inherits the mode, so the first
+    // write is refused by the server and the catch rolls back -- the connection
+    // survives, like a failed query.
+    await client.query('START TRANSACTION');
+    try {
+      const affected = await runWrites(
+        table,
+        keyColumns,
+        edits,
+        deletes,
+        (name) => this.quoteIdent(name),
+        () => '?',
+        async (sql, params) => {
+          const [res] = (await client.query(sql, params)) as [{ affectedRows?: number }, FieldPacket[]];
+          return res.affectedRows ?? 0;
+        }
+      );
+      await client.query('COMMIT');
+      return affected;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    }
   },
 
   quoteIdent(name) {
@@ -500,6 +684,69 @@ export const postgresDriver: Driver<pg.Client> = {
 
   async dropRelation(client, table, kind) {
     await client.query(`DROP ${kind === 'view' ? 'VIEW' : 'TABLE'} ${this.quoteIdent(table)}`);
+  },
+
+  async rowKey(client, _database, table) {
+    const { schema, relation } = splitRelation(table);
+    // pg_index over the relation's primary and unique indexes. Partial (indpred)
+    // and expression (indexprs) indexes are skipped -- neither is a plain
+    // column key. `ord` recovers each column's position in the key from indkey
+    // (an int2vector; its text form is space-separated), so key order survives.
+    const res = await client.query({
+      text: `SELECT ic.relname AS index_name,
+                    i.indisprimary,
+                    i.indisunique,
+                    a.attname,
+                    a.attnotnull,
+                    array_position(string_to_array(i.indkey::text, ' ')::int[], a.attnum::int) AS ord
+               FROM pg_index i
+               JOIN pg_class c ON c.oid = i.indrelid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+               JOIN pg_class ic ON ic.oid = i.indexrelid
+               JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(i.indkey)
+              WHERE n.nspname = $1 AND c.relname = $2
+                AND (i.indisprimary OR i.indisunique)
+                AND i.indpred IS NULL
+                AND i.indexprs IS NULL
+              ORDER BY ic.relname, ord`,
+      values: [schema, relation],
+      rowMode: 'array',
+    });
+
+    return pickRowKey(
+      (res.rows as unknown[][]).map((r) => ({
+        index: r[0] as string,
+        column: r[3] as string,
+        primary: r[1] === true,
+        unique: r[2] === true,
+        nullable: r[4] !== true,
+      }))
+    );
+  },
+
+  async applyWrites(client, table, keyColumns, edits, deletes) {
+    // One transaction for the batch -- see the mysql driver. A read-only session
+    // makes the first write fail and the catch rolls back.
+    await client.query('BEGIN');
+    try {
+      const affected = await runWrites(
+        table,
+        keyColumns,
+        edits,
+        deletes,
+        (name) => this.quoteIdent(name),
+        (position) => `$${position}`,
+        async (sql, params) => {
+          const res = await client.query(sql, params as unknown[]);
+          return res.rowCount ?? 0;
+        }
+      );
+      await client.query('COMMIT');
+      return affected;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    }
   },
 
   quoteIdent(name) {

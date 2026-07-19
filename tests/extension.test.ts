@@ -404,6 +404,124 @@ describe.each([
   });
 
   /*
+   * The editable grid writes back only where a row can be identified, and the
+   * extension is what decides that -- the primary key, else a unique index over
+   * NOT NULL columns. The write itself is one atomic batch of parameterized
+   * statements, so values reach the server as text (never through a Date or a
+   * Number) and a bad op takes the whole batch down with it.
+   */
+  describe('editable grid', () => {
+    test('browse reports the row identity, and null when there is none', async () => {
+      // Primary key, unique NOT NULL key, then the two that have no identity.
+      expect((await browse('users')).keyColumns).toEqual(['id']);
+      expect((await browse('tags')).keyColumns).toEqual(['label']);
+      expect((await browse('logs')).keyColumns).toBeNull();
+      // A view has no rows to target either.
+      expect((await browse('active_users')).keyColumns).toBeNull();
+    });
+
+    test('browse carries the columns and their types for the grid header', async () => {
+      // The header shows a column's type; it comes back with the page in ordinal
+      // order, each carrying the engine's own rendering of the type.
+      const cols = (await browse('users')).columnInfo;
+      expect(cols.map((c) => c.name).slice(0, 3)).toEqual(['id', 'name', 'email']);
+      expect(cols.find((c) => c.name === 'id')?.dataType).toMatch(/int/i);
+      expect(cols.find((c) => c.name === 'id')?.primaryKey).toBe(true);
+    });
+
+    test('writes edits and deletes back as one batch', async () => {
+      // A scratch table, never the shared fixture, so the suite re-runs clean.
+      await query('DROP TABLE IF EXISTS zz_edit_test');
+      await query('CREATE TABLE zz_edit_test (id int primary key, name text, n bigint)');
+      await query("INSERT INTO zz_edit_test (id, name, n) VALUES (1, 'a', 10), (2, 'b', 20), (3, 'c', 30)");
+
+      const res = (await h.ok('db.write', {
+        connectionId,
+        database: FIXTURE_DB,
+        table: 'zz_edit_test',
+        edits: [
+          // The bigint arrives as a *string* and must land intact: bound as a
+          // parameter, parsed by the server, never routed through a JS Number.
+          { key: { id: 1 }, set: { name: 'AA', n: '9007199254740993' } },
+          // NULL is a null value, distinct from the empty string.
+          { key: { id: 2 }, set: { name: null } },
+        ],
+        deletes: [{ key: { id: 3 } }],
+      })) as { affectedRows: number };
+      expect(res.affectedRows).toBe(3);
+
+      const after = await query('SELECT id, name, n FROM zz_edit_test ORDER BY id');
+      expect(after.rows).toHaveLength(2);
+
+      const row1 = after.rows.find((r) => Number(r[0]) === 1)!;
+      expect(row1[1]).toBe('AA');
+      expect(String(row1[2])).toBe('9007199254740993');
+
+      const row2 = after.rows.find((r) => Number(r[0]) === 2)!;
+      expect(row2[1]).toBeNull();
+
+      await query('DROP TABLE IF EXISTS zz_edit_test');
+    });
+
+    test('a failing op rolls the whole batch back', async () => {
+      await query('DROP TABLE IF EXISTS zz_edit_rb');
+      await query('CREATE TABLE zz_edit_rb (id int primary key, name text)');
+      await query("INSERT INTO zz_edit_rb (id, name) VALUES (1, 'a'), (2, 'b')");
+
+      // The second edit names a column that does not exist, so its UPDATE fails.
+      const bad = await h.dispatch('db.write', {
+        connectionId,
+        database: FIXTURE_DB,
+        table: 'zz_edit_rb',
+        edits: [
+          { key: { id: 1 }, set: { name: 'X' } },
+          { key: { id: 2 }, set: { nope: 'Y' } },
+        ],
+        deletes: [],
+      });
+      expect(bad.ok).toBe(false);
+
+      // The first edit must not have landed: the batch is atomic.
+      expect((await query('SELECT name FROM zz_edit_rb WHERE id = 1')).rows[0]![0]).toBe('a');
+
+      await query('DROP TABLE IF EXISTS zz_edit_rb');
+    });
+
+    test('a keyless table cannot be written', async () => {
+      const bad = await h.dispatch('db.write', {
+        connectionId,
+        database: FIXTURE_DB,
+        table: 'logs',
+        edits: [{ key: {}, set: { msg: 'x' } }],
+        deletes: [],
+      });
+      expect(bad.ok).toBe(false);
+      if (!bad.ok) expect(bad.error).toMatch(/no primary or unique key/i);
+    });
+
+    test('a write is refused on a read-only connection, and the connection survives', async () => {
+      await query('DROP TABLE IF EXISTS zz_edit_ro');
+      await query('CREATE TABLE zz_edit_ro (id int primary key, name text)');
+      await query("INSERT INTO zz_edit_ro (id, name) VALUES (1, 'a')");
+
+      await h.ok('db.readonly', { connectionId, readOnly: true });
+      const bad = await h.dispatch('db.write', {
+        connectionId,
+        database: FIXTURE_DB,
+        table: 'zz_edit_ro',
+        edits: [{ key: { id: 1 }, set: { name: 'X' } }],
+        deletes: [],
+      });
+      expect(bad.ok).toBe(false);
+      await h.ok('db.readonly', { connectionId, readOnly: false });
+
+      // Untouched, and the connection is still usable.
+      expect((await query('SELECT name FROM zz_edit_ro WHERE id = 1')).rows[0]![0]).toBe('a');
+      await query('DROP TABLE IF EXISTS zz_edit_ro');
+    });
+  });
+
+  /*
    * Read-only is the *server* refusing writes, not a parser of ours -- which is
    * the whole point, so the only way to prove it is to make the server do it. A
    * WHERE that matches nothing keeps the fixture untouched: the refusal happens

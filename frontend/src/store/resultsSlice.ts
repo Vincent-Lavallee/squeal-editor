@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-import type { QueryResult } from '../../../shared/protocol.ts';
+import type { ColumnInfo, QueryResult, RowDelete, RowEdit } from '../../../shared/protocol.ts';
 import { call } from '../bridge.ts';
 import { disconnect } from './sessionSlice.ts';
 import { tabClosed } from './tabsSlice.ts';
@@ -19,6 +19,14 @@ interface BrowseState {
   offset: number;
   pageSize: number;
   hasMore: boolean;
+  /**
+   * The columns that identify a row, or null when nothing does. The grid is
+   * editable only when this is non-null (and the connection is not read-only);
+   * otherwise it says why. Computed by the extension, carried here for the grid.
+   */
+  keyColumns: string[] | null;
+  /** The table's columns, so the grid header can show each column's type. */
+  columnInfo: ColumnInfo[];
 }
 
 export interface ResultsState {
@@ -114,6 +122,46 @@ export const browseTable = createAppThunk(
   }
 );
 
+/**
+ * Write the staged edits and deletes of a browsed table back, in one batch.
+ *
+ * Reads the connection and database off the tab, like `runQuery` and
+ * `browseTable` -- the target is the tab, never passed. The `edits`/`deletes`
+ * *are* passed, though: they are staged in the results feature context (they
+ * have not crossed the bridge until now), so they arrive as arguments the way
+ * `runQuery`'s `sql` does, not read off a slice.
+ *
+ * It touches no slice state on its own. The grid stays exactly as browsed while
+ * the save is in flight, and the hook re-browses on success and surfaces a
+ * failure beside the save bar -- a save error must not blank the grid and the
+ * edits the user is still holding, which is what putting it in `error` would do.
+ */
+export const saveEdits = createAppThunk(
+  'results/saveEdits',
+  async (
+    arg: { tabId: string; table: string; edits: RowEdit[]; deletes: RowDelete[] },
+    { getState, rejectWithValue }
+  ) => {
+    const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
+    if (!tab) return rejectWithValue('That tab is gone.');
+    if (!tab.database) return rejectWithValue('Select a database first.');
+
+    try {
+      const res = await call('db.write', {
+        connectionId: tab.connectionId,
+        database: tab.database,
+        table: arg.table,
+        edits: arg.edits,
+        deletes: arg.deletes,
+      });
+      return { affectedRows: res.affectedRows };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  },
+  { condition: (arg) => arg.edits.length > 0 || arg.deletes.length > 0 }
+);
+
 const resultsSlice = createSlice({
   name: 'results',
   initialState,
@@ -184,6 +232,8 @@ const resultsSlice = createSlice({
           offset: page.offset,
           pageSize: page.pageSize,
           hasMore: page.hasMore,
+          keyColumns: page.keyColumns,
+          columnInfo: page.columnInfo,
         };
       })
       .addCase(browseTable.rejected, (state, action) => {

@@ -131,6 +131,10 @@ const COMMANDS: Handlers = {
     return { ok: true };
   },
 
+  async 'db.write'({ connectionId, database, table, edits, deletes }) {
+    return { affectedRows: await getConnection(connectionId).write(database, table, edits, deletes) };
+  },
+
   async 'db.disconnect'({ connectionId }) {
     await closeConnection(connectionId);
     return { ok: true };
