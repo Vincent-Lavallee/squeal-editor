@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import type { TableInfo } from '../../shared/protocol.ts';
 import { useTabs } from './store/tabsSlice.ts';
@@ -39,6 +39,27 @@ function ShellLayout({ onAddConnection }: Props) {
   const { run, running, browseIn } = useResults();
   const { fetchDdl } = useExplorer();
   const { setSql } = useEditor();
+
+  // Sidebar collapse is webview-only UI state — it never crosses the bridge, so
+  // it lives here rather than in a slice. It starts expanded every launch and is
+  // a within-session toggle, not remembered.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const toggleSidebar = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
+
+  // Ctrl+B collapses/restores the sidebar from anywhere in the window. Inside
+  // the editor, Monaco's own binding (registered in EditorPane) handles it and
+  // stops propagation — this covers the rest of the window, the same pattern as
+  // Ctrl+Enter.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed((prev) => !prev);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // Clicking a table opens a grid tab of its own and browses into it, so the
   // query being written is never eaten. There is no editor on that tab by
@@ -111,12 +132,18 @@ function ShellLayout({ onAddConnection }: Props) {
     <div className="shell">
       <ConnectionRail onAdd={onAddConnection} />
 
-      <div className="app">
-        <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} onShowDefinition={showDefinition} />
+      <div className={`app ${sidebarCollapsed ? 'app--sidebar-collapsed' : ''}`}>
+        <Sidebar
+          onSelectTable={openTable}
+          onSelectDatabase={changeDatabase}
+          onShowDefinition={showDefinition}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebar}
+        />
 
         <main className={`main ${showEditor ? '' : 'main--grid'}`}>
           <TabStrip />
-          <EditorPane onRun={run} running={running} />
+          <EditorPane onRun={run} running={running} onToggleSidebar={toggleSidebar} />
           <div className="results">
             {activeTab ? (
               <ResultsTable />

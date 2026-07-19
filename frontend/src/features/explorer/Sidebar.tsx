@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 
 import type { TableInfo } from '../../../../shared/protocol.ts';
-import { DisclosureIcon, KeyIcon, TableIcon, ViewIcon } from '../../icons.ts';
+import { DisclosureIcon, KeyIcon, SidebarFoldIcon, SidebarUnfoldIcon, TableIcon, ViewIcon } from '../../icons.ts';
 import DropTableConfirm from './DropTableConfirm.tsx';
 import TableContextMenu from './TableContextMenu.tsx';
 import { useExplorer } from './useExplorer.ts';
@@ -13,9 +13,13 @@ interface Props {
   onSelectDatabase: (database: string) => void;
   /** Its definition opens in a new editor tab, which spans the bridge, tabs and editor. */
   onShowDefinition: (database: string, table: TableInfo) => void;
+  /** Whether the sidebar is collapsed. Shell owns this; the sidebar only wears it. */
+  collapsed?: boolean;
+  /** Shell's toggle, called from the button here and from the shortcut. */
+  onToggleCollapse?: () => void;
 }
 
-export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition }: Props) {
+export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition, collapsed, onToggleCollapse }: Props) {
   const { databases, database, hasTab, tables, columnsFor, loadTableColumns, dropTable, readOnly, loading, error } =
     useExplorer();
 
@@ -56,7 +60,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
   );
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
       {/*
         Which server this is belongs to the window, not to the tree, so the
         titlebar carries it -- printing it twice is how the two drift apart. The
@@ -92,6 +96,19 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
             </option>
           ))}
         </select>
+
+        <button
+          className="sidebar__toggle"
+          onClick={onToggleCollapse}
+          title={collapsed ? 'Show sidebar (Ctrl+B)' : 'Hide sidebar (Ctrl+B)'}
+          aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+        >
+          {collapsed ? (
+            <SidebarUnfoldIcon className="icon" aria-hidden="true" />
+          ) : (
+            <SidebarFoldIcon className="icon" aria-hidden="true" />
+          )}
+        </button>
       </div>
 
       <nav className="tree">

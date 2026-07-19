@@ -567,6 +567,15 @@
   flex: 1;
   min-height: 0;
 }
+/*
+ * When the sidebar is collapsed the grid column shrinks to a thin strip holding
+ * only the toggle button. The sidebar's own content is hidden via display:none
+ * on its children, not removed from the DOM, so the tree's expanded state
+ * survives the collapse.
+ */
+.app--sidebar-collapsed {
+  grid-template-columns: 28px 1fr;
+}
 
 /* ---------------- Status bar ---------------- */
 
@@ -764,6 +773,49 @@
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid var(--border);
+}
+/*
+ * Collapsed: the sidebar shrinks to a thin strip holding only the toggle.
+ * Children are hidden via display:none, not removed, so the tree keeps its
+ * expanded state and the database picker keeps its value.
+ */
+.sidebar--collapsed .sidebar__head {
+  border-bottom: none;
+  justify-content: center;
+  padding: 0;
+}
+.sidebar--collapsed .sidebar__head .select {
+  display: none;
+}
+.sidebar--collapsed .tree {
+  display: none;
+}
+
+/*
+ * The toggle handle. When the sidebar is open it rides at the right edge of the
+ * database picker's bar; when collapsed it is the only visible element, centred
+ * in the narrow strip that remains.
+ */
+.sidebar__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.sidebar__toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.sidebar--collapsed .sidebar__toggle {
+  margin-left: 0;
 }
 /* The database picker's bar. It sits at --bar-h to line up with the toolbar
    across the divider, and the select keeps its own 32px inside that. */

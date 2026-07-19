@@ -12,6 +12,8 @@ interface Props {
   /** Running belongs to the results feature, so the shell supplies both. */
   onRun: (sql: string) => void;
   running: boolean;
+  /** Toggling the sidebar is a shell concern; Monaco would otherwise swallow Ctrl+B. */
+  onToggleSidebar?: () => void;
 }
 
 declare global {
@@ -30,7 +32,7 @@ declare global {
   }
 }
 
-export default function EditorPane({ onRun, running }: Props) {
+export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
   const { config, dialect } = useSession();
   const { tabs, activeTab } = useTabs();
   const { sqlByTab, setSql, peekSql } = useEditor();
@@ -68,8 +70,8 @@ export default function EditorPane({ onRun, running }: Props) {
    * has to run whatever the *current* handler, text and tab are -- capturing
    * them would pin it to the first render and run the empty query forever.
    */
-  const latest = useRef({ sql, onRun, dialect, activeTabId, peekSql });
-  latest.current = { sql, onRun, dialect, activeTabId, peekSql };
+  const latest = useRef({ sql, onRun, dialect, activeTabId, peekSql, onToggleSidebar });
+  latest.current = { sql, onRun, dialect, activeTabId, peekSql, onToggleSidebar };
 
   // The button is the same action the shortcut and the context menu run, not a
   // second path into the formatter: reach for Monaco's registered action rather
@@ -156,6 +158,13 @@ export default function EditorPane({ onRun, running }: Props) {
      */
     instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       latest.current.onRun(latest.current.sql);
+    });
+
+    // Ctrl+B toggles the sidebar. Monaco wins inside its own DOM, so without
+    // this the window listener never sees the key — the same pattern as
+    // Ctrl+Enter above.
+    instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyB, () => {
+      latest.current.onToggleSidebar?.();
     });
 
     editor.current = instance;

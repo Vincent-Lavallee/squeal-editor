@@ -1,7 +1,9 @@
 import {
   RiAddLine,
-  RiArrowLeftSLine,
+  RiArrowLeftDoubleLine,
   RiArrowLeftLine,
+  RiArrowLeftSLine,
+  RiArrowRightDoubleLine,
   RiArrowRightSLine,
   RiBarChart2Line,
   RiBox3Line,
@@ -61,6 +63,15 @@ export const KeyIcon = RiKey2Line;
  */
 export const PrevPageIcon = RiArrowLeftSLine;
 export const NextPageIcon = RiArrowRightSLine;
+
+/**
+ * Collapsing the sidebar hides the explorer — double chevrons, the « » language
+ * that modern editors use for panel toggles. Two bindings because "hide" and
+ * "show" are different actions; giving one an arrow of its own must not silently
+ * flip the other (the same discipline as paging).
+ */
+export const SidebarFoldIcon = RiArrowLeftDoubleLine;
+export const SidebarUnfoldIcon = RiArrowRightDoubleLine;
 
 /*
  * Tabs. `QueryIcon` is what tells the two kinds apart at a glance -- an editor
