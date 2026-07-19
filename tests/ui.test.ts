@@ -371,7 +371,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<string>(activeTabLabel)).toBe('users');
 
       const headers = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`
+        `[...document.querySelectorAll('.grid__col-name')].map(e => e.textContent)`
       );
       expect(headers).toContain('email');
       expect(await app.evaluate<number>(`document.querySelectorAll('.grid tbody tr').length`)).toBe(2);
@@ -419,7 +419,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(`document.querySelector('.toolbar .btn--primary').click(); true;`);
       await Bun.sleep(1500);
 
-      const headers = `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`;
+      const headers = `[...document.querySelectorAll('.grid__col-name')].map(e => e.textContent)`;
       expect(await app.evaluate<string[]>(headers)).toEqual(['answer']);
 
       // The grid tab still holds the table it browsed, not this query's row.
@@ -574,7 +574,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(1500);
 
       const headers = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`
+        `[...document.querySelectorAll('.grid__col-name')].map(e => e.textContent)`
       );
       expect(headers).toEqual(['name', 'email']);
 
@@ -722,12 +722,13 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     test('keywords are highlighted, not left as plain text', async () => {
       await app.evaluate(setEditorText("SELECT 'x' -- comment"));
       await Bun.sleep(400);
-      // Monaco paints each token in its own span, so a themed keyword is a span
-      // with a colour of its own. One undifferentiated run means no grammar ran.
-      const colours = await app.evaluate<string[]>(`
+      // Monaco classifies each token into a category (keyword, string, comment,
+      // etc.) and assigns a distinct class per category. One class across every
+      // span means no grammar ran — every token reads as plain text.
+      const classes = await app.evaluate<string[]>(`
         [...document.querySelectorAll('.view-lines .view-line span span')]
-          .map(e => getComputedStyle(e).color)`);
-      expect(new Set(colours).size).toBeGreaterThan(1);
+          .map(e => e.className).filter(Boolean)`);
+      expect(new Set(classes).size).toBeGreaterThan(1);
     });
 
     test('find and replace is available over the editor text', async () => {
@@ -1001,7 +1002,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(2000);
 
       const headers = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`
+        `[...document.querySelectorAll('.grid__col-name')].map(e => e.textContent)`
       );
       expect(headers).toContain('email');
     });
@@ -1036,7 +1037,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
            [...tr.querySelectorAll('td')].slice(1).map(td => td.textContent))`
       );
       const headers = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('.grid thead th')].map(e => e.textContent).filter(Boolean)`
+        `[...document.querySelectorAll('.grid__col-name')].map(e => e.textContent)`
       );
       expect(cells[0]![headers.indexOf('big')]).toBe('9007199254740993');
     });
