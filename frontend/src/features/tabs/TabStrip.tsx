@@ -1,4 +1,4 @@
-import { CloseIcon, NewTabIcon, QueryIcon, TableIcon } from '../../icons.ts';
+import { CloseIcon, NewTabIcon, QueryIcon, TableIcon } from '../../common/icons/icons.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 
 /**

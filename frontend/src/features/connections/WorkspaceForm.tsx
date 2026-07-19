@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
 import type { Workspace, WorkspaceColorId, WorkspaceIconId } from '../../../../shared/protocol.ts';
-import { DEFAULT_WORKSPACE_COLOR, WORKSPACE_COLORS } from '../../workspaceColors.ts';
-import { DEFAULT_WORKSPACE_ICON, WORKSPACE_ICONS } from '../../workspaceIcons.ts';
+import { DEFAULT_WORKSPACE_COLOR, WORKSPACE_COLORS } from '../../common/icons/workspaceColors.ts';
+import { DEFAULT_WORKSPACE_ICON, WORKSPACE_ICONS } from '../../common/icons/workspaceIcons.ts';
 
 export interface WorkspaceFormValues {
   name: string;

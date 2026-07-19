@@ -6,7 +6,7 @@ import { UPDATE_PROGRESS_EVENT, type UpdateProgress } from '../../shared/protoco
 import App from './App.tsx';
 import { store } from './store/index.ts';
 import { progressReceived } from './store/updaterSlice.ts';
-import { initBridge } from './bridge.ts';
+import { initBridge } from './common/bridge/bridge.ts';
 import './styles/index.css';
 
 initBridge();

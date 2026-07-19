@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { engineLabel } from '../../engines.ts';
+import { engineLabel } from '../../common/db/engines.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import { useEditor } from './EditorContext.tsx';

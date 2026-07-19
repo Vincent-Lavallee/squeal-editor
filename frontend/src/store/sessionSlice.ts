@@ -2,7 +2,7 @@ import { createSlice, isAnyOf, type PayloadAction } from '@reduxjs/toolkit';
 import { useCallback } from 'react';
 
 import type { ConnectionConfig, Environment, ServerConfig, SqlDialect } from '../../../shared/protocol.ts';
-import { call } from '../bridge.ts';
+import { call } from '../common/bridge/bridge.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
 import type { RootState } from './index.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';

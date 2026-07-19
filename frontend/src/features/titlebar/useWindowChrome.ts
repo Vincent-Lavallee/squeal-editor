@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { call } from '../../bridge.ts';
+import { call } from '../../common/bridge/bridge.ts';
 
 /**
  * The window chrome: dragging, maximise state and the window buttons.

@@ -1,4 +1,4 @@
-import { UpdateIcon } from '../../icons.ts';
+import { UpdateIcon } from '../../common/icons/icons.ts';
 import { useUpdater } from './useUpdater.ts';
 
 /**

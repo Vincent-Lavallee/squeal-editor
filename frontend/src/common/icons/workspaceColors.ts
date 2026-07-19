@@ -1,4 +1,4 @@
-import type { WorkspaceColorId } from '../../shared/protocol.ts';
+import type { WorkspaceColorId } from '../../../../shared/protocol.ts';
 
 /**
  * The palette a workspace's colour is picked from.

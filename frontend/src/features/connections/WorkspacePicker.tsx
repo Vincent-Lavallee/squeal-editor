@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
 import type { Workspace } from '../../../../shared/protocol.ts';
-import { workspaceColor } from '../../workspaceColors.ts';
-import { workspaceGlyph } from '../../workspaceIcons.ts';
+import { workspaceColor } from '../../common/icons/workspaceColors.ts';
+import { workspaceGlyph } from '../../common/icons/workspaceIcons.ts';
 
 interface Props {
   workspaces: Workspace[];

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
-import { environmentLabel } from '../../environments.ts';
-import { ReadOnlyIcon, WritableIcon } from '../../icons.ts';
+import { environmentLabel } from '../../common/db/environments.ts';
+import { ReadOnlyIcon, WritableIcon } from '../../common/icons/icons.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import ReadOnlyConfirm from './ReadOnlyConfirm.tsx';
 

@@ -1,4 +1,4 @@
-import type { WorkspaceIconId } from '../../shared/protocol.ts';
+import type { WorkspaceIconId } from '../../../../shared/protocol.ts';
 import {
   BuildingIcon,
   CartIcon,

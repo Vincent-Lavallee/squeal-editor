@@ -1,10 +1,10 @@
 import type { Workspace } from '../../../../shared/protocol.ts';
-import { environmentAbbrev, environmentLabel } from '../../environments.ts';
+import { environmentAbbrev, environmentLabel } from '../../common/db/environments.ts';
 import { useAppSelector } from '../../store/hooks.ts';
 import { serverLabel, useSession, type OpenConnection } from '../../store/sessionSlice.ts';
 import { selectWorkspaces } from '../../store/workspacesSlice.ts';
-import { DEFAULT_WORKSPACE_COLOR, workspaceColor } from '../../workspaceColors.ts';
-import { workspaceGlyph } from '../../workspaceIcons.ts';
+import { DEFAULT_WORKSPACE_COLOR, workspaceColor } from '../../common/icons/workspaceColors.ts';
+import { workspaceGlyph } from '../../common/icons/workspaceIcons.ts';
 
 interface Props {
   /** Routes to the connect screen with everything here left open. `App` owns that. */

@@ -1,7 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 import type { ColumnInfo, QueryResult, RowDelete, RowEdit } from '../../../shared/protocol.ts';
-import { call } from '../bridge.ts';
+import { call } from '../common/bridge/bridge.ts';
 import { disconnect } from './sessionSlice.ts';
 import { tabClosed } from './tabsSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';

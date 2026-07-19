@@ -1,11 +1,11 @@
 import { useState } from 'react';
 
 import type { SavedConnection, Workspace } from '../../../../shared/protocol.ts';
-import { engineLabel } from '../../engines.ts';
-import { ENVIRONMENTS } from '../../environments.ts';
-import { BackIcon } from '../../icons.ts';
+import { engineLabel } from '../../common/db/engines.ts';
+import { ENVIRONMENTS } from '../../common/db/environments.ts';
+import { BackIcon } from '../../common/icons/icons.ts';
 import { serverLabel } from '../../store/sessionSlice.ts';
-import { workspaceGlyph } from '../../workspaceIcons.ts';
+import { workspaceGlyph } from '../../common/icons/workspaceIcons.ts';
 
 interface Props {
   /** The one being shown. Its connections are all this list ever holds. */

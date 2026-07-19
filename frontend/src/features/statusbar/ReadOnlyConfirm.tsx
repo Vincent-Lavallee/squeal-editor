@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import type { Environment } from '../../../../shared/protocol.ts';
-import { environmentLabel } from '../../environments.ts';
+import { environmentLabel } from '../../common/db/environments.ts';
 
 interface Props {
   environment: Environment;

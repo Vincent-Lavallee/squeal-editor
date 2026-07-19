@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
 import type { EngineType, Environment, SavedConnection, ServerConfig } from '../../../../shared/protocol.ts';
-import { ENGINES, engineByType } from '../../engines.ts';
-import { DEFAULT_ENVIRONMENT, ENVIRONMENTS } from '../../environments.ts';
+import { ENGINES, engineByType } from '../../common/db/engines.ts';
+import { DEFAULT_ENVIRONMENT, ENVIRONMENTS } from '../../common/db/environments.ts';
 
 /**
  * What the form knows. Turning this into a `PasswordUpdate` is the screen's job,
