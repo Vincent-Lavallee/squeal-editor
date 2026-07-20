@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.5.1...v0.5.2) (2026-07-20)
+
+
+### Bug Fixes
+
+* macos rel ([fb32b92](https://github.com/Vincent-Lavallee/squeal-editor/commit/fb32b92d6d10b3cff100b20af7334a0b8915d647))
+
 ## [0.5.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.5.0...v0.5.1) (2026-07-20)
 
 
