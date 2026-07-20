@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.3.0...v0.4.0) (2026-07-20)
+
+
+### Features
+
+* About menu ([70e3d54](https://github.com/Vincent-Lavallee/squeal-editor/commit/70e3d54ccafbe3860d8e78d7e680f7eeaf22f15e))
+* Add tab context menu ([4458e01](https://github.com/Vincent-Lavallee/squeal-editor/commit/4458e019596aacda4ff88613add84ea2c0c890b9))
+
+
+### Bug Fixes
+
+* Added migration system ([987ebe7](https://github.com/Vincent-Lavallee/squeal-editor/commit/987ebe7761b68a23c0b35fd7d73104b8119145bc))
+* db dropdown ([eecc915](https://github.com/Vincent-Lavallee/squeal-editor/commit/eecc9154fc492f43d5d77dd8b2670ef013c483de))
+* Minor css issues ([277ca96](https://github.com/Vincent-Lavallee/squeal-editor/commit/277ca96d45e9b6fd8eb7927c50be9cdd7a23d2dc))
+* Minor UX fixes ([69aee27](https://github.com/Vincent-Lavallee/squeal-editor/commit/69aee27ee748f472a59c793cfdf6a8c77b07b8ff))
+* protocol split ([6a00475](https://github.com/Vincent-Lavallee/squeal-editor/commit/6a0047580c4764211322afba52412d997e624daf))
+* Removed css files ([2561caa](https://github.com/Vincent-Lavallee/squeal-editor/commit/2561caab560072329de17c5d734d91aae1a31a14))
+* reorganize file structure ([fdc5707](https://github.com/Vincent-Lavallee/squeal-editor/commit/fdc57077c95e6e7d8b88f90e022a1a7811b96d0d))
+* UI issues ([75693c0](https://github.com/Vincent-Lavallee/squeal-editor/commit/75693c01bf5a533d0f3f6b7af8f946a8f4869fa2))
+* UI test ([337b900](https://github.com/Vincent-Lavallee/squeal-editor/commit/337b900b60aad4e65c94b2346caddf5c4fa200ec))
+
 ## [0.3.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.2.1...v0.3.0) (2026-07-19)
 
 
