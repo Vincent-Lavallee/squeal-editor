@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import type { TableInfo } from '../../../../shared/protocol.ts';
+import type { TableInfo } from '../../../../shared/protocol/index.ts';
 import { DisclosureIcon, KeyIcon, SidebarFoldIcon, SidebarUnfoldIcon, TableIcon, ViewIcon } from '../../common/icons/icons.ts';
 import DropTableConfirm from './DropTableConfirm.tsx';
 import TableContextMenu from './TableContextMenu.tsx';

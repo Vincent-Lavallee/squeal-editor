@@ -22,7 +22,7 @@ import {
   type ConnectionConfig,
   type QueryResult,
   type SqlDialect,
-} from '../../shared/protocol.ts';
+} from '../../shared/protocol/index.ts';
 import { fitMaximizedToWorkArea, matchWindowFrame } from './chrome.ts';
 import { applyUpdate, checkForUpdate, downloadUpdate } from './updater.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';

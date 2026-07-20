@@ -13,7 +13,7 @@
 
 import { format, type SqlLanguage } from 'sql-formatter';
 
-import type { SqlDialect } from '../../../../shared/protocol.ts';
+import type { SqlDialect } from '../../../../shared/protocol/index.ts';
 import { monaco } from './monaco.ts';
 
 /**

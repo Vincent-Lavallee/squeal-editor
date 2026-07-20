@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { CellValue } from '../../../../shared/protocol.ts';
+import type { CellValue } from '../../../../shared/protocol/index.ts';
 import { CopyIcon, NextPageIcon, PrevPageIcon } from '../../common/icons/icons.ts';
 import CellContextMenu, { type CellMenuItem } from './CellContextMenu.tsx';
 import { useResults } from './useResults.ts';

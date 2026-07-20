@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { Workspace, WorkspaceColorId, WorkspaceIconId } from '../../../../shared/protocol.ts';
+import type { Workspace, WorkspaceColorId, WorkspaceIconId } from '../../../../shared/protocol/index.ts';
 import { DEFAULT_WORKSPACE_COLOR, WORKSPACE_COLORS } from '../../common/icons/workspaceColors.ts';
 import { DEFAULT_WORKSPACE_ICON, WORKSPACE_ICONS } from '../../common/icons/workspaceIcons.ts';
 import Button from '../../common/components/Button.tsx';

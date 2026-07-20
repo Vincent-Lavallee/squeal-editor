@@ -16,7 +16,7 @@ import {
   type CommandReq,
   type CommandRes,
   type DbResponse,
-} from '../../../../shared/protocol.ts';
+} from '../../../../shared/protocol/index.ts';
 
 const EXT_ID = 'js.squeal.db';
 const DEFAULT_TIMEOUT_MS = 60_000;

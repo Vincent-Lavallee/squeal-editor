@@ -6,7 +6,7 @@ import type {
   RowEdit,
   SqlDialect,
   TableInfo,
-} from '../../shared/protocol.ts';
+} from '../../shared/protocol/index.ts';
 import { withDriver, type Driver, type QueryOutcome } from './drivers.ts';
 import { rdsAuthToken } from './iam.ts';
 

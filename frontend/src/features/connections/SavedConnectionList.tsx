@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { SavedConnection, Workspace } from '../../../../shared/protocol.ts';
+import type { SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
 import { engineLabel } from '../../common/db/engines.ts';
 import { ENVIRONMENTS } from '../../common/db/environments.ts';
 import { BackIcon } from '../../common/icons/icons.ts';

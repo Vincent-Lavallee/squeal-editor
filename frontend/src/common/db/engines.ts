@@ -1,4 +1,4 @@
-import type { EngineType } from '../../../../shared/protocol.ts';
+import type { EngineType } from '../../../../shared/protocol/index.ts';
 
 /**
  * The only engine-specific knowledge the UI is allowed to hold: a label, and

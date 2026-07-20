@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { Environment } from '../../../../shared/protocol.ts';
+import type { Environment } from '../../../../shared/protocol/index.ts';
 import { environmentLabel } from '../../common/db/environments.ts';
 import Button from '../../common/components/Button.tsx';
 import Input from '../../common/components/Input.tsx';

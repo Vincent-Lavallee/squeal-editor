@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { TableInfo } from '../../../../shared/protocol.ts';
+import type { TableInfo } from '../../../../shared/protocol/index.ts';
 import Button from '../../common/components/Button.tsx';
 import Input from '../../common/components/Input.tsx';
 import Modal from '../../common/components/Modal.tsx';

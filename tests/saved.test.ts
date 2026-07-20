@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { MIGRATIONS } from '../extensions/db/migrations/index.ts';
-import type { SavedConnection, Workspace } from '../shared/protocol.ts';
+import type { SavedConnection, Workspace } from '../shared/protocol/index.ts';
 import { FIXTURE_DB, PG } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 

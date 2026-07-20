@@ -28,7 +28,7 @@ import type {
   Workspace,
   WorkspaceColorId,
   WorkspaceIconId,
-} from '../../shared/protocol.ts';
+} from '../../shared/protocol/index.ts';
 import { runMigrations } from './migrations/runner.ts';
 
 /*

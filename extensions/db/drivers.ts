@@ -10,7 +10,7 @@ import type {
   RowDelete,
   RowEdit,
   SqlDialect,
-} from '../../shared/protocol.ts';
+} from '../../shared/protocol/index.ts';
 // Amazon's published RDS CA bundle, folded into the compiled binary as text.
 import rdsCaBundle from './rds-global-bundle.pem' with { type: 'text' };
 

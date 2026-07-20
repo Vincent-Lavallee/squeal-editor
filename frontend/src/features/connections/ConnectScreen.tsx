@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { PasswordUpdate, SavedConnection, Workspace } from '../../../../shared/protocol.ts';
+import type { PasswordUpdate, SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import Note from '../../common/components/Note.tsx';

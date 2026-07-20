@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import type { CellValue } from '../../../../shared/protocol.ts';
+import type { CellValue } from '../../../../shared/protocol/index.ts';
 import { useAppSelector } from '../../store/hooks.ts';
 
 /**

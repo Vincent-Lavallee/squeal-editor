@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-import type { UpdateProgress, UpdateStatus } from '../../../shared/protocol.ts';
+import type { UpdateProgress, UpdateStatus } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 

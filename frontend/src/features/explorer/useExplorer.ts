@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 
-import type { ColumnInfo } from '../../../../shared/protocol.ts';
+import type { ColumnInfo } from '../../../../shared/protocol/index.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import { selectActiveConnection } from '../../store/sessionSlice.ts';

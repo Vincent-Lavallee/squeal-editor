@@ -25,7 +25,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { UpdateProgress, UpdateStatus } from '../../shared/protocol.ts';
+import type { UpdateProgress, UpdateStatus } from '../../shared/protocol/index.ts';
 import { UPDATE_PUBLIC_KEY } from './updateKey.ts';
 
 const REPO = 'Vincent-Lavallee/squeal-editor';

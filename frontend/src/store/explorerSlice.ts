@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-import type { ColumnInfo, TableInfo } from '../../../shared/protocol.ts';
+import type { ColumnInfo, TableInfo } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { disconnect, sessionOpened } from './sessionSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';

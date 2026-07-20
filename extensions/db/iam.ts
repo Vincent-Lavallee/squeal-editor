@@ -20,7 +20,7 @@
 import { fromIni } from '@aws-sdk/credential-providers';
 import { Signer } from '@aws-sdk/rds-signer';
 
-import type { ConnectionConfig } from '../../shared/protocol.ts';
+import type { ConnectionConfig } from '../../shared/protocol/index.ts';
 
 /**
  * A password to reach the RDS instance, valid for ~15 minutes.

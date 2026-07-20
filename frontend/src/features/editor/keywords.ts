@@ -21,7 +21,7 @@ import { language as mysql } from 'monaco-editor/esm/vs/basic-languages/mysql/my
 import { language as pgsql } from 'monaco-editor/esm/vs/basic-languages/pgsql/pgsql.js';
 import { language as sql } from 'monaco-editor/esm/vs/basic-languages/sql/sql.js';
 
-import type { SqlDialect } from '../../../../shared/protocol.ts';
+import type { SqlDialect } from '../../../../shared/protocol/index.ts';
 
 /** What a word is, which is only ever used to pick its mark in the list. */
 export type WordKind = 'keyword' | 'function';

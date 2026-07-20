@@ -1,4 +1,4 @@
-import type { Environment } from '../../../../shared/protocol.ts';
+import type { Environment } from '../../../../shared/protocol/index.ts';
 
 /**
  * The environments a connection can sit in, in the order they are shown.

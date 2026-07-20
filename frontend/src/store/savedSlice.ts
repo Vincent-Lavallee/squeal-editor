@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-import type { Environment, PasswordUpdate, SavedConnection, ServerConfig } from '../../../shared/protocol.ts';
+import type { Environment, PasswordUpdate, SavedConnection, ServerConfig } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 import { deleteWorkspace } from './workspacesSlice.ts';

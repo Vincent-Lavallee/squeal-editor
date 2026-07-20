@@ -1,4 +1,4 @@
-import type { WorkspaceColorId } from '../../../../shared/protocol.ts';
+import type { WorkspaceColorId } from '../../../../shared/protocol/index.ts';
 import * as t from '../tokens';
 
 /**

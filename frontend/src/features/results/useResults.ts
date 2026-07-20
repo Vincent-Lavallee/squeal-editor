@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import type { CellValue, RowDelete, RowEdit } from '../../../../shared/protocol.ts';
+import type { CellValue, RowDelete, RowEdit } from '../../../../shared/protocol/index.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { browseTable, runQuery, saveEdits } from '../../store/resultsSlice.ts';
 import { useSession } from '../../store/sessionSlice.ts';

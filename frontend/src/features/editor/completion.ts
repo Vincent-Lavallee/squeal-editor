@@ -11,7 +11,7 @@
  * and knows no React. `useSqlCompletion` is what keeps the snapshot current.
  */
 
-import type { ColumnInfo, TableInfo } from '../../../../shared/protocol.ts';
+import type { ColumnInfo, TableInfo } from '../../../../shared/protocol/index.ts';
 import type { Word } from './keywords.ts';
 import { monaco } from './monaco.ts';
 import { resolveQualifier, type SqlScope } from './sqlScope.ts';

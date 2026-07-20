@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { TableInfo } from '../../../../shared/protocol.ts';
+import type { TableInfo } from '../../../../shared/protocol/index.ts';
 import * as t from '../../common/tokens';
 
 interface Props { table: TableInfo; x: number; y: number; readOnly: boolean; onCopyName: () => void; onShowDefinition: () => void; onDrop: () => void; onClose: () => void; }

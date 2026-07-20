@@ -15,7 +15,7 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import type { UpdateProgress } from '../shared/protocol.ts';
+import type { UpdateProgress } from '../shared/protocol/index.ts';
 import { checkForUpdate, downloadUpdate } from '../extensions/db/updater.ts';
 
 const isWindows = process.platform === 'win32';

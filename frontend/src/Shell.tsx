@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import type { TableInfo } from '../../shared/protocol.ts';
+import type { TableInfo } from '../../shared/protocol/index.ts';
 import { useTabs } from './store/tabsSlice.ts';
 import { EditorPane, EditorProvider, useEditor } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';

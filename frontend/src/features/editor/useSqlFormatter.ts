@@ -15,7 +15,7 @@
 
 import { useEffect } from 'react';
 
-import type { SqlDialect } from '../../../../shared/protocol.ts';
+import type { SqlDialect } from '../../../../shared/protocol/index.ts';
 import { sqlFormattingProvider } from './format.ts';
 import { monaco } from './monaco.ts';
 

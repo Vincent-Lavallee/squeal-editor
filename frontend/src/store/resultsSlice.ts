@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-import type { ColumnInfo, QueryResult, RowDelete, RowEdit } from '../../../shared/protocol.ts';
+import type { ColumnInfo, QueryResult, RowDelete, RowEdit } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { disconnect } from './sessionSlice.ts';
 import { tabClosed } from './tabsSlice.ts';

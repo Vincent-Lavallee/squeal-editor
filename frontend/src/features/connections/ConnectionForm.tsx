@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { EngineType, Environment, SavedConnection, ServerConfig } from '../../../../shared/protocol.ts';
+import type { EngineType, Environment, SavedConnection, ServerConfig } from '../../../../shared/protocol/index.ts';
 import { ENGINES, engineByType } from '../../common/db/engines.ts';
 import { DEFAULT_ENVIRONMENT, ENVIRONMENTS } from '../../common/db/environments.ts';
 import Button from '../../common/components/Button.tsx';

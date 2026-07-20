@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import type { SavedConnection } from '../../../../shared/protocol.ts';
+import type { SavedConnection } from '../../../../shared/protocol/index.ts';
 import { serverLabel } from '../../store/sessionSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import Input from '../../common/components/Input.tsx';

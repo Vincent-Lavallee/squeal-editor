@@ -27,7 +27,7 @@ so the extension has no build step.
 ```
 frontend/          React + Vite → builds into resources/
 extensions/db/     the process that actually holds the DB connections
-shared/protocol.ts the typed contract between them
+shared/protocol/   the typed contract between them, split by domain
 tests/             real-database + real-app suites
 ```
 

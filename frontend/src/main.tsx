@@ -2,7 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 
-import { UPDATE_PROGRESS_EVENT, type UpdateProgress } from '../../shared/protocol.ts';
+import { UPDATE_PROGRESS_EVENT, type UpdateProgress } from '../../shared/protocol/index.ts';
 import App from './App.tsx';
 import { store } from './store/index.ts';
 import { progressReceived } from './store/updaterSlice.ts';

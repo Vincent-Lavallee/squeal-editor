@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-import type { Workspace, WorkspaceColorId, WorkspaceIconId } from '../../../shared/protocol.ts';
+import type { Workspace, WorkspaceColorId, WorkspaceIconId } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import type { RootState } from './index.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';

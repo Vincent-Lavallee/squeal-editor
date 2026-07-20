@@ -1,4 +1,4 @@
-import type { ConnectionConfig } from '../../shared/protocol.ts';
+import type { ConnectionConfig } from '../../shared/protocol/index.ts';
 
 /**
  * Throwaway servers on non-default ports so they cannot collide with anything

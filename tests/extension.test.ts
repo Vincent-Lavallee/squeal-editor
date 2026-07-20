@@ -11,7 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import type { ColumnInfo, ConnectionConfig, QueryResult, TableInfo, TablePage } from '../shared/protocol.ts';
+import type { ColumnInfo, ConnectionConfig, QueryResult, TableInfo, TablePage } from '../shared/protocol/index.ts';
 import { FIXTURE_DB, MYSQL, PG } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 

@@ -1,4 +1,4 @@
-import type { Workspace } from '../../../../shared/protocol.ts';
+import type { Workspace } from '../../../../shared/protocol/index.ts';
 import { environmentAbbrev, environmentLabel } from '../../common/db/environments.ts';
 import { useAppSelector } from '../../store/hooks.ts';
 import { serverLabel, useSession, type OpenConnection } from '../../store/sessionSlice.ts';

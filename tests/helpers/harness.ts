@@ -10,7 +10,7 @@
 import { WebSocketServer, type WebSocket as WsSocket } from 'ws';
 import type { Subprocess } from 'bun';
 
-import type { CommandName, CommandReq, DbResponse } from '../../shared/protocol.ts';
+import type { CommandName, CommandReq, DbResponse } from '../../shared/protocol/index.ts';
 
 const EXT_ID = 'js.squeal.db';
 const TOKEN = 'test-token';
