@@ -43,7 +43,7 @@ const KEY_NAME = 'connection-key';
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
-function dataDir(): string {
+export function dataDir(): string {
   const override = process.env.SQUEAL_DATA_DIR;
   if (override) return override;
 

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useSession } from '../../store/sessionSlice.ts';
 import * as t from '../../common/tokens';
-import FileMenu from './FileMenu.tsx';
+import AboutDialog from './AboutDialog.tsx';
+import Menu from './Menu.tsx';
+import { useAbout } from './useAbout.ts';
 import { useWindowChrome } from './useWindowChrome.ts';
 
 interface Props { onCheckForUpdates: () => void; }
@@ -9,11 +11,18 @@ interface Props { onCheckForUpdates: () => void; }
 export default function Titlebar({ onCheckForUpdates }: Props) {
   const { maximized, minimize, toggleMaximize, close, dragProps } = useWindowChrome();
   const { connected, serverLabel } = useSession();
+  const { version, openDataDir } = useAbout();
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
+  const [showingAbout, setShowingAbout] = useState(false);
 
-  const items = [
-    { label: 'Check for updates…', onSelect: onCheckForUpdates },
+  const fileItems = [
     { label: 'Exit', onSelect: close },
+  ];
+
+  const aboutItems = [
+    { label: 'Check for updates…', onSelect: onCheckForUpdates },
+    { label: 'Version', onSelect: () => setShowingAbout(true) },
+    { label: 'Open app data', onSelect: openDataDir },
   ];
 
   const btnStyle = (name: string): React.CSSProperties => ({
@@ -25,7 +34,9 @@ export default function Titlebar({ onCheckForUpdates }: Props) {
 
   return (
     <header style={{ display: 'flex', alignItems: 'center', flex: 'none', height: t.TITLEBAR_H, paddingLeft: t.GAP_SM, borderBottom: `1px solid ${t.BORDER}`, userSelect: 'none' }}>
-      <FileMenu items={items} />
+      <Menu label="File" items={fileItems} />
+      <Menu label="About" items={aboutItems} />
+      {showingAbout && <AboutDialog version={version} onClose={() => setShowingAbout(false)} />}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 0, height: '100%' }} {...dragProps}>
         <span data-testid="titlebar-title" style={{ overflow: 'hidden', color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {connected ? <span style={{ fontFamily: t.MONO }}>{serverLabel}</span> : 'Squeal Editor'}

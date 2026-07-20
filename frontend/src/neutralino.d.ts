@@ -42,6 +42,15 @@ declare namespace Neutralino {
     function writeText(text: string): Promise<void>;
   }
 
+  namespace os {
+    /**
+     * Hand a path or URL to the OS's default handler. A directory opens in the
+     * file manager, which is what "Open app data" means -- the extension only
+     * says where the folder is.
+     */
+    function open(url: string): Promise<void>;
+  }
+
   namespace window {
     interface SizeOptions {
       width?: number;

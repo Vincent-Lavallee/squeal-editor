@@ -67,6 +67,14 @@ describe('the store', () => {
     expect(await list()).toEqual([]);
   });
 
+  // The About menu's "Open app data" hands this straight to the file manager, so
+  // it has to be the directory holding the database this suite is reading -- not
+  // a path recomputed up in the webview from a platform rule written twice.
+  test('says where it lives', async () => {
+    expect(await h.ok('app.dataDir', {})).toEqual({ path: DATA_DIR });
+    expect(readdirSync(DATA_DIR)).toContain('connections.db');
+  });
+
   test('a saved connection comes back without its password', async () => {
     const saved = await save({
       name: 'with-password',

@@ -27,6 +27,7 @@ import { fitMaximizedToWorkArea, matchWindowFrame } from './chrome.ts';
 import { applyUpdate, checkForUpdate, downloadUpdate } from './updater.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';
 import {
+  dataDir,
   deleteSaved,
   deleteWorkspace,
   listSaved,
@@ -195,6 +196,12 @@ const COMMANDS: Handlers = {
 
   async 'window.fitMaximized'({ pid }) {
     return { applied: fitMaximizedToWorkArea(pid) };
+  },
+
+  /* -- The app itself -------------------------------------------------- */
+
+  async 'app.dataDir'() {
+    return { path: dataDir() };
   },
 
   /* -- The updater (updater.ts explains why this lives here too) -------- */

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as t from '../../common/tokens';
 
 interface Item { label: string; onSelect: () => void; }
-interface Props { items: Item[]; }
+interface Props { label: string; items: Item[]; }
 
 const itemBase: React.CSSProperties = {
   padding: '6px 8px', border: 'none', borderRadius: t.RADIUS,
@@ -10,7 +10,12 @@ const itemBase: React.CSSProperties = {
   fontSize: t.TEXT_BODY, textAlign: 'left', cursor: 'pointer',
 };
 
-export default function FileMenu({ items }: Props) {
+/*
+ * Each menu owns its own open state, and two of them side by side need no
+ * coordinator: pressing another trigger lands outside this one's root, so the
+ * pointerdown listener below closes it in the same gesture that opens the other.
+ */
+export default function Menu({ label, items }: Props) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -26,9 +31,9 @@ export default function FileMenu({ items }: Props) {
 
   return (
     <div style={{ position: 'relative', flex: 'none' }} ref={root}>
-      <button data-testid="menu-trigger"
+      <button data-testid="menu-trigger" data-menu={label}
         style={{ height: t.TITLEBAR_H, padding: `0 ${t.GAP_SM}px`, border: 'none', borderRadius: t.RADIUS, background: open ? t.HOVER : 'none', color: open ? t.TEXT : t.TEXT_MUTED, font: 'inherit', fontSize: t.TEXT_BADGE, cursor: 'pointer' }}
-        aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>File</button>
+        aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>{label}</button>
       {open && (
         <div style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0, display: 'flex', flexDirection: 'column', minWidth: 160, padding: t.GAP_XS, border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, background: t.BG }} role="menu">
           {items.map((item) => (

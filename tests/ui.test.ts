@@ -1274,19 +1274,44 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<boolean>(`Neutralino.window.isMaximized()`)).toBe(false);
     });
 
+    const openMenu = (label: string) =>
+      `document.querySelector('[data-menu="${label}"]').click(); true;`;
+    const openMenuItems = `[...document.querySelectorAll('[data-testid="menu-item"]')].map(e => e.textContent)`;
+    const clickMenuItem = (label: string) =>
+      `[...document.querySelectorAll('[data-testid="menu-item"]')].find(e => e.textContent === ${JSON.stringify(label)}).click(); true;`;
+
     test('the File menu opens, and closes on Escape', async () => {
       expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="sidebar"]')`)).toBe(true);
 
-      await app.evaluate(`document.querySelector('[data-testid="menu-trigger"]').click(); true;`);
+      await app.evaluate(openMenu('File'));
       await Bun.sleep(200);
-      expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="menu-item"]')].map(e => e.textContent)`))
-        .toEqual(['Check for updates…', 'Exit']);
+      expect(await app.evaluate<string[]>(openMenuItems)).toEqual(['Exit']);
 
-      await app.evaluate(
-        `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true;`
-      );
+      await app.evaluate(pressEscape);
       await Bun.sleep(200);
       expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="menu-item"]').length`)).toBe(0);
+    });
+
+    test('the About menu opens, and Version shows the running version', async () => {
+      await app.evaluate(openMenu('About'));
+      await Bun.sleep(200);
+      expect(await app.evaluate<string[]>(openMenuItems))
+        .toEqual(['Check for updates…', 'Version', 'Open app data']);
+
+      await app.evaluate(clickMenuItem('Version'));
+      await Bun.sleep(200);
+
+      // The dialog must show the same version the updater checks against, so
+      // assert against the package the build read it from rather than a literal.
+      const { version } = await Bun.file(new URL('../package.json', import.meta.url)).json();
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="about-version"]').textContent`))
+        .toBe(`Version ${version}`);
+
+      await app.evaluate(
+        `[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === 'Close').click(); true;`
+      );
+      await Bun.sleep(200);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="modal"]').length`)).toBe(0);
     });
   });
 

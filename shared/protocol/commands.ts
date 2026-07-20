@@ -250,6 +250,25 @@ export interface Commands {
     res: { applied: boolean };
   };
 
+  /* -- The app itself. Not a database, and here for a different reason. --- */
+
+  /**
+   * Where the store lives on disk, for the About menu's "Open app data".
+   *
+   * This is the mirror image of `window.matchFrame`, not another instance of it.
+   * There the extension makes a call the webview cannot; here the webview opens
+   * the folder perfectly well (`Neutralino.os.open`) and the only thing it lacks
+   * is the path -- which is per-platform and computed beside the database it
+   * names, so answering it here is what keeps one place deciding where the store
+   * lives. Hand back the path and let the caller open it; an extension that
+   * shelled out to a file manager would be a second answer to a question the
+   * webview already has an API for.
+   */
+  'app.dataDir': {
+    req: Record<string, never>;
+    res: { path: string };
+  };
+
   /* -- The updater. Not a database either, and here for the same reason. --- */
 
   /**
