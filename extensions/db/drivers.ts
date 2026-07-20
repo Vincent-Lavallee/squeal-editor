@@ -7,9 +7,11 @@ import type {
   ColumnInfo,
   ConnectionConfig,
   EngineType,
+  FilterOperator,
   RowDelete,
   RowEdit,
   SqlDialect,
+  TableFilter,
 } from '../../shared/protocol/index.ts';
 // Amazon's published RDS CA bundle, folded into the compiled binary as text.
 import rdsCaBundle from './rds-global-bundle.pem' with { type: 'text' };
@@ -74,7 +76,15 @@ export interface Driver<C> {
    * Postgres relation outside `public` resolvable at all -- see `splitRelation`.
    */
   listColumns(client: C, database: string, table: string): Promise<ColumnInfo[]>;
-  query(client: C, sql: string): Promise<QueryOutcome>;
+  /**
+   * Run one statement.
+   *
+   * `params` is optional and exists for the SQL *this side authored* -- a
+   * browsed page's filter binds its values rather than interpolating them. The
+   * user's own statement arrives through `db.query` with no parameters, because
+   * it is text they wrote and there is nothing in it for us to bind.
+   */
+  query(client: C, sql: string, params?: CellValue[]): Promise<QueryOutcome>;
   /**
    * Put this client's session into read-only mode, or back to read-write, so the
    * *server* refuses writes rather than the app trying to parse them out of the
@@ -132,6 +142,13 @@ export interface Driver<C> {
     deletes: RowDelete[]
   ): Promise<number>;
   quoteIdent(name: string): string;
+  /**
+   * How this engine spells the Nth bound parameter -- `?` for mysql2, `$n` for
+   * pg. A driver method beside `quoteIdent` for the same reason: both are the
+   * engine's own spelling, and every assembler that binds a value (`runWrites`,
+   * `buildWhere`) takes it as a callback so the assembly cannot drift per engine.
+   */
+  placeholder(position: number): string;
 }
 
 /**
@@ -273,6 +290,104 @@ async function runWrites(
   return affected;
 }
 
+/** A `WHERE` clause and the values bound into it, ready to run. */
+export interface WhereClause {
+  /** The clause *without* the `WHERE` keyword, or null when nothing narrows. */
+  clause: string | null;
+  params: CellValue[];
+}
+
+/** The operators the builder may author, as a runtime guard over user JSON. */
+const FILTER_OPERATORS = new Set<FilterOperator>([
+  '=',
+  '<>',
+  '>',
+  '<',
+  '>=',
+  '<=',
+  'LIKE',
+  'IN',
+  'IS NULL',
+  'IS NOT NULL',
+]);
+
+const NO_VALUE_OPERATORS = new Set<FilterOperator>(['IS NULL', 'IS NOT NULL']);
+
+/**
+ * Turns a filter into the `WHERE` a browsed page runs under.
+ *
+ * Shared between the engines for `runWrites`' reason: the assembly and the
+ * operator guard must not drift, and the only thing that differs is how a
+ * placeholder is spelled. Quoting and the placeholder arrive as callbacks so
+ * this file's per-engine halves stay the drivers'.
+ *
+ * **The builder path binds every value and interpolates none.** The column is
+ * quoted, the operator comes from a closed set checked here rather than trusted
+ * from the JSON, and the value becomes a parameter -- so a BIGINT compares
+ * exactly, a date is the server's string to parse, and there is nothing for a
+ * quote in the text to break out of. This is *Value handling* on the read path.
+ *
+ * **The raw path interpolates by design.** It is the user's own `WHERE` text,
+ * the same category as the statement they type in the editor, and there is no
+ * structure in it to bind. It is the escape hatch for what the operator set
+ * cannot express, and it can express anything they could have written by hand.
+ */
+export function buildWhere(
+  filter: TableFilter | undefined,
+  quoteIdent: (name: string) => string,
+  placeholder: (position: number) => string,
+  startAt = 0
+): WhereClause {
+  const empty: WhereClause = { clause: null, params: [] };
+  if (!filter) return empty;
+
+  if (filter.kind === 'raw') {
+    const where = filter.where.trim();
+    return where ? { clause: where, params: [] } : empty;
+  }
+
+  const params: CellValue[] = [];
+  let position = startAt;
+  const parts: string[] = [];
+
+  for (const condition of filter.conditions) {
+    if (!condition.column) continue;
+    if (!FILTER_OPERATORS.has(condition.operator)) {
+      throw new Error(`Unsupported filter operator: ${String(condition.operator)}`);
+    }
+    const column = quoteIdent(condition.column);
+
+    if (NO_VALUE_OPERATORS.has(condition.operator)) {
+      parts.push(`${column} ${condition.operator}`);
+      continue;
+    }
+
+    if (condition.operator === 'IN') {
+      // One placeholder per item, so the list is bound rather than pasted. An
+      // empty list has no rows it could match and no legal `IN ()` on either
+      // engine, so the condition is dropped instead of authored as a syntax error.
+      const items = condition.value
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+      if (items.length === 0) continue;
+      const slots = items.map(() => placeholder(++position)).join(', ');
+      params.push(...items);
+      parts.push(`${column} IN (${slots})`);
+      continue;
+    }
+
+    params.push(condition.value);
+    parts.push(`${column} ${condition.operator} ${placeholder(++position)}`);
+  }
+
+  if (parts.length === 0) return empty;
+  // Parenthesised per condition so an OR set cannot be re-associated by whatever
+  // the caller appends next; the conjunction joins the whole set, and mixed
+  // logic is the raw clause's job rather than something guessed at here.
+  return { clause: parts.map((part) => `(${part})`).join(` ${filter.conjunction} `), params };
+}
+
 /**
  * Extract the Nth expression from the SELECT clause of `sql`.
  *
@@ -412,8 +527,11 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     return rows.map((r) => ({ name: r[0] as string, dataType: r[1] as string, primaryKey: r[2] === 'PRI' }));
   },
 
-  async query(client, sql) {
-    const [result, fields] = (await client.query({ sql, rowsAsArray: true })) as [unknown, FieldPacket[] | undefined];
+  async query(client, sql, params) {
+    const [result, fields] = (await client.query({ sql, rowsAsArray: true }, params)) as [
+      unknown,
+      FieldPacket[] | undefined,
+    ];
 
     // SELECT-ish statements yield an array of rows; DML yields an OkPacket.
     if (!Array.isArray(result)) {
@@ -499,7 +617,7 @@ export const mysqlDriver: Driver<MysqlConnection> = {
         edits,
         deletes,
         (name) => this.quoteIdent(name),
-        () => '?',
+        (position) => this.placeholder(position),
         async (sql, params) => {
           const [res] = (await client.query(sql, params)) as [{ affectedRows?: number }, FieldPacket[]];
           return res.affectedRows ?? 0;
@@ -515,6 +633,11 @@ export const mysqlDriver: Driver<MysqlConnection> = {
 
   quoteIdent(name) {
     return `\`${String(name).replace(/`/g, '``')}\``;
+  },
+
+  // mysql2 binds positionally in order, so every placeholder is the same token.
+  placeholder() {
+    return '?';
   },
 };
 
@@ -630,9 +753,9 @@ export const postgresDriver: Driver<pg.Client> = {
     }));
   },
 
-  async query(client, sql) {
+  async query(client, sql, params) {
     // A multi-statement string yields one result per statement; show the last.
-    const raw = (await client.query({ text: sql, rowMode: 'array' })) as
+    const raw = (await client.query({ text: sql, values: params, rowMode: 'array' })) as
       | pg.QueryArrayResult
       | pg.QueryArrayResult[];
     const res: pg.QueryArrayResult = Array.isArray(raw) ? raw[raw.length - 1]! : raw;
@@ -810,7 +933,7 @@ export const postgresDriver: Driver<pg.Client> = {
         edits,
         deletes,
         (name) => this.quoteIdent(name),
-        (position) => `$${position}`,
+        (position) => this.placeholder(position),
         async (sql, params) => {
           const res = await client.query(sql, params as unknown[]);
           return res.rowCount ?? 0;
@@ -830,6 +953,11 @@ export const postgresDriver: Driver<pg.Client> = {
       .split('.')
       .map((part) => `"${part.replace(/"/g, '""')}"`)
       .join('.');
+  },
+
+  // pg numbers its placeholders, so the position is part of the token.
+  placeholder(position) {
+    return `$${position}`;
   },
 };
 

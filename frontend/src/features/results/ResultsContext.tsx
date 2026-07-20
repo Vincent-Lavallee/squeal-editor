@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import type { CellValue } from '../../../../shared/protocol/index.ts';
+import type { CellValue, FilterCondition } from '../../../../shared/protocol/index.ts';
 import { useAppSelector } from '../../store/hooks.ts';
 
 /**
@@ -14,12 +14,18 @@ import { useAppSelector } from '../../store/hooks.ts';
  *
  * Staging belongs to a *page*, not just a tab: rows have no id, so an edit is
  * keyed by its row index into the page on screen, and paging or re-browsing makes
- * those indices meaningless. Each entry therefore stamps the `page` it was made
- * against (`table@offset`); reading or writing against a different page starts
- * fresh, so paging discards staging while switching tabs never does.
+ * those indices meaningless. Each entry therefore stamps the page it was made
+ * against; reading or writing against a different page starts fresh, so paging
+ * discards staging while switching tabs never does.
+ *
+ * **The filter is part of what names a page, not just the table and the offset.**
+ * Row 3 of `users` at offset 0 is a different row once a `WHERE` is applied, so a
+ * key of `table@offset` alone would carry staged edits across a filter change and
+ * apply them to whatever now sits at those indices -- a write to a row the user
+ * never saw, which is the one thing the row-identity design exists to prevent.
  */
 export interface Pending {
-  /** The `table@offset` page these indices are valid for; a new page starts fresh. */
+  /** The `table@offset@filter` page these indices are valid for; a new page starts fresh. */
   page: string;
   /** rowIndex -> colIndex -> staged value (text, or null for SQL NULL). */
   edits: Record<number, Record<number, CellValue>>;
@@ -29,6 +35,28 @@ export interface Pending {
 
 /** Shared frozen empty, so a tab with nothing staged is a stable reference. */
 const EMPTY: Pending = Object.freeze({ page: '', edits: {}, deletes: {} });
+
+/**
+ * The filter being assembled, per tab, before Apply sends it.
+ *
+ * **It holds both forms at once, and only `mode` says which is in force.** The
+ * obvious shape is the protocol's own `TableFilter` — a union, one form or the
+ * other — and it is the wrong one here for a reason the union cannot express:
+ * switching form would then have nowhere to keep what you were switching away
+ * from, so every trip between builder and raw discarded the other side's work.
+ * Keeping both is also what lets the round trip be lossless *without* parsing:
+ * going back to the builder restores the conditions it last had rather than
+ * trying to read them out of the text.
+ *
+ * `useResults` narrows this to a `TableFilter` (or `null`) at the moment it
+ * applies, which is where the two shapes meet and the only place they need to.
+ */
+export interface FilterDraft {
+  mode: 'builder' | 'raw';
+  conjunction: 'AND' | 'OR';
+  conditions: FilterCondition[];
+  where: string;
+}
 
 interface ResultsView {
   /** The staging for a tab's current page, or the empty one when it is stale/absent. */
@@ -43,6 +71,19 @@ interface ResultsView {
   setSaving: (tabId: string, value: boolean) => void;
   saveError: Record<string, string | null>;
   setSaveError: (tabId: string, message: string | null) => void;
+  /**
+   * The filter being *assembled*, per tab, before Apply sends it.
+   *
+   * A context and not a slice, by the same test as the staged edits beside it:
+   * it has not crossed the bridge. Only Apply crosses, and what it applied lands
+   * in `browse.filter` in the slice -- so the draft and the applied filter are
+   * two different facts that are allowed to differ, which is exactly what an
+   * unapplied edit *is*. Absent means the bar has not been touched since the tab
+   * last browsed, and it seeds itself from the applied filter.
+   */
+  filterDraft: Record<string, FilterDraft>;
+  setFilterDraft: (tabId: string, draft: FilterDraft) => void;
+  clearFilterDraft: (tabId: string) => void;
 }
 
 const ResultsViewContext = createContext<ResultsView | null>(null);
@@ -51,6 +92,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const [pendingByTab, setPendingByTab] = useState<Record<string, Pending>>({});
   const [saving, setSavingState] = useState<Record<string, boolean>>({});
   const [saveError, setSaveErrorState] = useState<Record<string, string | null>>({});
+  const [filterDraft, setFilterDraftState] = useState<Record<string, FilterDraft>>({});
   const tabs = useAppSelector((s) => s.tabs.tabs);
 
   const pendingFor = useCallback(
@@ -114,6 +156,21 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     setSaveErrorState((prev) => (prev[tabId] === message ? prev : { ...prev, [tabId]: message }));
   }, []);
 
+  const setFilterDraft = useCallback((tabId: string, draft: FilterDraft) => {
+    setFilterDraftState((prev) => ({ ...prev, [tabId]: draft }));
+  }, []);
+  // Drops the draft entirely rather than storing an empty one, so the bar falls
+  // back to seeding from whatever is applied -- "untouched" and "deliberately
+  // emptied" would otherwise be two states that look identical and behave apart.
+  const clearFilterDraft = useCallback((tabId: string) => {
+    setFilterDraftState((prev) => {
+      if (!(tabId in prev)) return prev;
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
+  }, []);
+
   /*
    * Forget the staging of tabs that are gone -- the same diff-the-list prune the
    * editor's text uses, so "close others", a disconnect, and whatever closes a
@@ -128,11 +185,38 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     setPendingByTab((prev) => prune(prev));
     setSavingState((prev) => prune(prev));
     setSaveErrorState((prev) => prune(prev));
+    setFilterDraftState((prev) => prune(prev));
   }, [tabs]);
 
   const value = useMemo(
-    () => ({ pendingFor, setCell, clearCell, toggleDelete, discard, saving, setSaving, saveError, setSaveError }),
-    [pendingFor, setCell, clearCell, toggleDelete, discard, saving, setSaving, saveError, setSaveError]
+    () => ({
+      pendingFor,
+      setCell,
+      clearCell,
+      toggleDelete,
+      discard,
+      saving,
+      setSaving,
+      saveError,
+      setSaveError,
+      filterDraft,
+      setFilterDraft,
+      clearFilterDraft,
+    }),
+    [
+      pendingFor,
+      setCell,
+      clearCell,
+      toggleDelete,
+      discard,
+      saving,
+      setSaving,
+      saveError,
+      setSaveError,
+      filterDraft,
+      setFilterDraft,
+      clearFilterDraft,
+    ]
   );
 
   return <ResultsViewContext.Provider value={value}>{children}</ResultsViewContext.Provider>;

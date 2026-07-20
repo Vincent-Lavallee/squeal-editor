@@ -22,3 +22,5 @@ claude.md
 docs
 
 dist/
+# Temp file bun leaves behind when `bun build --compile` is interrupted.
+.*.bun-build

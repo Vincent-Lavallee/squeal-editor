@@ -91,6 +91,61 @@ export interface TablePage {
 }
 
 /**
+ * The comparisons a builder row may make.
+ *
+ * Spelled as the SQL both engines already agree on, so the extension pastes the
+ * operator through rather than mapping a vocabulary of ours onto each dialect --
+ * the `SqlDialect` rule again. The set is closed on purpose: it is what the
+ * extension will author, and anything outside it is what the raw clause is for.
+ *
+ * `IS NULL` and `IS NOT NULL` take no value, and `IN` takes a comma-separated
+ * list that becomes one bound parameter per item.
+ */
+export type FilterOperator =
+  | '='
+  | '<>'
+  | '>'
+  | '<'
+  | '>='
+  | '<='
+  | 'LIKE'
+  | 'IN'
+  | 'IS NULL'
+  | 'IS NOT NULL';
+
+/** One builder row: a column, a comparison, and the text to compare against. */
+export interface FilterCondition {
+  column: string;
+  operator: FilterOperator;
+  /** Ignored for `IS NULL`/`IS NOT NULL`; split on commas for `IN`. */
+  value: string;
+}
+
+/**
+ * How a browsed page is narrowed, in one of two forms the user chooses between.
+ *
+ * **`builder`** is the structured form: the column is quoted per engine, the
+ * operator comes from the closed set above, and every value is *bound as a
+ * parameter*. Nothing the user types reaches the SQL as text, so this is value
+ * handling on the filter path -- a BIGINT compares exactly and a date string is
+ * the server's to parse, never a JS `Date`.
+ *
+ * `conjunction` joins every condition, rather than each row picking its own.
+ * Mixed `AND`/`OR` without parentheses is ambiguous to read and precedence-bound
+ * to `AND` in a way nobody predicts from the UI, so the builder stays
+ * unambiguous and mixed logic is exactly what `raw` is for.
+ *
+ * **`raw`** is the user's own `WHERE` text, interpolated as typed. That is the
+ * same category as the SQL they write in the editor -- their statement, not the
+ * UI authoring one -- and it is the escape hatch for what the closed operator
+ * set cannot say (date arithmetic, functions, parenthesised groups, subqueries).
+ * It carries no parameters by construction: there is no structure to bind.
+ */
+export type TableFilter =
+  | { kind: 'builder'; conjunction: 'AND' | 'OR'; conditions: FilterCondition[] }
+  | { kind: 'raw'; where: string };
+
+/**
  * One row's edit, staged in the grid and issued on Save.
  *
  * `key` is the row's identifying values *as they were browsed* -- the columns in

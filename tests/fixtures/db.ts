@@ -15,6 +15,12 @@
  * `tags` and `logs` are for the editable grid's row identity: `tags` has a
  * UNIQUE NOT NULL column and no primary key (so its identity is the unique key),
  * and `logs` has neither (so the grid must stay read-only against it).
+ *
+ * `users."eventType"` is deliberately mixed-case: it is what exposed the filter
+ * bar quoting an identifier as `eventType` instead of `"eventType"`, which
+ * Postgres folds to `eventtype` and then cannot find. MySQL's own case
+ * insensitivity means it cannot reproduce that half of the bug, but the column
+ * stays on both so the two engines keep the same shape.
  */
 
 import { $ } from 'bun';
@@ -27,11 +33,12 @@ CREATE TABLE users (
   email text,
   created_at timestamptz default now(),
   meta jsonb,
-  avatar bytea
+  avatar bytea,
+  "eventType" text
 );
-INSERT INTO users (name, email, meta, avatar) VALUES
-  ('Ada', 'ada@x.io', '{"role":"admin"}', '\\x0102ff'),
-  ('Grace', NULL, NULL, NULL);
+INSERT INTO users (name, email, meta, avatar, "eventType") VALUES
+  ('Ada', 'ada@x.io', '{"role":"admin"}', '\\x0102ff', 'page_view'),
+  ('Grace', NULL, NULL, NULL, NULL);
 CREATE VIEW active_users AS SELECT id, name FROM users;
 CREATE SCHEMA reporting;
 CREATE TABLE reporting.daily_stats (day date, hits bigint);
@@ -54,11 +61,12 @@ CREATE TABLE users (
   created_at datetime default current_timestamp,
   meta json,
   avatar blob,
-  big bigint
+  big bigint,
+  eventType varchar(50)
 );
-INSERT INTO users (name, email, meta, avatar, big) VALUES
-  ('Ada', 'ada@x.io', '{"role":"admin"}', UNHEX('0102FF'), 9007199254740993),
-  ('Grace', NULL, NULL, NULL, NULL);
+INSERT INTO users (name, email, meta, avatar, big, eventType) VALUES
+  ('Ada', 'ada@x.io', '{"role":"admin"}', UNHEX('0102FF'), 9007199254740993, 'page_view'),
+  ('Grace', NULL, NULL, NULL, NULL, NULL);
 CREATE VIEW active_users AS SELECT id, name FROM users;
 CREATE TABLE events (id int auto_increment primary key, label varchar(20));
 INSERT INTO events (label)

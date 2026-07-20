@@ -30,9 +30,12 @@ export type {
 export type {
   CellValue,
   ColumnInfo,
+  FilterCondition,
+  FilterOperator,
   QueryResult,
   RowDelete,
   RowEdit,
+  TableFilter,
   TableInfo,
   TablePage,
 } from './results.ts';

@@ -11,7 +11,15 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import type { ColumnInfo, ConnectionConfig, QueryResult, TableInfo, TablePage } from '../shared/protocol/index.ts';
+import type {
+  ColumnInfo,
+  ConnectionConfig,
+  FilterCondition,
+  QueryResult,
+  TableFilter,
+  TableInfo,
+  TablePage,
+} from '../shared/protocol/index.ts';
 import { FIXTURE_DB, MYSQL, PG } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 
@@ -239,6 +247,140 @@ describe.each([
     expect(res.ok).toBe(false);
 
     // The connection must survive it, the same way a bad statement does.
+    expect((await browse('users')).result.rows).toHaveLength(2);
+  });
+
+  /* -- Filtering a browsed page. Same contract on both engines: the UI hands
+        over a structured filter or a raw clause and never SQL of its own. --- */
+
+  const filtered = async (table: string, filter: TableFilter, offset = 0): Promise<TablePage> =>
+    (await h.ok('db.browse', { connectionId, database: FIXTURE_DB, table, offset, filter })) as TablePage;
+
+  const where = (conditions: FilterCondition[], conjunction: 'AND' | 'OR' = 'AND'): TableFilter => ({
+    kind: 'builder',
+    conjunction,
+    conditions,
+  });
+
+  test('a builder condition narrows the page', async () => {
+    const page = await filtered('users', where([{ column: 'name', operator: '=', value: 'Ada' }]));
+    expect(page.result.rows).toHaveLength(1);
+    expect(page.result.rows[0]![1]).toBe('Ada');
+  });
+
+  test('IS NULL and IS NOT NULL compare against no value', async () => {
+    // The one pair that takes no value at all -- a `= NULL` would match nothing
+    // on either engine, which is the bug this operator exists to avoid.
+    const nulls = await filtered('users', where([{ column: 'email', operator: 'IS NULL', value: '' }]));
+    expect(nulls.result.rows).toHaveLength(1);
+    expect(nulls.result.rows[0]![1]).toBe('Grace');
+
+    const notNulls = await filtered('users', where([{ column: 'email', operator: 'IS NOT NULL', value: '' }]));
+    expect(notNulls.result.rows).toHaveLength(1);
+    expect(notNulls.result.rows[0]![1]).toBe('Ada');
+  });
+
+  test('IN binds one placeholder per item', async () => {
+    const page = await filtered('tags', where([{ column: 'label', operator: 'IN', value: 'red, blue' }]));
+    expect(page.result.rows).toHaveLength(2);
+
+    const one = await filtered('tags', where([{ column: 'label', operator: 'IN', value: 'red' }]));
+    expect(one.result.rows).toHaveLength(1);
+  });
+
+  test('the conjunction joins every condition', async () => {
+    const conditions: FilterCondition[] = [
+      { column: 'label', operator: '=', value: 'red' },
+      { column: 'label', operator: '=', value: 'blue' },
+    ];
+    // AND over two values of one column matches nothing; OR matches both. That
+    // asymmetry is what proves the conjunction reached the SQL.
+    expect((await filtered('tags', where(conditions, 'AND'))).result.rows).toHaveLength(0);
+    expect((await filtered('tags', where(conditions, 'OR'))).result.rows).toHaveLength(2);
+  });
+
+  test('a value is bound, never interpolated', async () => {
+    // The whole reason the builder binds. If this were pasted in, the quote
+    // would close the literal and `OR 1=1` would widen the page back to every
+    // row -- so a zero-row answer *is* the assertion, and the table surviving
+    // is the second half of it.
+    const page = await filtered('users', where([{ column: 'name', operator: '=', value: "' OR 1=1 --" }]));
+    expect(page.result.rows).toHaveLength(0);
+    expect((await browse('users')).result.rows).toHaveLength(2);
+  });
+
+  test('an empty builder is no filter at all', async () => {
+    // Conditions with no column are the half-built rows of a bar being used;
+    // they must drop out rather than author `WHERE ()`.
+    expect((await filtered('users', where([]))).result.rows).toHaveLength(2);
+    expect((await filtered('users', where([{ column: '', operator: '=', value: 'x' }]))).result.rows).toHaveLength(2);
+  });
+
+  test('hasMore and paging are answered under the filter', async () => {
+    // 149 of the 150 events match, so the filtered set still spans two pages --
+    // and the second page must be the filter's second page, not the table's.
+    const filter = where([{ column: 'label', operator: '<>', value: 'e1' }]);
+    const first = await filtered('events', filter);
+    expect(first.result.rows).toHaveLength(first.pageSize);
+    expect(first.hasMore).toBe(true);
+
+    const second = await filtered('events', filter, first.pageSize);
+    expect(second.result.rows).toHaveLength(49);
+    expect(second.hasMore).toBe(false);
+
+    // The excluded row appears on neither page.
+    const labels = [...first.result.rows, ...second.result.rows].map((r) => r[1]);
+    expect(labels).not.toContain('e1');
+  });
+
+  test('a raw clause runs as the user typed it', async () => {
+    // Written against `label`, the key column, rather than `weight`, which the
+    // write-back tests edit -- a filter test that depends on a value another
+    // test mutates fails on ordering rather than on the filter.
+    const page = await filtered('tags', { kind: 'raw', where: "label = 'red'" });
+    expect(page.result.rows).toHaveLength(1);
+    expect(page.result.rows[0]![0]).toBe('red');
+  });
+
+  test('an empty raw clause is no filter', async () => {
+    expect((await filtered('users', { kind: 'raw', where: '   ' })).result.rows).toHaveLength(2);
+  });
+
+  test('a filtered page still carries its row identity', async () => {
+    // The grid stays editable under a filter: the key columns and the catalog
+    // travel with the page exactly as they do unfiltered.
+    const page = await filtered('users', where([{ column: 'name', operator: '=', value: 'Ada' }]));
+    expect(page.keyColumns).toEqual(['id']);
+    expect(page.columnInfo.map((c) => c.name)).toContain('email');
+  });
+
+  test('an operator outside the set is refused, not authored', async () => {
+    // It arrives as user JSON, so the closed set is checked at runtime rather
+    // than trusted from the type. Refusing beats pasting it into the SQL.
+    const res = await h.dispatch('db.browse', {
+      connectionId,
+      database: FIXTURE_DB,
+      table: 'users',
+      offset: 0,
+      filter: { kind: 'builder', conjunction: 'AND', conditions: [{ column: 'name', operator: 'DROP', value: 'x' }] },
+    });
+    expect(res.ok).toBe(false);
+
+    expect((await browse('users')).result.rows).toHaveLength(2);
+  });
+
+  test('a filter the server rejects leaves the connection usable', async () => {
+    // A raw clause is the user's text, so a syntax error in it is theirs -- and
+    // it must fail like a bad statement rather than killing the connection.
+    const res = await h.dispatch('db.browse', {
+      connectionId,
+      database: FIXTURE_DB,
+      table: 'users',
+      offset: 0,
+      filter: { kind: 'raw', where: 'not valid sql (' },
+    });
+    expect(res.ok).toBe(false);
+
     expect((await browse('users')).result.rows).toHaveLength(2);
   });
 

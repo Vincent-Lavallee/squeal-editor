@@ -17,7 +17,7 @@ import type {
   WorkspaceColorId,
   WorkspaceIconId,
 } from './config.ts';
-import type { ColumnInfo, QueryResult, RowDelete, RowEdit, TableInfo, TablePage } from './results.ts';
+import type { ColumnInfo, QueryResult, RowDelete, RowEdit, TableFilter, TableInfo, TablePage } from './results.ts';
 import type { UpdateStatus } from './updater.ts';
 
 /**
@@ -59,9 +59,18 @@ export interface Commands {
   /**
    * One page of a table, in the server's natural order. `offset` is the first
    * row wanted; the extension writes the SQL and reports the page size back.
+   *
+   * `filter` narrows the page with a `WHERE` the extension authors -- which is
+   * why filtering exists here and nowhere else. Narrowing a *query's* result
+   * would mean wrapping the user's statement, and `db.query` runs what is on
+   * screen or the editor is lying about what it ran; this rides on the SQL the
+   * extension already wrote, exactly as paging and write-back do.
+   *
+   * A builder filter's values are bound as parameters and never interpolated. A
+   * raw filter is the user's own `WHERE` text, pasted in as typed.
    */
   'db.browse': {
-    req: { connectionId: string; database: string; table: string; offset: number };
+    req: { connectionId: string; database: string; table: string; offset: number; filter?: TableFilter };
     res: TablePage;
   };
   /**

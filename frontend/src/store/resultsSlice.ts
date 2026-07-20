@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-import type { ColumnInfo, QueryResult, RowDelete, RowEdit } from '../../../shared/protocol/index.ts';
+import type { ColumnInfo, QueryResult, RowDelete, RowEdit, TableFilter } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { disconnect } from './sessionSlice.ts';
 import { tabsClosed } from './tabsSlice.ts';
@@ -27,6 +27,17 @@ interface BrowseState {
   keyColumns: string[] | null;
   /** The table's columns, so the grid header can show each column's type. */
   columnInfo: ColumnInfo[];
+  /**
+   * The filter this page was *fetched with*, or null for the unfiltered table.
+   *
+   * Deliberately not the filter being edited: this one crossed the bridge, so it
+   * is the slice's, while the draft the user is still assembling has never left
+   * the webview and lives in `ResultsContext`. The same split as the editor's
+   * text against the query that ran -- and it is what lets paging, a re-browse
+   * after Save, and the row-index staging key all name the page actually on
+   * screen rather than whatever the bar happens to read now.
+   */
+  filter: TableFilter | null;
 }
 
 export interface ResultsState {
@@ -34,6 +45,18 @@ export interface ResultsState {
   browse: BrowseState | null;
   error: string | null;
   running: boolean;
+  /**
+   * The columns of the last page this tab browsed *successfully*, kept when a
+   * later browse fails.
+   *
+   * `browse` goes on a failure, because a failed page leaves nothing to page
+   * from — but the filter bar outlives the failure by design, and its column
+   * dropdown would come back empty exactly when the user is trying to correct
+   * the filter that caused the error. Which columns a table has did not stop
+   * being true because one `WHERE` was malformed, so it is held apart from the
+   * page it arrived on.
+   */
+  columns: ColumnInfo[];
 }
 
 /**
@@ -47,7 +70,7 @@ type ResultsByTab = Record<string, ResultsState>;
 
 const initialState: ResultsByTab = {};
 
-const blank = (): ResultsState => ({ result: null, browse: null, error: null, running: false });
+const blank = (): ResultsState => ({ result: null, browse: null, error: null, running: false, columns: [] });
 
 /**
  * Reads its target off the state rather than taking it as an argument. That is
@@ -93,6 +116,12 @@ export const runQuery = createAppThunk(
  * one thunk serves the first page and every step after it; the hook computes the
  * next offset from the page the extension reported, never from a local 100.
  *
+ * `filter` is an argument for `offset`'s reason and not `database`'s: it is what
+ * the caller is asking for, so applying a filter, clearing it and stepping a page
+ * are all this one thunk. It is passed rather than read off `browse` precisely
+ * because applying a *new* one is the case that matters, and reading the current
+ * page's filter could only ever re-fetch the page already on screen.
+ *
  * Known and deliberate: the database is captured here, at call time. Page 2 in
  * flight while the tab is switched to another database is last-arrival-wins
  * rather than last-intent-wins. Guarding it means dropping a `fulfilled` whose
@@ -101,7 +130,10 @@ export const runQuery = createAppThunk(
  */
 export const browseTable = createAppThunk(
   'results/browseTable',
-  async (arg: { tabId: string; table: string; offset: number }, { getState, rejectWithValue }) => {
+  async (
+    arg: { tabId: string; table: string; offset: number; filter?: TableFilter | null },
+    { getState, rejectWithValue }
+  ) => {
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
     if (!tab) return rejectWithValue('That tab is gone.');
     if (!tab.database) return rejectWithValue('Select a database first.');
@@ -114,8 +146,12 @@ export const browseTable = createAppThunk(
         database: tab.database,
         table: arg.table,
         offset: arg.offset,
+        filter: arg.filter ?? undefined,
       });
-      return { database: tab.database, table: arg.table, page };
+      // The filter is echoed into the payload rather than read back off
+      // `meta.arg` in the reducer, so what the page *was fetched with* and what
+      // came back are one fact arriving together.
+      return { database: tab.database, table: arg.table, filter: arg.filter ?? null, page };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
     }
@@ -223,7 +259,7 @@ const resultsSlice = createSlice({
       .addCase(browseTable.fulfilled, (state, action) => {
         const s = state[action.meta.arg.tabId];
         if (!s) return;
-        const { database, table, page } = action.payload;
+        const { database, table, filter, page } = action.payload;
         s.running = false;
         s.result = page.result;
         s.browse = {
@@ -234,7 +270,11 @@ const resultsSlice = createSlice({
           hasMore: page.hasMore,
           keyColumns: page.keyColumns,
           columnInfo: page.columnInfo,
+          filter,
         };
+        // Held apart from the page, so a later failure does not take it -- see
+        // `ResultsState.columns`. Only a successful page may replace it.
+        if (page.columnInfo.length > 0) s.columns = page.columnInfo;
       })
       .addCase(browseTable.rejected, (state, action) => {
         const s = state[action.meta.arg.tabId];
@@ -242,6 +282,8 @@ const resultsSlice = createSlice({
         s.running = false;
         s.result = null;
         // A failed page leaves nothing to page from, so the pager goes with it.
+        // `columns` deliberately stays: the filter bar survives the failure and
+        // needs them to offer the correction.
         s.browse = null;
         s.error = action.payload ?? 'Could not read the table.';
       });

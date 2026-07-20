@@ -5,6 +5,7 @@ import { CopyIcon, NextPageIcon, PrevPageIcon } from '../../common/icons/icons.t
 import { useResults } from './useResults.ts';
 import Button from '../../common/components/Button.tsx';
 import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
+import FilterBar from './FilterBar.tsx';
 import Note from '../../common/components/Note.tsx';
 import * as t from '../../common/tokens';
 
@@ -20,7 +21,7 @@ const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
 
 export default function ResultsTable() {
-  const { result, browse, error, running, next, prev, editable, readOnlyReason, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, dirtyCount, saving, saveError } = useResults();
+  const { result, browse, error, running, next, prev, editable, readOnlyReason, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, dirtyCount, saving, saveError, filterActive, clearFilter } = useResults();
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const anchor = useRef<number | null>(null);
@@ -31,30 +32,43 @@ export default function ResultsTable() {
 
   const emptyCtr: React.CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 0, padding: t.GAP_XL, textAlign: 'center' };
 
-  if (running) return <div style={emptyCtr}><Note kind="muted">Running…</Note></div>;
+  // Above every early return, because a grid tab keeps its filter whatever the
+  // grid beneath is showing -- and a rejected filter is exactly the case where
+  // the bar has to still be there to be corrected. It draws nothing on an
+  // editor tab, so a query's result is unchanged.
+  if (running) return <><FilterBar /><div style={emptyCtr}><Note kind="muted">Running…</Note></div></>;
   if (error) return (
-    <div style={emptyCtr}>
-      <div data-testid="note-error" style={{ position: 'relative', maxWidth: 560, width: '100%', padding: t.GAP, border: `1px solid ${t.RED}`, borderRadius: t.RADIUS_LG, background: t.RED_BG, color: t.RED_TEXT, fontSize: t.TEXT_BODY, fontFamily: t.MONO, whiteSpace: 'pre-wrap', wordBreak: 'break-word', textAlign: 'left' }}>
-        {error}
-        <button type="button" style={{ position: 'absolute', top: t.GAP_SM, right: t.GAP_SM, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, padding: 0, border: 'none', borderRadius: t.RADIUS, background: 'transparent', color: t.RED_TEXT, cursor: 'pointer' }}
-          onClick={() => void Neutralino.clipboard.writeText(error)} title="Copy error">
-          <CopyIcon style={iconSvg} />
-        </button>
+    <>
+      <FilterBar />
+      <div style={emptyCtr}>
+        <div data-testid="note-error" style={{ position: 'relative', maxWidth: 560, width: '100%', padding: t.GAP, border: `1px solid ${t.RED}`, borderRadius: t.RADIUS_LG, background: t.RED_BG, color: t.RED_TEXT, fontSize: t.TEXT_BODY, fontFamily: t.MONO, whiteSpace: 'pre-wrap', wordBreak: 'break-word', textAlign: 'left' }}>
+          {error}
+          <button type="button" style={{ position: 'absolute', top: t.GAP_SM, right: t.GAP_SM, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, padding: 0, border: 'none', borderRadius: t.RADIUS, background: 'transparent', color: t.RED_TEXT, cursor: 'pointer' }}
+            onClick={() => void Neutralino.clipboard.writeText(error)} title="Copy error">
+            <CopyIcon style={iconSvg} />
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
   if (!result) return (
-    <div style={emptyCtr}>
-      <div style={{ color: t.TEXT_FAINT, fontSize: t.TEXT_TITLE, fontWeight: 500, marginBottom: t.GAP_XS }}>No results yet</div>
-      <Note kind="muted">Run a query to see results.</Note>
-    </div>
+    <>
+      <FilterBar />
+      <div style={emptyCtr}>
+        <div style={{ color: t.TEXT_FAINT, fontSize: t.TEXT_TITLE, fontWeight: 500, marginBottom: t.GAP_XS }}>No results yet</div>
+        <Note kind="muted">Run a query to see results.</Note>
+      </div>
+    </>
   );
 
   if (result.columns.length === 0) return (
-    <div style={emptyCtr}>
-      <div style={{ color: t.GREEN, fontSize: t.TEXT_TITLE, fontWeight: 500, marginBottom: t.GAP_XS }}>Query finished</div>
-      <Note kind="ok">{result.message}</Note>
-    </div>
+    <>
+      <FilterBar />
+      <div style={emptyCtr}>
+        <div style={{ color: t.GREEN, fontSize: t.TEXT_TITLE, fontWeight: 500, marginBottom: t.GAP_XS }}>Query finished</div>
+        <Note kind="ok">{result.message}</Note>
+      </div>
+    </>
   );
 
   const count = result.rows.length;
@@ -108,22 +122,36 @@ export default function ResultsTable() {
 
   return (
     <>
+      <FilterBar />
       <div data-testid="results-bar" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `0 ${t.GAP_LG}px`, height: barH, borderBottom: `1px solid ${t.BORDER}`, fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>
+        {/* No table name: the tab and the filter bar above both already say
+            which table this is, and one place names a thing. */}
         <span>
-          {browse ? `${browse.table} · rows ${firstRow}–${browse.offset + count}` : `${count} row${count === 1 ? '' : 's'}`} · {result.durationMs} ms
+          {browse ? `rows ${firstRow}–${browse.offset + count}` : `${count} row${count === 1 ? '' : 's'}`} · {result.durationMs} ms
           {readOnlyReason && <span data-testid="results-ro" style={{ color: t.TEXT_FAINT }}> · {readOnlyReason}</span>}
         </span>
 
-        {paged && browse && (
-          <div data-testid="results-pager" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, marginLeft: 'auto' }}>
-            <Button variant="ghost" style={{ height: 24, padding: '0 6px' }} onClick={prev} disabled={browse.offset === 0} title="Previous page">
-              <PrevPageIcon style={iconSvg} aria-hidden="true" /> Prev
+        <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, marginLeft: 'auto' }}>
+          {/* Clear lives here rather than in the filter bar because it is a fact
+              about the result on screen, and because it is the one filter control
+              that is not needed to recover from a filter the server refused. */}
+          {filterActive && (
+            <Button variant="ghost" data-testid="filter-clear" style={{ height: 24, padding: '0 8px' }} onClick={clearFilter}>
+              Clear filter
             </Button>
-            <Button variant="ghost" style={{ height: 24, padding: '0 6px' }} onClick={next} disabled={!browse.hasMore} title="Next page">
-              Next <NextPageIcon style={iconSvg} aria-hidden="true" />
-            </Button>
-          </div>
-        )}
+          )}
+
+          {paged && browse && (
+            <div data-testid="results-pager" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS }}>
+              <Button variant="ghost" style={{ height: 24, padding: '0 6px' }} onClick={prev} disabled={browse.offset === 0} title="Previous page">
+                <PrevPageIcon style={iconSvg} aria-hidden="true" /> Prev
+              </Button>
+              <Button variant="ghost" style={{ height: 24, padding: '0 6px' }} onClick={next} disabled={!browse.hasMore} title="Next page">
+                Next <NextPageIcon style={iconSvg} aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {(dirtyCount > 0 || saving || saveError) && (

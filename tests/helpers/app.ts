@@ -21,6 +21,22 @@ interface Target {
 export interface Page {
   /** Evaluate in the page and return the value. Throws if the page throws. */
   evaluate<T = unknown>(expression: string): Promise<T>;
+  /**
+   * Re-evaluate `expression` until it yields something other than `null` or
+   * `undefined`, and return that. Throws when it never does.
+   *
+   * The alternative is `evaluate` after a fixed `Bun.sleep`, which is what most
+   * of this suite still does and what it should stop doing. A sleep encodes how
+   * long the step took on the machine it was written on; anything that shifts
+   * the timing — a slower box, a feature added upstream, one more test running
+   * first — turns it into a failure that reads as a broken app rather than as a
+   * short wait. Prefer this wherever the thing being waited for is observable.
+   *
+   * The expression must return `null` for "not yet", not `false`: a predicate
+   * answering a genuine `false` is a value, and swallowing it would make this
+   * hang instead of failing the assertion it was asked about.
+   */
+  waitFor<T = unknown>(expression: string, timeoutMs?: number): Promise<T>;
   reload(): Promise<void>;
   screenshot(path: string): Promise<void>;
 }
@@ -59,6 +75,61 @@ async function findPage(tries = 40): Promise<Target> {
   throw new Error('app never exposed a CDP page target');
 }
 
+/** Is anything answering on the debugging port right now? */
+async function cdpAlive(): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${CDP_PORT}/json`, { signal: AbortSignal.timeout(1000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Kill any app left behind by an earlier run, before starting one.
+ *
+ * **This is the single most important line in the harness, and its absence cost
+ * a full day.** The debugging port is a fixed 9333 and `findPage` matches on the
+ * window *title*, so an instance orphaned by a crashed, killed or timed-out run
+ * is indistinguishable from the one about to be spawned — and the suite silently
+ * drives the orphan instead: a different `SQUEAL_DATA_DIR`, already connected,
+ * already past the connect screen. Every test then fails at once for reasons
+ * that look unrelated to each other and to the real cause (`#type` missing reads
+ * as `Illegal invocation` from `setSelect`, and a busy orphan reads as
+ * `Runtime.evaluate timed out`), and it reproduces on a clean checkout, so it
+ * looks like the app is broken rather than the harness.
+ *
+ * Reaping by name is the same blunt instrument `stop()` already uses, so this
+ * takes a developer's own open copy of the app with it — that was already true
+ * of running the suite and is the accepted cost of a fixed port.
+ *
+ * `force` skips the "is anything on the port" check, for the one caller that
+ * runs *before* the port matters: `test:ui` compiles the extension first, and
+ * `bun build --compile` cannot overwrite a running `.exe` — so a stray extension
+ * fails the run at `EPERM` before a single test starts, which is the same
+ * stray-process family one step upstream.
+ */
+export async function reapStaleApp(force = false): Promise<void> {
+  if (!force && !(await cdpAlive())) return;
+
+  if (process.platform === 'win32') {
+    await $`taskkill /F /IM neutralino-win_x64.exe`.quiet().nothrow();
+    // The extension outlives the app by design (the heartbeat), and while it
+    // lives it holds the previous run's store open. Nothing here needs it.
+    await $`taskkill /F /IM squeal-db-ext.exe`.quiet().nothrow();
+  } else {
+    await $`pkill -f neutralino`.quiet().nothrow();
+  }
+
+  // Wait for the port to actually go quiet: spawning while the old instance
+  // still holds it is how two apps end up racing for one target list.
+  for (let i = 0; i < 20; i++) {
+    if (!(await cdpAlive())) return;
+    await Bun.sleep(500);
+  }
+  throw new Error(`a previous app is still holding port ${CDP_PORT}; kill it before running the UI suite`);
+}
+
 /**
  * `env` reaches the extension: Neutralino spawns it as a child, so it inherits
  * whatever `neu run` was given. That is how the UI suite points the saved
@@ -66,6 +137,9 @@ async function findPage(tries = 40): Promise<Target> {
  * to whoever is running the tests.
  */
 export async function launchApp(env: Record<string, string> = {}): Promise<AppSession> {
+  // Never attach to a survivor of the last run -- see `reapStaleApp`.
+  await reapStaleApp();
+
   const child = Bun.spawn(['bun', 'x', 'neu', 'run'], {
     env: {
       ...process.env,
@@ -118,9 +192,35 @@ export async function launchApp(env: Record<string, string> = {}): Promise<AppSe
       return r.result.value as T;
     },
 
+    async waitFor<T>(expression: string, timeoutMs = 15_000): Promise<T> {
+      const deadline = Date.now() + timeoutMs;
+      let lastError: unknown = null;
+      while (Date.now() < deadline) {
+        try {
+          const value = await this.evaluate<T>(expression);
+          if (value !== null && value !== undefined) return value;
+        } catch (err) {
+          // A page mid-render can throw on a selector that is about to exist;
+          // that is "not yet" too. The last one is reported if time runs out.
+          lastError = err;
+        }
+        await Bun.sleep(100);
+      }
+      throw new Error(
+        `waitFor timed out after ${timeoutMs}ms: ${expression.trim().slice(0, 120)}` +
+          (lastError ? `\nlast error: ${String(lastError)}` : '')
+      );
+    },
+
     async reload() {
       await send('Page.reload');
-      await Bun.sleep(2500);
+      // Wait for React to have rendered *something* rather than for a fixed
+      // interval. The bundle is several megabytes and the first screen also
+      // waits on the extension answering `db.saved.list`, so how long this takes
+      // is a property of the machine -- and the failure when it is too short is
+      // a null element, which surfaces as an unrelated-looking TypeError deep in
+      // whichever helper touched it first.
+      await this.waitFor(`document.querySelector('#root')?.children.length > 0 ? true : null`);
     },
 
     async screenshot(path: string) {
@@ -135,8 +235,14 @@ export async function launchApp(env: Record<string, string> = {}): Promise<AppSe
       // (and therefore the extension) behind, so reap the binary by name.
       if (process.platform === 'win32') {
         await $`taskkill /F /IM neutralino-win_x64.exe`.quiet().nothrow();
+        // And the extension with it. It is *built* to outlive the app for up to
+        // the heartbeat timeout, which is right in production and wrong here:
+        // left running it keeps this run's store open and its socket bound, so
+        // the next run starts against the previous one's leftovers.
+        await $`taskkill /F /IM squeal-db-ext.exe`.quiet().nothrow();
       } else {
         await $`pkill -f neutralino`.quiet().nothrow();
+        await $`pkill -f squeal-db-ext`.quiet().nothrow();
       }
     },
   };

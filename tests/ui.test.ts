@@ -180,6 +180,8 @@ const pagerBtn = (label: 'Prev' | 'Next') => `
   [...document.querySelectorAll('[data-testid="results-pager"] button')]
     .find(e => e.textContent.trim() === ${JSON.stringify(label)})`;
 
+/** How many rows the grid is showing -- what a filter changes. */
+const rowCount = `document.querySelectorAll('.grid tbody tr').length`;
 /** A data cell (past the row-number gutter) at row r, column c of the grid. */
 const gridCell = (r: number, c: number) =>
   `document.querySelectorAll('.grid tbody tr')[${r}].querySelectorAll('td:not(.gutter)')[${c}]`;
@@ -209,7 +211,12 @@ async function fillConnectForm(
   environment?: string
 ): Promise<void> {
   await app.evaluate(`document.querySelector('[data-testid="saved-new"]')?.click(); true;`);
-  await Bun.sleep(300);
+
+  // Wait for the form rather than sleeping at it. Reaching a null `#type` is not
+  // a readable failure: `setSelect` calls a setter with null as `this`, which
+  // throws `Illegal invocation` from inside the injected script -- a message
+  // that names neither the element nor the screen it was expected on.
+  await app.waitFor(`document.querySelector('#type') ? true : null`);
 
   await app.evaluate(`${REACT_SETTERS}
     setSelect(document.querySelector('#type'), ${JSON.stringify(cfg.type)});
@@ -564,6 +571,190 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(300);
     });
 
+    test('a filter narrows the grid, and clearing it restores the table', async () => {
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(2000);
+      expect(await app.evaluate<number>(rowCount)).toBe(2);
+
+      // The bar is there with a blank condition already on it -- there is no
+      // button to reveal it and nothing to add before typing a first filter.
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="filter-condition"]').length`)).toBe(1);
+      // And a blank row is not a pending change, so there is nothing to apply.
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="filter-apply"]').disabled`)).toBe(true);
+
+      await app.evaluate(`${REACT_SETTERS}
+        setSelect(document.querySelector('[data-testid="filter-column"]'), 'name');
+        setNative(document.querySelector('[data-testid="filter-value"]'), 'Ada');
+        true;`);
+      await Bun.sleep(300);
+
+      await app.evaluate(`document.querySelector('[data-testid="filter-apply"]').click(); true;`);
+      await Bun.sleep(1500);
+
+      // One row, and it is the one the filter names -- the count alone would
+      // pass for a filter that matched the wrong row.
+      expect(await app.evaluate<number>(rowCount)).toBe(1);
+      expect(await app.evaluate<string>(`${gridCell(0, 1)}.textContent`)).toBe('Ada');
+
+      // Applied and unchanged since, so there is nothing left to run.
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="filter-apply"]').disabled`)).toBe(true);
+
+      await app.evaluate(`document.querySelector('[data-testid="filter-clear"]').click(); true;`);
+      await Bun.sleep(1500);
+      expect(await app.evaluate<number>(rowCount)).toBe(2);
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+    });
+
+    test('switching to raw carries the built conditions over as SQL', async () => {
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(2000);
+
+      await app.evaluate(`${REACT_SETTERS}
+        setSelect(document.querySelector('[data-testid="filter-column"]'), 'name');
+        setNative(document.querySelector('[data-testid="filter-value"]'), "O'Hara");
+        true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`document.querySelector('[data-testid="filter-toggle-form"]').click(); true;`);
+      await Bun.sleep(400);
+
+      // The value arrives as a quoted literal, with its own quote doubled: the
+      // builder bound it as a parameter and raw text does not, so handing it
+      // over bare would be an identifier rather than a value. The column is
+      // quoted too, per the dialect this session reported (Postgres here) --
+      // unconditionally, the same way the extension's own quoteIdent does.
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="filter-raw"]').value`)).toBe(
+        `"name" = 'O''Hara'`
+      );
+
+      // And it is text that actually runs, not a label.
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('[data-testid="filter-raw"]'), "name = 'Ada'"); true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`document.querySelector('[data-testid="filter-apply"]').click(); true;`);
+      await Bun.sleep(1500);
+      expect(await app.evaluate<number>(rowCount)).toBe(1);
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+    });
+
+    test('a mixed-case column survives the trip to raw and back to the server', async () => {
+      // The reported bug: `eventType` handed to Postgres unquoted is not the
+      // column of that name -- Postgres folds an unquoted identifier to
+      // lowercase, so the server looked for `eventtype`, found nothing, and
+      // refused the filter. `users."eventType"` exists in the fixture only to
+      // make this reproducible without a mock.
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(2000);
+
+      await app.evaluate(`${REACT_SETTERS}
+        setSelect(document.querySelector('[data-testid="filter-column"]'), 'eventType');
+        setNative(document.querySelector('[data-testid="filter-value"]'), 'page_view');
+        true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`document.querySelector('[data-testid="filter-toggle-form"]').click(); true;`);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="filter-raw"]').value`)).toBe(
+        `"eventType" = 'page_view'`
+      );
+
+      await app.evaluate(`document.querySelector('[data-testid="filter-apply"]').click(); true;`);
+      await Bun.sleep(1500);
+
+      // No error, and it is Ada's row specifically -- not an accidental match.
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="note-error"]').length`)).toBe(0);
+      expect(await app.evaluate<number>(rowCount)).toBe(1);
+      expect(await app.evaluate<string>(`${gridCell(0, 1)}.textContent`)).toBe('Ada');
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+    });
+
+    test('switching back to the builder keeps the conditions it had', async () => {
+      // The bug this pins: raw -> builder used to reset to a blank row even
+      // though the builder side of the draft was never touched. Neither
+      // direction may discard the other form's work -- see `FilterDraft`.
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(2000);
+
+      await app.evaluate(`${REACT_SETTERS}
+        setSelect(document.querySelector('[data-testid="filter-column"]'), 'name');
+        setNative(document.querySelector('[data-testid="filter-value"]'), 'Ada');
+        true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`document.querySelector('[data-testid="filter-add"]').click(); true;`);
+      await Bun.sleep(300);
+
+      await app.evaluate(`document.querySelector('[data-testid="filter-toggle-form"]').click(); true;`); // to raw
+      await Bun.sleep(300);
+      await app.evaluate(`document.querySelector('[data-testid="filter-toggle-form"]').click(); true;`); // back to builder
+      await Bun.sleep(300);
+
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="filter-condition"]').length`)).toBe(2);
+      expect(await app.evaluate<string>(`document.querySelectorAll('[data-testid="filter-column"]')[0].value`)).toBe('name');
+      expect(await app.evaluate<string>(`document.querySelectorAll('[data-testid="filter-value"]')[0].value`)).toBe('Ada');
+
+      // And it still runs after the round trip -- not just displayed. Row 1,
+      // not the first match: `filter-remove` is one button per row, and the
+      // row to drop is the blank second one, not the filled first one.
+      await app.evaluate(`document.querySelectorAll('[data-testid="filter-remove"]')[1].click(); true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`document.querySelector('[data-testid="filter-apply"]').click(); true;`);
+      await Bun.sleep(1500);
+      expect(await app.evaluate<number>(rowCount)).toBe(1);
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+    });
+
+    test('a filter the server rejects leaves the bar there to be corrected', async () => {
+      // The failure case that decided where the bar is drawn: a rejected page
+      // clears `browse`, so a bar keyed off it would vanish with the error and
+      // take the only way to fix it along.
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(2000);
+
+      await app.evaluate(`document.querySelector('[data-testid="filter-toggle-form"]').click(); true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`${REACT_SETTERS}
+        setNative(document.querySelector('[data-testid="filter-raw"]'), 'not valid sql (');
+        true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`document.querySelector('[data-testid="filter-apply"]').click(); true;`);
+      await Bun.sleep(1500);
+
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="note-error"]').length`)).toBe(1);
+      // Still there, and still holding what was typed.
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="filter-raw"]').length`)).toBe(1);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="filter-raw"]').value`)).toBe(
+        'not valid sql ('
+      );
+
+      // The column dropdown must not have emptied out along with `browse` --
+      // it is exactly what someone needs to build the correction. Checked via
+      // the builder, since the failure was in raw mode.
+      await app.evaluate(`document.querySelector('[data-testid="filter-toggle-form"]').click(); true;`);
+      await Bun.sleep(300);
+      const columnOptions = await app.evaluate<number>(
+        `document.querySelectorAll('[data-testid="filter-column"] option').length`
+      );
+      expect(columnOptions).toBeGreaterThan(1);
+
+      // And correcting it recovers, without re-opening the table.
+      await app.evaluate(`${REACT_SETTERS}
+        setSelect(document.querySelector('[data-testid="filter-column"]'), 'name');
+        setNative(document.querySelector('[data-testid="filter-value"]'), 'Ada');
+        true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`document.querySelector('[data-testid="filter-apply"]').click(); true;`);
+      await Bun.sleep(1500);
+      expect(await app.evaluate<number>(rowCount)).toBe(1);
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+    });
+
     test('NULL is rendered distinctly, not as empty or "null"', async () => {
       // Browse `users` in a tab of its own rather than inheriting whatever the
       // last test left in the grid: Grace's NULL email is the subject, and a
@@ -747,13 +938,18 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
     test('keywords are highlighted, not left as plain text', async () => {
       await app.evaluate(setEditorText("SELECT 'x' -- comment"));
-      await Bun.sleep(800);
       // Monaco classifies each token into a category (keyword, string, comment,
       // etc.) and assigns a distinct class per category. One class across every
       // span means no grammar ran — every token reads as plain text.
-      const classes = await app.evaluate<string[]>(`
-        [...document.querySelectorAll('.view-lines .view-line span span')]
-          .map(e => e.className).filter(Boolean)`);
+      //
+      // Waited for rather than slept on: tokenizing is asynchronous and its
+      // latency depends on what the editor was doing beforehand, so a fixed
+      // sleep here passes or fails according to how many tests ran before it.
+      const classes = await app.waitFor<string[]>(`(() => {
+        const seen = [...document.querySelectorAll('.view-lines .view-line span span')]
+          .map(e => e.className).filter(Boolean);
+        return new Set(seen).size > 1 ? seen : null;
+      })()`);
       expect(new Set(classes).size).toBeGreaterThan(1);
     });
 
@@ -880,7 +1076,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     test('moving a grid tab to a database without that table errors in that tab', async () => {
       await app.evaluate(clickTable('users'));
       await Bun.sleep(2000);
-      expect(await app.evaluate<string>(barText)).toContain('users');
+      // Browsed here first: the results bar no longer names the table (the tab
+      // and the filter bar above both do), so the rows are what says it worked.
+      expect(await app.evaluate<number>(rowCount)).toBe(2);
 
       await app.evaluate(selectDatabase('postgres'));
       await Bun.sleep(2000);
@@ -1186,6 +1384,31 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`
       );
       expect(cells[0]![headers.indexOf('big')]).toBe('9007199254740993');
+    });
+
+    /*
+     * The other half of the Postgres filter-bar test's identifier quoting, and
+     * the pair is the test: Postgres alone would only prove double-quoting
+     * happens, never that it is the *dialect's* mark and not a hardcoded one.
+     * MySQL quoting with a backtick instead is what proves `conditionsToWhere`
+     * actually branches on `SqlDialect` rather than always emitting one engine's
+     * syntax -- which would look identical to correct on whichever engine was
+     * tested first.
+     */
+    test('switching to raw quotes the identifier with this engine\'s own mark', async () => {
+      await app.evaluate(`${REACT_SETTERS}
+        setSelect(document.querySelector('[data-testid="filter-column"]'), 'name');
+        setNative(document.querySelector('[data-testid="filter-value"]'), 'Ada');
+        true;`);
+      await Bun.sleep(300);
+      await app.evaluate(`document.querySelector('[data-testid="filter-toggle-form"]').click(); true;`);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="filter-raw"]').value`)).toBe(
+        "`name` = 'Ada'"
+      );
+      // Leave the bar as found: builder mode, no filter applied.
+      await app.evaluate(`document.querySelector('[data-testid="filter-toggle-form"]').click(); true;`);
+      await Bun.sleep(300);
     });
 
     /*

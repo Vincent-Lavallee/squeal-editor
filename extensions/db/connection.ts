@@ -5,9 +5,10 @@ import type {
   RowDelete,
   RowEdit,
   SqlDialect,
+  TableFilter,
   TableInfo,
 } from '../../shared/protocol/index.ts';
-import { withDriver, type Driver, type QueryOutcome } from './drivers.ts';
+import { buildWhere, withDriver, type Driver, type QueryOutcome } from './drivers.ts';
 import { rdsAuthToken } from './iam.ts';
 
 /**
@@ -45,7 +46,11 @@ export interface ConnectionHandle {
   listTables(database: string): Promise<TableInfo[]>;
   listColumns(database: string, table: string): Promise<ColumnInfo[]>;
   query(database: string | undefined, sql: string): Promise<QueryOutcome>;
-  browse(database: string, table: string, offset: number): Promise<TableRows>;
+  /**
+   * One page of a table, optionally narrowed by `filter`. A builder filter's
+   * values are bound as parameters; a raw one is the user's own `WHERE` text.
+   */
+  browse(database: string, table: string, offset: number, filter?: TableFilter): Promise<TableRows>;
   /** A relation's `CREATE` statement, for the context menu's "open definition". */
   tableDdl(database: string, table: string, kind: 'table' | 'view'): Promise<string>;
   /** Drop a relation. Not undoable -- the UI guards it behind a typed confirmation. */
@@ -156,13 +161,29 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
      * order is not a guaranteed-stable order -- rows written between two page
      * fetches can shift a row across the boundary. Ordering by a key we picked
      * would trade that for a sort of the whole table on every page.
+     *
+     * A `filter` narrows the page, and it is authored here for the same reason
+     * the paging is: a `WHERE` needs the engine's quoting and placeholders, and
+     * this is SQL we wrote rather than SQL the user did. `hasMore` keeps meaning
+     * what it meant -- the probe row is fetched under the same `WHERE`, so it
+     * answers "is there another *matching* row" rather than being inferred.
      */
-    async browse(database, table, offset) {
+    async browse(database, table, offset, filter) {
       // `offset` is user-supplied JSON on its way into a string of SQL, and no
       // placeholder can carry a LIMIT clause on both engines. Forcing it to a
       // non-negative integer is what makes the interpolation below safe; the
       // table name is quoted by the driver for the same reason.
       const from = Math.max(0, Math.floor(Number(offset) || 0));
+
+      // Built before the client so an unsupported operator or a malformed filter
+      // fails as a bad filter, rather than after a round trip as a SQL error.
+      // The values are bound; only LIMIT/OFFSET above is ever interpolated.
+      const { clause, params } = buildWhere(
+        filter,
+        (name) => driver.quoteIdent(name),
+        (position) => driver.placeholder(position)
+      );
+      const where = clause ? ` WHERE ${clause}` : '';
 
       const client = await getClient(database);
       // Ask for one row past the page, so "is there more" is answered by whether
@@ -173,7 +194,8 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
       // two queries at once (pg queues and warns, mysql2 would interleave).
       const outcome = await driver.query(
         client,
-        `SELECT * FROM ${driver.quoteIdent(table)} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`
+        `SELECT * FROM ${driver.quoteIdent(table)}${where} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`,
+        params
       );
       const keyColumns = await driver.rowKey(client, database, table);
       const columnInfo = await driver.listColumns(client, database, table);
