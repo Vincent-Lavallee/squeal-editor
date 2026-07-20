@@ -50,6 +50,7 @@ interface FormState {
 const readOnlyDefault = (environment: Environment): boolean => environment === 'production';
 
 const checkboxStyle = { flex: 'none', width: 13, height: 13, margin: 0, accentColor: t.ACCENT, cursor: 'pointer' };
+const checkboxHintStyle = { marginLeft: 13 + t.GAP_SM, marginTop: 2, color: t.TEXT_FAINT, fontSize: t.TEXT_BADGE };
 
 function initialState(initial?: SavedConnection): FormState {
   if (!initial) {
@@ -121,11 +122,13 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
       </Field>
 
       <Field label="">
-        <label style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, marginTop: t.GAP_XS, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, cursor: 'pointer' }} htmlFor="readOnly">
-          <input id="readOnly" type="checkbox" checked={form.readOnly} onChange={(e) => set('readOnly', e.target.checked)} style={checkboxStyle} />
-          Open read-only
-          <span style={{ textTransform: 'none', letterSpacing: 0, color: t.TEXT_FAINT }}>— the server refuses writes; on by default for Production</span>
-        </label>
+        <div style={{ marginTop: t.GAP_XS }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, cursor: 'pointer' }} htmlFor="readOnly">
+            <input id="readOnly" type="checkbox" checked={form.readOnly} onChange={(e) => set('readOnly', e.target.checked)} style={checkboxStyle} />
+            Open read-only
+          </label>
+          <div style={checkboxHintStyle}>the server refuses writes; on by default for Production</div>
+        </div>
       </Field>
 
       <Field label="Engine" htmlFor="type">
@@ -155,13 +158,15 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
       </div>
 
       <Field label="">
-        <label style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, marginTop: t.GAP_XS, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, cursor: 'pointer' }} htmlFor="ssl">
-          <input id="ssl" type="checkbox" checked={iam ? true : form.ssl} disabled={iam} onChange={(e) => set('ssl', e.target.checked)} style={checkboxStyle} />
-          Connect over SSL
-          <span style={{ textTransform: 'none', letterSpacing: 0, color: t.TEXT_FAINT }}>
-            {iam ? '— required for IAM authentication' : "— the server's certificate must be one this machine trusts"}
-          </span>
-        </label>
+        <div style={{ marginTop: t.GAP_XS }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, cursor: 'pointer' }} htmlFor="ssl">
+            <input id="ssl" type="checkbox" checked={iam ? true : form.ssl} disabled={iam} onChange={(e) => set('ssl', e.target.checked)} style={checkboxStyle} />
+            Connect over SSL
+          </label>
+          <div style={checkboxHintStyle}>
+            {iam ? 'required for IAM authentication' : "the server's certificate must be one this machine trusts"}
+          </div>
+        </div>
       </Field>
 
       <Field label="User" htmlFor="user">
@@ -174,11 +179,13 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
             placeholder={mode === 'edit' && initial?.hasPassword ? 'unchanged' : ''}
             onChange={(e) => { set('password', e.target.value); set('passwordTouched', true); }} />
           {willBeStored && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, marginTop: t.GAP_XS, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, cursor: 'pointer' }} htmlFor="savePassword">
-              <input id="savePassword" type="checkbox" checked={form.savePassword} onChange={(e) => set('savePassword', e.target.checked)} style={checkboxStyle} />
-              Save the password
-              <span style={{ textTransform: 'none', letterSpacing: 0, color: t.TEXT_FAINT }}>— otherwise you are asked for it each time</span>
-            </label>
+            <div style={{ marginTop: t.GAP_XS }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, cursor: 'pointer' }} htmlFor="savePassword">
+                <input id="savePassword" type="checkbox" checked={form.savePassword} onChange={(e) => set('savePassword', e.target.checked)} style={checkboxStyle} />
+                Save the password
+              </label>
+              <div style={checkboxHintStyle}>otherwise you are asked for it each time</div>
+            </div>
           )}
         </Field>
       )}
