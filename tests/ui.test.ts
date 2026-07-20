@@ -94,6 +94,37 @@ const tab = (label: string) => `
 const clickTab = (label: string) => `${tab(label)}.querySelector('[data-testid="tab-pick"]').click(); true;`;
 const closeTab = (label: string) => `${tab(label)}.querySelector('[data-testid="tab-close"]').click(); true;`;
 const newTab = `document.querySelector('[data-testid="tab-new"]').click(); true;`;
+const rightClickTab = (label: string) => `(() => {
+  const el = ${tab(label)};
+  const r = el.getBoundingClientRect();
+  el.dispatchEvent(new MouseEvent('contextmenu',
+    { bubbles: true, cancelable: true, clientX: r.left + 5, clientY: r.top + 5 }));
+  return true;
+})()`;
+
+/*
+ * Dragging is three events and they are dispatched as three separate steps on
+ * purpose: the strip remembers what is being dragged in React state, so the
+ * `dragover` that decides where it lands has to run after that state has
+ * committed. Firing all three in one evaluate reads the state as it was before
+ * `dragstart`, and nothing moves.
+ *
+ * These are plain MouseEvents with no `dataTransfer`, which is exactly why the
+ * strip keeps the dragged id in state rather than in the drag payload -- a
+ * handler that read `e.dataTransfer.getData()` could not be driven from here.
+ */
+const dragTabStart = (label: string) =>
+  `${tab(label)}.dispatchEvent(new MouseEvent('dragstart', { bubbles: true, cancelable: true })); true;`;
+/** Over the left half of `label`, which means "drop it in front of this one". */
+const dragTabOver = (label: string) => `(() => {
+  const el = ${tab(label)};
+  const r = el.getBoundingClientRect();
+  el.dispatchEvent(new MouseEvent('dragover',
+    { bubbles: true, cancelable: true, clientX: r.left + 4, clientY: r.top + 5 }));
+  return true;
+})()`;
+const dropTab = (label: string) =>
+  `${tab(label)}.dispatchEvent(new MouseEvent('drop', { bubbles: true, cancelable: true })); true;`;
 
 /*
  * The editor is Monaco, so its text is in a model rather than in a DOM value:
@@ -971,6 +1002,126 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(150);
       await app.evaluate(`document.querySelector('[data-testid="modal-submit"]').click(); true;`);
       await Bun.sleep(400);
+    });
+
+    /*
+     * The tab strip's own menu and its drag. This block runs last in the Postgres
+     * suite because it ends by closing every tab, and it names nothing it did not
+     * make -- the `Query N` counter has been moved by earlier tests, so each tab
+     * created here is read back rather than assumed.
+     */
+    test('right-clicking a tab offers duplicate and the three closes', async () => {
+      await app.evaluate(rightClickTab('Query 3'));
+      await Bun.sleep(200);
+
+      // Asserted as one list for the same reason the tree's menu is: the menu
+      // being the whole surface is the point.
+      expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
+        'Duplicate', 'Close All Except Current', 'Close Tabs to the Right', 'Close All',
+      ]);
+
+      // One tab open: there is nothing to close except it, and nothing to its
+      // right. Both say so rather than being offered and doing nothing.
+      expect(await app.evaluate<boolean>(`${contextItem('Close All Except Current')}.disabled`)).toBe(true);
+      expect(await app.evaluate<boolean>(`${contextItem('Close Tabs to the Right')}.disabled`)).toBe(true);
+
+      await app.evaluate(pressEscape);
+      await Bun.sleep(150);
+    });
+
+    /*
+     * Duplicate copies the text, and the copy is its own tab from then on. The
+     * second half is the half that matters: a copy sharing the original's text
+     * would be one model behind two labels, which is what the per-tab model
+     * exists to prevent.
+     */
+    test('duplicating a tab copies its text, and the two are independent', async () => {
+      await app.evaluate(setEditorText('SELECT 1 -- the original'));
+      await Bun.sleep(300);
+
+      await app.evaluate(rightClickTab('Query 3'));
+      await Bun.sleep(200);
+      await app.evaluate(clickContextItem('Duplicate'));
+      await Bun.sleep(600);
+
+      const copy = await app.evaluate<string>(activeTabLabel);
+      expect(copy).not.toBe('Query 3');
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 3', copy]);
+      expect(await app.evaluate<string | null>(editorText)).toContain('the original');
+
+      await app.evaluate(setEditorText('SELECT 2 -- the copy'));
+      await Bun.sleep(300);
+      await app.evaluate(clickTab('Query 3'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string | null>(editorText)).toContain('the original');
+    });
+
+    /*
+     * Reordering moves the tab and nothing else -- picking a tab up is not
+     * selecting it, so the tab you were working in is still the tab you are in
+     * when you put it down.
+     */
+    test('dragging a tab drops it in front of another', async () => {
+      const [, copy] = await app.evaluate<string[]>(tabLabels);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe('Query 3');
+
+      await app.evaluate(dragTabStart(copy!));
+      await Bun.sleep(200);
+      await app.evaluate(dragTabOver('Query 3'));
+      await Bun.sleep(200);
+      await app.evaluate(dropTab('Query 3'));
+      await Bun.sleep(400);
+
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([copy, 'Query 3']);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe('Query 3');
+    });
+
+    test('"Close Tabs to the Right" closes those and lands you on the one you asked from', async () => {
+      const [first] = await app.evaluate<string[]>(tabLabels);
+      await app.evaluate(newTab);
+      await Bun.sleep(500);
+      expect(await app.evaluate<string[]>(tabLabels)).toHaveLength(3);
+
+      await app.evaluate(rightClickTab(first!));
+      await Bun.sleep(200);
+      await app.evaluate(clickContextItem('Close Tabs to the Right'));
+      await Bun.sleep(500);
+
+      // The active tab was one of the two just closed, so it has to land
+      // somewhere -- and the tab the menu was summoned from is the only answer
+      // that is not arbitrary.
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([first]);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe(first);
+    });
+
+    test('"Close All Except Current" leaves the one it was asked from', async () => {
+      await app.evaluate(newTab);
+      await Bun.sleep(500);
+      const keep = await app.evaluate<string>(activeTabLabel);
+      await app.evaluate(newTab);
+      await Bun.sleep(500);
+      expect(await app.evaluate<string[]>(tabLabels)).toHaveLength(3);
+
+      await app.evaluate(rightClickTab(keep));
+      await Bun.sleep(200);
+      await app.evaluate(clickContextItem('Close All Except Current'));
+      await Bun.sleep(500);
+
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([keep]);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe(keep);
+    });
+
+    test('"Close All" leaves the empty state, with no tabs', async () => {
+      const [only] = await app.evaluate<string[]>(tabLabels);
+
+      await app.evaluate(rightClickTab(only!));
+      await Bun.sleep(200);
+      await app.evaluate(clickContextItem('Close All'));
+      await Bun.sleep(500);
+
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+      const note = await app.evaluate<string>(`document.querySelector('[data-testid="note-muted"]')?.textContent ?? ''`);
+      expect(note).toContain('Nothing open');
     });
   });
 

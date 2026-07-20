@@ -1,24 +1,84 @@
 import { useState } from 'react';
 import { CloseIcon, NewTabIcon, QueryIcon, TableIcon } from '../../common/icons/icons.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
+import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import * as t from '../../common/tokens';
 
 const iconSvg = { flex: 'none', width: 16, height: 16 };
 
-export default function TabStrip() {
-  const { tabs: tabList, activeTabId, activeTab, activateTab, closeTab, openEditorTab } = useTabs();
+/**
+ * Where a dragged tab would land: in front of a tab, or at the end (`null`).
+ * `undefined` is the third state and not a sloppy one -- it is "the drag has not
+ * been over anything yet", which `null` is already spoken for and cannot say.
+ */
+type DropAt = string | null | undefined;
+
+interface Props {
+  /**
+   * Duplicating copies the query text, which lives in the editor's context and
+   * not in the tab -- so it is wired in the composition root like every other
+   * thing that spans two features, and arrives here as a prop.
+   */
+  onDuplicateTab?: (tabId: string) => void;
+}
+
+export default function TabStrip({ onDuplicateTab }: Props) {
+  const { tabs: tabList, activeTabId, activeTab, activateTab, closeTab, closeOtherTabs, closeTabsToTheRight, closeAllTabs, moveTab, openEditorTab } = useTabs();
   const [hoveredTabId, setHoveredTabId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropAt, setDropAt] = useState<DropAt>(undefined);
+
+  const endDrag = () => { setDraggingId(null); setDropAt(undefined); };
+
+  const drop = () => {
+    if (draggingId && dropAt !== undefined) moveTab(draggingId, dropAt);
+    endDrag();
+  };
+
+  // The half the pointer is on decides which side of this tab the drop lands:
+  // past the midpoint means in front of the *next* one, which at the end of the
+  // strip is `null`.
+  const dragOverTab = (index: number) => (e: React.DragEvent) => {
+    if (!draggingId) return;
+    e.preventDefault();
+    const box = e.currentTarget.getBoundingClientRect();
+    const after = e.clientX > box.left + box.width / 2;
+    setDropAt(after ? (tabList[index + 1]?.id ?? null) : tabList[index]!.id);
+  };
+
+  const menuItems = (id: string): MenuItem[] => {
+    const index = tabList.findIndex((tab) => tab.id === id);
+    const only = tabList.length === 1;
+    const last = index === tabList.length - 1;
+    return [
+      { label: 'Duplicate', disabled: !onDuplicateTab, onSelect: () => onDuplicateTab?.(id) },
+      { label: 'Close All Except Current', disabled: only, onSelect: () => closeOtherTabs(id) },
+      { label: 'Close Tabs to the Right', disabled: last, onSelect: () => closeTabsToTheRight(id) },
+      { label: 'Close All', onSelect: () => closeAllTabs() },
+    ];
+  };
 
   return (
-    <div data-testid="tabs" style={{ display: 'flex', alignItems: 'stretch', minWidth: 0, borderBottom: `1px solid ${t.BORDER}`, overflowX: 'auto', scrollbarWidth: 'none' }} role="tablist">
-      {tabList.map((tab) => {
+    <div data-testid="tabs" style={{ display: 'flex', alignItems: 'stretch', minWidth: 0, borderBottom: `1px solid ${t.BORDER}`, overflowX: 'auto', scrollbarWidth: 'none' }} role="tablist"
+      onDragOver={(e) => { if (draggingId) e.preventDefault(); }} onDrop={drop}>
+      {tabList.map((tab, index) => {
         const active = tab.id === activeTabId;
         const hovered = hoveredTabId === tab.id;
         const Icon = tab.kind === 'grid' ? TableIcon : QueryIcon;
+        // Not on the tab being dragged: an insertion mark on the thing you are
+        // holding says a move that is no move at all.
+        const marked = dropAt !== undefined && dropAt !== draggingId;
 
         return (
-          <div data-testid="tab" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', maxWidth: 200, paddingRight: t.GAP_XS, ...(active ? { background: t.SELECTED, color: t.ACCENT } : {}) }}
-            key={tab.id} onMouseEnter={() => setHoveredTabId(tab.id)} onMouseLeave={() => setHoveredTabId(null)}>
+          <div data-testid="tab" style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', maxWidth: 200, paddingRight: t.GAP_XS, opacity: tab.id === draggingId ? 0.4 : 1, ...(active ? { background: t.SELECTED, color: t.ACCENT } : {}) }}
+            key={tab.id} onMouseEnter={() => setHoveredTabId(tab.id)} onMouseLeave={() => setHoveredTabId(null)}
+            draggable onDragStart={(e) => { setDraggingId(tab.id); e.dataTransfer?.setData('text/plain', tab.id); }} onDragEnd={endDrag}
+            onDragOver={dragOverTab(index)} onContextMenu={(e) => { e.preventDefault(); setMenu({ id: tab.id, x: e.clientX, y: e.clientY }); }}>
+
+            {marked && dropAt === tab.id && <DropMark side="left" />}
+            {marked && dropAt === null && index === tabList.length - 1 && <DropMark side="right" />}
+
             <button data-testid="tab-pick" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 1, minWidth: 0, height: t.TAB_H, padding: `0 ${t.GAP_XS}px 0 10px`, border: 'none', background: 'none', color: 'inherit', font: 'inherit', fontSize: t.TEXT_BADGE, cursor: 'pointer' }}
               role="tab" aria-selected={active} onClick={() => activateTab(tab.id)} title={tab.database ? `${tab.title} — ${tab.database}` : tab.title}>
               <Icon style={{ ...iconSvg, color: active ? 'inherit' : t.TEXT_MUTED }} aria-hidden="true" />
@@ -35,6 +95,17 @@ export default function TabStrip() {
         onClick={() => openEditorTab(activeTab?.database)} aria-label="New query tab">
         <NewTabIcon style={iconSvg} aria-hidden="true" />
       </button>
+
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.id)} onClose={() => setMenu(null)} />}
     </div>
   );
+}
+
+/**
+ * The insertion line. Absolutely positioned rather than a border on the tab, so
+ * showing it never widens anything -- a 2px border appearing under the pointer
+ * would shove every tab to its right and move the target out from under the drop.
+ */
+function DropMark({ side }: { side: 'left' | 'right' }) {
+  return <div data-testid="tab-drop-mark" aria-hidden="true" style={{ position: 'absolute', top: 0, bottom: 0, [side]: 0, width: 2, background: t.ACCENT, pointerEvents: 'none' }} />;
 }

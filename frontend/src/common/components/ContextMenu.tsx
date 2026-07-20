@@ -1,13 +1,33 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import * as t from '../../common/tokens';
+import * as t from '../tokens';
 
-export interface CellMenuItem { label: string; danger?: boolean; disabled?: boolean; onSelect: () => void; }
-interface Props { x: number; y: number; items: CellMenuItem[]; onClose: () => void; }
+/**
+ * The app's one right-click menu: a list of labelled items at a point.
+ *
+ * It lives in `common/` rather than in whichever feature grew it first, because
+ * three features summon one now -- the tree, the grid and the tab strip -- and a
+ * feature may not import a sibling. What is shared is the chrome, and the chrome
+ * is the part that is easy to get subtly wrong twice: clamping to the viewport,
+ * closing on Escape, on a click outside, on a scroll or a resize.
+ *
+ * Items are data, not children. Every caller builds its own labels and disabled
+ * rules; none of them re-implements the dismissal.
+ */
+export interface MenuItem {
+  label: string;
+  danger?: boolean;
+  disabled?: boolean;
+  /** Hover text — used to say *why* an item is disabled. */
+  title?: string;
+  onSelect: () => void;
+}
+
+interface Props { x: number; y: number; items: MenuItem[]; onClose: () => void; }
 
 const menuStyle: React.CSSProperties = { position: 'fixed', zIndex: 50, display: 'flex', flexDirection: 'column', minWidth: 160, padding: t.GAP_XS, border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, background: t.BG };
-const itemBase: React.CSSProperties = { padding: '6px 8px', border: 'none', borderRadius: t.RADIUS, background: 'none', color: t.TEXT, font: 'inherit', fontSize: t.TEXT_BODY, textAlign: 'left', cursor: 'pointer' };
+const itemBase: React.CSSProperties = { padding: '6px 8px', border: 'none', borderRadius: t.RADIUS, background: 'none', color: t.TEXT, font: 'inherit', fontSize: t.TEXT_BODY, textAlign: 'left', whiteSpace: 'nowrap', cursor: 'pointer' };
 
-export default function CellContextMenu({ x, y, items, onClose }: Props) {
+export default function ContextMenu({ x, y, items, onClose }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
   const [hovered, setHovered] = useState<string | null>(null);
@@ -31,7 +51,7 @@ export default function CellContextMenu({ x, y, items, onClose }: Props) {
       {items.map((item) => {
         const h = hovered === item.label && !item.disabled;
         return (
-          <button key={item.label} data-testid="context-menu-item" role="menuitem"
+          <button key={item.label} data-testid="context-menu-item" role="menuitem" title={item.title}
             style={{ ...itemBase, ...(item.danger ? { color: t.RED_TEXT } : {}), ...(item.disabled ? { color: t.TEXT_FAINT, cursor: 'default' } : {}), ...(h && item.danger ? { background: t.RED_BG } : h ? { background: t.HOVER } : {}) }}
             disabled={item.disabled} onMouseEnter={() => setHovered(item.label)} onMouseLeave={() => setHovered(null)}
             onClick={() => { onClose(); item.onSelect(); }}>{item.label}</button>

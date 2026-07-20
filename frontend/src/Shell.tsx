@@ -24,10 +24,10 @@ export default function Shell({ onAddConnection }: Props) {
 }
 
 function ShellLayout({ onAddConnection }: Props) {
-  const { activeTab, openGridTab, openEditorTab, selectDatabase } = useTabs();
+  const { tabs, activeTab, openGridTab, openEditorTab, selectDatabase } = useTabs();
   const { run, running, browseIn } = useResults();
   const { fetchDdl } = useExplorer();
-  const { setSql } = useEditor();
+  const { setSql, peekSql } = useEditor();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const toggleSidebar = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
@@ -53,6 +53,32 @@ function ShellLayout({ onAddConnection }: Props) {
     if (tabId) setSql(tabId, text);
   }, [fetchDdl, openEditorTab, setSql]);
 
+  /*
+   * A copy of a tab is a new tab of the same kind on the same database, plus
+   * whatever the original was holding: a grid tab re-browses its table, an editor
+   * tab is seeded with its text. Both of those already have a way in -- this
+   * spans tabs, the editor and the results, so it is wired here and passed down.
+   *
+   * The copy takes the next `Query N` rather than the original's name, which is
+   * the same answer the tree gives when a table is opened twice: two tabs, and
+   * you can tell them apart.
+   */
+  const duplicateTab = useCallback((tabId: string) => {
+    const tab = tabs.find((candidate) => candidate.id === tabId);
+    if (!tab) return;
+
+    if (tab.kind === 'grid' && tab.table && tab.database) {
+      const id = openGridTab(tab.database, tab.table);
+      if (id) browseIn(id, tab.table, 0);
+      return;
+    }
+    const id = openEditorTab(tab.database);
+    // Seeded at birth, the way a definition tab is: the model reads `peekSql`
+    // when it is created, so writing the text now is not a write into a live
+    // editor. Text still only flows out.
+    if (id) setSql(id, peekSql(tabId) ?? '');
+  }, [tabs, openGridTab, openEditorTab, browseIn, setSql, peekSql]);
+
   const changeDatabase = useCallback((database: string) => {
     if (!activeTab) return;
     selectDatabase(activeTab.id, database);
@@ -70,7 +96,7 @@ function ShellLayout({ onAddConnection }: Props) {
           collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
 
         <main data-testid={showEditor ? undefined : 'main-grid'} className={showEditor ? '' : 'main--grid'} style={{ display: 'grid', gridTemplateRows: showEditor ? `${t.TAB_H}px ${t.BAR_H}px minmax(120px, 30%) 1fr` : `${t.TAB_H}px 1fr`, minWidth: 0, minHeight: 0 }}>
-          <TabStrip />
+          <TabStrip onDuplicateTab={duplicateTab} />
           <EditorPane onRun={run} running={running} onToggleSidebar={toggleSidebar} />
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: `1px solid ${t.BORDER}` }}>
             {activeTab ? <ResultsTable /> : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}

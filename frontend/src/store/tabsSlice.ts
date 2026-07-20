@@ -143,11 +143,36 @@ const tabsSlice = createSlice({
       state.nextQueryNo[connectionId] = no + 1;
     },
 
-    tabClosed(state, action: PayloadAction<{ id: string }>) {
-      const i = state.tabs.findIndex((t) => t.id === action.payload.id);
-      if (i === -1) return;
-      const { connectionId } = state.tabs[i]!;
-      state.tabs.splice(i, 1);
+    /**
+     * Closing takes a *set*, and closing one is the set of one.
+     *
+     * "Close others" and "close to the right" are not loops over a single close:
+     * dispatching N times would re-pick the active tab N times, walking it along
+     * the survivors instead of landing on the one the menu was summoned from --
+     * and every reader keyed by tab id (`resultsSlice`) would see N events for
+     * one gesture. One action carries the whole set, so the active tab is chosen
+     * once, from the shape after all of them are gone.
+     */
+    tabsClosed(state, action: PayloadAction<{ ids: string[] }>) {
+      const closing = new Set(action.payload.ids);
+
+      /*
+       * Per connection, how many of its tabs survive *before* the first one it
+       * is losing -- the index the active tab falls to once the gaps close.
+       *
+       * Counted against the list as it stands, because after the filter below
+       * there is no way to ask where the hole was.
+       */
+      const landingIndex = new Map<string, number>();
+      const survivorsSeen = new Map<string, number>();
+      for (const tab of state.tabs) {
+        const seen = survivorsSeen.get(tab.connectionId) ?? 0;
+        if (!closing.has(tab.id)) survivorsSeen.set(tab.connectionId, seen + 1);
+        else if (!landingIndex.has(tab.connectionId)) landingIndex.set(tab.connectionId, seen);
+      }
+      if (landingIndex.size === 0) return;
+
+      state.tabs = state.tabs.filter((tab) => !closing.has(tab.id));
 
       // Closing the tab you are looking at hands you the neighbour to the right,
       // else the left, else nothing -- and nothing is a real answer: the last tab
@@ -155,11 +180,38 @@ const tabsSlice = createSlice({
       //
       // The neighbours are this connection's, not the flat list's: the tab to
       // the right in `tabs` may belong to a server you are not looking at.
-      if (state.activeTabId[connectionId] === action.payload.id) {
+      for (const [connectionId, index] of landingIndex) {
+        const active = state.activeTabId[connectionId];
+        if (active === null || active === undefined || !closing.has(active)) continue;
         const mine = state.tabs.filter((t) => t.connectionId === connectionId);
-        const before = state.tabs.slice(0, i).filter((t) => t.connectionId === connectionId).length;
-        state.activeTabId[connectionId] = mine[before]?.id ?? mine[before - 1]?.id ?? null;
+        state.activeTabId[connectionId] = mine[index]?.id ?? mine[index - 1]?.id ?? null;
       }
+    },
+
+    /**
+     * Move a tab in front of another of its own connection, or to the end.
+     *
+     * The reorder is computed over that connection's tabs alone and written back
+     * into **the very slots they already occupied** in the flat list. Splicing
+     * the flat array directly would slide another connection's tabs past each
+     * other whenever one sits between two of these -- invisible until you switch
+     * to that server and find its tabs shuffled by a drag you did elsewhere.
+     */
+    tabMoved(state, action: PayloadAction<{ id: string; beforeId: string | null }>) {
+      const { id, beforeId } = action.payload;
+      if (id === beforeId) return;
+      const moving = state.tabs.find((t) => t.id === id);
+      if (!moving) return;
+
+      const slots: number[] = [];
+      state.tabs.forEach((tab, i) => { if (tab.connectionId === moving.connectionId) slots.push(i); });
+
+      const reordered = slots.map((i) => state.tabs[i]!).filter((tab) => tab.id !== id);
+      const to = beforeId === null ? reordered.length : reordered.findIndex((tab) => tab.id === beforeId);
+      if (to === -1) return;
+      reordered.splice(to, 0, moving);
+
+      slots.forEach((slot, k) => { state.tabs[slot] = reordered[k]!; });
     },
 
     tabActivated(state, action: PayloadAction<{ id: string }>) {
@@ -205,7 +257,7 @@ const tabsSlice = createSlice({
   },
 });
 
-export const { tabOpened, tabClosed, tabActivated, databaseChanged } = tabsSlice.actions;
+export const { tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged } = tabsSlice.actions;
 export const tabsReducer = tabsSlice.reducer;
 
 /** The active connection's tabs, in order. The strip draws these and no others. */
@@ -275,7 +327,34 @@ export function useTabs() {
       },
       [dispatch, store]
     ),
-    closeTab: useCallback((id: string) => dispatch(tabClosed({ id })), [dispatch]),
+    closeTab: useCallback((id: string) => dispatch(tabsClosed({ ids: [id] })), [dispatch]),
+    /*
+     * Which tabs each of these means is worked out here and not in the strip,
+     * for the same reason a thunk reads its own target: `tabs` is already the
+     * active connection's, in order, so there is nothing for a caller to get
+     * wrong -- and a caller that got it wrong would close another server's tabs.
+     */
+    closeOtherTabs: useCallback(
+      (id: string) => dispatch(tabsClosed({ ids: tabs.filter((t) => t.id !== id).map((t) => t.id) })),
+      [dispatch, tabs]
+    ),
+    closeTabsToTheRight: useCallback(
+      (id: string) => {
+        const from = tabs.findIndex((t) => t.id === id);
+        if (from === -1) return;
+        dispatch(tabsClosed({ ids: tabs.slice(from + 1).map((t) => t.id) }));
+      },
+      [dispatch, tabs]
+    ),
+    closeAllTabs: useCallback(
+      () => dispatch(tabsClosed({ ids: tabs.map((t) => t.id) })),
+      [dispatch, tabs]
+    ),
+    /** Drop `id` in front of `beforeId`, or at the end when that is null. */
+    moveTab: useCallback(
+      (id: string, beforeId: string | null) => dispatch(tabMoved({ id, beforeId })),
+      [dispatch]
+    ),
     activateTab: useCallback((id: string) => dispatch(tabActivated({ id })), [dispatch]),
     selectDatabase: useCallback(
       (tabId: string, database: string) => dispatch(databaseChanged({ tabId, database })),

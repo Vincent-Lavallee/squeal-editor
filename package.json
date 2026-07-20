@@ -15,7 +15,7 @@
     "dev": "bun run build:ext && neu run",
     "typecheck": "tsc -p frontend --noEmit && tsc -p extensions/db --noEmit",
     "test": "bun test",
-    "test:ui": "bun run build:ext && SQUEAL_UI=1 bun test tests/ui.test.ts --timeout 120000",
+    "test:ui": "bun run build && bun run build:ext && SQUEAL_UI=1 bun test tests/ui.test.ts --timeout 120000",
     "test:db:up": "bun run tests/fixtures/db.ts up",
     "test:db:down": "bun run tests/fixtures/db.ts down",
     "neu:update": "neu update"

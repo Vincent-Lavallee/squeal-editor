@@ -3,7 +3,7 @@ import { createSlice } from '@reduxjs/toolkit';
 import type { ColumnInfo, QueryResult, RowDelete, RowEdit } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { disconnect } from './sessionSlice.ts';
-import { tabClosed } from './tabsSlice.ts';
+import { tabsClosed } from './tabsSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
 /**
@@ -181,8 +181,8 @@ const resultsSlice = createSlice({
       })
       // Reacting to the event, not reaching into `tabsSlice` -- the same shape as
       // the disconnect case above, and the reason neither slice knows the other.
-      .addCase(tabClosed, (state, action) => {
-        delete state[action.payload.id];
+      .addCase(tabsClosed, (state, action) => {
+        for (const id of action.payload.ids) delete state[id];
       })
 
       // Every case below keys off `action.meta.arg.tabId` rather than off
@@ -199,7 +199,7 @@ const resultsSlice = createSlice({
       .addCase(runQuery.fulfilled, (state, action) => {
         const s = state[action.meta.arg.tabId];
         // A query still in flight when its tab closes must not resurrect the
-        // entry `tabClosed` just deleted: creating it here would leak it for the
+        // entry `tabsClosed` just deleted: creating it here would leak it for the
         // life of the session, and nothing would ever collect it again.
         if (!s) return;
         s.running = false;
@@ -249,7 +249,7 @@ const resultsSlice = createSlice({
     // because a session opening dropped every tab and a grid outliving its tab
     // is an entry nothing would ever collect. Opening a connection drops no tabs
     // now -- it adds one -- so resetting here would blank the grid of every
-    // server already open. The tabs that do go, go through `tabClosed` and
+    // server already open. The tabs that do go, go through `tabsClosed` and
     // `disconnect` above, which is every way a tab can leave.
   },
 });

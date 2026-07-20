@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { CellValue } from '../../../../shared/protocol/index.ts';
 import { CopyIcon, NextPageIcon, PrevPageIcon } from '../../common/icons/icons.ts';
-import CellContextMenu, { type CellMenuItem } from './CellContextMenu.tsx';
 import { useResults } from './useResults.ts';
 import Button from '../../common/components/Button.tsx';
+import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import Note from '../../common/components/Note.tsx';
 import * as t from '../../common/tokens';
 
@@ -94,9 +94,9 @@ export default function ResultsTable() {
     setEditing(null); setMenu({ row: r, col: c, x: e.clientX, y: e.clientY });
   };
 
-  const menuItems = (m: Menu): CellMenuItem[] => {
+  const menuItems = (m: Menu): MenuItem[] => {
     const rows = selected.size > 0 ? [...selected].sort((a, b) => a - b) : [m.row];
-    const items: CellMenuItem[] = [{ label: rows.length > 1 ? `Copy ${rows.length} rows` : 'Copy row', onSelect: () => copyRows(rows) }];
+    const items: MenuItem[] = [{ label: rows.length > 1 ? `Copy ${rows.length} rows` : 'Copy row', onSelect: () => copyRows(rows) }];
     if (editable) {
       items.push({ label: 'Set NULL', disabled: isDeleted(m.row) || isKeyCol(m.col), onSelect: () => setNull(m.row, m.col) });
       items.push({ label: isDeleted(m.row) ? 'Keep row' : 'Delete row', danger: !isDeleted(m.row), onSelect: () => toggleDelete(m.row) });
@@ -182,7 +182,7 @@ export default function ResultsTable() {
         </table>
       </div>
 
-      {menu && <CellContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
     </>
   );
 }

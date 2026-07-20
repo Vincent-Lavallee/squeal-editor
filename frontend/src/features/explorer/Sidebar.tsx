@@ -3,8 +3,8 @@ import { useMemo, useState } from 'react';
 import type { TableInfo } from '../../../../shared/protocol/index.ts';
 import { DisclosureIcon, KeyIcon, SidebarFoldIcon, SidebarUnfoldIcon, TableIcon, ViewIcon } from '../../common/icons/icons.ts';
 import DropTableConfirm from './DropTableConfirm.tsx';
-import TableContextMenu from './TableContextMenu.tsx';
 import { useExplorer } from './useExplorer.ts';
+import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import Select from '../../common/components/Select.tsx';
 import * as t from '../../common/tokens';
 
@@ -25,6 +25,15 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
   const [dropping, setDropping] = useState<TableInfo | null>(null);
 
   const copyName = (name: string) => void Neutralino.clipboard.writeText(name);
+
+  // Drop is refused on a read-only connection: read-only is the server refusing
+  // writes, and that does not reliably cover DDL, so honouring the intent for a
+  // `DROP` is the UI's to do.
+  const menuItems = (table: TableInfo, db: string): MenuItem[] => [
+    { label: 'Copy name', onSelect: () => copyName(table.name) },
+    { label: 'Open definition', onSelect: () => onShowDefinition(db, table) },
+    { label: `Drop ${table.kind === 'view' ? 'view' : 'table'}`, danger: true, disabled: readOnly, title: readOnly ? 'This connection is read-only.' : undefined, onSelect: () => setDropping(table) },
+  ];
 
   const toggle = (name: string) => {
     setExpanded((prev) => {
@@ -85,7 +94,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
         })}
       </nav>
 
-      {menu && database && <TableContextMenu table={menu.table} x={menu.x} y={menu.y} readOnly={readOnly} onCopyName={() => copyName(menu.table.name)} onShowDefinition={() => onShowDefinition(database, menu.table)} onDrop={() => setDropping(menu.table)} onClose={() => setMenu(null)} />}
+      {menu && database && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.table, database)} onClose={() => setMenu(null)} />}
       {dropping && database && <DropTableConfirm table={dropping} onConfirm={async () => { await dropTable(database, dropping.name, dropping.kind); setDropping(null); }} onCancel={() => setDropping(null)} />}
     </aside>
   );
