@@ -33,17 +33,33 @@ mkdir -p "$macos" "$app/Contents/Resources"
 # postject and there is no data file left to misplace.
 #
 # The extension cannot follow it in, so it stays a real nested executable and
-# gets a real signature below. Its path is not a choice either: NL_PATH is the
-# directory holding the executable, and commandDarwin resolves
-# ${NL_PATH}/extensions/db/squeal-db-ext against it.
+# gets a real signature below. Its location is not a choice either: commandDarwin
+# resolves ${NL_PATH}/extensions/db/squeal-db-ext, and the launcher below is what
+# makes NL_PATH land here.
 if [ -f dist/squeal-editor/resources.neu ]; then
   echo "resources.neu is still on disk — neu build ran without --embed-resources." >&2
   exit 1
 fi
 
-cp dist/squeal-editor/squeal-editor-mac_arm64 "$macos/squeal-editor"
+cp dist/squeal-editor/squeal-editor-mac_arm64 "$macos/squeal-editor-bin"
 cp -R dist/squeal-editor/extensions "$macos/extensions"
-chmod +x "$macos/squeal-editor" "$macos/extensions/db/squeal-db-ext"
+
+# NL_PATH follows the working directory, not the executable, and Finder launches
+# with the working directory set to `/` -- where Neutralino then looks for
+# /extensions/db/squeal-db-ext, finds nothing, and the app comes up with a dead
+# extension. So CFBundleExecutable is this shim rather than the binary: it moves
+# to its own directory first, which is the one place NL_PATH must be.
+#
+# `exec` so the shell is replaced rather than left as a parent. The extension
+# heartbeats against the app and the UI suite reaps by process, and both want one
+# process, not a shell wrapping one.
+cat > "$macos/squeal-editor" <<'LAUNCHER'
+#!/bin/sh
+cd "$(dirname "$0")" || exit 1
+exec ./squeal-editor-bin "$@"
+LAUNCHER
+
+chmod +x "$macos/squeal-editor" "$macos/squeal-editor-bin" "$macos/extensions/db/squeal-db-ext"
 
 iconset="dist/icon.iconset"
 rm -rf "$iconset"
@@ -76,10 +92,13 @@ PLIST
 # Inner-out: signing the bundle seals whatever its nested executables already
 # carry, so an extension signed afterwards would invalidate the outer signature.
 codesign --force --sign - --timestamp=none "$macos/extensions/db/squeal-db-ext"
+codesign --force --sign - --timestamp=none "$macos/squeal-editor-bin"
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --deep --strict "$app"
 
+# ditto, not cp -R: it preserves the extended attributes a signed bundle carries,
+# which cp can drop and thereby invalidate the signature just made.
 mkdir -p dist/dmg
-cp -R "$app" dist/dmg/
+ditto "$app" "dist/dmg/Squeal Editor.app"
 ln -s /Applications dist/dmg/Applications
 hdiutil create -volname "Squeal Editor" -srcfolder dist/dmg -ov -format UDZO "$dmg"
