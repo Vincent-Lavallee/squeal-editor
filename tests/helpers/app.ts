@@ -48,6 +48,27 @@ export interface AppSession extends Page {
 /**
  * React tracks its own value on DOM nodes, so assigning .value is ignored.
  * Prepend this to any script that needs to type into a controlled input.
+ *
+ * `<Select>` is not a native `<select>` — it is a focusable div plus a floating
+ * listbox, so there is no `.value` to set and no `option` to enumerate while it
+ * is shut, and no `.disabled` either (it is `aria-disabled`). Everything below
+ * drives it the way a user does: click to open, click a row to choose. A
+ * searchable one is typed into at `[data-testid="<id>-search"]`, which is inside
+ * the *trigger* and exists only while the list is open.
+ *
+ * **Both halves are async, and that is the part worth knowing.** A `click()`
+ * dispatched from a script is not a trusted event, so React does not flush it
+ * synchronously the way it flushes a real one — the popup is *not* in the DOM
+ * on the next line. `pickOption` and `optionsOf` therefore return promises and
+ * poll for the listbox, and every caller must make one the completion value of
+ * its `evaluate` (no trailing `true;`), which `awaitPromise` then waits on.
+ * Fire one and carry on and it reads as "no option X": the list simply had not
+ * rendered yet.
+ *
+ * The second half of that matters for ordering too. An option's click handler
+ * closes over the state of the render that opened the popup, so anything typed
+ * into the same form *between* the open and the choose is discarded when the
+ * choose lands. Pick first, await it, then type — never both in one script.
  */
 export const REACT_SETTERS = `
 function setNative(el, value) {
@@ -55,9 +76,34 @@ function setNative(el, value) {
   Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
-function setSelect(el, value) {
-  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(el, value);
-  el.dispatchEvent(new Event('change', { bubbles: true }));
+function waitForNode(selector) {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    (function poll() {
+      const found = document.querySelector(selector);
+      if (found) return resolve(found);
+      if (Date.now() - startedAt > 4000) return reject(new Error('never appeared: ' + selector));
+      setTimeout(poll, 30);
+    })();
+  });
+}
+function pickOption(el, value) {
+  el.click();
+  return waitForNode('[role="listbox"] [role="option"][data-value="' + value + '"]').then((o) => o.click());
+}
+function selectValue(testid) {
+  return document.querySelector('[data-testid="' + testid + '"]').getAttribute('data-value');
+}
+/** Opens the listbox, reads a field off every row, shuts it again. */
+function optionsOf(testid, field) {
+  const trigger = document.querySelector('[data-testid="' + testid + '"]');
+  trigger.click();
+  return waitForNode('[role="listbox"] [role="option"]').then(() => {
+    const rows = [...document.querySelectorAll('[role="listbox"] [role="option"]')];
+    const read = rows.map((e) => (field === 'value' ? e.getAttribute('data-value') : e.textContent));
+    trigger.click();
+    return read;
+  });
 }`;
 
 async function findPage(tries = 40): Promise<Target> {

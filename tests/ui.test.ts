@@ -69,10 +69,9 @@ const contextItem = (label: string) => `
 const clickContextItem = (label: string) => `${contextItem(label)}.click(); true;`;
 const pressEscape = `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true;`;
 
-/** The database is picked from a select now, so React's own setter is the way in. */
+/** The database picker is a listbox, so it is opened and one of its rows clicked. */
 const selectDatabase = (name: string) => `${REACT_SETTERS}
-  setSelect(document.querySelector('[data-testid="sidebar-db-select"]'), ${JSON.stringify(name)});
-  true;`;
+  pickOption(document.querySelector('[data-testid="sidebar-db-select"]'), ${JSON.stringify(name)});`;
 
 /** The rail, top to bottom: one chip per open connection, named. */
 const railNames = `[...document.querySelectorAll('[data-testid="rail-name"]')].map(e => e.textContent)`;
@@ -210,17 +209,31 @@ async function fillConnectForm(
   name: string,
   environment?: string
 ): Promise<void> {
+  /*
+   * Wait for whichever screen this lands on before reaching into it. `connect`
+   * reloads and calls straight through to here, so on a slow frame the click
+   * below no-ops against a screen that has not rendered yet -- and the failure
+   * lands on the `#type` wait instead, reading as "the connect form never
+   * opened" about a form nothing ever asked for.
+   *
+   * It is *either* screen, and the click stays optional for that reason: an
+   * empty workspace has no list worth showing, so the form is already the
+   * screen and there is no `saved-new` to press. Waiting for the button alone
+   * turns that perfectly good state into a timeout.
+   */
+  await app.waitFor(
+    `document.querySelector('[data-testid="saved-new"]') || document.querySelector('#type') ? true : null`
+  );
   await app.evaluate(`document.querySelector('[data-testid="saved-new"]')?.click(); true;`);
 
   // Wait for the form rather than sleeping at it. Reaching a null `#type` is not
-  // a readable failure: `setSelect` calls a setter with null as `this`, which
-  // throws `Illegal invocation` from inside the injected script -- a message
-  // that names neither the element nor the screen it was expected on.
+  // a readable failure: `pickOption` calls `click()` on null, which throws from
+  // inside the injected script -- a message that names neither the element nor
+  // the screen it was expected on.
   await app.waitFor(`document.querySelector('#type') ? true : null`);
 
   await app.evaluate(`${REACT_SETTERS}
-    setSelect(document.querySelector('#type'), ${JSON.stringify(cfg.type)});
-    true;`);
+    pickOption(document.querySelector('#type'), ${JSON.stringify(cfg.type)});`);
   await Bun.sleep(200);
   await app.evaluate(`${REACT_SETTERS}
     setNative(document.querySelector('#name'), ${JSON.stringify(name)});
@@ -235,8 +248,7 @@ async function fillConnectForm(
     // Groups the connection under a heading in the list, tags its chip on the
     // rail, and shows in the status bar for the active connection.
     await app.evaluate(`${REACT_SETTERS}
-      setSelect(document.querySelector('#environment'), ${JSON.stringify(environment)});
-      true;`);
+      pickOption(document.querySelector('#environment'), ${JSON.stringify(environment)});`);
     await Bun.sleep(200);
   }
 
@@ -335,9 +347,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     test('offers the databases in the picker', async () => {
-      const dbs = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('[data-testid="sidebar-db-select"] option')].map(e => e.textContent)`
-      );
+      const dbs = await app.evaluate<string[]>(`${REACT_SETTERS} optionsOf('sidebar-db-select', 'label');`);
       expect(dbs).toContain('shop');
     });
 
@@ -482,21 +492,22 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * There is no active tab to inherit a database from, so the tab opens on the
      * session's default -- and this asserts the *user-visible* consequences of
      * that (an enabled picker, a listed tree) rather than the state behind them.
-     * `setSelect` would sail straight past a disabled picker: React's onChange
-     * fires for a synthetic `change` event that no real click could produce, so
-     * a test driving the picker that way passed while the app stranded you here.
+     * Driving the picker's state directly would sail straight past a disabled
+     * one -- the old native-select setter fired a synthetic `change` no real
+     * click could produce, so a test that used it passed while the app stranded
+     * you here. `pickOption` clicks, which a disabled trigger ignores.
      */
     test('a new tab from the empty state lands on a database', async () => {
       await app.evaluate(newTab);
       await Bun.sleep(1500);
 
       // Not stranded: the picker names a real database and can be used.
-      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="sidebar-db-select"]').disabled`)).toBe(false);
-      const picked = await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').value`);
+      // `aria-disabled`, not `.disabled`: the trigger is a focusable div rather
+      // than a button, because it holds the search input while the list is open.
+      expect(await app.evaluate<string | null>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('aria-disabled')`)).toBeNull();
+      const picked = await app.evaluate<string>(`${REACT_SETTERS} selectValue('sidebar-db-select');`);
       expect(picked).not.toBe('');
-      const options = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('[data-testid="sidebar-db-select"] option')].map(e => e.value)`
-      );
+      const options = await app.evaluate<string[]>(`${REACT_SETTERS} optionsOf('sidebar-db-select', 'value');`);
       expect(options).toContain(picked);
 
       // The tree answered for that database, rather than sitting blank because
@@ -583,7 +594,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="filter-apply"]').disabled`)).toBe(true);
 
       await app.evaluate(`${REACT_SETTERS}
-        setSelect(document.querySelector('[data-testid="filter-column"]'), 'name');
+        pickOption(document.querySelector('[data-testid="filter-column"]'), 'name');`);
+      await app.evaluate(`${REACT_SETTERS}
         setNative(document.querySelector('[data-testid="filter-value"]'), 'Ada');
         true;`);
       await Bun.sleep(300);
@@ -612,7 +624,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(2000);
 
       await app.evaluate(`${REACT_SETTERS}
-        setSelect(document.querySelector('[data-testid="filter-column"]'), 'name');
+        pickOption(document.querySelector('[data-testid="filter-column"]'), 'name');`);
+      await app.evaluate(`${REACT_SETTERS}
         setNative(document.querySelector('[data-testid="filter-value"]'), "O'Hara");
         true;`);
       await Bun.sleep(300);
@@ -649,7 +662,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(2000);
 
       await app.evaluate(`${REACT_SETTERS}
-        setSelect(document.querySelector('[data-testid="filter-column"]'), 'eventType');
+        pickOption(document.querySelector('[data-testid="filter-column"]'), 'eventType');`);
+      await app.evaluate(`${REACT_SETTERS}
         setNative(document.querySelector('[data-testid="filter-value"]'), 'page_view');
         true;`);
       await Bun.sleep(300);
@@ -679,7 +693,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(2000);
 
       await app.evaluate(`${REACT_SETTERS}
-        setSelect(document.querySelector('[data-testid="filter-column"]'), 'name');
+        pickOption(document.querySelector('[data-testid="filter-column"]'), 'name');`);
+      await app.evaluate(`${REACT_SETTERS}
         setNative(document.querySelector('[data-testid="filter-value"]'), 'Ada');
         true;`);
       await Bun.sleep(300);
@@ -692,7 +707,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(300);
 
       expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="filter-condition"]').length`)).toBe(2);
-      expect(await app.evaluate<string>(`document.querySelectorAll('[data-testid="filter-column"]')[0].value`)).toBe('name');
+      expect(await app.evaluate<string>(`document.querySelectorAll('[data-testid="filter-column"]')[0].getAttribute('data-value')`)).toBe('name');
       expect(await app.evaluate<string>(`document.querySelectorAll('[data-testid="filter-value"]')[0].value`)).toBe('Ada');
 
       // And it still runs after the round trip -- not just displayed. Row 1,
@@ -736,14 +751,13 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // the builder, since the failure was in raw mode.
       await app.evaluate(`document.querySelector('[data-testid="filter-toggle-form"]').click(); true;`);
       await Bun.sleep(300);
-      const columnOptions = await app.evaluate<number>(
-        `document.querySelectorAll('[data-testid="filter-column"] option').length`
-      );
-      expect(columnOptions).toBeGreaterThan(1);
+      const columnOptions = await app.evaluate<string[]>(`${REACT_SETTERS} optionsOf('filter-column', 'value');`);
+      expect(columnOptions.length).toBeGreaterThan(1);
 
       // And correcting it recovers, without re-opening the table.
       await app.evaluate(`${REACT_SETTERS}
-        setSelect(document.querySelector('[data-testid="filter-column"]'), 'name');
+        pickOption(document.querySelector('[data-testid="filter-column"]'), 'name');`);
+      await app.evaluate(`${REACT_SETTERS}
         setNative(document.querySelector('[data-testid="filter-value"]'), 'Ada');
         true;`);
       await Bun.sleep(300);
@@ -1052,13 +1066,13 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await app.evaluate(selectDatabase('postgres'));
       await Bun.sleep(1200);
-      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').value`)).toBe('postgres');
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('postgres');
 
       // Back to the first tab: it never moved, so the picker still reads `shop`
       // and the tree is still showing shop's tables.
       await app.evaluate(clickTab('Query 3'));
       await Bun.sleep(1200);
-      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').value`)).toBe('shop');
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('shop');
       const tables = await app.evaluate<string[]>(
         `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`
       );
@@ -1397,7 +1411,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      */
     test('switching to raw quotes the identifier with this engine\'s own mark', async () => {
       await app.evaluate(`${REACT_SETTERS}
-        setSelect(document.querySelector('[data-testid="filter-column"]'), 'name');
+        pickOption(document.querySelector('[data-testid="filter-column"]'), 'name');`);
+      await app.evaluate(`${REACT_SETTERS}
         setNative(document.querySelector('[data-testid="filter-value"]'), 'Ada');
         true;`);
       await Bun.sleep(300);
@@ -1552,7 +1567,12 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await connect(PG, 'pg-fixture');
       expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="sidebar"]')`)).toBe(true);
 
+      // `reload` waits for the root to have children, which the saved list is
+      // not: it arrives a bridge round-trip later. Assert straight after and the
+      // list is legitimately still empty, which reads as "the connection was
+      // never saved" about one that was.
       await app.reload();
+      await app.waitFor(`document.querySelector('[data-testid="saved-name"]') ? true : null`);
       expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="saved-name"]')].map(e => e.textContent)`))
         .toEqual(['pg-fixture']);
     });
@@ -1577,7 +1597,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       // Back to the list without connecting, so the row assertions below stand.
       await app.reload();
-      await Bun.sleep(400);
+      await app.waitFor(`document.querySelector('[data-testid="saved-name"]') ? true : null`);
       expect(await app.evaluate<string[]>(`[...document.querySelectorAll('[data-testid="saved-name"]')].map(e => e.textContent)`))
         .toEqual(['pg-fixture']);
     });
@@ -1598,9 +1618,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         );
       }
       // It must be a real session, not just a routed screen.
-      const dbs = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('[data-testid="sidebar-db-select"] option')].map(e => e.textContent)`
-      );
+      const dbs = await app.evaluate<string[]>(`${REACT_SETTERS} optionsOf('sidebar-db-select', 'label');`);
       expect(dbs).toContain('shop');
     });
 

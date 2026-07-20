@@ -67,12 +67,13 @@ const blankCondition = (column: string): FilterCondition => ({ column, operator:
  */
 const conjunctionStyle: React.CSSProperties = {
   height: CONTROL_H,
-  width: 46,
-  // Asymmetric: a native <select> always draws its own arrow on the right,
-  // which the narrow width made the previous symmetric 1px padding too tight
-  // for -- "AND" ran under it. The left side stays tight since there is
-  // nothing there to protect.
-  padding: '0 13px 0 3px',
+  // It fills its whole track rather than the 46px it took when the browser drew
+  // its arrow: the app's caret is a 16px icon, and there is one icon size on
+  // purpose. `AND` at 10px plus that mark needs every pixel the lead has, so the
+  // gap goes and the padding is the little that is left.
+  width: '100%',
+  gap: 0,
+  padding: '0 0 0 3px',
   fontSize: 10,
   fontWeight: 400,
   color: t.TEXT_FAINT,
@@ -288,44 +289,33 @@ export default function FilterBar() {
               style={conjunctionStyle}
               title="How the conditions combine"
               value={conjunction}
-              onChange={(e) => setConditions(rows, e.target.value as 'AND' | 'OR')}
-            >
-              <option value="AND">AND</option>
-              <option value="OR">OR</option>
-            </Select>
+              options={[{ value: 'AND', label: 'AND' }, { value: 'OR', label: 'OR' }]}
+              onSelect={(value) => setConditions(rows, value as 'AND' | 'OR')}
+            />
           )}
 
           <Select
             data-testid="filter-column"
             style={controlStyle}
             value={condition.column}
-            onChange={(e) => updateCondition(index, { column: e.target.value })}
-          >
-            {/* A column the page no longer has (the tab moved database) still
-                renders, rather than silently snapping to the first column and
-                changing what the filter means without saying so. */}
-            {condition.column !== '' && !columns.includes(condition.column) && (
-              <option value={condition.column}>{condition.column}</option>
-            )}
-            {columns.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </Select>
+            // A column the page no longer has (the tab moved database) still
+            // renders, rather than silently snapping to the first column and
+            // changing what the filter means without saying so.
+            options={[
+              ...(condition.column !== '' && !columns.includes(condition.column) ? [{ value: condition.column, label: condition.column }] : []),
+              ...columns.map((name) => ({ value: name, label: name })),
+            ]}
+            onSelect={(value) => updateCondition(index, { column: value })}
+          />
 
           <Select
             data-testid="filter-operator"
             style={controlStyle}
             value={condition.operator}
-            onChange={(e) => updateCondition(index, { operator: e.target.value as FilterOperator })}
-          >
-            {OPERATORS.map((operator) => (
-              <option key={operator} value={operator}>
-                {operator}
-              </option>
-            ))}
-          </Select>
+            options={OPERATORS.map((operator) => ({ value: operator, label: operator }))}
+            onSelect={(value) => updateCondition(index, { operator: value as FilterOperator })}
+          />
+
 
           {operatorTakesValue(condition.operator) ? (
             <Input

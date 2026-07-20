@@ -6,6 +6,7 @@ import DropTableConfirm from './DropTableConfirm.tsx';
 import { useExplorer } from './useExplorer.ts';
 import Button from '../../common/components/Button.tsx';
 import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
+import Input from '../../common/components/Input.tsx';
 import Select from '../../common/components/Select.tsx';
 import * as t from '../../common/tokens';
 
@@ -22,6 +23,7 @@ interface Props {
 export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition, collapsed, onToggleCollapse }: Props) {
   const { databases, database, hasTab, tables, columnsFor, loadTableColumns, dropTable, readOnly, loading, error } = useExplorer();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<{ table: TableInfo; x: number; y: number } | null>(null);
   const [dropping, setDropping] = useState<TableInfo | null>(null);
 
@@ -50,16 +52,30 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
     [tables]
   );
 
+  // Names only. Columns are fetched lazily per expanded table, so matching them
+  // would find hits in whatever happens to be open and silently miss every table
+  // that is not -- a filter that answers differently depending on what you expanded.
+  const query = filter.trim().toLowerCase();
+  const visible = useMemo(
+    () => (sorted && query ? sorted.filter((table) => table.name.toLowerCase().includes(query)) : sorted),
+    [sorted, query]
+  );
+  const filteredEverythingOut = query !== '' && visible?.length === 0 && (sorted?.length ?? 0) > 0;
+
   return (
     <aside data-testid="sidebar" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, borderRight: `1px solid ${t.BORDER}` }}>
       <div data-testid="sidebar-head" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, height: t.TAB_H, padding: '0 6px', borderBottom: collapsed ? 'none' : `1px solid ${t.BORDER}`, flex: 'none', ...(collapsed ? { justifyContent: 'center', padding: 0 } : {}) }}>
-        <Select variant="bare" value={database ?? ''} onChange={(e) => onSelectDatabase(e.target.value)}
+        <Select variant="bare" searchable value={database ?? ''} onSelect={onSelectDatabase}
+          options={databases.map((db) => ({ value: db, label: db }))}
+          placeholder={databases.length === 0 ? 'No databases' : 'Select a database…'}
           disabled={!hasTab || databases.length === 0} aria-label="Database"
           data-testid="sidebar-db-select"
-          style={{ flex: 1, minWidth: 0, display: collapsed ? 'none' : undefined }}>
-          {database === null && <option value="" disabled>{databases.length === 0 ? 'No databases' : 'Select a database…'}</option>}
-          {databases.map((db) => (<option key={db} value={db}>{db}</option>))}
-        </Select>
+          // Spread the hidden case rather than writing `display: undefined`: the
+          // key would still exist and would overwrite the component's own
+          // `display: flex`, which React then drops, leaving a block box whose
+          // label cannot grow and whose caret sits against the text instead of
+          // at the right edge.
+          style={{ flex: 1, minWidth: 0, ...(collapsed ? { display: 'none' } : {}) }} />
 
         <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0, ...(collapsed ? { marginLeft: 0 } : { marginLeft: 'auto' }) }}
           onClick={onToggleCollapse} title={collapsed ? 'Show sidebar (Ctrl+B)' : 'Hide sidebar (Ctrl+B)'}
@@ -68,12 +84,19 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
         </Button>
       </div>
 
+      <div data-testid="sidebar-filter-bar" style={{ display: collapsed ? 'none' : 'flex', alignItems: 'center', height: t.TAB_H, padding: '0 6px', borderBottom: `1px solid ${t.BORDER}`, flex: 'none' }}>
+        <Input variant="bare" value={filter} onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter tables…" aria-label="Filter tables"
+          data-testid="sidebar-filter" />
+      </div>
+
       <nav style={{ flex: 1, overflowY: 'auto', padding: `${t.GAP_SM}px 6px`, display: collapsed ? 'none' : undefined }}>
         {loading && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>Loading…</div>}
         {error && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.RED_TEXT }}>{error}</div>}
         {sorted?.length === 0 && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No tables</div>}
+        {filteredEverythingOut && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No matches</div>}
 
-        {database && sorted?.map((table) => {
+        {database && visible?.map((table) => {
           const open = expanded.has(table.name);
           return (
             <div key={table.name} data-testid="tree-item">

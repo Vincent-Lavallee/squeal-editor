@@ -113,12 +113,11 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
 
       <Field label="Environment" htmlFor="environment">
         <Select id="environment" value={form.environment}
-          onChange={(e) => {
-            const env = e.target.value as Environment;
+          options={ENVIRONMENTS.map((env) => ({ value: env.value, label: env.label }))}
+          onSelect={(value) => {
+            const env = value as Environment;
             setForm((prev) => ({ ...prev, environment: env, readOnly: readOnlyDefault(env) }));
-          }}>
-          {ENVIRONMENTS.map((env) => (<option key={env.value} value={env.value}>{env.label}</option>))}
-        </Select>
+          }} />
       </Field>
 
       <Field label="">
@@ -132,16 +131,13 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
       </Field>
 
       <Field label="Engine" htmlFor="type">
-        <Select id="type" value={form.type} onChange={(e) => set('type', e.target.value as EngineType)}>
-          {ENGINES.map((e) => (<option key={e.value} value={e.value}>{e.label}</option>))}
-        </Select>
+        <Select id="type" value={form.type} onSelect={(value) => set('type', value as EngineType)}
+          options={ENGINES.map((e) => ({ value: e.value, label: e.label }))} />
       </Field>
 
       <Field label="Authentication" htmlFor="authMethod">
-        <Select id="authMethod" value={form.authMethod} onChange={(e) => setAuthMethod(e.target.value as AuthMethod)}>
-          <option value="password">Password</option>
-          <option value="iam">AWS IAM (RDS)</option>
-        </Select>
+        <Select id="authMethod" value={form.authMethod} onSelect={(value) => setAuthMethod(value as AuthMethod)}
+          options={[{ value: 'password', label: 'Password' }, { value: 'iam', label: 'AWS IAM (RDS)' }]} />
       </Field>
 
       <div style={{ display: 'flex', gap: 10 }}>

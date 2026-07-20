@@ -3,6 +3,7 @@ import {
   RiArrowLeftDoubleLine,
   RiArrowLeftLine,
   RiArrowLeftSLine,
+  RiArrowDownSLine,
   RiArrowRightDoubleLine,
   RiArrowRightSLine,
   RiBarChart2Line,
@@ -52,6 +53,14 @@ export const ViewIcon = RiEyeLine;
  * paging, and giving one an arrow of its own must not silently flip the other.
  */
 export const DisclosureIcon = RiArrowRightSLine;
+
+/**
+ * The caret on a `<Select>` trigger. A kind of its own rather than
+ * `DisclosureIcon`: that one points right and rotates to open a tree row, while
+ * this one points down at rest and never turns. The browser used to draw this
+ * glyph for us; the listbox is hand-rolled, so the app draws it now.
+ */
+export const SelectCaretIcon = RiArrowDownSLine;
 
 /** Marks a primary-key column in an expanded tree row. Shape, not colour: it
  *  reads as muted as any other tree glyph. */
