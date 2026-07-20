@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.4.0...v0.5.0) (2026-07-20)
+
+
+### Features
+
+* Real macos rel ([bbb29c5](https://github.com/Vincent-Lavallee/squeal-editor/commit/bbb29c5bccd2c431f97fe6b6f34b55f87c6d83ad))
+* Table filter tab ([51d833a](https://github.com/Vincent-Lavallee/squeal-editor/commit/51d833a042ccfcd395923ceaa1298fef4e925bf8))
+
+
+### Bug Fixes
+
+* Checkbox hints on connection screen ([3d060ef](https://github.com/Vincent-Lavallee/squeal-editor/commit/3d060ef75d31a98ac01ff5f6147141048e03137e))
+
 ## [0.4.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.3.0...v0.4.0) (2026-07-20)
 
 
