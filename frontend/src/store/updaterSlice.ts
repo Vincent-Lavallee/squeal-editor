@@ -35,6 +35,13 @@ interface UpdaterState {
    * for the same reason `upToDate` is.
    */
   checkFailed: boolean;
+  /**
+   * This platform has no update path at all, so the extension returned without
+   * asking GitHub anything. Kept apart from `checkFailed` because that one offers
+   * a retry, and retrying here could never succeed -- the answer will not change.
+   * Manual only, for the same reason the other two are.
+   */
+  unsupported: boolean;
   error: string | null;
 }
 
@@ -45,6 +52,7 @@ const initialState: UpdaterState = {
   dismissed: false,
   upToDate: false,
   checkFailed: false,
+  unsupported: false,
   error: null,
 };
 
@@ -91,6 +99,7 @@ const updaterSlice = createSlice({
       state.dismissed = true;
       state.upToDate = false;
       state.checkFailed = false;
+      state.unsupported = false;
     },
     progressReceived(state, action: PayloadAction<UpdateProgress>) {
       state.progress = action.payload;
@@ -102,13 +111,22 @@ const updaterSlice = createSlice({
         state.phase = 'checking';
         state.upToDate = false;
         state.checkFailed = false;
+        state.unsupported = false;
         state.error = null;
       })
       .addCase(checkForUpdate.fulfilled, (state, action) => {
         state.status = action.payload;
         state.phase = action.payload.hasUpdate ? 'available' : 'idle';
         const manual = action.meta.arg?.manual ?? false;
-        if (action.payload.hasUpdate) {
+        if (!action.payload.supported) {
+          // The extension answered without reaching GitHub: the whole apply path
+          // is the Windows installer, so there is nothing to offer here. Said
+          // outright rather than as a failed check, which would be a retry loop
+          // that cannot end.
+          state.unsupported = manual;
+          state.upToDate = false;
+          state.checkFailed = false;
+        } else if (action.payload.hasUpdate) {
           // A check that found something un-dismisses the banner, so asking again
           // from the menu surfaces it even after an earlier "Later".
           state.dismissed = false;
@@ -130,6 +148,7 @@ const updaterSlice = createSlice({
         // failed check: silent on launch, "couldn't check" when asked.
         state.phase = 'idle';
         state.checkFailed = action.meta.arg?.manual ?? false;
+        state.unsupported = false;
       })
 
       .addCase(downloadUpdate.pending, (state) => {

@@ -6,7 +6,18 @@ import * as t from '../../common/tokens';
 const iconSvg = { flex: 'none', width: 16, height: 16, color: t.ACCENT };
 
 export default function UpdateBanner() {
-  const { phase, status, progress, dismissed, upToDate, checkFailed, error, check, download, apply, dismiss } = useUpdater();
+  const { phase, status, progress, dismissed, upToDate, checkFailed, unsupported, error, check, download, apply, dismiss } = useUpdater();
+
+  // No "Try again": the answer is a property of the platform, not of the attempt.
+  if (unsupported) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `${t.GAP_XS}px ${t.GAP}px`, borderBottom: `1px solid ${t.BORDER}`, color: t.TEXT, fontSize: t.TEXT_BADGE }} role="status">
+        <UpdateIcon style={iconSvg} />
+        <span style={{ marginRight: 'auto' }}>Automatic updates aren't available on this platform yet.</span>
+        <Button variant="ghost" onClick={dismiss}>Dismiss</Button>
+      </div>
+    );
+  }
 
   if (checkFailed) {
     return (

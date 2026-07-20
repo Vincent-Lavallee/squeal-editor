@@ -26,12 +26,22 @@ dmg="squeal-editor-macos-arm64-v$version.dmg"
 rm -rf "$app" dist/dmg "$dmg"
 mkdir -p "$macos" "$app/Contents/Resources"
 
-# NL_PATH is the directory holding the executable, and that is where Neutralino
-# looks for resources.neu and resolves ${NL_PATH}/extensions/db/squeal-db-ext
-# from. So the payload sits beside the binary in MacOS/, not in Resources/,
-# which is only reachable by an app that knows to look there.
+# Only executables may live in Contents/MacOS. codesign treats everything in
+# there as nested code, so a data file lands as an unsigned subcomponent and the
+# bundle fails `--verify --deep --strict`. That is why CI builds macOS with
+# `neu build --embed-resources`: resources.neu goes inside the binary via
+# postject and there is no data file left to misplace.
+#
+# The extension cannot follow it in, so it stays a real nested executable and
+# gets a real signature below. Its path is not a choice either: NL_PATH is the
+# directory holding the executable, and commandDarwin resolves
+# ${NL_PATH}/extensions/db/squeal-db-ext against it.
+if [ -f dist/squeal-editor/resources.neu ]; then
+  echo "resources.neu is still on disk — neu build ran without --embed-resources." >&2
+  exit 1
+fi
+
 cp dist/squeal-editor/squeal-editor-mac_arm64 "$macos/squeal-editor"
-cp dist/squeal-editor/resources.neu "$macos/resources.neu"
 cp -R dist/squeal-editor/extensions "$macos/extensions"
 chmod +x "$macos/squeal-editor" "$macos/extensions/db/squeal-db-ext"
 
