@@ -46,7 +46,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
         <Select value={database ?? ''} onChange={(e) => onSelectDatabase(e.target.value)}
           disabled={!hasTab || databases.length === 0} aria-label="Database"
           data-testid="sidebar-db-select"
-          style={{ flex: 1, minWidth: 0, border: '1px solid transparent', background: 'transparent', display: collapsed ? 'none' : undefined }}>
+          style={{ flex: 1, minWidth: 0, border: '1px solid transparent', background: t.BG, display: collapsed ? 'none' : undefined }}>
           {database === null && <option value="" disabled>{databases.length === 0 ? 'No databases' : 'Select a database…'}</option>}
           {databases.map((db) => (<option key={db} value={db}>{db}</option>))}
         </Select>

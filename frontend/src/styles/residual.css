@@ -72,6 +72,10 @@
 }
 
 /* ---- Reset ---- */
+/* The one place the palette is told to the browser rather than drawn by it.
+   A <select>'s popup list is OS-drawn and takes no CSS, so without this it
+   comes up white on a dark app. */
+:root { color-scheme: dark; }
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { height: 100%; }
 body {
@@ -143,8 +147,7 @@ input::placeholder { color: var(--text-faint); }
   color: var(--accent);
 }
 
-/* ---- Grid tab hides editor chrome (Monaco stays mounted) ---- */
-.main--grid .toolbar,
+/* ---- Grid tab hides the editor box (Monaco stays mounted) ---- */
 .main--grid .editor { display: none; }
 
 /* ---- Layout (flex fill for routing + root flex column) ---- */

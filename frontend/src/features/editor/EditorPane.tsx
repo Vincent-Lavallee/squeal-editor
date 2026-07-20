@@ -292,15 +292,20 @@ export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
 
   return (
     <>
-      <div className="toolbar" style={toolbar}>
-        <div style={spacer} />
-        <Button onClick={format}>
-          Format
-        </Button>
-        <Button data-testid="run-btn" variant="primary" onClick={() => onRun(sql)} disabled={running}>
-          {running ? 'Running…' : 'Run'}
-        </Button>
-      </div>
+      {/* The toolbar is unmounted on a grid tab rather than hidden in CSS: only
+          the editor box below has to survive the switch, and its inline
+          `display: flex` would outrank any class rule trying to hide it. */}
+      {isEditorTab && (
+        <div className="toolbar" style={toolbar}>
+          <div style={spacer} />
+          <Button onClick={format}>
+            Format
+          </Button>
+          <Button data-testid="run-btn" variant="primary" onClick={() => onRun(sql)} disabled={running}>
+            {running ? 'Running…' : 'Run'}
+          </Button>
+        </div>
+      )}
 
       <div className="editor" style={editorBox} ref={host} />
     </>
