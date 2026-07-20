@@ -11,7 +11,7 @@ const base: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: t.GAP_SM,
-  height: 30,
+  height: t.BUTTON_H,
   padding: '0 12px',
   border: `1px solid ${t.BORDER_STRONG}`,
   borderRadius: t.RADIUS,

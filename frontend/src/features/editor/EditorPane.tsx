@@ -12,9 +12,13 @@ import { useSqlFormatter } from './useSqlFormatter.ts';
 const toolbar: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 10,
-  padding: `0 ${t.GAP_LG}px`,
+  gap: t.GAP_SM,
+  padding: `0 ${t.GAP_SM}px`,
   borderBottom: `1px solid ${t.BORDER}`,
+};
+
+const barButton: React.CSSProperties = {
+  height: t.BUTTON_H_BAR,
 };
 
 const spacer: React.CSSProperties = {
@@ -298,10 +302,10 @@ export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
       {isEditorTab && (
         <div className="toolbar" style={toolbar}>
           <div style={spacer} />
-          <Button onClick={format}>
+          <Button style={barButton} onClick={format}>
             Format
           </Button>
-          <Button data-testid="run-btn" variant="primary" onClick={() => onRun(sql)} disabled={running}>
+          <Button style={barButton} data-testid="run-btn" variant="primary" onClick={() => onRun(sql)} disabled={running}>
             {running ? 'Running…' : 'Run'}
           </Button>
         </div>

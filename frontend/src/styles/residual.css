@@ -58,10 +58,11 @@
   --tracking-label: 0.04em;
   --icon: 16px;
   --titlebar-h: 32px;
-  --bar-h: 44px;
   --tab-h: 32px;
   --statusbar-h: 26px;
-  --rail-h: 48px;
+  --rail-h: 32px;
+  --button-h: 30px;
+  --button-h-bar: 24px;
   --row-h: 44px;
   --row-h-dense: 30px;
   --gap-xs: 4px;

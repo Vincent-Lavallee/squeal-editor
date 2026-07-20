@@ -95,7 +95,7 @@ function ShellLayout({ onAddConnection }: Props) {
         <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} onShowDefinition={showDefinition}
           collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
 
-        <main data-testid={showEditor ? undefined : 'main-grid'} className={showEditor ? '' : 'main--grid'} style={{ display: 'grid', gridTemplateRows: showEditor ? `${t.TAB_H}px ${t.BAR_H}px minmax(120px, 30%) 1fr` : `${t.TAB_H}px 1fr`, minWidth: 0, minHeight: 0 }}>
+        <main data-testid={showEditor ? undefined : 'main-grid'} className={showEditor ? '' : 'main--grid'} style={{ display: 'grid', gridTemplateRows: showEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(120px, 30%) 1fr` : `${t.TAB_H}px 1fr`, minWidth: 0, minHeight: 0 }}>
           <TabStrip onDuplicateTab={duplicateTab} />
           <EditorPane onRun={run} running={running} onToggleSidebar={toggleSidebar} />
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: `1px solid ${t.BORDER}` }}>

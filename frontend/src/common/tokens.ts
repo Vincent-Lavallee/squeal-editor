@@ -134,10 +134,24 @@ export const ICON = 16;
 
 /* ---- Density ---- */
 export const TITLEBAR_H = 32; /* Windows' own titlebar height */
-export const BAR_H = 44; /* top bar */
-export const TAB_H = 32; /* tab strip — matches TITLEBAR_H today but is its own fact */
+/*
+ * The chrome bar height. Every horizontal bar between the titlebar and the
+ * status bar is this tall — the tab strip, the sidebar head, the editor
+ * toolbar and the connection rail — so the stack reads as one ruled grid
+ * rather than four bars that each chose a size. It matches TITLEBAR_H today
+ * but is its own fact.
+ */
+export const TAB_H = 32;
 export const STATUSBAR_H = 26; /* bottom status bar */
-export const RAIL_H = 48; /* connection rail — full-width horizontal bar */
+export const RAIL_H = TAB_H; /* connection rail — full-width horizontal bar */
+export const BUTTON_H = 30; /* buttons and inputs */
+/*
+ * A button sized to sit inside a chrome bar. BUTTON_H against a 32px bar leaves
+ * a single pixel either side and reads as the button *being* the bar; this
+ * leaves it room to sit in one.
+ */
+export const BUTTON_H_BAR = 24;
+
 export const ROW_H = 44; /* reference table row height */
 /*
  * Deviation from the reference: its 44px rows suit a dashboard table of a
