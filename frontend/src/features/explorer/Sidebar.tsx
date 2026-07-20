@@ -4,6 +4,7 @@ import type { TableInfo } from '../../../../shared/protocol/index.ts';
 import { DisclosureIcon, KeyIcon, SidebarFoldIcon, SidebarUnfoldIcon, TableIcon, ViewIcon } from '../../common/icons/icons.ts';
 import DropTableConfirm from './DropTableConfirm.tsx';
 import { useExplorer } from './useExplorer.ts';
+import Button from '../../common/components/Button.tsx';
 import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import Select from '../../common/components/Select.tsx';
 import * as t from '../../common/tokens';
@@ -51,20 +52,20 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
 
   return (
     <aside data-testid="sidebar" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, borderRight: `1px solid ${t.BORDER}` }}>
-      <div data-testid="sidebar-head" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, height: t.TAB_H, padding: `0 ${t.GAP}px`, borderBottom: collapsed ? 'none' : `1px solid ${t.BORDER}`, flex: 'none', ...(collapsed ? { justifyContent: 'center', padding: 0 } : {}) }}>
-        <Select value={database ?? ''} onChange={(e) => onSelectDatabase(e.target.value)}
+      <div data-testid="sidebar-head" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, height: t.TAB_H, padding: '0 6px', borderBottom: collapsed ? 'none' : `1px solid ${t.BORDER}`, flex: 'none', ...(collapsed ? { justifyContent: 'center', padding: 0 } : {}) }}>
+        <Select variant="bare" value={database ?? ''} onChange={(e) => onSelectDatabase(e.target.value)}
           disabled={!hasTab || databases.length === 0} aria-label="Database"
           data-testid="sidebar-db-select"
-          style={{ flex: 1, minWidth: 0, border: '1px solid transparent', background: t.BG, display: collapsed ? 'none' : undefined }}>
+          style={{ flex: 1, minWidth: 0, display: collapsed ? 'none' : undefined }}>
           {database === null && <option value="" disabled>{databases.length === 0 ? 'No databases' : 'Select a database…'}</option>}
           {databases.map((db) => (<option key={db} value={db}>{db}</option>))}
         </Select>
 
-        <button style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', width: 22, height: 22, border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, background: 'none', color: t.TEXT_MUTED, cursor: 'pointer', ...(collapsed ? { marginLeft: 0 } : { marginLeft: 'auto' }) }}
+        <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0, ...(collapsed ? { marginLeft: 0 } : { marginLeft: 'auto' }) }}
           onClick={onToggleCollapse} title={collapsed ? 'Show sidebar (Ctrl+B)' : 'Hide sidebar (Ctrl+B)'}
           aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}>
           {collapsed ? <SidebarUnfoldIcon style={iconSvg} aria-hidden="true" /> : <SidebarFoldIcon style={iconSvg} aria-hidden="true" />}
-        </button>
+        </Button>
       </div>
 
       <nav style={{ flex: 1, overflowY: 'auto', padding: `${t.GAP_SM}px 6px`, display: collapsed ? 'none' : undefined }}>
