@@ -95,9 +95,18 @@ jobs:
         if: runner.os == 'Windows'
         run: tar -a -c -f "squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip" -C dist squeal-editor
 
-      - name: Zip the bundle (Unix)
-        if: runner.os != 'Windows'
+      - name: Zip the bundle (Linux)
+        if: runner.os == 'Linux'
         run: cd dist && zip -r "../squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip" squeal-editor
+
+      # macOS ships a .dmg instead of a zip: the raw neu output is a bare
+      # executable and a resources folder, which is not something macOS knows how
+      # to install. The script builds the .app bundle neu does not.
+      - name: Package the macOS app
+        if: runner.os == 'macOS'
+        run: |
+          version="${{ needs.release-please.outputs.tag_name }}"
+          bash scripts/package-macos.sh "${version#v}"
 
       # A Setup.exe beside the portable zip: the installer is the path the
       # auto-updater will lean on, the zip stays for anyone who wants it loose.
@@ -114,9 +123,18 @@ jobs:
           & $iscc "/DAppVersion=$version" installer\squeal-editor.iss
 
       - name: Attach to the release
+        if: runner.os != 'macOS'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ needs.release-please.outputs.tag_name }}" "squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip" --clobber
+
+      - name: Attach the macOS disk image to the release
+        if: runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ needs.release-please.outputs.tag_name }}"
+          gh release upload "$version" "squeal-editor-macos-arm64-v${version#v}.dmg" --clobber
 
       - name: Attach the installer to the release
         if: runner.os == 'Windows'
