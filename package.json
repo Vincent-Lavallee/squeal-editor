@@ -12,6 +12,7 @@
     "build": "bun run --filter @squeal/frontend build",
     "build:ext": "bun build extensions/db/main.ts --compile --outfile extensions/db/squeal-db-ext",
     "start": "bun run build && bun run build:ext && neu run -- --window-enable-inspector=true",
+    "start:macos": "bash scripts/dev-macos.sh",
     "dev": "bun run build:ext && neu run -- --window-enable-inspector=true",
     "typecheck": "tsc -p frontend --noEmit && tsc -p extensions/db --noEmit",
     "test": "bun test",

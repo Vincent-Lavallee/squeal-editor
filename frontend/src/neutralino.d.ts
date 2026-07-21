@@ -15,6 +15,11 @@
  * d.ts calls it a string, and it is not.
  */
 declare const NL_PID: number;
+/**
+ * The OS Neutralino is running on.
+ * `Darwin` on macOS, `Windows` on Windows, `Linux` on Linux.
+ */
+declare const NL_OS: string;
 
 declare namespace Neutralino {
   function init(): void;

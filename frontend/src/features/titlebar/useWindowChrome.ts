@@ -23,6 +23,8 @@ import { call } from '../../common/bridge/bridge.ts';
  */
 const DRAG_THRESHOLD = 4;
 
+const IS_MACOS = typeof NL_OS !== 'undefined' && NL_OS === 'Darwin';
+
 export function useWindowChrome() {
   const [maximized, setMaximized] = useState(false);
 
@@ -44,9 +46,13 @@ export function useWindowChrome() {
    * because Neutralino spawns extensions through a shell -- the extension's own
    * parent is that shell, not this window.
    *
+   * macOS keeps its own native title bar (borderless: false) and neither the
+   * WS_THICKFRAME trick nor the frame paint apply there.
+   *
    * See docs/decisions.md before touching either half.
    */
   useEffect(() => {
+    if (IS_MACOS) return;
     void (async () => {
       await Neutralino.window.setSize({ resizable: true });
 
@@ -87,8 +93,10 @@ export function useWindowChrome() {
      * The clamp itself resizes the window once more, so sync runs again; the
      * extension no-ops on a window already fitted, which is what stops that
      * echo from becoming a loop.
+     *
+     * macOS has its own native zoom behaviour and does not need this clamp.
      */
-    if (isMaximized) {
+    if (isMaximized && !IS_MACOS) {
       await call('window.fitMaximized', { pid: NL_PID }).catch(() => undefined);
     }
   }, []);
