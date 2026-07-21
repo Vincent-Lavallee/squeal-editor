@@ -152,5 +152,5 @@ input::placeholder { color: var(--text-faint); }
 .main--grid .editor { display: none; }
 
 /* ---- Layout (flex fill for routing + root flex column) ---- */
-.app-body { flex: 1; min-height: 0; }
+.app-body { flex: 1; min-height: 0; overflow: auto; }
 #root { display: flex; flex-direction: column; }

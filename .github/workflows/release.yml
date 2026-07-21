@@ -88,14 +88,6 @@ jobs:
         if: runner.os != 'macOS'
         run: bunx neu build
 
-      # macOS keeps the native title bar (traffic-light buttons on the left,
-      # native menu bar with App / File / Edit menus) instead of the custom
-      # titlebar the Windows and Linux builds use.
-      - name: Switch to native title bar (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          sed -i '' 's/"borderless": true/"borderless": false/' neutralino.config.json
-
       # macOS embeds resources.neu into the binary rather than shipping it beside
       # one. Inside an .app the only place NL_PATH can find a loose resources.neu
       # is Contents/MacOS, and codesign reads every file there as nested code, so
