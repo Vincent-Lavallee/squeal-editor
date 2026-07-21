@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.4...v0.6.5) (2026-07-21)
+
+
+### Bug Fixes
+
+* macos borderless window ([4547296](https://github.com/Vincent-Lavallee/squeal-editor/commit/454729608ff902ce99c28eba106dc8598b795c87))
+
 ## [0.6.4](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.3...v0.6.4) (2026-07-21)
 
 
