@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.0...v0.6.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* Removed partition from table tree ([7a95cab](https://github.com/Vincent-Lavallee/squeal-editor/commit/7a95cabc981294e0271aaf2f3c0210ea32b97227))
+
 ## [0.6.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.5.2...v0.6.0) (2026-07-21)
 
 
