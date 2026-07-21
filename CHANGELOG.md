@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.5.2...v0.6.0) (2026-07-21)
+
+
+### Features
+
+* grouped by schema ([4a58e8f](https://github.com/Vincent-Lavallee/squeal-editor/commit/4a58e8feb7f4b798de57c16a1973bab3ea5574f7))
+* Reziable panels ([a78b345](https://github.com/Vincent-Lavallee/squeal-editor/commit/a78b34529eb81e0a16008a95bebe8bc511c2f601))
+* search the database dropdown and filter the table tree ([287b524](https://github.com/Vincent-Lavallee/squeal-editor/commit/287b5247ace5d3c1186c030fbe96d67ce0f270d7))
+* sqlite support ([e245d90](https://github.com/Vincent-Lavallee/squeal-editor/commit/e245d90d76011ffe80f1e91ceda9b670cabd7e17))
+* Stars ([c9daadf](https://github.com/Vincent-Lavallee/squeal-editor/commit/c9daadf11f95f95ee58a90e72f3524b47fa8791d))
+
+
+### Bug Fixes
+
+* devtools on release build ([d5a7f8a](https://github.com/Vincent-Lavallee/squeal-editor/commit/d5a7f8a5345a6bccadf67077639b8b13cd3acbce))
+* user data db name ([3dd72d2](https://github.com/Vincent-Lavallee/squeal-editor/commit/3dd72d254d9b84feb8410903777015b46eec684e))
+
 ## [0.5.2](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.5.1...v0.5.2) (2026-07-20)
 
 
