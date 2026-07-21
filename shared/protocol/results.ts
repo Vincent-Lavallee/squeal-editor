@@ -30,6 +30,18 @@ export interface TableInfo {
 }
 
 /**
+ * One relation a saved connection has starred, named the way every relation
+ * command already is -- `table` and an optional `schema`, never a joined
+ * display string. It travels with `database` because a star is a fact about one
+ * relation in one database, not about the table name alone.
+ */
+export interface StarredTable {
+  database: string;
+  table: string;
+  schema?: string;
+}
+
+/**
  * A column of a table, as the catalog describes it.
  *
  * `dataType` is the engine's *own* rendering of the type -- `varchar(255)` from

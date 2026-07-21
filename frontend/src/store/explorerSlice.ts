@@ -58,6 +58,17 @@ interface ExplorerState {
    */
   columns: Record<string, Record<string, Record<string, ColumnInfo[] | null>>>;
   /**
+   * Starred tables, keyed connection -> database -> the relation's qualified
+   * name, the same shape `columns` already is and for the same reason: a
+   * connection absent here has simply never had its stars fetched, and two
+   * connections holding a database called `app` must not read each other's.
+   *
+   * Presence is the whole answer -- there is no `false` entry, because
+   * unstarring removes the key rather than writing one that means "no". `true`
+   * is the value only because a map needs one; nothing ever reads it.
+   */
+  stars: Record<string, Record<string, Record<string, true>>>;
+  /**
    * The tree's in-flight fetch, and its failure. Singular because one tree is
    * drawn at a time -- but each names its connection, because the fetch that
    * lands is not always the one the tree is still waiting for.
@@ -70,6 +81,7 @@ const initialState: ExplorerState = {
   databases: {},
   tables: {},
   columns: {},
+  stars: {},
   loadingTables: null,
   error: null,
 };
@@ -233,6 +245,61 @@ export const dropTable = createAppThunk(
   }
 );
 
+/**
+ * Every star the active connection's saved row holds, across every database it
+ * has ever browsed -- one call per session, the same shape `databases` arrives
+ * in, rather than one per database: the tree switching database must cost
+ * nothing extra to ask about.
+ *
+ * Takes the *runtime* `connectionId` so its `condition` can dedupe the same way
+ * `loadTables` does, but reads the row's own id off the session to ask the
+ * store -- stars are filed under the saved connection, which outlives this
+ * session, not the id this thunk was handed.
+ */
+export const loadStars = createAppThunk(
+  'explorer/loadStars',
+  async (connectionId: string, { getState, rejectWithValue }) => {
+    const conn = getState().session.connections[connectionId];
+    if (!conn) return rejectWithValue('Not connected.');
+    try {
+      const { stars } = await call('db.stars.list', { savedConnectionId: conn.savedConnectionId });
+      return { connectionId, stars };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  },
+  {
+    condition: (connectionId, { getState }) => getState().explorer.stars[connectionId] === undefined,
+  }
+);
+
+/** A relation the tree's context menu is starring or unstarring. */
+interface StarArg extends Relation {
+  database: string;
+  starred: boolean;
+}
+
+/**
+ * Star or unstar a relation. The bridge call carries the saved connection's own
+ * id -- see `loadStars` -- and on success the tree's cache is updated directly
+ * rather than refetched, since the whole set is already in hand and a toggle
+ * changes exactly one entry of it.
+ */
+export const setStar = createAppThunk(
+  'explorer/setStar',
+  async ({ database, table, schema, starred }: StarArg, { getState, rejectWithValue }) => {
+    const connectionId = getState().session.activeConnectionId;
+    const conn = connectionId ? getState().session.connections[connectionId] : null;
+    if (!connectionId || !conn) return rejectWithValue('Not connected.');
+    try {
+      await call('db.stars.set', { savedConnectionId: conn.savedConnectionId, database, table, schema, starred });
+      return { connectionId, database, table, schema, starred };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  }
+);
+
 const explorerSlice = createSlice({
   name: 'explorer',
   initialState,
@@ -269,6 +336,7 @@ const explorerSlice = createSlice({
         delete state.databases[connectionId];
         delete state.tables[connectionId];
         delete state.columns[connectionId];
+        delete state.stars[connectionId];
         if (state.loadingTables?.connectionId === connectionId) state.loadingTables = null;
         if (state.error?.connectionId === connectionId) state.error = null;
       })
@@ -310,6 +378,25 @@ const explorerSlice = createSlice({
         }
         const byTable = state.columns[connectionId]?.[database];
         if (byTable) delete byTable[relationName({ table, schema })];
+      })
+      .addCase(loadStars.fulfilled, (state, action) => {
+        const { connectionId, stars } = action.payload;
+        // A disconnect that lands first drops the connection outright; writing
+        // here anyway would resurrect it with nothing left to ever collect it.
+        if (!(connectionId in state.databases)) return;
+        const byDatabase: Record<string, Record<string, true>> = {};
+        for (const s of stars) {
+          (byDatabase[s.database] ??= {})[relationName({ table: s.table, schema: s.schema })] = true;
+        }
+        state.stars[connectionId] = byDatabase;
+      })
+      .addCase(setStar.fulfilled, (state, action) => {
+        const { connectionId, database, table, schema, starred } = action.payload;
+        const byDatabase = (state.stars[connectionId] ??= {});
+        const byTable = (byDatabase[database] ??= {});
+        const key = relationName({ table, schema });
+        if (starred) byTable[key] = true;
+        else delete byTable[key];
       })
       //
       // The database list arrives with the connection itself, so the explorer

@@ -5,7 +5,14 @@ import { relationName, type Relation } from '../../common/db/relation.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import { selectActiveConnection } from '../../store/sessionSlice.ts';
-import { dropTable as dropTableThunk, fetchDdl as fetchDdlThunk, loadColumns, loadTables } from '../../store/explorerSlice.ts';
+import {
+  dropTable as dropTableThunk,
+  fetchDdl as fetchDdlThunk,
+  loadColumns,
+  loadStars,
+  loadTables,
+  setStar as setStarThunk,
+} from '../../store/explorerSlice.ts';
 
 /**
  * A connection with nothing fetched yet, and a tab pointed at nothing, read the
@@ -17,7 +24,7 @@ const NO_DATABASES: string[] = [];
 /** The explorer's whole public surface. Its components use nothing else. */
 export function useExplorer() {
   const dispatch = useAppDispatch();
-  const { databases, tables, columns, loadingTables, error } = useAppSelector((s) => s.explorer);
+  const { databases, tables, columns, stars, loadingTables, error } = useAppSelector((s) => s.explorer);
   const connectionId = useAppSelector((s) => s.session.activeConnectionId);
   // The active connection's lock, so the menu can refuse a drop on a connection
   // the user has held read-only -- read-only does not reliably cover DDL at the
@@ -46,6 +53,16 @@ export function useExplorer() {
   useEffect(() => {
     if (database) void dispatch(loadTables(database));
   }, [database, connectionId, dispatch]);
+
+  /*
+   * One fetch per connection, not per database -- see `loadStars`. Keyed on
+   * `connectionId` alone, which changes exactly when the rail moves or a
+   * session opens; `loadStars`' own `condition` is what keeps a connection
+   * already fetched off the bridge on every one of those switches.
+   */
+  useEffect(() => {
+    if (connectionId) void dispatch(loadStars(connectionId));
+  }, [connectionId, dispatch]);
 
   /*
    * The tree fetches a table's columns the same way the completion does -- the
@@ -85,11 +102,26 @@ export function useExplorer() {
     [dispatch]
   );
 
+  // Whether a relation is pinned in the tree, keyed the same way its cache is.
+  const isStarred = useCallback(
+    (db: string, relation: Relation): boolean =>
+      connectionId ? (stars[connectionId]?.[db]?.[relationName(relation)] ?? false) : false,
+    [connectionId, stars]
+  );
+  const toggleStar = useCallback(
+    (db: string, relation: Relation, starred: boolean): void => {
+      void dispatch(setStarThunk({ database: db, ...relation, starred }));
+    },
+    [dispatch]
+  );
+
   return {
     columnsFor,
     loadTableColumns,
     fetchDdl,
     dropTable,
+    isStarred,
+    toggleStar,
     /** The active connection is read-only; a drop is disabled and says why. */
     readOnly,
     /** The schema that goes without saying here, or undefined if none does. */

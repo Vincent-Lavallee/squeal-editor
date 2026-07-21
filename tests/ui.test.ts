@@ -1190,19 +1190,44 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
     /*
      * Right-clicking a table used to do nothing; now it is the surface the
-     * per-table actions hang off. The three are asserted as one list because the
-     * menu being the whole surface is the point -- a stray fourth entry, or a
+     * per-table actions hang off. The four are asserted as one list because the
+     * menu being the whole surface is the point -- a stray fifth entry, or a
      * missing one, is the regression. We are on `shop` with `users` in the tree
      * from the test above.
      */
     test('right-clicking a table opens its action menu', async () => {
       await app.evaluate(rightClickTable('users'));
       await Bun.sleep(200);
-      expect(await app.evaluate<string[]>(menuItemLabels)).toEqual(['Copy name', 'Open definition', 'Drop table']);
+      expect(await app.evaluate<string[]>(menuItemLabels)).toEqual(['Copy name', 'Open definition', 'Star', 'Drop table']);
       // Dismisses on Escape, like every floating thing here.
       await app.evaluate(pressEscape);
       await Bun.sleep(150);
       expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="context-menu"]').length`)).toBe(0);
+    });
+
+    /*
+     * Starring lifts a table into its own "Starred" group at the top and out of
+     * the list below -- not repeated in it. Unstarring puts it back exactly
+     * where the plain sort already had it.
+     */
+    test('starring a table pins it above the rest, and unstarring returns it', async () => {
+      await app.evaluate(rightClickTable('users'));
+      await Bun.sleep(200);
+      await app.evaluate(clickContextItem('Star'));
+      await Bun.sleep(400);
+
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="tree-pinned"]')`)).toBe(true);
+      const pinnedLabels = `[...document.querySelector('[data-testid="tree-pinned"]').querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`;
+      expect(await app.evaluate<string[]>(pinnedLabels)).toEqual(['users']);
+
+      await app.evaluate(rightClickTable('users'));
+      await Bun.sleep(200);
+      // The menu now offers to reverse it, worded for the state it found.
+      expect(await app.evaluate<string[]>(menuItemLabels)).toContain('Unstar');
+      await app.evaluate(clickContextItem('Unstar'));
+      await Bun.sleep(400);
+
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="tree-pinned"]')`)).toBe(false);
     });
 
     test('the menu names a view a view', async () => {

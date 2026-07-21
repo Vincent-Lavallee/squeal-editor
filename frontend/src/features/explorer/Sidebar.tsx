@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 
 import type { TableInfo } from '../../../../shared/protocol/index.ts';
 import { relationLabel, relationName, relationOf } from '../../common/db/relation.ts';
-import { DisclosureIcon, FlatTreeIcon, KeyIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, TableIcon, ViewIcon } from '../../common/icons/icons.ts';
+import { DisclosureIcon, FlatTreeIcon, KeyIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, StarIcon, TableIcon, ViewIcon } from '../../common/icons/icons.ts';
 import DropTableConfirm from './DropTableConfirm.tsx';
 import { useExplorer } from './useExplorer.ts';
 import Button from '../../common/components/Button.tsx';
@@ -31,7 +31,7 @@ interface Props {
 }
 
 export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition, collapsed, onToggleCollapse }: Props) {
-  const { databases, database, hasTab, tables, columnsFor, loadTableColumns, dropTable, readOnly, defaultSchema, loading, error } = useExplorer();
+  const { databases, database, hasTab, tables, columnsFor, loadTableColumns, dropTable, isStarred, toggleStar, readOnly, defaultSchema, loading, error } = useExplorer();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [flippedSchemas, setFlippedSchemas] = useState<ReadonlySet<string>>(() => new Set());
   const [filter, setFilter] = useState('');
@@ -44,13 +44,17 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
   // Drop is refused on a read-only connection: read-only is the server refusing
   // writes, and that does not reliably cover DDL, so honouring the intent for a
   // `DROP` is the UI's to do.
-  const menuItems = (table: TableInfo, db: string): MenuItem[] => [
-    // The name as it reads, not the cache's key: what lands on the clipboard is
-    // what you would type, and `public.` is not something anyone types.
-    { label: 'Copy name', onSelect: () => copyName(relationLabel(relationOf(table), defaultSchema)) },
-    { label: 'Open definition', onSelect: () => onShowDefinition(db, table) },
-    { label: `Drop ${table.kind === 'view' ? 'view' : 'table'}`, danger: true, disabled: readOnly, title: readOnly ? 'This connection is read-only.' : undefined, onSelect: () => setDropping(table) },
-  ];
+  const menuItems = (table: TableInfo, db: string): MenuItem[] => {
+    const starred = isStarred(db, relationOf(table));
+    return [
+      // The name as it reads, not the cache's key: what lands on the clipboard is
+      // what you would type, and `public.` is not something anyone types.
+      { label: 'Copy name', onSelect: () => copyName(relationLabel(relationOf(table), defaultSchema)) },
+      { label: 'Open definition', onSelect: () => onShowDefinition(db, table) },
+      { label: starred ? 'Unstar' : 'Star', onSelect: () => toggleStar(db, relationOf(table), !starred) },
+      { label: `Drop ${table.kind === 'view' ? 'view' : 'table'}`, danger: true, disabled: readOnly, title: readOnly ? 'This connection is read-only.' : undefined, onSelect: () => setDropping(table) },
+    ];
+  };
 
   // Keyed by the qualified name, because two schemas may each hold a `users` and
   // expanding one of them must not open the other.
@@ -89,6 +93,21 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
   const filteredEverythingOut = query !== '' && visible?.length === 0 && (sorted?.length ?? 0) > 0;
 
   /*
+   * Starred tables lift into their own group at the top and drop out of the
+   * list below rather than repeating in it -- `unpinned` is what every schema
+   * grouping and the flat fallback below actually renders. Both keep the sort
+   * above's tables-over-views order, since filtering preserves it.
+   */
+  const pinned = useMemo(
+    () => (visible && database ? visible.filter((table) => isStarred(database, relationOf(table))) : null),
+    [visible, database, isStarred]
+  );
+  const unpinned = useMemo(
+    () => (visible && database ? visible.filter((table) => !isStarred(database, relationOf(table))) : visible),
+    [visible, database, isStarred]
+  );
+
+  /*
    * A group starts open only if it is the schema you are already in -- the rest
    * are shut, because a dozen schemas all open cost the same scroll that grouping
    * exists to remove. Which schema that is comes from the engine
@@ -114,13 +133,13 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
    * rather than off the engine: the UI does not know what MySQL is, and "these
    * relations name a schema" is exactly the question being asked anyway.
    */
-  const hasSchemas = visible?.some((table) => table.schema !== undefined) ?? false;
+  const hasSchemas = unpinned?.some((table) => table.schema !== undefined) ?? false;
   const grouped = useMemo(() => {
-    if (!visible || !hasSchemas || !groupBySchema) return null;
+    if (!unpinned || !hasSchemas || !groupBySchema) return null;
     // Grouping preserves the order within each group, so the sort above still
     // holds tables over views inside every one of them.
     const groups = new Map<string, TableInfo[]>();
-    for (const table of visible) {
+    for (const table of unpinned) {
       const schema = table.schema ?? '';
       const existing = groups.get(schema);
       if (existing) existing.push(table);
@@ -135,7 +154,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
       if (b === defaultSchema) return 1;
       return a.localeCompare(b);
     });
-  }, [visible, hasSchemas, groupBySchema, defaultSchema]);
+  }, [unpinned, hasSchemas, groupBySchema, defaultSchema]);
 
   const renderRow = (table: TableInfo, db: string, indented: boolean) => {
     const key = relationName(relationOf(table));
@@ -214,6 +233,16 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
         {sorted?.length === 0 && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No tables</div>}
         {filteredEverythingOut && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No matches</div>}
 
+        {database && pinned && pinned.length > 0 && (
+          <div data-testid="tree-pinned" style={{ marginBottom: t.GAP_SM, paddingBottom: t.GAP_SM, borderBottom: `1px solid ${t.BORDER}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', height: t.ROW_H_DENSE, padding: '0 6px', color: t.ACCENT, fontSize: t.TEXT_BADGE }}>
+              <StarIcon style={{ ...iconSvg, color: t.ACCENT }} aria-hidden="true" />
+              <span>Starred</span>
+            </div>
+            {pinned.map((table) => renderRow(table, database, false))}
+          </div>
+        )}
+
         {database && grouped?.map(([schema, group]) => {
           const open = schemaOpen(schema);
           return (
@@ -230,7 +259,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
           );
         })}
 
-        {database && !grouped && visible?.map((table) => renderRow(table, database, false))}
+        {database && !grouped && unpinned?.map((table) => renderRow(table, database, false))}
       </nav>
 
       {menu && database && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.table, database)} onClose={() => setMenu(null)} />}

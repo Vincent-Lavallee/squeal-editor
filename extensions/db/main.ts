@@ -32,11 +32,13 @@ import {
   deleteWorkspace,
   listSaved,
   listSettings,
+  listStars,
   listWorkspaces,
   resolveSaved,
   saveConnection,
   saveWorkspace,
   setSetting,
+  setStar,
 } from './store.ts';
 
 // Killing the app does not reliably close our socket: WebView2 child processes
@@ -173,6 +175,15 @@ const COMMANDS: Handlers = {
       workspaceId,
       readOnly,
     };
+  },
+
+  async 'db.stars.list'({ savedConnectionId }) {
+    return { stars: listStars(savedConnectionId) };
+  },
+
+  async 'db.stars.set'({ savedConnectionId, database, table, schema, starred }) {
+    setStar(savedConnectionId, database, schema, table, starred);
+    return { ok: true };
   },
 
   /* -- Workspaces (store.ts owns the grouping and the cascade) --------- */

@@ -39,6 +39,7 @@ export type {
   QueryResult,
   RowDelete,
   RowEdit,
+  StarredTable,
   TableFilter,
   TableInfo,
   TablePage,

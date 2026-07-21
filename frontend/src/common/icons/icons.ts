@@ -25,6 +25,7 @@ import {
   RiRocketLine,
   RiShoppingCartLine,
   RiStackLine,
+  RiStarSFill,
   RiTableLine,
 } from '@remixicon/react';
 
@@ -77,6 +78,11 @@ export const SelectCaretIcon = RiArrowDownSLine;
 /** Marks a primary-key column in an expanded tree row. Shape, not colour: it
  *  reads as muted as any other tree glyph. */
 export const KeyIcon = RiKey2Line;
+
+/** The pinned group's heading, and a starred table's mark -- always filled:
+ *  there is no "unstarred" drawing of this glyph, since an unstarred table
+ *  simply does not show one. */
+export const StarIcon = RiStarSFill;
 
 /*
  * Paging. A binding each although the two are mirror images: "previous page" and

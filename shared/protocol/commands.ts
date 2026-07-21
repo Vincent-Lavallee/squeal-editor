@@ -17,7 +17,16 @@ import type {
   WorkspaceColorId,
   WorkspaceIconId,
 } from './config.ts';
-import type { ColumnInfo, QueryResult, RowDelete, RowEdit, TableFilter, TableInfo, TablePage } from './results.ts';
+import type {
+  ColumnInfo,
+  QueryResult,
+  RowDelete,
+  RowEdit,
+  StarredTable,
+  TableFilter,
+  TableInfo,
+  TablePage,
+} from './results.ts';
 import type { UpdateStatus } from './updater.ts';
 
 /**
@@ -212,6 +221,32 @@ export interface Commands {
       workspaceId: string;
       readOnly: boolean;
     };
+  };
+
+  /**
+   * Every table a saved connection has starred, across every database it has
+   * ever browsed. Fetched once per session, the same way `db.saved.connect`
+   * hands back `databases` -- there is no per-database call because the whole
+   * point is a tree switching database costs nothing extra to ask about.
+   *
+   * `savedConnectionId` names the *saved* row, never the runtime `connectionId`
+   * a live connection carries: a star has to outlive the session it was set in,
+   * and the runtime id is minted fresh every time `db.connect` runs. The two
+   * ids happen to be the same string only for `db.saved.connect`'s caller, who
+   * already holds both.
+   */
+  'db.stars.list': {
+    req: { savedConnectionId: string };
+    res: { stars: StarredTable[] };
+  };
+  /**
+   * Star or unstar one relation, from the tree's context menu. Idempotent: the
+   * UI sends the state it wants, not a toggle, so a menu opened twice cannot
+   * flip a star back by accident.
+   */
+  'db.stars.set': {
+    req: { savedConnectionId: string; database: string; table: string; schema?: string; starred: boolean };
+    res: { ok: true };
   };
 
   /* -- Workspaces. The same store, and the thing connections hang off. --- */

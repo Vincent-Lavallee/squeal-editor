@@ -535,6 +535,97 @@ describe('settings', () => {
   });
 });
 
+describe('starred tables', () => {
+  const stars = async (savedConnectionId: string): Promise<{ database: string; schema?: string; table: string }[]> =>
+    ((await h.ok('db.stars.list', { savedConnectionId })) as { stars: { database: string; schema?: string; table: string }[] })
+      .stars;
+
+  test('a fresh connection has none', async () => {
+    const saved = await save({ name: 'stars-fresh', config: PG_SERVER, password: { mode: 'none' } });
+    expect(await stars(saved.id)).toEqual([]);
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+
+  test('starring adds it, unstarring removes it, and both are idempotent', async () => {
+    const saved = await save({ name: 'stars-toggle', config: PG_SERVER, password: { mode: 'none' } });
+
+    await h.ok('db.stars.set', { savedConnectionId: saved.id, database: FIXTURE_DB, table: 'users', schema: 'public', starred: true });
+    // Twice: starring an already-starred table must not throw on the UNIQUE index.
+    await h.ok('db.stars.set', { savedConnectionId: saved.id, database: FIXTURE_DB, table: 'users', schema: 'public', starred: true });
+    expect(await stars(saved.id)).toEqual([{ database: FIXTURE_DB, schema: 'public', table: 'users' }]);
+
+    await h.ok('db.stars.set', { savedConnectionId: saved.id, database: FIXTURE_DB, table: 'users', schema: 'public', starred: false });
+    // Twice: unstarring one that is already gone must not throw either.
+    await h.ok('db.stars.set', { savedConnectionId: saved.id, database: FIXTURE_DB, table: 'users', schema: 'public', starred: false });
+    expect(await stars(saved.id)).toEqual([]);
+
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+
+  test('a table with no schema stars the same as one twice, not once', async () => {
+    // MySQL never carries a schema, which is the case the `NOT NULL DEFAULT ''`
+    // column exists for: SQLite's `UNIQUE` treats every `NULL` as its own value,
+    // so a nullable schema would let this table be starred twice over.
+    const saved = await save({ name: 'stars-no-schema', config: PG_SERVER, password: { mode: 'none' } });
+
+    await h.ok('db.stars.set', { savedConnectionId: saved.id, database: FIXTURE_DB, table: 'orders', starred: true });
+    await h.ok('db.stars.set', { savedConnectionId: saved.id, database: FIXTURE_DB, table: 'orders', starred: true });
+    expect(await stars(saved.id)).toEqual([{ database: FIXTURE_DB, schema: undefined, table: 'orders' }]);
+
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+
+  test('two schemas holding the same table name are starred independently', async () => {
+    const saved = await save({ name: 'stars-two-schemas', config: PG_SERVER, password: { mode: 'none' } });
+
+    await h.ok('db.stars.set', { savedConnectionId: saved.id, database: FIXTURE_DB, table: 'stats', schema: 'public', starred: true });
+    await h.ok('db.stars.set', { savedConnectionId: saved.id, database: FIXTURE_DB, table: 'stats', schema: 'reporting', starred: true });
+    const listed = await stars(saved.id);
+    expect(listed).toHaveLength(2);
+    expect(listed.map((s) => s.schema).sort()).toEqual(['public', 'reporting']);
+
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+
+  test('two connections holding the same database name do not share stars', async () => {
+    const a = await save({ name: 'stars-conn-a', config: PG_SERVER, password: { mode: 'none' } });
+    const b = await save({ name: 'stars-conn-b', config: PG_SERVER, password: { mode: 'none' } });
+
+    await h.ok('db.stars.set', { savedConnectionId: a.id, database: FIXTURE_DB, table: 'users', schema: 'public', starred: true });
+    expect(await stars(a.id)).toHaveLength(1);
+    expect(await stars(b.id)).toEqual([]);
+
+    await h.ok('db.saved.delete', { id: a.id });
+    await h.ok('db.saved.delete', { id: b.id });
+  });
+
+  test('deleting a connection takes its stars with it', async () => {
+    const saved = await save({ name: 'stars-deleted', config: PG_SERVER, password: { mode: 'none' } });
+    await h.ok('db.stars.set', { savedConnectionId: saved.id, database: FIXTURE_DB, table: 'users', schema: 'public', starred: true });
+    await h.ok('db.saved.delete', { id: saved.id });
+
+    // The row is gone with the connection it belonged to (the FK's ON DELETE
+    // CASCADE), not just unreachable through a `savedConnectionId` that no
+    // longer resolves to anything -- so a re-saved connection reusing an id
+    // would never inherit stars from one it happens to share nothing else with.
+    const db = new Database(DB_FILE);
+    const remaining = db.query('SELECT COUNT(*) AS n FROM stars WHERE connection_id = ?').get(saved.id) as { n: number };
+    db.close();
+    expect(remaining.n).toBe(0);
+  });
+
+  test('stars survive a new extension process', async () => {
+    const saved = await save({ name: 'stars-survivor', config: PG_SERVER, password: { mode: 'none' } });
+    await h.ok('db.stars.set', { savedConnectionId: saved.id, database: FIXTURE_DB, table: 'users', schema: 'public', starred: true });
+
+    await h.stop();
+    h = await startHarness(ENV);
+
+    expect(await stars(saved.id)).toEqual([{ database: FIXTURE_DB, schema: 'public', table: 'users' }]);
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+});
+
 describe('workspaces', () => {
   test('a store starts with one, so the feature can be ignored', async () => {
     const all = await workspaces();
@@ -690,6 +781,7 @@ const stamps = (): Stamp[] => {
 
 /** What each migration would have to undo, for the rewind below. Newest first. */
 const UNDO: Record<string, string[]> = {
+  stars: ['DROP TABLE stars'],
   settings: ['DROP TABLE settings'],
   'workspace-colour': ['ALTER TABLE workspaces DROP COLUMN color'],
   'connection-aws-iam': [
@@ -823,6 +915,7 @@ describe('migrating a store written before workspaces', () => {
       // behind makes the walk back up fail on it -- which is the honest outcome
       // for a file that claims to be older than a table it is holding.
       db.run('DROP TABLE settings');
+      db.run('DROP TABLE stars');
       db.run('DROP TABLE schema_migrations');
     })();
     const legacyNames = (db.query('SELECT name FROM saved_connections').all() as { name: string }[]).map((r) => r.name);

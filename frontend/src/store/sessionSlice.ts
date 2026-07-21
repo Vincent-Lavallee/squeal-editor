@@ -18,6 +18,15 @@ import { createAppThunk, errorMessage } from './thunk.ts';
  */
 export interface OpenConnection {
   connectionId: string;
+  /**
+   * The id of the saved row this connection was opened from -- never the
+   * runtime `connectionId` above, which is minted fresh every session. Stars
+   * key off this one because they have to outlive the session that set them,
+   * the same reason `db.saved.connect` names the row rather than a live
+   * connection. Every open connection has one: `submitNew` saves the row before
+   * connecting, exactly like `name` and `workspaceId`.
+   */
+  savedConnectionId: string;
   config: ServerConfig;
   /**
    * How the editor highlights this server's SQL, as the extension reported it.
@@ -126,6 +135,8 @@ export const connect = createAppThunk(
       environment: Environment;
       workspaceId: string;
       readOnly: boolean;
+      /** The row `submitNew` just saved, before ever reaching this thunk. */
+      savedConnectionId: string;
     },
     { rejectWithValue }
   ): Promise<Opened | ReturnType<typeof rejectWithValue>> => {
@@ -134,6 +145,7 @@ export const connect = createAppThunk(
       const { password: _password, ...server } = arg.config;
       return {
         connectionId: res.connectionId,
+        savedConnectionId: arg.savedConnectionId,
         config: server,
         databases: res.databases,
         dialect: res.dialect,
@@ -163,6 +175,7 @@ export const connectSaved = createAppThunk(
       const res = await call('db.saved.connect', arg);
       return {
         connectionId: res.connectionId,
+        savedConnectionId: arg.id,
         config: res.config,
         databases: res.databases,
         dialect: res.dialect,
@@ -281,10 +294,12 @@ const sessionSlice = createSlice({
         state.error = null;
       })
       .addMatcher(sessionOpened, (state, action) => {
-        const { connectionId, config, dialect, defaultSchema, name, workspaceId, environment, readOnly } = action.payload;
+        const { connectionId, savedConnectionId, config, dialect, defaultSchema, name, workspaceId, environment, readOnly } =
+          action.payload;
         state.connecting = false;
         state.connections[connectionId] = {
           connectionId,
+          savedConnectionId,
           config,
           dialect,
           defaultSchema,
@@ -367,8 +382,9 @@ export function useSession() {
         name: string,
         environment: Environment,
         workspaceId: string,
-        readOnly: boolean
-      ) => dispatch(connect({ config, name, environment, workspaceId, readOnly })),
+        readOnly: boolean,
+        savedConnectionId: string
+      ) => dispatch(connect({ config, name, environment, workspaceId, readOnly, savedConnectionId })),
       [dispatch]
     ),
     connectSaved: useCallback(
