@@ -20,7 +20,7 @@ import { join } from 'node:path';
 
 import { MIGRATIONS } from '../extensions/db/migrations/index.ts';
 import type { SavedConnection, Workspace } from '../shared/protocol/index.ts';
-import { FIXTURE_DB, PG } from './fixtures/config.ts';
+import { FIXTURE_DB, PG, SQLITE, SQLITE_FILE } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 
 const DATA_DIR = mkdtempSync(join(tmpdir(), 'squeal-test-'));
@@ -29,6 +29,9 @@ const ENV = { SQUEAL_DATA_DIR: DATA_DIR, SQUEAL_KEYCHAIN_SERVICE: KEYCHAIN_SERVI
 
 const DB_FILE = join(DATA_DIR, 'connections.db');
 const { password: PG_PASSWORD, ...PG_SERVER } = PG;
+// A file engine carries no password at all; the split is the same one so the
+// saved row is described the way every other one here is.
+const { password: _SQLITE_PASSWORD, ...SQLITE_SERVER } = SQLITE;
 
 let h: Harness;
 /** The workspace every connection below lands in unless it says otherwise. */
@@ -344,6 +347,55 @@ describe('IAM authentication', () => {
     const res = await h.dispatch('db.saved.connect', { id: saved.id });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toMatch(/requires ssl/i);
+
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+});
+
+/*
+ * A file engine stores no password because it has none, which makes it the same
+ * shape of trap as IAM one describe up: `hasPassword: false` has to mean "there
+ * is nothing to ask for" here, not "ask for it".
+ *
+ * This is a regression test with a name attached. The first cut exempted the
+ * *UI's* prompt and `db.connect` but not `resolveSaved`, so the form saved a
+ * SQLite connection happily and clicking it came straight back with "does not
+ * store a password; one is needed to connect" -- a refusal from the one layer
+ * that had not been told. `isFileEngine` lives in the protocol precisely so both
+ * sides read one answer.
+ */
+describe('a file engine has no password to be missing', () => {
+  test('connecting to a saved SQLite connection is not refused for a missing password', async () => {
+    const saved = await save({
+      name: 'sqlite-conn',
+      config: SQLITE_SERVER,
+      password: { mode: 'none' },
+    });
+    expect(saved.hasPassword).toBe(false);
+
+    // Unlike the IAM case, this one genuinely connects -- the fixture file is
+    // right there -- so it asserts the whole path rather than just the absence
+    // of one error. The database it reports is the file's path, which is what
+    // keys the connection to a single client.
+    const res = (await h.ok('db.saved.connect', { id: saved.id })) as {
+      connectionId: string;
+      databases: string[];
+    };
+    expect(res.databases).toContain(SQLITE_FILE);
+
+    await h.ok('db.disconnect', { connectionId: res.connectionId });
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+
+  test('a file connection round-trips its path through the store', async () => {
+    const saved = await save({ name: 'sqlite-path', config: SQLITE_SERVER, password: { mode: 'none' } });
+
+    // Read back through the list, so this is the row on disk rather than the
+    // save's own answer: the path rides in `default_database` like any other
+    // database name, which is the whole reason it needed no new column.
+    const listed = (await list()).find((c) => c.id === saved.id)!;
+    expect(listed.config.database).toBe(SQLITE_FILE);
+    expect(listed.config.type).toBe('sqlite');
 
     await h.ok('db.saved.delete', { id: saved.id });
   });

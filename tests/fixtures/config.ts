@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import type { ConnectionConfig } from '../../shared/protocol/index.ts';
 
 /**
@@ -21,8 +23,28 @@ export const MYSQL: ConnectionConfig = {
   password: 'secret',
 };
 
+/**
+ * The SQLite fixture is a file rather than a container, so it needs no Docker --
+ * but it is still seeded by `test:db:up` along with the other two, so one
+ * command puts every engine's fixture in place.
+ *
+ * The path is absolute because the extension is a separate process with its own
+ * working directory, and it is the *whole* address: a file engine writes no
+ * host, port or user, and carries its path in `database`. See `ServerConfig`.
+ */
+export const SQLITE_FILE = join(import.meta.dir, 'shop.db');
+
+export const SQLITE: ConnectionConfig = {
+  type: 'sqlite',
+  host: '',
+  port: 0,
+  user: '',
+  password: '',
+  database: SQLITE_FILE,
+};
+
 export const PG_CONTAINER = 'squeal-pg';
 export const MYSQL_CONTAINER = 'squeal-mysql';
 
-/** The database both engines get seeded with. */
+/** The database the two server engines get seeded with. */
 export const FIXTURE_DB = 'shop';

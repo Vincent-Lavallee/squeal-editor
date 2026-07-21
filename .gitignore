@@ -11,6 +11,10 @@ frontend/public/js/
 extensions/db/squeal-db-ext
 extensions/db/squeal-db-ext.exe
 
+# The SQLite test fixture; regenerate with `bun run test:db:up`. It is seeded
+# from SQLITE_SEED the same way the containers are, so it is output, not source.
+tests/fixtures/shop.db
+
 # Neutralino runtime scratch.
 .tmp/
 neutralinojs.log

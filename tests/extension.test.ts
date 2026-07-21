@@ -1,12 +1,13 @@
 /**
- * Exercises the extension against real MySQL and Postgres.
+ * Exercises the extension against real MySQL, Postgres and SQLite.
  *
  *   bun run test:db:up   (once)
  *   bun test tests/extension.test.ts
  *
  * These are not unit tests on purpose: every bug found so far -- BIGINT rounding,
  * timezone-shifted dates, orphaned processes -- was invisible to a mock and only
- * showed up against a real server.
+ * showed up against a real server. SQLite is a real database here too, just one
+ * that is a file rather than a container: `test:db:up` seeds all three.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -20,7 +21,7 @@ import type {
   TableInfo,
   TablePage,
 } from '../shared/protocol/index.ts';
-import { FIXTURE_DB, MYSQL, PG } from './fixtures/config.ts';
+import { FIXTURE_DB, MYSQL, PG, SQLITE, SQLITE_FILE } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 
 let h: Harness;
@@ -62,37 +63,47 @@ describe('transport', () => {
   });
 });
 
-// Both engines must satisfy exactly the same contract; the UI cannot tell them
-// apart, so anything asymmetric here is a bug.
+/*
+ * Every engine must satisfy exactly the same contract; the UI cannot tell them
+ * apart, so anything asymmetric here is a bug.
+ *
+ * `fixtureDb` is per-engine rather than the one `FIXTURE_DB` constant, because
+ * what names a database is not the same fact on every engine: the two server
+ * engines were seeded with a database called `shop`, and SQLite's database *is*
+ * the file, so the path is its name -- which is also what `listDatabases`
+ * reports back for it. Everything downstream just passes it along, which is the
+ * point: no test below knows which kind it was handed.
+ */
 describe.each([
-  ['postgres', PG, true],
-  ['mysql', MYSQL, false],
-] as const)('%s', (label, config, expectSchemaQualified) => {
+  ['postgres', PG, FIXTURE_DB, true],
+  ['mysql', MYSQL, FIXTURE_DB, false],
+  ['sqlite', SQLITE, SQLITE_FILE, false],
+] as const)('%s', (label, config, fixtureDb, expectSchemaQualified) => {
   let connectionId: string;
 
   beforeAll(async () => {
     const res = (await h.ok('db.connect', { config })) as { connectionId: string; databases: string[] };
     connectionId = res.connectionId;
-    expect(res.databases).toContain(FIXTURE_DB);
+    expect(res.databases).toContain(fixtureDb);
     // System catalogs must never show up in the tree.
     expect(res.databases).not.toContain('information_schema');
 
     // A later test overwrites Grace's NULL email; reset so the suite re-runs cleanly.
     await h.ok('db.query', {
       connectionId,
-      database: FIXTURE_DB,
+      database: fixtureDb,
       sql: "UPDATE users SET email=NULL WHERE name='Grace'",
     });
   });
 
-  const query = async (sql: string, database: string | undefined = FIXTURE_DB): Promise<QueryResult> =>
+  const query = async (sql: string, database: string | undefined = fixtureDb): Promise<QueryResult> =>
     (await h.ok('db.query', { connectionId, database, sql })) as QueryResult;
 
   const browse = async (table: string, offset = 0, schema?: string): Promise<TablePage> =>
-    (await h.ok('db.browse', { connectionId, database: FIXTURE_DB, table, schema, offset })) as TablePage;
+    (await h.ok('db.browse', { connectionId, database: fixtureDb, table, schema, offset })) as TablePage;
 
   const listTables = async (): Promise<TableInfo[]> =>
-    ((await h.ok('db.tables', { connectionId, database: FIXTURE_DB })) as { tables: TableInfo[] }).tables;
+    ((await h.ok('db.tables', { connectionId, database: fixtureDb })) as { tables: TableInfo[] }).tables;
 
   test('lists tables and flags views', async () => {
     const tables = await listTables();
@@ -124,7 +135,7 @@ describe.each([
   const names = (tables: TableInfo[]): string[] => tables.map((t) => t.name);
 
   const columnsOf = async (table: string, schema?: string): Promise<ColumnInfo[]> =>
-    ((await h.ok('db.columns', { connectionId, database: FIXTURE_DB, table, schema })) as { columns: ColumnInfo[] })
+    ((await h.ok('db.columns', { connectionId, database: fixtureDb, table, schema })) as { columns: ColumnInfo[] })
       .columns;
 
   test('lists a table\'s columns in the order the table declares them', async () => {
@@ -270,7 +281,7 @@ describe.each([
     // placeholder can carry. Junk must become 0, not a second statement.
     const res = await h.dispatch('db.browse', {
       connectionId,
-      database: FIXTURE_DB,
+      database: fixtureDb,
       table: 'events',
       offset: '0; DROP TABLE events; --',
     });
@@ -283,7 +294,7 @@ describe.each([
   test('browsing a table that is not there errors cleanly', async () => {
     const res = await h.dispatch('db.browse', {
       connectionId,
-      database: FIXTURE_DB,
+      database: fixtureDb,
       table: 'nope_missing',
       offset: 0,
     });
@@ -297,7 +308,7 @@ describe.each([
         over a structured filter or a raw clause and never SQL of its own. --- */
 
   const filtered = async (table: string, filter: TableFilter, offset = 0): Promise<TablePage> =>
-    (await h.ok('db.browse', { connectionId, database: FIXTURE_DB, table, offset, filter })) as TablePage;
+    (await h.ok('db.browse', { connectionId, database: fixtureDb, table, offset, filter })) as TablePage;
 
   const where = (conditions: FilterCondition[], conjunction: 'AND' | 'OR' = 'AND'): TableFilter => ({
     kind: 'builder',
@@ -402,7 +413,7 @@ describe.each([
     // than trusted from the type. Refusing beats pasting it into the SQL.
     const res = await h.dispatch('db.browse', {
       connectionId,
-      database: FIXTURE_DB,
+      database: fixtureDb,
       table: 'users',
       offset: 0,
       filter: { kind: 'builder', conjunction: 'AND', conditions: [{ column: 'name', operator: 'DROP', value: 'x' }] },
@@ -417,7 +428,7 @@ describe.each([
     // it must fail like a bad statement rather than killing the connection.
     const res = await h.dispatch('db.browse', {
       connectionId,
-      database: FIXTURE_DB,
+      database: fixtureDb,
       table: 'users',
       offset: 0,
       filter: { kind: 'raw', where: 'not valid sql (' },
@@ -432,7 +443,7 @@ describe.each([
   });
 
   const ddlOf = async (table: string, kind: 'table' | 'view' = 'table', schema?: string): Promise<string> =>
-    ((await h.ok('db.ddl', { connectionId, database: FIXTURE_DB, table, schema, kind })) as { ddl: string }).ddl;
+    ((await h.ok('db.ddl', { connectionId, database: fixtureDb, table, schema, kind })) as { ddl: string }).ddl;
 
   test('renders a faithful CREATE TABLE, engine-rendered', async () => {
     // MySQL hands back SHOW CREATE TABLE; Postgres reassembles it from the
@@ -469,7 +480,7 @@ describe.each([
     await query('DROP TABLE IF EXISTS reporting.zz_drop_test');
     await query('CREATE TABLE reporting.zz_drop_test (id int)');
 
-    await h.ok('db.drop', { connectionId, database: FIXTURE_DB, table: 'zz_drop_test', schema: 'reporting', kind: 'table' });
+    await h.ok('db.drop', { connectionId, database: fixtureDb, table: 'zz_drop_test', schema: 'reporting', kind: 'table' });
 
     const remaining = await listTables();
     expect(remaining.some((t) => t.name === 'zz_drop_test')).toBe(false);
@@ -482,16 +493,16 @@ describe.each([
     await query('DROP TABLE IF EXISTS zz_drop_test');
     await query('CREATE TABLE zz_drop_test (id int)');
 
-    await h.ok('db.drop', { connectionId, database: FIXTURE_DB, table: 'zz_drop_test', kind: 'table' });
+    await h.ok('db.drop', { connectionId, database: fixtureDb, table: 'zz_drop_test', kind: 'table' });
 
-    const { tables } = (await h.ok('db.tables', { connectionId, database: FIXTURE_DB })) as { tables: TableInfo[] };
+    const { tables } = (await h.ok('db.tables', { connectionId, database: fixtureDb })) as { tables: TableInfo[] };
     expect(tables.map((t) => t.name)).not.toContain('zz_drop_test');
   });
 
   test('a failed drop does not kill the connection', async () => {
     const bad = await h.dispatch('db.drop', {
       connectionId,
-      database: FIXTURE_DB,
+      database: fixtureDb,
       table: 'zz_never_existed',
       kind: 'table',
     });
@@ -520,10 +531,13 @@ describe.each([
   });
 
   test('BIGINT past 2^53 keeps every digit', async () => {
+    // Only Postgres has a second schema to hold `reporting.daily_stats`; the
+    // other two carry the value on `users.big`. Same assertion either way --
+    // where the BIGINT lives is a fixture detail, that it survives is the rule.
     const sql =
-      label === 'mysql'
-        ? "SELECT big FROM users WHERE name='Ada'"
-        : 'SELECT hits FROM reporting.daily_stats';
+      label === 'postgres'
+        ? 'SELECT hits FROM reporting.daily_stats'
+        : "SELECT big FROM users WHERE name='Ada'";
     const res = await query(sql);
     expect(String(res.rows[0]![0])).toBe('9007199254740993');
   });
@@ -545,7 +559,7 @@ describe.each([
   });
 
   test('a bad statement errors without killing the connection', async () => {
-    const bad = await h.dispatch('db.query', { connectionId, database: FIXTURE_DB, sql: 'SELECT * FROM nope_missing' });
+    const bad = await h.dispatch('db.query', { connectionId, database: fixtureDb, sql: 'SELECT * FROM nope_missing' });
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(bad.error).toMatch(/nope_missing|does not exist|doesn't exist/i);
 
@@ -563,7 +577,7 @@ describe.each([
     const { connectionId: temp } = (await h.ok('db.connect', { config })) as { connectionId: string };
     await h.ok('db.disconnect', { connectionId: temp });
 
-    const res = await h.dispatch('db.query', { connectionId: temp, database: FIXTURE_DB, sql: 'SELECT 1' });
+    const res = await h.dispatch('db.query', { connectionId: temp, database: fixtureDb, sql: 'SELECT 1' });
     expect(res.ok).toBe(false);
   });
 
@@ -582,7 +596,7 @@ describe.each([
     for (const id of [a.connectionId, b.connectionId]) {
       const res = (await h.ok('db.query', {
         connectionId: id,
-        database: FIXTURE_DB,
+        database: fixtureDb,
         sql: 'SELECT 1 AS ok',
       })) as QueryResult & { rows: unknown[][] };
       expect(Number(res.rows[0]![0])).toBe(1);
@@ -595,7 +609,7 @@ describe.each([
 
     const survivor = (await h.ok('db.query', {
       connectionId: b.connectionId,
-      database: FIXTURE_DB,
+      database: fixtureDb,
       sql: 'SELECT 1 AS ok',
     })) as QueryResult & { rows: unknown[][] };
     expect(Number(survivor.rows[0]![0])).toBe(1);
@@ -637,7 +651,7 @@ describe.each([
 
       const res = (await h.ok('db.write', {
         connectionId,
-        database: FIXTURE_DB,
+        database: fixtureDb,
         table: 'zz_edit_test',
         edits: [
           // The bigint arrives as a *string* and must land intact: bound as a
@@ -671,7 +685,7 @@ describe.each([
       // The second edit names a column that does not exist, so its UPDATE fails.
       const bad = await h.dispatch('db.write', {
         connectionId,
-        database: FIXTURE_DB,
+        database: fixtureDb,
         table: 'zz_edit_rb',
         edits: [
           { key: { id: 1 }, set: { name: 'X' } },
@@ -690,7 +704,7 @@ describe.each([
     test('a keyless table cannot be written', async () => {
       const bad = await h.dispatch('db.write', {
         connectionId,
-        database: FIXTURE_DB,
+        database: fixtureDb,
         table: 'logs',
         edits: [{ key: {}, set: { msg: 'x' } }],
         deletes: [],
@@ -707,7 +721,7 @@ describe.each([
       await h.ok('db.readonly', { connectionId, readOnly: true });
       const bad = await h.dispatch('db.write', {
         connectionId,
-        database: FIXTURE_DB,
+        database: fixtureDb,
         table: 'zz_edit_ro',
         edits: [{ key: { id: 1 }, set: { name: 'X' } }],
         deletes: [],
@@ -736,16 +750,16 @@ describe.each([
     test('the server refuses writes when read-only, and takes them again when off', async () => {
       await h.ok('db.readonly', { connectionId, readOnly: true });
 
-      const refused = await h.dispatch('db.query', { connectionId, database: FIXTURE_DB, sql: noopWrite });
+      const refused = await h.dispatch('db.query', { connectionId, database: fixtureDb, sql: noopWrite });
       expect(refused.ok).toBe(false);
-      if (!refused.ok) expect(refused.error).toMatch(/read.only/i);
+      if (!refused.ok) expect(refused.error).toMatch(/read[\s-]?only/i);
 
       // Reads still work while locked -- read-only is not "no queries".
-      const read = (await h.ok('db.query', { connectionId, database: FIXTURE_DB, sql: 'SELECT 1 AS ok' })) as QueryResult;
+      const read = (await h.ok('db.query', { connectionId, database: fixtureDb, sql: 'SELECT 1 AS ok' })) as QueryResult;
       expect(Number(read.rows[0]![0])).toBe(1);
 
       await h.ok('db.readonly', { connectionId, readOnly: false });
-      expect((await h.dispatch('db.query', { connectionId, database: FIXTURE_DB, sql: noopWrite })).ok).toBe(true);
+      expect((await h.dispatch('db.query', { connectionId, database: fixtureDb, sql: noopWrite })).ok).toBe(true);
     });
 
     test('opening read-only refuses a write on a database opened afterwards', async () => {
@@ -757,11 +771,11 @@ describe.each([
         connectionId: string;
       };
 
-      const refused = await h.dispatch('db.query', { connectionId: roId, database: FIXTURE_DB, sql: noopWrite });
+      const refused = await h.dispatch('db.query', { connectionId: roId, database: fixtureDb, sql: noopWrite });
       expect(refused.ok).toBe(false);
-      if (!refused.ok) expect(refused.error).toMatch(/read.only/i);
+      if (!refused.ok) expect(refused.error).toMatch(/read[\s-]?only/i);
 
-      const read = (await h.ok('db.query', { connectionId: roId, database: FIXTURE_DB, sql: 'SELECT 1 AS ok' })) as QueryResult;
+      const read = (await h.ok('db.query', { connectionId: roId, database: fixtureDb, sql: 'SELECT 1 AS ok' })) as QueryResult;
       expect(Number(read.rows[0]![0])).toBe(1);
 
       await h.ok('db.disconnect', { connectionId: roId });

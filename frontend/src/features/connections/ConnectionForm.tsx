@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import type { EngineType, Environment, SavedConnection, ServerConfig } from '../../../../shared/protocol/index.ts';
-import { ENGINES, engineByType } from '../../common/db/engines.ts';
+import { ENGINES, engineByType, isFileBased } from '../../common/db/engines.ts';
 import { DEFAULT_ENVIRONMENT, ENVIRONMENTS } from '../../common/db/environments.ts';
 import Button from '../../common/components/Button.tsx';
 import Input from '../../common/components/Input.tsx';
@@ -80,27 +80,58 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
 
   const named = form.name.trim() !== '';
   const willBeStored = mode === 'edit' || named;
-  const iam = form.authMethod === 'iam';
+  const fileBased = isFileBased(form.type);
+  // A file has no auth of any kind, so IAM cannot be in play even if the select
+  // was left on it before the engine changed.
+  const iam = !fileBased && form.authMethod === 'iam';
   const passwordUsed = mode === 'new' || form.savePassword;
 
   function setAuthMethod(method: AuthMethod): void {
     setForm((prev) => ({ ...prev, authMethod: method, ssl: method === 'iam' ? true : prev.ssl }));
   }
 
+  /**
+   * Switching between a server engine and a file engine clears the address,
+   * because `database` means a different thing on each side of that line -- a
+   * database name over there, a path to a file here. Carrying `postgres` across
+   * would offer it as a filename.
+   */
+  function setEngine(type: EngineType): void {
+    setForm((prev) => (isFileBased(prev.type) === isFileBased(type) ? { ...prev, type } : { ...prev, type, database: '' }));
+  }
+
+  async function browseForFile(): Promise<void> {
+    const chosen = await Neutralino.os.showOpenDialog('Choose a SQLite database', {
+      multiSelections: false,
+      filters: [
+        { name: 'SQLite database', extensions: ['db', 'sqlite', 'sqlite3', 'db3'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    // An empty array is the user cancelling, which must leave the field alone
+    // rather than blanking a path they had already chosen.
+    if (chosen.length > 0) set('database', chosen[0]!);
+  }
+
   function handleSubmit(e: React.FormEvent): void {
     e.preventDefault();
     onSubmit({
       name: form.name.trim(),
-      config: {
-        type: form.type, host: form.host, port: Number(form.port) || engine.defaultPort,
-        user: form.user || engine.defaultUser, database: form.database || undefined,
-        ssl: iam ? true : form.ssl,
-        ...(iam ? { iam: { profile: form.awsProfile.trim(), region: form.awsRegion.trim() } } : {}),
-      },
+      config: fileBased
+        ? // No server to address and no secret to carry: the empty host, zero port
+          // and empty user are what `ServerConfig` documents a file engine writes,
+          // and the path travels as `database`.
+          { type: form.type, host: '', port: 0, user: '', database: form.database.trim() }
+        : {
+            type: form.type, host: form.host, port: Number(form.port) || engine.defaultPort,
+            user: form.user || engine.defaultUser, database: form.database || undefined,
+            ssl: iam ? true : form.ssl,
+            ...(iam ? { iam: { profile: form.awsProfile.trim(), region: form.awsRegion.trim() } } : {}),
+          },
       environment: form.environment, readOnly: form.readOnly,
-      password: iam ? '' : form.password,
-      savePassword: iam ? false : willBeStored && form.savePassword,
-      passwordTouched: form.passwordTouched,
+      password: iam || fileBased ? '' : form.password,
+      savePassword: iam || fileBased ? false : willBeStored && form.savePassword,
+      passwordTouched: fileBased ? false : form.passwordTouched,
     });
   }
 
@@ -131,15 +162,18 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
       </Field>
 
       <Field label="Engine" htmlFor="type">
-        <Select id="type" value={form.type} onSelect={(value) => set('type', value as EngineType)}
+        <Select id="type" value={form.type} onSelect={(value) => setEngine(value as EngineType)}
           options={ENGINES.map((e) => ({ value: e.value, label: e.label }))} />
       </Field>
 
+      {!fileBased && (
       <Field label="Authentication" htmlFor="authMethod">
         <Select id="authMethod" value={form.authMethod} onSelect={(value) => setAuthMethod(value as AuthMethod)}
           options={[{ value: 'password', label: 'Password' }, { value: 'iam', label: 'AWS IAM (RDS)' }]} />
       </Field>
+      )}
 
+      {!fileBased && (
       <div style={{ display: 'flex', gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Host" htmlFor="host">
@@ -152,7 +186,9 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
           </Field>
         </div>
       </div>
+      )}
 
+      {!fileBased && (
       <Field label="">
         <div style={{ marginTop: t.GAP_XS }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, cursor: 'pointer' }} htmlFor="ssl">
@@ -164,12 +200,15 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
           </div>
         </div>
       </Field>
+      )}
 
+      {!fileBased && (
       <Field label="User" htmlFor="user">
         <Input id="user" value={form.user} placeholder={engine.defaultUser} onChange={(e) => set('user', e.target.value)} />
       </Field>
+      )}
 
-      {!iam && (
+      {!fileBased && !iam && (
         <Field label="Password" htmlFor="password">
           <Input id="password" type="password" value={form.password} disabled={!passwordUsed}
             placeholder={mode === 'edit' && initial?.hasPassword ? 'unchanged' : ''}
@@ -197,13 +236,27 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
         </div>
       )}
 
-      <Field label="Database" htmlFor="database" hint={form.type === 'postgres' ? '(default: postgres)' : '(optional)'}>
-        <Input id="database" value={form.database} onChange={(e) => set('database', e.target.value)} />
-      </Field>
+      {fileBased ? (
+        <Field label="Database file" htmlFor="database" hint="(required)">
+          <div style={{ display: 'flex', gap: t.GAP_SM }}>
+            <div style={{ flex: 1 }}>
+              <Input id="database" value={form.database} placeholder="C:\path\to\app.db" required
+                onChange={(e) => set('database', e.target.value)} />
+            </div>
+            {/* Typing or pasting a path stays possible beside the dialog: when you
+                already have the path, that is the shorter route to it. */}
+            <Button onClick={() => void browseForFile()} disabled={busy}>Browse…</Button>
+          </div>
+        </Field>
+      ) : (
+        <Field label="Database" htmlFor="database" hint={form.type === 'postgres' ? '(default: postgres)' : '(optional)'}>
+          <Input id="database" value={form.database} onChange={(e) => set('database', e.target.value)} />
+        </Field>
+      )}
 
       <div data-testid="connect-actions" style={{ display: 'flex', gap: t.GAP_SM, marginTop: t.GAP_XS }}>
         {onCancel && <Button onClick={onCancel} disabled={busy}>Cancel</Button>}
-        <Button type="submit" data-testid="connect-submit" variant="primary" style={{ justifyContent: 'center', height: 34, flex: 1 }} disabled={busy || !form.name.trim()}>
+        <Button type="submit" data-testid="connect-submit" variant="primary" style={{ justifyContent: 'center', height: 34, flex: 1 }} disabled={busy || !form.name.trim() || (fileBased && !form.database.trim())}>
           {mode === 'edit' ? (busy ? 'Saving…' : 'Save changes') : busy ? 'Connecting…' : 'Connect'}
         </Button>
       </div>

@@ -27,6 +27,10 @@ export type {
   WorkspaceIconId,
 } from './config.ts';
 
+// The one value `config` exports. Both sides act on it and must not disagree --
+// see its own comment for what disagreeing costs.
+export { isFileEngine } from './config.ts';
+
 export type {
   CellValue,
   ColumnInfo,

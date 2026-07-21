@@ -3,6 +3,7 @@ import { useCallback } from 'react';
 
 import type { ConnectionConfig, Environment, ServerConfig, SqlDialect } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
+import { isFileBased } from '../common/db/engines.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
 import type { RootState } from './index.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
@@ -309,9 +310,17 @@ const sessionSlice = createSlice({
 export const { errorDismissed, connectionActivated } = sessionSlice.actions;
 export const sessionReducer = sessionSlice.reducer;
 
-/** How a server reads in the chrome, from anything that carries one. */
+/**
+ * How a server reads in the chrome, from anything that carries one.
+ *
+ * A file engine has no user, host or port, so `user@host:port` would render as
+ * `@:0` -- the path it actually opened is the only thing that identifies it.
+ * Shown in full rather than as a basename: two connections into different
+ * directories are routinely the same filename, and every place this is drawn
+ * already truncates with an ellipsis.
+ */
 export const serverLabel = (config: ServerConfig): string =>
-  `${config.user}@${config.host}:${config.port}`;
+  isFileBased(config.type) ? (config.database ?? '') : `${config.user}@${config.host}:${config.port}`;
 
 /** The connection in front, or null when nothing is open. */
 export const selectActiveConnection = (s: RootState): OpenConnection | null =>

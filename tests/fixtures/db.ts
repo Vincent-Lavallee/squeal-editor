@@ -30,7 +30,10 @@
  */
 
 import { $ } from 'bun';
-import { MYSQL_CONTAINER, PG_CONTAINER } from './config.ts';
+import { Database } from 'bun:sqlite';
+import { rmSync } from 'node:fs';
+
+import { MYSQL_CONTAINER, PG_CONTAINER, SQLITE_FILE } from './config.ts';
 
 const PG_SEED = `
 CREATE TABLE users (
@@ -88,6 +91,62 @@ CREATE TABLE logs (msg varchar(100));
 INSERT INTO logs (msg) VALUES ('one'), ('two');
 `;
 
+/**
+ * The same shapes as the other two, in SQLite's spelling.
+ *
+ * `big` sits on `users` the way MySQL's does, because SQLite has no second
+ * schema to put a `reporting.daily_stats` in -- the BIGINT still has to be
+ * somewhere, since it is the value the whole `safeIntegers` rule exists for.
+ *
+ * `id INTEGER PRIMARY KEY` is deliberate and not incidental: it is the rowid
+ * alias, the form `pragma_table_info` reports as **nullable**, so it is exactly
+ * the table that proves the driver's primary-key override works. Written any
+ * other way this fixture would pass while the common case stayed broken.
+ *
+ * `created_at` is text, which is what SQLite stores a timestamp as -- there is
+ * no date type to shift, so the verbatim rule holds here for free.
+ */
+const SQLITE_SEED = `
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  name TEXT,
+  email TEXT,
+  created_at TEXT DEFAULT '2026-01-05 09:30:00',
+  meta TEXT,
+  avatar BLOB,
+  big BIGINT,
+  eventType TEXT
+);
+INSERT INTO users (name, email, created_at, meta, avatar, big, eventType) VALUES
+  ('Ada', 'ada@x.io', '2026-01-05 09:30:00', '{"role":"admin"}', X'0102FF', 9007199254740993, 'page_view'),
+  ('Grace', NULL, '2026-01-05 09:30:00', NULL, NULL, NULL, NULL);
+CREATE VIEW active_users AS SELECT id, name FROM users;
+CREATE TABLE events (id INTEGER PRIMARY KEY, label TEXT);
+INSERT INTO events (label)
+WITH RECURSIVE series(n) AS (
+  SELECT 1 UNION ALL SELECT n + 1 FROM series WHERE n < 150
+)
+SELECT 'e' || n FROM series;
+CREATE TABLE tags (label TEXT NOT NULL UNIQUE, weight INT);
+INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
+CREATE TABLE logs (msg TEXT);
+INSERT INTO logs (msg) VALUES ('one'), ('two');
+`;
+
+/**
+ * Rebuilt from nothing every time, which is what makes `up` re-runnable here --
+ * the containers get a DROP DATABASE, and deleting the file is the same move.
+ */
+function seedSqlite(): void {
+  rmSync(SQLITE_FILE, { force: true });
+  const db = new Database(SQLITE_FILE, { create: true });
+  try {
+    db.run(SQLITE_SEED);
+  } finally {
+    db.close();
+  }
+}
+
 async function waitFor(label: string, probe: () => Promise<boolean>, tries = 60): Promise<void> {
   for (let i = 0; i < tries; i++) {
     if (await probe().catch(() => false)) return;
@@ -117,11 +176,15 @@ export async function up(): Promise<void> {
   await $`docker exec ${MYSQL_CONTAINER} mysql -uroot -psecret -e ${'DROP DATABASE IF EXISTS shop'}`.quiet().nothrow();
   await $`docker exec ${MYSQL_CONTAINER} mysql -uroot -psecret -e ${MYSQL_SEED}`.quiet().nothrow();
 
+  // No container to wait for: a file engine is ready the moment it is written.
+  seedSqlite();
+
   console.log('test databases up and seeded');
 }
 
 export async function down(): Promise<void> {
   await $`docker rm -f ${PG_CONTAINER} ${MYSQL_CONTAINER}`.quiet().nothrow();
+  rmSync(SQLITE_FILE, { force: true });
   console.log('test databases removed');
 }
 

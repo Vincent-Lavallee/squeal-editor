@@ -6,6 +6,7 @@ import Button from '../../common/components/Button.tsx';
 import Note from '../../common/components/Note.tsx';
 import Callout from '../../common/components/Callout.tsx';
 import * as t from '../../common/tokens';
+import { isFileBased } from '../../common/db/engines.ts';
 import ConnectionForm, { type FormValues } from './ConnectionForm.tsx';
 import PasswordPrompt from './PasswordPrompt.tsx';
 import SavedConnectionList from './SavedConnectionList.tsx';
@@ -51,7 +52,12 @@ export default function ConnectScreen({ onCancel }: Props) {
   }
 
   function pick(connection: SavedConnection): void {
-    if (!connection.hasPassword && !connection.config.iam) return go({ view: 'password', connection });
+    // `hasPassword` false means "prompt" only when there is a password to
+    // prompt for. An IAM connection mints a token instead, and a file engine has
+    // no auth at all -- for both, a prompt would ask for something that does not
+    // exist and then refuse to connect without it.
+    const needsPassword = !connection.config.iam && !isFileBased(connection.config.type);
+    if (!connection.hasPassword && needsPassword) return go({ view: 'password', connection });
     session.dismissError(); setConnectingId(connection.id);
     void session.connectSaved(connection.id);
   }

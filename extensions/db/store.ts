@@ -29,6 +29,7 @@ import type {
   WorkspaceColorId,
   WorkspaceIconId,
 } from '../../shared/protocol/index.ts';
+import { isFileEngine } from '../../shared/protocol/index.ts';
 import { runMigrations } from './migrations/runner.ts';
 
 /*
@@ -431,10 +432,18 @@ export async function resolveSaved(
 
   const { config, name, environment, workspaceId, readOnly } = toSaved(row);
 
-  // An IAM connection has no password to resolve: the extension mints a token at
-  // connect time from the profile and region in `config.iam`. The empty string
-  // stands in for the field the drivers never read on this path.
-  if (config.iam) {
+  // Two kinds of connection have no password to resolve, and for both the empty
+  // string stands in for a field the drivers never read on this path:
+  //
+  //   - an IAM connection, where the extension mints a token at connect time
+  //     from the profile and region in `config.iam`;
+  //   - a file engine, which has no authentication at all -- reaching it is
+  //     opening a path, and the OS has already decided whether that is allowed.
+  //
+  // Missing either one turns `hasPassword: false` into a refusal to connect,
+  // which is the same misreading the UI makes if it prompts for one. That is
+  // exactly why `isFileEngine` is in the protocol and not written out twice.
+  if (config.iam || isFileEngine(config.type)) {
     return { config, password: '', name, environment, workspaceId, readOnly };
   }
 

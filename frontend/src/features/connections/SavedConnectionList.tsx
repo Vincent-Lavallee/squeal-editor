@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import type { SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
-import { engineLabel } from '../../common/db/engines.ts';
+import { engineLabel, isFileBased } from '../../common/db/engines.ts';
 import { ENVIRONMENTS } from '../../common/db/environments.ts';
 import { BackIcon } from '../../common/icons/icons.ts';
 import { serverLabel } from '../../store/sessionSlice.ts';
@@ -73,7 +73,10 @@ export default function SavedConnectionList({ workspace, connections, connecting
                       </span>
                       <span data-testid="saved-server" style={{ overflow: 'hidden', color: t.TEXT_MUTED, fontFamily: t.MONO, fontSize: t.TEXT_BADGE, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {connectingId === c.id ? 'Connecting…' : serverLabel(c.config)}
-                        {!c.hasPassword && connectingId !== c.id && <span style={{ color: t.TEXT_FAINT, fontFamily: t.FONT, fontSize: t.TEXT_BADGE }}> · asks for a password</span>}
+                        {/* `hasPassword` is false for three different reasons and only
+                            one of them means a prompt: an IAM row mints a token and a
+                            file engine has no auth at all, so neither is ever asked. */}
+                        {!c.hasPassword && !c.config.iam && !isFileBased(c.config.type) && connectingId !== c.id && <span style={{ color: t.TEXT_FAINT, fontFamily: t.FONT, fontSize: t.TEXT_BADGE }}> · asks for a password</span>}
                       </span>
                     </button>
 

@@ -6,7 +6,21 @@
  * connection is filed under.
  */
 
-export type EngineType = 'mysql' | 'postgres';
+export type EngineType = 'mysql' | 'postgres' | 'sqlite';
+
+/**
+ * Whether this engine is a file on disk rather than a server on a network.
+ *
+ * It lives in the protocol rather than on either side because **both** sides act
+ * on it and they must not disagree: the UI draws a path field instead of a host
+ * and never prompts for a password, and the extension's store must not demand a
+ * stored one before it will resolve the connection. Two copies of this predicate
+ * is how "connect" starts refusing a connection the form was happy to save.
+ *
+ * A file engine has no host, port, user, password or TLS. It carries its path in
+ * `ServerConfig.database` -- see below.
+ */
+export const isFileEngine = (type: EngineType): boolean => type === 'sqlite';
 
 /**
  * How an engine's SQL is written, as the engine itself reports it.
@@ -58,10 +72,24 @@ export interface AwsIamAuth {
  */
 export interface ServerConfig {
   type: EngineType;
+  /**
+   * Where the server is. A file-based engine has no server to address, so
+   * SQLite writes `host: ''`, `port: 0` and `user: ''` and carries its path in
+   * `database` -- see below. They stay required rather than becoming optional so
+   * every server engine keeps its compile-time guarantee that an address exists.
+   */
   host: string;
   port: number;
   user: string;
-  /** Bootstrap database. Postgres must connect to one; MySQL may omit it. */
+  /**
+   * Bootstrap database. Postgres must connect to one; MySQL may omit it.
+   *
+   * **For SQLite this is the path to the database file**, and it is required.
+   * The file *is* the database there -- there is no server holding several and
+   * no name to pick out of one -- so a second field for the path would be a
+   * field that only ever holds what this one already means. It is what the
+   * driver opens, and what `listDatabases` reports back as the sole database.
+   */
   database?: string;
   /**
    * Reach the server over TLS, verifying its certificate against the machine's

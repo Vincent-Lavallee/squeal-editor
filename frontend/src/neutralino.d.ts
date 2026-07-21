@@ -49,6 +49,25 @@ declare namespace Neutralino {
      * says where the folder is.
      */
     function open(url: string): Promise<void>;
+
+    interface Filter {
+      name: string;
+      extensions: string[];
+    }
+    interface OpenDialogOptions {
+      multiSelections?: boolean;
+      filters?: Filter[];
+      defaultPath?: string;
+    }
+    /**
+     * The OS's own file picker, for choosing a SQLite database to connect to.
+     *
+     * A webview API rather than a bridge command, by the extension's own test:
+     * the webview can do this itself, so it does not belong in the extension.
+     * Resolves to an **empty array** when the user cancels -- not a rejection --
+     * which is why the caller checks the length rather than catching.
+     */
+    function showOpenDialog(title?: string, options?: OpenDialogOptions): Promise<string[]>;
   }
 
   namespace window {
