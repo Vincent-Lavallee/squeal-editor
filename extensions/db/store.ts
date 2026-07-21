@@ -112,7 +112,7 @@ let db: Database | null = null;
 function open(): Database {
   if (db) return db;
   mkdirSync(dataDir(), { recursive: true });
-  db = new Database(join(dataDir(), 'connections.db'));
+  db = new Database(join(dataDir(), 'squeal.db'));
 
   // Off by default in SQLite, and per-connection rather than stored in the file,
   // so it has to be set on every open or the REFERENCES clause is decoration.

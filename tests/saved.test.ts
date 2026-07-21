@@ -27,7 +27,7 @@ const DATA_DIR = mkdtempSync(join(tmpdir(), 'squeal-test-'));
 const KEYCHAIN_SERVICE = `squeal-test-${Bun.randomUUIDv7()}`;
 const ENV = { SQUEAL_DATA_DIR: DATA_DIR, SQUEAL_KEYCHAIN_SERVICE: KEYCHAIN_SERVICE };
 
-const DB_FILE = join(DATA_DIR, 'connections.db');
+const DB_FILE = join(DATA_DIR, 'squeal.db');
 const { password: PG_PASSWORD, ...PG_SERVER } = PG;
 // A file engine carries no password at all; the split is the same one so the
 // saved row is described the way every other one here is.
@@ -75,7 +75,7 @@ describe('the store', () => {
   // a path recomputed up in the webview from a platform rule written twice.
   test('says where it lives', async () => {
     expect(await h.ok('app.dataDir', {})).toEqual({ path: DATA_DIR });
-    expect(readdirSync(DATA_DIR)).toContain('connections.db');
+    expect(readdirSync(DATA_DIR)).toContain('squeal.db');
   });
 
   test('a saved connection comes back without its password', async () => {

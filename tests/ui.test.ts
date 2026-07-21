@@ -341,7 +341,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     // The keychain entry outlives both the app and the temp dir.
     await Bun.secrets.delete({ service: KEYCHAIN_SERVICE, name: 'connection-key' }).catch(() => undefined);
     // Best-effort: the extension is *designed* to outlive the app by up to the
-    // heartbeat timeout, and until it exits it still holds connections.db open,
+    // heartbeat timeout, and until it exits it still holds squeal.db open,
     // which Windows reports as EBUSY. A temp directory is not worth failing the
     // suite over -- the OS sweeps it up.
     try {
