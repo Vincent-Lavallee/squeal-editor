@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.1...v0.6.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* macos titlebar ([59d6384](https://github.com/Vincent-Lavallee/squeal-editor/commit/59d63849df8aeafb0a495e10cf0c33f4d2657eef))
+
 ## [0.6.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.0...v0.6.1) (2026-07-21)
 
 
