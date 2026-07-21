@@ -24,7 +24,7 @@ macos="$app/Contents/MacOS"
 dmg="squeal-editor-macos-arm64-v$version.dmg"
 
 rm -rf "$app" dist/dmg "$dmg"
-mkdir -p "$macos" "$app/Contents/Resources"
+mkdir -p "$macos" "$app/Contents/Resources" "$app/Contents/Frameworks"
 
 # Only executables may live in Contents/MacOS. codesign treats everything in
 # there as nested code, so a data file lands as an unsigned subcomponent and the
@@ -44,6 +44,17 @@ fi
 cp dist/squeal-editor/squeal-editor-mac_arm64 "$macos/squeal-editor-bin"
 cp -R dist/squeal-editor/extensions "$macos/extensions"
 
+# A borderless Neutralino window on macOS can never become the key window, so
+# it never gets keyboard input (neutralinojs#1197). The dylib restyles the
+# window from inside the process — transparent titled titlebar, content under
+# it — which is the only place an NSWindow can be touched. Injection survives
+# ad-hoc signing precisely because there is no hardened runtime; a Developer ID
+# build would need the dyld-environment-variables entitlement.
+clang -dynamiclib -fobjc-arc -arch arm64 -mmacosx-version-min=11.0 \
+  -framework AppKit \
+  -o "$app/Contents/Frameworks/squeal-window-chrome.dylib" \
+  scripts/macos-window-chrome.m
+
 # NL_PATH follows the working directory, not the executable, and Finder launches
 # with the working directory set to `/` -- where Neutralino then looks for
 # /extensions/db/squeal-db-ext, finds nothing, and the app comes up with a dead
@@ -53,9 +64,15 @@ cp -R dist/squeal-editor/extensions "$macos/extensions"
 # `exec` so the shell is replaced rather than left as a parent. The extension
 # heartbeats against the app and the UI suite reaps by process, and both want one
 # process, not a shell wrapping one.
+# DYLD_INSERT_LIBRARIES must be exported *inside* the shim: dyld deletes DYLD_*
+# variables whenever it starts a SIP-protected binary, and /bin/sh is one — a
+# value set outside the script would never survive into it. The same rule is
+# what keeps the dylib out of the extension: Neutralino spawns extensions
+# through /bin/sh, and the variable dies at that boundary.
 cat > "$macos/squeal-editor" <<'LAUNCHER'
 #!/bin/sh
 cd "$(dirname "$0")" || exit 1
+export DYLD_INSERT_LIBRARIES="$PWD/../Frameworks/squeal-window-chrome.dylib"
 exec ./squeal-editor-bin "$@"
 LAUNCHER
 
@@ -92,6 +109,7 @@ PLIST
 # Inner-out: signing the bundle seals whatever its nested executables already
 # carry, so an extension signed afterwards would invalidate the outer signature.
 codesign --force --sign - --timestamp=none "$macos/extensions/db/squeal-db-ext"
+codesign --force --sign - --timestamp=none "$app/Contents/Frameworks/squeal-window-chrome.dylib"
 codesign --force --sign - --timestamp=none "$macos/squeal-editor-bin"
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --deep --strict "$app"

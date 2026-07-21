@@ -46,22 +46,23 @@ export function useWindowChrome() {
    * because Neutralino spawns extensions through a shell -- the extension's own
    * parent is that shell, not this window.
    *
-   * macOS keeps its own native title bar (borderless: false) and neither the
-   * WS_THICKFRAME trick nor the frame paint apply there.
+   * On macOS neither the WS_THICKFRAME trick nor the frame paint apply. The
+   * borderless window there cannot become the key window at all — AppKit
+   * refuses keyboard focus to a window without NSWindowStyleMaskTitled — and
+   * no JS call can change that. scripts/macos-window-chrome.m, injected by the
+   * packaged app's launcher, restyles the window into a titled one with a
+   * transparent titlebar, which restores keyboard focus and native resize.
    *
    * See docs/decisions.md before touching either half.
    */
   useEffect(() => {
     if (IS_MACOS) {
-      /* A borderless window on macOS doesn't always receive keyboard focus
-       * automatically — the WKWebView needs the window to be the key window
-       * before it will deliver any keystrokes. */
+      /* Best-effort only: with the injected dylib the window is titled and
+       * focuses natively; without it (dev runs) these calls cannot make a
+       * borderless window key, but they cost nothing. */
       void Neutralino.window.focus();
       document.getElementById('root')?.focus();
 
-      /* If the app loses focus (e.g. the user tabs away), clicking back on
-       * the webview should restore it.  WKWebView doesn't always do this on
-       * its own in a borderless window. */
       function onMouseDown(): void {
         void Neutralino.window.focus();
       }
