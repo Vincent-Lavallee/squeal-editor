@@ -91,5 +91,7 @@ declare namespace Neutralino {
     function isMaximized(): Promise<boolean>;
     /** Hands the window to the OS move loop; that is what keeps Aero Snap native. */
     function beginDrag(screenX?: number, screenY?: number): Promise<void>;
+    /** Brings the window to the foreground and gives it keyboard focus. */
+    function focus(): Promise<void>;
   }
 }

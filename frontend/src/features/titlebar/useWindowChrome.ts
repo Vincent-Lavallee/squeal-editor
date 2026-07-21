@@ -52,7 +52,22 @@ export function useWindowChrome() {
    * See docs/decisions.md before touching either half.
    */
   useEffect(() => {
-    if (IS_MACOS) return;
+    if (IS_MACOS) {
+      /* A borderless window on macOS doesn't always receive keyboard focus
+       * automatically — the WKWebView needs the window to be the key window
+       * before it will deliver any keystrokes. */
+      void Neutralino.window.focus();
+      document.getElementById('root')?.focus();
+
+      /* If the app loses focus (e.g. the user tabs away), clicking back on
+       * the webview should restore it.  WKWebView doesn't always do this on
+       * its own in a borderless window. */
+      function onMouseDown(): void {
+        void Neutralino.window.focus();
+      }
+      document.addEventListener('mousedown', onMouseDown);
+      return () => document.removeEventListener('mousedown', onMouseDown);
+    }
     void (async () => {
       await Neutralino.window.setSize({ resizable: true });
 
