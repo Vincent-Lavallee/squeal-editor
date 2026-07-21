@@ -10,7 +10,17 @@ import { ResultsProvider, ResultsTable, useResults } from './features/results/in
 import { StatusBar } from './features/statusbar/index.ts';
 import { TabStrip } from './features/tabs/index.ts';
 import Note from './common/components/Note.tsx';
+import ResizeHandle from './common/components/ResizeHandle.tsx';
 import * as t from './common/tokens';
+
+const SIDEBAR_MIN = 160;
+const SIDEBAR_MAX = 480;
+const RESULTS_MIN = 120;
+const EDITOR_MIN = 120;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
 
 interface Props { onAddConnection: () => void; }
 
@@ -32,6 +42,21 @@ function ShellLayout({ onAddConnection }: Props) {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const toggleSidebar = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
+
+  const [sidebarWidth, setSidebarWidth] = useState(240);
+  const dragSidebar = useCallback((deltaPx: number) => {
+    setSidebarWidth((prev) => clamp(prev + deltaPx, SIDEBAR_MIN, SIDEBAR_MAX));
+  }, []);
+
+  // The results panel's height, in px; the editor above it takes whatever is
+  // left (`1fr`). Both bounds are read fresh on every drag so a window resize
+  // between drags is respected without a resize observer.
+  const [resultsHeight, setResultsHeight] = useState(280);
+  const dragResults = useCallback((deltaPx: number) => {
+    const chromeAbove = t.RAIL_H + t.TAB_H + t.TAB_H;
+    const max = window.innerHeight - t.STATUSBAR_H - chromeAbove - EDITOR_MIN;
+    setResultsHeight((prev) => clamp(prev - deltaPx, RESULTS_MIN, Math.max(RESULTS_MIN, max)));
+  }, []);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
@@ -95,14 +120,16 @@ function ShellLayout({ onAddConnection }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <ConnectionRail onAdd={onAddConnection} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: sidebarCollapsed ? '28px 1fr' : '240px 1fr', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: sidebarCollapsed ? '28px 1fr' : `${sidebarWidth}px auto 1fr`, flex: 1, minHeight: 0 }}>
         <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} onShowDefinition={showDefinition}
           collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
+        {!sidebarCollapsed && <ResizeHandle orientation="vertical" onDrag={dragSidebar} />}
 
-        <main data-testid={showEditor ? undefined : 'main-grid'} className={showEditor ? '' : 'main--grid'} style={{ display: 'grid', gridTemplateRows: showEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(120px, 30%) 1fr` : `${t.TAB_H}px 1fr`, minWidth: 0, minHeight: 0 }}>
+        <main data-testid={showEditor ? undefined : 'main-grid'} className={showEditor ? '' : 'main--grid'} style={{ display: 'grid', gridTemplateRows: showEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(${EDITOR_MIN}px, 1fr) auto ${resultsHeight}px` : `${t.TAB_H}px 1fr`, minWidth: 0, minHeight: 0 }}>
           <TabStrip onDuplicateTab={duplicateTab} />
           <EditorPane onRun={run} running={running} onToggleSidebar={toggleSidebar} />
-          <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: `1px solid ${t.BORDER}` }}>
+          {showEditor && <ResizeHandle orientation="horizontal" onDrag={dragResults} />}
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: showEditor ? undefined : `1px solid ${t.BORDER}` }}>
             {activeTab ? <ResultsTable /> : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}
           </div>
         </main>
