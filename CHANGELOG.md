@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.3...v0.6.4) (2026-07-21)
+
+
+### Bug Fixes
+
+* macos keyboard input ([8ede684](https://github.com/Vincent-Lavallee/squeal-editor/commit/8ede684f4bfe57f5d4e6b88901147e07712355c8))
+
 ## [0.6.3](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.2...v0.6.3) (2026-07-21)
 
 
