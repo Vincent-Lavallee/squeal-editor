@@ -771,10 +771,13 @@ export const postgresDriver: Driver<pg.Client> = {
 
   async listTables(client) {
     const res = await client.query({
-      text: `SELECT table_schema, table_name, table_type
-               FROM information_schema.tables
-              WHERE table_schema <> ALL($1)
-              ORDER BY table_schema, table_name`,
+      text: `SELECT t.table_schema, t.table_name, t.table_type
+               FROM information_schema.tables t
+               JOIN pg_namespace n ON n.nspname = t.table_schema
+               JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid
+              WHERE t.table_schema <> ALL($1)
+                AND c.relispartition = false
+              ORDER BY t.table_schema, t.table_name`,
       values: [PG_SYSTEM_SCHEMAS],
       rowMode: 'array',
     });
