@@ -25,7 +25,7 @@ static void restyle(NSWindow *window) {
                       NSWindowStyleMaskResizable |
                       NSWindowStyleMaskFullSizeContentView;
   window.titlebarAppearsTransparent = YES;
-  window.titleVisibility = NSWindowTitleVisibilityHidden;
+  window.titleVisibility = NSWindowTitleHidden;
 
   /* The webview draws its own traffic lights (TitlebarMacos.tsx). */
   [window standardWindowButton:NSWindowCloseButton].hidden = YES;
