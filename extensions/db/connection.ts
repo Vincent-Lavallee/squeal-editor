@@ -8,7 +8,7 @@ import type {
   TableFilter,
   TableInfo,
 } from '../../shared/protocol/index.ts';
-import { buildWhere, withDriver, type Driver, type QueryOutcome } from './drivers.ts';
+import { buildWhere, withDriver, type Driver, type QueryOutcome, type Relation } from './drivers.ts';
 import { rdsAuthToken } from './iam.ts';
 
 /**
@@ -40,21 +40,23 @@ export interface ConnectionHandle {
   readonly config: ConnectionConfig;
   /** The driver's own answer, so the renderer never derives it from `config.type`. */
   readonly dialect: SqlDialect;
+  /** The schema that goes without saying, so the UI can leave it off a name. */
+  readonly defaultSchema?: string;
   /** Whether the server is currently refusing writes on this connection. */
   readonly readOnly: boolean;
   listDatabases(): Promise<string[]>;
   listTables(database: string): Promise<TableInfo[]>;
-  listColumns(database: string, table: string): Promise<ColumnInfo[]>;
+  listColumns(database: string, relation: Relation): Promise<ColumnInfo[]>;
   query(database: string | undefined, sql: string): Promise<QueryOutcome>;
   /**
    * One page of a table, optionally narrowed by `filter`. A builder filter's
    * values are bound as parameters; a raw one is the user's own `WHERE` text.
    */
-  browse(database: string, table: string, offset: number, filter?: TableFilter): Promise<TableRows>;
+  browse(database: string, relation: Relation, offset: number, filter?: TableFilter): Promise<TableRows>;
   /** A relation's `CREATE` statement, for the context menu's "open definition". */
-  tableDdl(database: string, table: string, kind: 'table' | 'view'): Promise<string>;
+  tableDdl(database: string, relation: Relation, kind: 'table' | 'view'): Promise<string>;
   /** Drop a relation. Not undoable -- the UI guards it behind a typed confirmation. */
-  dropRelation(database: string, table: string, kind: 'table' | 'view'): Promise<void>;
+  dropRelation(database: string, relation: Relation, kind: 'table' | 'view'): Promise<void>;
   /**
    * Write edited and deleted rows back to a browsed table, as one atomic batch,
    * returning the total rows affected. Refused for a table with no row identity:
@@ -62,7 +64,7 @@ export interface ConnectionHandle {
    * be written even if the caller supplies one. Each op must carry every key
    * column, or it could not target a row.
    */
-  write(database: string, table: string, edits: RowEdit[], deletes: RowDelete[]): Promise<number>;
+  write(database: string, relation: Relation, edits: RowEdit[], deletes: RowDelete[]): Promise<number>;
   /**
    * Turn read-only on or off across every client this connection holds, and
    * remember it for every client opened afterwards. Both halves matter: one
@@ -128,6 +130,7 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
   return {
     config,
     dialect: driver.dialect,
+    defaultSchema: driver.defaultSchema,
     get readOnly() {
       return readOnly;
     },
@@ -140,8 +143,8 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
       return driver.listTables(await getClient(database), database);
     },
 
-    async listColumns(database, table) {
-      return driver.listColumns(await getClient(database), database, table);
+    async listColumns(database, relation) {
+      return driver.listColumns(await getClient(database), database, relation);
     },
 
     async query(database, sql) {
@@ -152,7 +155,10 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
      * A page of a table, in the server's natural order.
      *
      * Quoting rules are per-engine, so the SQL is written here -- where the
-     * driver is known -- rather than guessed at in the renderer. `LIMIT/OFFSET`
+     * driver is known -- rather than guessed at in the renderer. The relation is
+     * named by `driver.qualify`, the one place a schema stops being a separate
+     * fact and becomes the engine's own spelling of a table's name.
+     * `LIMIT/OFFSET`
      * is not per-engine between these two; an engine that spells paging its own
      * way (SQL Server's OFFSET/FETCH) makes this a driver method.
      *
@@ -168,7 +174,7 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
      * what it meant -- the probe row is fetched under the same `WHERE`, so it
      * answers "is there another *matching* row" rather than being inferred.
      */
-    async browse(database, table, offset, filter) {
+    async browse(database, relation, offset, filter) {
       // `offset` is user-supplied JSON on its way into a string of SQL, and no
       // placeholder can carry a LIMIT clause on both engines. Forcing it to a
       // non-negative integer is what makes the interpolation below safe; the
@@ -194,11 +200,11 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
       // two queries at once (pg queues and warns, mysql2 would interleave).
       const outcome = await driver.query(
         client,
-        `SELECT * FROM ${driver.quoteIdent(table)}${where} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`,
+        `SELECT * FROM ${driver.qualify(relation)}${where} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`,
         params
       );
-      const keyColumns = await driver.rowKey(client, database, table);
-      const columnInfo = await driver.listColumns(client, database, table);
+      const keyColumns = await driver.rowKey(client, database, relation);
+      const columnInfo = await driver.listColumns(client, database, relation);
 
       const hasMore = outcome.rows.length > PAGE_SIZE;
       return {
@@ -213,21 +219,21 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
       };
     },
 
-    async tableDdl(database, table, kind) {
-      return driver.tableDdl(await getClient(database), table, kind);
+    async tableDdl(database, relation, kind) {
+      return driver.tableDdl(await getClient(database), relation, kind);
     },
 
-    async dropRelation(database, table, kind) {
-      await driver.dropRelation(await getClient(database), table, kind);
+    async dropRelation(database, relation, kind) {
+      await driver.dropRelation(await getClient(database), relation, kind);
     },
 
-    async write(database, table, edits, deletes) {
+    async write(database, relation, edits, deletes) {
       const client = await getClient(database);
       // The identity is recomputed here rather than trusted from the UI: which
       // columns legitimately name a row is the server's fact, and a keyless table
       // has no write to apply. Refused before a transaction is even opened.
-      const keyColumns = await driver.rowKey(client, database, table);
-      if (!keyColumns) throw new Error(`${table} has no primary or unique key, so it cannot be edited.`);
+      const keyColumns = await driver.rowKey(client, database, relation);
+      if (!keyColumns) throw new Error(`${relation.table} has no primary or unique key, so it cannot be edited.`);
 
       // Every op must carry all of the key columns, or its WHERE could not target
       // a single row -- a stale grid handing back a partial key is a bug up top,
@@ -237,7 +243,7 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
         if (missing.length > 0) throw new Error(`A row is missing its key column${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`);
       }
 
-      return driver.applyWrites(client, table, keyColumns, edits, deletes);
+      return driver.applyWrites(client, relation, keyColumns, edits, deletes);
     },
 
     async setReadOnly(value) {

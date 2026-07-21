@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react';
 
 import type { ColumnInfo } from '../../../../shared/protocol/index.ts';
+import { relationName, type Relation } from '../../common/db/relation.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import { selectActiveConnection } from '../../store/sessionSlice.ts';
@@ -22,6 +23,9 @@ export function useExplorer() {
   // the user has held read-only -- read-only does not reliably cover DDL at the
   // server, so honouring that intent for a DROP is the UI's to do. See decisions.
   const readOnly = useAppSelector((s) => selectActiveConnection(s)?.readOnly ?? false);
+  // The schema this engine treats as implied, so the tree can leave it off a
+  // name. It is the extension's answer, not a fact the UI knows about Postgres.
+  const defaultSchema = useAppSelector((s) => selectActiveConnection(s)?.defaultSchema);
   const { activeTab } = useTabs();
   const database = activeTab?.database ?? null;
 
@@ -54,13 +58,13 @@ export function useExplorer() {
    * straight through so the tree can tell "loading" from "empty".
    */
   const columnsFor = useCallback(
-    (db: string, table: string): ColumnInfo[] | null | undefined =>
-      connectionId ? columns[connectionId]?.[db]?.[table] : undefined,
+    (db: string, relation: Relation): ColumnInfo[] | null | undefined =>
+      connectionId ? columns[connectionId]?.[db]?.[relationName(relation)] : undefined,
     [columns, connectionId]
   );
   const loadTableColumns = useCallback(
-    (db: string, table: string) => {
-      void dispatch(loadColumns({ database: db, table }));
+    (db: string, relation: Relation) => {
+      void dispatch(loadColumns({ database: db, ...relation }));
     },
     [dispatch]
   );
@@ -69,15 +73,15 @@ export function useExplorer() {
   // unwrapped result, so the caller sees the DDL string or the rejection reason
   // directly -- a failed drop surfaces in the confirm modal, where it was asked.
   const fetchDdl = useCallback(
-    (db: string, table: string, kind: 'table' | 'view'): Promise<string> =>
-      dispatch(fetchDdlThunk({ database: db, table, kind }))
+    (db: string, relation: Relation, kind: 'table' | 'view'): Promise<string> =>
+      dispatch(fetchDdlThunk({ database: db, ...relation, kind }))
         .unwrap()
         .then((r) => r.ddl),
     [dispatch]
   );
   const dropTable = useCallback(
-    (db: string, table: string, kind: 'table' | 'view'): Promise<unknown> =>
-      dispatch(dropTableThunk({ database: db, table, kind })).unwrap(),
+    (db: string, relation: Relation, kind: 'table' | 'view'): Promise<unknown> =>
+      dispatch(dropTableThunk({ database: db, ...relation, kind })).unwrap(),
     [dispatch]
   );
 
@@ -88,6 +92,8 @@ export function useExplorer() {
     dropTable,
     /** The active connection is read-only; a drop is disabled and says why. */
     readOnly,
+    /** The schema that goes without saying here, or undefined if none does. */
+    defaultSchema,
     databases: connectionId ? (databases[connectionId] ?? NO_DATABASES) : NO_DATABASES,
     database,
     /** With nothing open there is no tab to point, so there is nothing to pick. */

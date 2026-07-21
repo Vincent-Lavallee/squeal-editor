@@ -28,7 +28,7 @@ import type { UpdateStatus } from './updater.ts';
 export interface Commands {
   'db.connect': {
     req: { config: ConnectionConfig; readOnly: boolean };
-    res: { connectionId: string; databases: string[]; dialect: SqlDialect };
+    res: { connectionId: string; databases: string[]; dialect: SqlDialect; defaultSchema?: string };
   };
   'db.databases': {
     req: { connectionId: string };
@@ -47,9 +47,19 @@ export interface Commands {
    * `format_type` against a Postgres relation), so only this side may write it.
    * The renderer asking "what columns does this table have" and getting an
    * answer is the whole of what it knows.
+   *
+   * `schema` is the convention every relation command here follows. When the
+   * caller holds a `TableInfo` it sends both fields and the driver qualifies from
+   * them -- no display string is ever taken apart to recover where a relation
+   * lives. It is optional for the one caller that genuinely has only a string:
+   * the editor's completion, which scans a name out of SQL *being typed* and has
+   * no catalog row behind it. Omitted, a Postgres driver falls back to reading a
+   * leading `schema.` off the name, which is the guess this field exists to
+   * avoid making anywhere it can be avoided. MySQL ignores the field outright --
+   * its database is its schema, and its client is already pinned to one.
    */
   'db.columns': {
-    req: { connectionId: string; database: string; table: string };
+    req: { connectionId: string; database: string; table: string; schema?: string };
     res: { columns: ColumnInfo[] };
   };
   'db.query': {
@@ -70,7 +80,7 @@ export interface Commands {
    * raw filter is the user's own `WHERE` text, pasted in as typed.
    */
   'db.browse': {
-    req: { connectionId: string; database: string; table: string; offset: number; filter?: TableFilter };
+    req: { connectionId: string; database: string; table: string; schema?: string; offset: number; filter?: TableFilter };
     res: TablePage;
   };
   /**
@@ -84,7 +94,7 @@ export interface Commands {
    * takes a different path for each, and the UI already holds it.
    */
   'db.ddl': {
-    req: { connectionId: string; database: string; table: string; kind: 'table' | 'view' };
+    req: { connectionId: string; database: string; table: string; schema?: string; kind: 'table' | 'view' };
     res: { ddl: string };
   };
   /**
@@ -98,7 +108,7 @@ export interface Commands {
    * drop something depended on is the safe answer, surfaced as a failed drop.
    */
   'db.drop': {
-    req: { connectionId: string; database: string; table: string; kind: 'table' | 'view' };
+    req: { connectionId: string; database: string; table: string; schema?: string; kind: 'table' | 'view' };
     res: { ok: true };
   };
   /**
@@ -120,6 +130,7 @@ export interface Commands {
       connectionId: string;
       database: string;
       table: string;
+      schema?: string;
       edits: RowEdit[];
       deletes: RowDelete[];
     };
@@ -188,6 +199,13 @@ export interface Commands {
       connectionId: string;
       databases: string[];
       dialect: SqlDialect;
+      /**
+       * The schema that goes without saying on this engine, carried the way
+       * `dialect` is: the tree leaves it off a relation's printed name, and the
+       * UI never has to hold a table of which engine calls its default what.
+       * Absent for an engine with no schema layer.
+       */
+      defaultSchema?: string;
       config: ServerConfig;
       name: string;
       environment: Environment;
@@ -216,6 +234,30 @@ export interface Commands {
    */
   'db.workspaces.delete': {
     req: { id: string };
+    res: { ok: true };
+  };
+
+  /* -- User settings. The same store, and not about any connection. ------- */
+
+  /**
+   * Every stored setting, as one map, read once at launch.
+   *
+   * All of them rather than one per key: they are a handful of short strings, so
+   * a call per setting buys nothing and makes the launch path grow a round trip
+   * every time a preference is added. The UI holds the map and writes through.
+   *
+   * The value is a string and the *caller* owns its meaning -- the store keeps
+   * text, not a schema of what each key may hold. A key nobody has written is
+   * simply absent, which is what lets each reader spell its own default rather
+   * than the store guessing one on behalf of a feature it knows nothing about.
+   */
+  'settings.list': {
+    req: Record<string, never>;
+    res: { settings: Record<string, string> };
+  };
+  /** Write one setting, inserting or replacing it. */
+  'settings.set': {
+    req: { key: string; value: string };
     res: { ok: true };
   };
 

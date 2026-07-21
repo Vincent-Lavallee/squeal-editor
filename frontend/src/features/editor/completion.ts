@@ -12,6 +12,7 @@
  */
 
 import type { ColumnInfo, TableInfo } from '../../../../shared/protocol/index.ts';
+import { relationLabel, relationOf } from '../../common/db/relation.ts';
 import type { Word } from './keywords.ts';
 import { monaco } from './monaco.ts';
 import { resolveQualifier, type SqlScope } from './sqlScope.ts';
@@ -26,6 +27,12 @@ export interface CompletionSnapshot {
   words: Word[];
   /** The active tab's database's tables. Empty until they land. */
   tables: TableInfo[];
+  /**
+   * The schema this engine leaves implied, so a suggested relation is qualified
+   * only when it has to be. Undefined means qualify nothing -- an engine with no
+   * schema layer, or no connection yet.
+   */
+  defaultSchema?: string;
   scope: SqlScope;
   /** `null` while the fetch is in flight, or if it failed. */
   columnsFor: (table: string) => ColumnInfo[] | null;
@@ -112,7 +119,7 @@ export function sqlCompletionProvider(
     triggerCharacters: ['.'],
 
     provideCompletionItems(model, position) {
-      const { words, tables, scope, columnsFor } = snapshot();
+      const { words, tables, defaultSchema, scope, columnsFor } = snapshot();
       const range = wordRange(model, position);
 
       /*
@@ -154,12 +161,17 @@ export function sqlCompletionProvider(
       }
 
       for (const table of tables) {
+        // Qualified unless the schema goes without saying, because this text is
+        // going into a statement: an unqualified name in another schema resolves
+        // through `search_path`, so offering the bare one suggests SQL that does
+        // not run. The tree prints the same string for the same reason.
+        const name = relationLabel(relationOf(table), defaultSchema);
         suggestions.push({
-          label: table.name,
+          label: name,
           kind: table.kind === 'view' ? KIND.view : KIND.table,
           detail: table.kind,
-          insertText: table.name,
-          sortText: SORT.table + table.name,
+          insertText: name,
+          sortText: SORT.table + name,
           range,
         });
       }

@@ -88,25 +88,43 @@ describe.each([
   const query = async (sql: string, database: string | undefined = FIXTURE_DB): Promise<QueryResult> =>
     (await h.ok('db.query', { connectionId, database, sql })) as QueryResult;
 
-  const browse = async (table: string, offset = 0): Promise<TablePage> =>
-    (await h.ok('db.browse', { connectionId, database: FIXTURE_DB, table, offset })) as TablePage;
+  const browse = async (table: string, offset = 0, schema?: string): Promise<TablePage> =>
+    (await h.ok('db.browse', { connectionId, database: FIXTURE_DB, table, schema, offset })) as TablePage;
+
+  const listTables = async (): Promise<TableInfo[]> =>
+    ((await h.ok('db.tables', { connectionId, database: FIXTURE_DB })) as { tables: TableInfo[] }).tables;
 
   test('lists tables and flags views', async () => {
-    const { tables } = (await h.ok('db.tables', { connectionId, database: FIXTURE_DB })) as { tables: TableInfo[] };
+    const tables = await listTables();
     const names = tables.map((t) => t.name);
 
     expect(names).toContain('users');
     expect(tables.find((t) => t.name === 'active_users')?.kind).toBe('view');
     expect(tables.find((t) => t.name === 'users')?.kind).toBe('table');
+  });
+
+  test('a relation names its schema, or has none to name', async () => {
+    const tables = await listTables();
 
     if (expectSchemaQualified) {
-      // Postgres relations outside `public` must be qualified, or they are unusable.
-      expect(names).toContain('reporting.daily_stats');
+      // The schema is a field on every relation, `public` included -- the tree
+      // groups by it, and a group needs an answer for each row and not only for
+      // the ones outside the default schema. The name is the relation's own.
+      expect(tables.find((t) => t.name === 'users')?.schema).toBe('public');
+      expect(tables.find((t) => t.name === 'daily_stats')?.schema).toBe('reporting');
+      // The name is never the qualified string: that was the prefix this replaced.
+      expect(names(tables)).not.toContain('reporting.daily_stats');
+    } else {
+      // MySQL's database *is* its schema, so there is no second level to report
+      // and nothing for the tree to group by.
+      expect(tables.every((t) => t.schema === undefined)).toBe(true);
     }
   });
 
-  const columnsOf = async (table: string): Promise<ColumnInfo[]> =>
-    ((await h.ok('db.columns', { connectionId, database: FIXTURE_DB, table })) as { columns: ColumnInfo[] })
+  const names = (tables: TableInfo[]): string[] => tables.map((t) => t.name);
+
+  const columnsOf = async (table: string, schema?: string): Promise<ColumnInfo[]> =>
+    ((await h.ok('db.columns', { connectionId, database: FIXTURE_DB, table, schema })) as { columns: ColumnInfo[] })
       .columns;
 
   test('lists a table\'s columns in the order the table declares them', async () => {
@@ -150,11 +168,34 @@ describe.each([
     expect(await columnsOf('no_such_table')).toEqual([]);
   });
 
-  test.if(expectSchemaQualified)('columns of a schema-qualified relation resolve', async () => {
-    // The name arrives exactly as `db.tables` reported it, so this is the proof
-    // that the qualification survives the round trip: split wrong, and the
-    // lookup silently answers for `public.daily_stats`, which does not exist.
+  test.if(expectSchemaQualified)('columns resolve from the schema field', async () => {
+    // Both halves arrive as `db.tables` reported them. Read the schema wrong and
+    // the lookup silently answers for `public.daily_stats`, which does not exist.
+    expect((await columnsOf('daily_stats', 'reporting')).map((c) => c.name)).toEqual(['day', 'hits']);
+  });
+
+  test.if(expectSchemaQualified)('columns resolve from a qualified name with no schema field', async () => {
+    // The completion's path: a name scanned out of SQL being typed, with no
+    // catalog row behind it to supply a schema. The driver falls back to reading
+    // a leading `schema.` off the name, which is why this still answers.
     expect((await columnsOf('reporting.daily_stats')).map((c) => c.name)).toEqual(['day', 'hits']);
+  });
+
+  test.if(expectSchemaQualified)('a relation whose own name holds a dot is addressed by its field', async () => {
+    // The case that has no correct split: `reporting.daily.stats` could be read
+    // as either half, and the fallback above gets it wrong on purpose -- it
+    // looks for `daily.stats` in `reporting`... by splitting at the first dot,
+    // so it asks `reporting` for `daily.stats` and happens to be right, while a
+    // last-dot split would ask `reporting.daily` for `stats`. The field never
+    // has to choose, which is the whole point.
+    const columns = await columnsOf('daily.stats', 'reporting');
+    expect(columns.map((c) => c.name)).toEqual(['day', 'hits']);
+
+    // And it is a *different* table from the one beside it, which is what makes
+    // getting this wrong a silent read of the wrong rows rather than an error.
+    const page = await browse('daily.stats', 0, 'reporting');
+    expect(page.result.rows).toHaveLength(1);
+    expect(String(page.result.rows[0]![1])).toBe('1');
   });
 
   test('browsing a table reads it, quoted for the engine', async () => {
@@ -167,11 +208,13 @@ describe.each([
     expect(page.offset).toBe(0);
   });
 
-  test.if(expectSchemaQualified)('browsing a schema-qualified relation quotes each part', async () => {
-    // "reporting.daily_stats" as one quoted string names a table with a dot in
-    // it, which does not exist. The parts have to be quoted separately.
-    const page = await browse('reporting.daily_stats');
+  test.if(expectSchemaQualified)('browsing a relation in another schema quotes each part', async () => {
+    // Quoted as one string, `"reporting.daily_stats"` names a table with a dot
+    // in it -- which now genuinely exists beside it, so getting this wrong reads
+    // the wrong table rather than failing. Each part is quoted on its own.
+    const page = await browse('daily_stats', 0, 'reporting');
     expect(page.result.rows).toHaveLength(1);
+    expect(String(page.result.rows[0]![1])).toBe('9007199254740993');
   });
 
   test('a table smaller than a page does not offer a next one', async () => {
@@ -388,8 +431,8 @@ describe.each([
     expect(typeof (await browse('users')).result.durationMs).toBe('number');
   });
 
-  const ddlOf = async (table: string, kind: 'table' | 'view' = 'table'): Promise<string> =>
-    ((await h.ok('db.ddl', { connectionId, database: FIXTURE_DB, table, kind })) as { ddl: string }).ddl;
+  const ddlOf = async (table: string, kind: 'table' | 'view' = 'table', schema?: string): Promise<string> =>
+    ((await h.ok('db.ddl', { connectionId, database: FIXTURE_DB, table, schema, kind })) as { ddl: string }).ddl;
 
   test('renders a faithful CREATE TABLE, engine-rendered', async () => {
     // MySQL hands back SHOW CREATE TABLE; Postgres reassembles it from the
@@ -410,12 +453,27 @@ describe.each([
     expect(ddl).toContain('name');
   });
 
-  test.if(expectSchemaQualified)('renders DDL for a schema-qualified relation', async () => {
-    // The name arrives as db.tables reported it; split wrong and regclass would
-    // resolve public.daily_stats, which does not exist.
-    const ddl = await ddlOf('reporting.daily_stats');
+  test.if(expectSchemaQualified)('renders DDL for a relation in another schema', async () => {
+    // Both halves arrive as db.tables reported them; read the schema wrong and
+    // regclass resolves public.daily_stats, which does not exist.
+    const ddl = await ddlOf('daily_stats', 'table', 'reporting');
     expect(ddl).toMatch(/create table/i);
     expect(ddl).toContain('hits');
+    // Qualified in the output too, so the statement it prints is one that runs
+    // wherever search_path happens to point.
+    expect(ddl).toContain('reporting');
+  });
+
+  test.if(expectSchemaQualified)('drops a relation in another schema, and only that one', async () => {
+    // The pair that a wrong split confuses: dropping one must leave the other.
+    await query('DROP TABLE IF EXISTS reporting.zz_drop_test');
+    await query('CREATE TABLE reporting.zz_drop_test (id int)');
+
+    await h.ok('db.drop', { connectionId, database: FIXTURE_DB, table: 'zz_drop_test', schema: 'reporting', kind: 'table' });
+
+    const remaining = await listTables();
+    expect(remaining.some((t) => t.name === 'zz_drop_test')).toBe(false);
+    expect(remaining.some((t) => t.name === 'daily_stats' && t.schema === 'reporting')).toBe(true);
   });
 
   test('drops a table, and it is gone afterwards', async () => {

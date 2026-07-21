@@ -145,6 +145,11 @@ export const browseTable = createAppThunk(
         connectionId: tab.connectionId,
         database: tab.database,
         table: arg.table,
+        // Off the tab, not the arg: the schema is what the tab was opened on and
+        // it never changes, so passing it alongside the name would be a second
+        // source for one fact -- the rule `database` and `connectionId` already
+        // follow here. The one thing a caller varies is which page of it to fetch.
+        schema: tab.schema,
         offset: arg.offset,
         filter: arg.filter ?? undefined,
       });
@@ -187,6 +192,7 @@ export const saveEdits = createAppThunk(
         connectionId: tab.connectionId,
         database: tab.database,
         table: arg.table,
+        schema: tab.schema,
         edits: arg.edits,
         deletes: arg.deletes,
       });

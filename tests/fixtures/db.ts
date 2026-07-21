@@ -16,6 +16,12 @@
  * UNIQUE NOT NULL column and no primary key (so its identity is the unique key),
  * and `logs` has neither (so the grid must stay read-only against it).
  *
+ * `reporting."daily.stats"` has a dot in its *own* name, beside a
+ * `reporting.daily_stats` that does not. It is the case that cannot be addressed
+ * by splitting a display string -- `reporting.daily.stats` has no correct split
+ * -- so it is the proof that the schema travels as a field rather than as a
+ * prefix, and the two together are the pair a wrong split confuses.
+ *
  * `users."eventType"` is deliberately mixed-case: it is what exposed the filter
  * bar quoting an identifier as `eventType` instead of `"eventType"`, which
  * Postgres folds to `eventtype` and then cannot find. MySQL's own case
@@ -43,6 +49,8 @@ CREATE VIEW active_users AS SELECT id, name FROM users;
 CREATE SCHEMA reporting;
 CREATE TABLE reporting.daily_stats (day date, hits bigint);
 INSERT INTO reporting.daily_stats VALUES ('2026-01-05', 9007199254740993);
+CREATE TABLE reporting."daily.stats" (day date, hits bigint);
+INSERT INTO reporting."daily.stats" VALUES ('2026-01-06', 1);
 CREATE TABLE events (id serial primary key, label text);
 INSERT INTO events (label) SELECT 'e' || g FROM generate_series(1, 150) g;
 CREATE TABLE tags (label text NOT NULL UNIQUE, weight int);

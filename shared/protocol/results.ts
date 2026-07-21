@@ -8,9 +8,24 @@
 /** Cells arrive JSON-encoded, so drivers flatten exotic types to strings. */
 export type CellValue = string | number | boolean | null;
 
+/**
+ * A relation in the tree.
+ *
+ * `name` is the relation's own name and nothing else -- never a `schema.table`
+ * display string. The schema is a field beside it because it is a *fact* about
+ * where the relation lives, and a fact recovered by splitting a display string on
+ * a dot is a guess: a table may legitimately have one in its name, and the split
+ * cannot tell that case from a qualified one. Everything that has to address the
+ * relation -- browsing it, reading its definition, dropping it -- sends both
+ * fields and lets the driver qualify.
+ *
+ * `schema` is absent for MySQL, whose database *is* its schema and which has no
+ * second level to name. It is always present for Postgres, `public` included, so
+ * the tree can group by it without asking which case it is looking at.
+ */
 export interface TableInfo {
-  /** Display name; schema-qualified for Postgres when not in `public`. */
   name: string;
+  schema?: string;
   kind: 'table' | 'view';
 }
 

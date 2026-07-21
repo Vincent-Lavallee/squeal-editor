@@ -8,6 +8,8 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 
+import type { TableInfo } from '../../../../shared/protocol/index.ts';
+import { relationName, resolveRelation } from '../../common/db/relation.ts';
 import { loadColumns } from '../../store/explorerSlice.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { useSession } from '../../store/sessionSlice.ts';
@@ -15,6 +17,9 @@ import { sqlCompletionProvider, type CompletionSnapshot } from './completion.ts'
 import { wordsFor } from './keywords.ts';
 import { monaco } from './monaco.ts';
 import { scanScope } from './sqlScope.ts';
+
+/** Shared and frozen: a fresh `[]` here would be a new snapshot every action. */
+const EMPTY: TableInfo[] = [];
 
 /**
  * `sql` and `database` are the active tab's.
@@ -24,8 +29,14 @@ import { scanScope } from './sqlScope.ts';
  */
 export function useSqlCompletion(sql: string, database: string | null): void {
   const dispatch = useAppDispatch();
-  const { connectionId, dialect } = useSession();
+  const { connectionId, dialect, defaultSchema } = useSession();
   const { tables, columns } = useAppSelector((s) => s.explorer);
+
+  // A tab pointed at nothing, or a database whose tables have not landed yet:
+  // both are "no tables to offer", which is not the same as a bug. Both caches
+  // name the connection now, so an identically-named database on another server
+  // cannot answer for this one.
+  const listed = (connectionId && database ? tables[connectionId]?.[database] : undefined) ?? EMPTY;
 
   const scope = useMemo(() => scanScope(sql), [sql]);
 
@@ -56,15 +67,16 @@ export function useSqlCompletion(sql: string, database: string | null): void {
    */
   const snapshot: CompletionSnapshot = {
     words: wordsFor(dialect),
-    // A tab pointed at nothing, or a database whose tables have not landed yet:
-    // both are "no tables to offer", which is not the same as a bug. Both caches
-    // name the connection now, so an identically-named database on another
-    // server cannot answer for this one.
-    tables: (connectionId && database ? tables[connectionId]?.[database] : undefined) ?? [],
+    tables: listed,
+    defaultSchema,
     scope,
+    // Resolved the same way `loadColumns` resolved it before filing the answer,
+    // so the read and the write agree on the key. Read it raw and a table whose
+    // columns are sitting in the cache under `public.users` looks unfetched to
+    // the popup -- forever, since the fetch itself is deduped by that same key.
     columnsFor: (table) => {
       if (!connectionId || !database) return null;
-      return columns[connectionId]?.[database]?.[table] ?? null;
+      return columns[connectionId]?.[database]?.[relationName(resolveRelation(listed, { table }))] ?? null;
     },
   };
 

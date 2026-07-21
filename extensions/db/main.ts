@@ -31,10 +31,12 @@ import {
   deleteSaved,
   deleteWorkspace,
   listSaved,
+  listSettings,
   listWorkspaces,
   resolveSaved,
   saveConnection,
   saveWorkspace,
+  setSetting,
 } from './store.ts';
 
 // Killing the app does not reliably close our socket: WebView2 child processes
@@ -83,13 +85,13 @@ type Handlers = { [K in CommandName]: (req: CommandReq<K>) => Promise<CommandRes
 async function establish(
   config: ConnectionConfig,
   readOnly: boolean
-): Promise<{ connectionId: string; databases: string[]; dialect: SqlDialect }> {
+): Promise<{ connectionId: string; databases: string[]; dialect: SqlDialect; defaultSchema?: string }> {
   const conn = await openConnection(config, readOnly);
   const databases = await conn.listDatabases();
 
   const connectionId = randomUUID();
   connections.set(connectionId, conn);
-  return { connectionId, databases, dialect: conn.dialect };
+  return { connectionId, databases, dialect: conn.dialect, defaultSchema: conn.defaultSchema };
 }
 
 const COMMANDS: Handlers = {
@@ -105,8 +107,8 @@ const COMMANDS: Handlers = {
     return { tables: await getConnection(connectionId).listTables(database) };
   },
 
-  async 'db.columns'({ connectionId, database, table }) {
-    return { columns: await getConnection(connectionId).listColumns(database, table) };
+  async 'db.columns'({ connectionId, database, table, schema }) {
+    return { columns: await getConnection(connectionId).listColumns(database, { table, schema }) };
   },
 
   async 'db.query'({ connectionId, database, sql }) {
@@ -116,24 +118,24 @@ const COMMANDS: Handlers = {
     return { ...outcome, durationMs: Date.now() - startedAt } as QueryResult;
   },
 
-  async 'db.browse'({ connectionId, database, table, offset, filter }) {
+  async 'db.browse'({ connectionId, database, table, schema, offset, filter }) {
     const conn = getConnection(connectionId);
     const startedAt = Date.now();
-    const { columns, rows, ...page } = await conn.browse(database, table, offset, filter);
+    const { columns, rows, ...page } = await conn.browse(database, { table, schema }, offset, filter);
     return { result: { columns, rows, durationMs: Date.now() - startedAt }, ...page };
   },
 
-  async 'db.ddl'({ connectionId, database, table, kind }) {
-    return { ddl: await getConnection(connectionId).tableDdl(database, table, kind) };
+  async 'db.ddl'({ connectionId, database, table, schema, kind }) {
+    return { ddl: await getConnection(connectionId).tableDdl(database, { table, schema }, kind) };
   },
 
-  async 'db.drop'({ connectionId, database, table, kind }) {
-    await getConnection(connectionId).dropRelation(database, table, kind);
+  async 'db.drop'({ connectionId, database, table, schema, kind }) {
+    await getConnection(connectionId).dropRelation(database, { table, schema }, kind);
     return { ok: true };
   },
 
-  async 'db.write'({ connectionId, database, table, edits, deletes }) {
-    return { affectedRows: await getConnection(connectionId).write(database, table, edits, deletes) };
+  async 'db.write'({ connectionId, database, table, schema, edits, deletes }) {
+    return { affectedRows: await getConnection(connectionId).write(database, { table, schema }, edits, deletes) };
   },
 
   async 'db.disconnect'({ connectionId }) {
@@ -196,6 +198,17 @@ const COMMANDS: Handlers = {
 
   async 'window.fitMaximized'({ pid }) {
     return { applied: fitMaximizedToWorkArea(pid) };
+  },
+
+  /* -- User settings (the same store, and about no connection) ---------- */
+
+  async 'settings.list'() {
+    return { settings: listSettings() };
+  },
+
+  async 'settings.set'({ key, value }) {
+    setSetting(key, value);
+    return { ok: true };
   },
 
   /* -- The app itself -------------------------------------------------- */

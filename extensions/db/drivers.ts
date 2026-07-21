@@ -41,7 +41,25 @@ for (const oid of PG_DATE_OIDS) {
 /** What a driver reports about a relation, before preview SQL is attached. */
 export interface TableMeta {
   name: string;
+  /** Where it lives, for an engine that has schemas. Absent for MySQL. */
+  schema?: string;
   kind: 'table' | 'view';
+}
+
+/**
+ * Which relation a call is about, as the two facts that identify one.
+ *
+ * They travel as a single value rather than as a name plus an optional extra
+ * argument, because the whole point of the schema being a field is that it can
+ * never be separated from the name and later guessed back out of it. A caller
+ * that has a `TableMeta` has both halves already; the one caller that does not is
+ * the editor's completion, scanning a name out of SQL as it is typed, and it
+ * passes `schema` undefined -- see `splitRelation`, which is the fallback that
+ * case and only that case still needs.
+ */
+export interface Relation {
+  table: string;
+  schema?: string;
 }
 
 /** A grid, or a count for statements that return no rows. */
@@ -61,6 +79,22 @@ export interface Driver<C> {
    * learns which engine said so, which is the same rule that keeps quoting here.
    */
   dialect: SqlDialect;
+  /**
+   * The schema a relation is in when nobody says otherwise -- the one that goes
+   * without saying, so the UI can leave it off a name it prints.
+   *
+   * Reported rather than assumed for the same reason `dialect` is: the renderer
+   * must not carry a table of which engine calls its default schema what, and it
+   * already has to be told which relations are in which schema. Undefined for an
+   * engine with no schema layer, which is what says "there is nothing to leave
+   * off here".
+   *
+   * It is the *conventional* default and not a reading of the session's
+   * `search_path`, which a user may have set to anything. Getting it wrong costs
+   * a name printed in full, never a query aimed at the wrong relation -- the SQL
+   * this side authors always qualifies (see `qualify`) and never consults this.
+   */
+  defaultSchema?: string;
   createClient(config: ConnectionConfig, database?: string): Promise<C>;
   closeClient(client: C): Promise<void>;
   listDatabases(client: C): Promise<string[]>;
@@ -72,10 +106,11 @@ export interface Driver<C> {
    * and the order `SELECT *` returns, so it is the only one the reader already
    * has in their head. The completion sorts by relevance on top of it anyway.
    *
-   * `table` arrives exactly as `listTables` reported it, which is what makes a
-   * Postgres relation outside `public` resolvable at all -- see `splitRelation`.
+   * `relation` carries the schema `listTables` reported alongside the name, which
+   * is what makes a Postgres relation outside `public` resolvable without taking
+   * a display string apart to find out where it lives.
    */
-  listColumns(client: C, database: string, table: string): Promise<ColumnInfo[]>;
+  listColumns(client: C, database: string, relation: Relation): Promise<ColumnInfo[]>;
   /**
    * Run one statement.
    *
@@ -103,14 +138,14 @@ export interface Driver<C> {
    * the engine rendering its own definition, which is the answer here the same
    * way `format_type` was for a column's type. `kind` selects table-vs-view.
    */
-  tableDdl(client: C, table: string, kind: 'table' | 'view'): Promise<string>;
+  tableDdl(client: C, relation: Relation, kind: 'table' | 'view'): Promise<string>;
   /**
    * Drop a relation. `DROP TABLE` and `DROP VIEW` differ per kind and the
    * identifier is quoted per engine, which is why the UI names one and never
    * writes the SQL. No `CASCADE`: a relation something else depends on stays put,
    * refused by the server, rather than taking its dependents with it silently.
    */
-  dropRelation(client: C, table: string, kind: 'table' | 'view'): Promise<void>;
+  dropRelation(client: C, relation: Relation, kind: 'table' | 'view'): Promise<void>;
   /**
    * The columns that identify a row of a table, or `null` when nothing does.
    *
@@ -121,7 +156,7 @@ export interface Driver<C> {
    * read-only. Per-engine like quoting: the catalog query differs, and only this
    * side may write it. The names come back in key order.
    */
-  rowKey(client: C, database: string, table: string): Promise<string[] | null>;
+  rowKey(client: C, database: string, relation: Relation): Promise<string[] | null>;
   /**
    * Apply staged edits and deletes as one atomic transaction, returning the
    * total rows affected.
@@ -136,12 +171,24 @@ export interface Driver<C> {
    */
   applyWrites(
     client: C,
-    table: string,
+    relation: Relation,
     keyColumns: string[],
     edits: RowEdit[],
     deletes: RowDelete[]
   ): Promise<number>;
   quoteIdent(name: string): string;
+  /**
+   * How this engine names a relation in a statement: quoted, and qualified by its
+   * schema where the engine has one.
+   *
+   * A driver method beside `quoteIdent` because qualifying is per-engine in the
+   * same way quoting is -- Postgres writes `"reporting"."hits"`, MySQL writes
+   * `` `hits` `` and ignores the schema entirely, its client already being pinned
+   * to the database that *is* the schema. Every statement this side authors about
+   * a relation goes through here, so there is one answer to what a table is
+   * called in SQL rather than one per call site.
+   */
+  qualify(relation: Relation): string;
   /**
    * How this engine spells the Nth bound parameter -- `?` for mysql2, `$n` for
    * pg. A driver method beside `quoteIdent` for the same reason: both are the
@@ -254,7 +301,10 @@ function pickRowKey(parts: KeyPart[]): string[] | null {
  * parameter, so the server parses the text and nothing is reformatted.
  */
 async function runWrites(
-  table: string,
+  // Already quoted and qualified by the driver's own `qualify`, so this assembler
+  // never has to know how either is spelled -- the same shape as the two
+  // callbacks below.
+  qualified: string,
   keyColumns: string[],
   edits: RowEdit[],
   deletes: RowDelete[],
@@ -275,7 +325,7 @@ async function runWrites(
     const set = setCols.map((c) => `${quoteIdent(c)} = ${placeholder(++p)}`).join(', ');
     const where = keyColumns.map((c) => `${quoteIdent(c)} = ${placeholder(++p)}`).join(' AND ');
     const params: CellValue[] = [...setCols.map((c) => edit.set[c] ?? null), ...keyColumns.map((c) => edit.key[c] ?? null)];
-    const n = await exec(`UPDATE ${quoteIdent(table)} SET ${set} WHERE ${where}`, params);
+    const n = await exec(`UPDATE ${qualified} SET ${set} WHERE ${where}`, params);
     if (n > 1) throw tooMany(n, 'Edit');
     affected += n;
   }
@@ -283,7 +333,7 @@ async function runWrites(
     let p = 0;
     const where = keyColumns.map((c) => `${quoteIdent(c)} = ${placeholder(++p)}`).join(' AND ');
     const params: CellValue[] = keyColumns.map((c) => del.key[c] ?? null);
-    const n = await exec(`DELETE FROM ${quoteIdent(table)} WHERE ${where}`, params);
+    const n = await exec(`DELETE FROM ${qualified} WHERE ${where}`, params);
     if (n > 1) throw tooMany(n, 'Delete');
     affected += n;
   }
@@ -507,7 +557,10 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     }));
   },
 
-  async listColumns(client, database, table) {
+  // `relation.schema` goes unread throughout this driver: MySQL has no second
+  // level to name -- its database *is* its schema -- so the client being pinned
+  // to `database` is the whole of where a table lives.
+  async listColumns(client, database, { table }) {
     const [rows] = (await client.query(
       {
         // COLUMN_TYPE, not DATA_TYPE: the former is MySQL's own full rendering
@@ -552,27 +605,27 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     await client.query(readOnly ? 'SET SESSION TRANSACTION READ ONLY' : 'SET SESSION TRANSACTION READ WRITE');
   },
 
-  async tableDdl(client, table, kind) {
+  async tableDdl(client, relation, kind) {
     // MySQL renders its own DDL, so take it verbatim -- the same call the mysql
     // CLI's own `SHOW CREATE` makes. The statement is the second column for both
     // a table and a view (a view's row carries extra charset columns after it),
     // so index 1 is the definition either way. The client is already pinned to
     // the right database, so a bare name resolves there.
     const verb = kind === 'view' ? 'SHOW CREATE VIEW' : 'SHOW CREATE TABLE';
-    const [rows] = (await client.query({ sql: `${verb} ${this.quoteIdent(table)}`, rowsAsArray: true })) as [
+    const [rows] = (await client.query({ sql: `${verb} ${this.qualify(relation)}`, rowsAsArray: true })) as [
       unknown[][],
       FieldPacket[],
     ];
     const ddl = rows[0]?.[1];
-    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of ${table}.`);
+    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of ${relation.table}.`);
     return ddl;
   },
 
-  async dropRelation(client, table, kind) {
-    await client.query(`DROP ${kind === 'view' ? 'VIEW' : 'TABLE'} ${this.quoteIdent(table)}`);
+  async dropRelation(client, relation, kind) {
+    await client.query(`DROP ${kind === 'view' ? 'VIEW' : 'TABLE'} ${this.qualify(relation)}`);
   },
 
-  async rowKey(client, database, table) {
+  async rowKey(client, database, { table }) {
     // STATISTICS is MySQL's index catalog; COLUMNS carries nullability. A
     // functional index has a NULL COLUMN_NAME (its EXPRESSION is set instead),
     // which pickRowKey drops -- an expression is no plain key. PRIMARY is the
@@ -604,7 +657,7 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     );
   },
 
-  async applyWrites(client, table, keyColumns, edits, deletes) {
+  async applyWrites(client, relation, keyColumns, edits, deletes) {
     // The whole batch is one transaction: it all lands or none does. Under a
     // read-only session this START TRANSACTION inherits the mode, so the first
     // write is refused by the server and the catch rolls back -- the connection
@@ -612,7 +665,7 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     await client.query('START TRANSACTION');
     try {
       const affected = await runWrites(
-        table,
+        this.qualify(relation),
         keyColumns,
         edits,
         deletes,
@@ -635,6 +688,14 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     return `\`${String(name).replace(/`/g, '``')}\``;
   },
 
+  // The schema is dropped rather than written: MySQL's database is its schema and
+  // the client is already pinned to one, so qualifying would name the database
+  // twice -- and name it wrongly the moment a caller passes a Postgres-shaped
+  // relation through. A bare quoted name resolves in the pinned database.
+  qualify({ table }) {
+    return this.quoteIdent(table);
+  },
+
   // mysql2 binds positionally in order, so every placeholder is the same token.
   placeholder() {
     return '?';
@@ -642,30 +703,35 @@ export const mysqlDriver: Driver<MysqlConnection> = {
 };
 
 /**
- * Undoes what `listTables` did to a relation's name.
+ * Where a relation lives and what it is called, for a caller that supplied only a
+ * name.
  *
- * `listTables` qualifies anything outside `public` as `schema.table` and leaves
- * the common case bare, so a name coming back the other way has to be taken
- * apart before it can be looked up -- the catalog stores the two halves in
- * separate columns and no single column holds the string the UI is holding.
- * Unqualified therefore means `public`, which is the only thing it can mean:
- * that is precisely the case `listTables` chose not to spell out.
+ * `listTables` reports the schema as a field, so everything that comes from the
+ * tree -- browsing, columns, the definition, a drop, a write-back -- arrives with
+ * both halves already and never reaches the fallback below. The one caller that
+ * cannot is the editor's completion: it scans a relation out of SQL *being
+ * typed*, where `reporting.hits` is a string the user wrote and there is no
+ * catalog row behind it to ask.
  *
- * Splitting on the *first* dot matches `quoteIdent` on every name `listTables`
- * can actually produce, which is at most two parts. Neither survives a schema or
- * a table with a dot in its name, and they fail the same way for the same
- * reason; if that is ever worth fixing, it is worth fixing in both.
+ * So the split is a guess, and it is confined to the only case where guessing is
+ * the sole option available. It splits on the *first* dot and reads an
+ * unqualified name as `public`, which is right for every name a user is likely to
+ * type and wrong for a table with a dot in its own name -- a relation the tree
+ * addresses correctly, because there the schema is a field rather than something
+ * recovered from punctuation.
  */
-function splitRelation(name: string): { schema: string; relation: string } {
-  const dot = name.indexOf('.');
+function splitRelation({ schema, table }: Relation): { schema: string; relation: string } {
+  if (schema !== undefined) return { schema, relation: table };
+  const dot = table.indexOf('.');
   return dot === -1
-    ? { schema: 'public', relation: name }
-    : { schema: name.slice(0, dot), relation: name.slice(dot + 1) };
+    ? { schema: 'public', relation: table }
+    : { schema: table.slice(0, dot), relation: table.slice(dot + 1) };
 }
 
 export const postgresDriver: Driver<pg.Client> = {
   defaultPort: 5432,
   dialect: 'pgsql',
+  defaultSchema: 'public',
 
   async createClient(config, database) {
     // Postgres binds a connection to one database for its lifetime, so switching
@@ -709,16 +775,21 @@ export const postgresDriver: Driver<pg.Client> = {
     });
 
     return (res.rows as string[][]).map((r) => ({
-      // Only qualify non-public schemas, so the common case stays readable.
-      name: r[0] === 'public' ? (r[1] as string) : `${r[0]}.${r[1]}`,
+      // The schema is reported as its own field, `public` included. Folding it
+      // into the name for the common case would make "which schema is this in"
+      // answerable only by looking for a dot, which is the guess this field
+      // exists to remove -- and the tree needs the answer for every relation to
+      // group by it, not just for the ones outside `public`.
+      schema: r[0] as string,
+      name: r[1] as string,
       kind: r[2] === 'VIEW' ? ('view' as const) : ('table' as const),
     }));
   },
 
   // `database` goes unread: a pg client is pinned to one database for life, so
   // the client handed in *is* the database being asked about. Same as listTables.
-  async listColumns(client, _database, table) {
-    const { schema, relation } = splitRelation(table);
+  async listColumns(client, _database, ref) {
+    const { schema, relation } = splitRelation(ref);
     const res = await client.query({
       // pg_attribute rather than information_schema.columns, for the type: the
       // latter reports 'character varying' and puts the length in a column of
@@ -790,11 +861,9 @@ export const postgresDriver: Driver<pg.Client> = {
     );
   },
 
-  async tableDdl(client, table, kind) {
-    // Qualify explicitly so `::regclass` resolves regardless of search_path --
-    // `listTables` leaves public bare, so an unqualified name means public.
-    const { schema, relation } = splitRelation(table);
-    const qualified = `${this.quoteIdent(schema)}.${this.quoteIdent(relation)}`;
+  async tableDdl(client, ref, kind) {
+    // Qualify explicitly so `::regclass` resolves regardless of search_path.
+    const qualified = this.qualify(ref);
 
     if (kind === 'view') {
       // pg has no SHOW CREATE; pg_get_viewdef is it rendering the view back.
@@ -804,7 +873,7 @@ export const postgresDriver: Driver<pg.Client> = {
         rowMode: 'array',
       });
       const def = (res.rows[0] as string[] | undefined)?.[0];
-      if (typeof def !== 'string') throw new Error(`Could not read the definition of ${table}.`);
+      if (typeof def !== 'string') throw new Error(`Could not read the definition of ${ref.table}.`);
       return `CREATE VIEW ${qualified} AS\n${def}`;
     }
 
@@ -880,12 +949,12 @@ export const postgresDriver: Driver<pg.Client> = {
     return [`CREATE TABLE ${qualified} (\n${body}\n);`, ...indexLines].join('\n');
   },
 
-  async dropRelation(client, table, kind) {
-    await client.query(`DROP ${kind === 'view' ? 'VIEW' : 'TABLE'} ${this.quoteIdent(table)}`);
+  async dropRelation(client, ref, kind) {
+    await client.query(`DROP ${kind === 'view' ? 'VIEW' : 'TABLE'} ${this.qualify(ref)}`);
   },
 
-  async rowKey(client, _database, table) {
-    const { schema, relation } = splitRelation(table);
+  async rowKey(client, _database, ref) {
+    const { schema, relation } = splitRelation(ref);
     // pg_index over the relation's primary and unique indexes. Partial (indpred)
     // and expression (indexprs) indexes are skipped -- neither is a plain
     // column key. `ord` recovers each column's position in the key from indkey
@@ -922,13 +991,13 @@ export const postgresDriver: Driver<pg.Client> = {
     );
   },
 
-  async applyWrites(client, table, keyColumns, edits, deletes) {
+  async applyWrites(client, relation, keyColumns, edits, deletes) {
     // One transaction for the batch -- see the mysql driver. A read-only session
     // makes the first write fail and the catch rolls back.
     await client.query('BEGIN');
     try {
       const affected = await runWrites(
-        table,
+        this.qualify(relation),
         keyColumns,
         edits,
         deletes,
@@ -948,11 +1017,17 @@ export const postgresDriver: Driver<pg.Client> = {
   },
 
   quoteIdent(name) {
-    // A schema-qualified name arrives as "schema.table"; quote each part.
-    return String(name)
-      .split('.')
-      .map((part) => `"${part.replace(/"/g, '""')}"`)
-      .join('.');
+    return `"${String(name).replace(/"/g, '""')}"`;
+  },
+
+  // Always qualified, `public` included: an unqualified name resolves through
+  // `search_path`, which is a session setting this app never sets and cannot
+  // rely on. Each half is quoted on its own, so a schema or a table containing a
+  // dot survives -- which the old "split the display string" spelling could not,
+  // and is the whole reason the schema became a field.
+  qualify(ref) {
+    const { schema, relation } = splitRelation(ref);
+    return `${this.quoteIdent(schema)}.${this.quoteIdent(relation)}`;
   },
 
   // pg numbers its placeholders, so the position is part of the token.

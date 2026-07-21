@@ -2,6 +2,8 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 import type { ColumnInfo, TableInfo } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
+import { relationName, resolveRelation, type Relation } from '../common/db/relation.ts';
+import type { RootState } from './index.ts';
 import { disconnect, sessionOpened } from './sessionSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
@@ -117,9 +119,14 @@ export const loadTables = createAppThunk(
 );
 
 /** Which table's columns to fetch. The connection is read, never passed -- see below. */
-interface ColumnsArg {
+interface ColumnsArg extends Relation {
   database: string;
-  table: string;
+}
+
+/** The catalog's answer for a relation named without a schema -- see `resolveRelation`. */
+function resolveSchema(state: RootState, database: string, ref: Relation): Relation {
+  const connectionId = state.session.activeConnectionId;
+  return resolveRelation(connectionId ? state.explorer.tables[connectionId]?.[database] : undefined, ref);
 }
 
 /**
@@ -135,9 +142,12 @@ interface ColumnsArg {
  */
 export const loadColumns = createAppThunk(
   'explorer/loadColumns',
-  async ({ database, table }: ColumnsArg, { getState, dispatch, rejectWithValue }) => {
+  async ({ database, ...ref }: ColumnsArg, { getState, dispatch, rejectWithValue }) => {
     const connectionId = getState().session.activeConnectionId;
     if (!connectionId) return rejectWithValue('Not connected.');
+
+    const relation = resolveSchema(getState(), database, ref);
+    const table = relationName(relation);
 
     /*
      * Mark it asked *before* the await, or the next keystroke's condition still
@@ -152,7 +162,9 @@ export const loadColumns = createAppThunk(
     dispatch(columnsRequested({ connectionId, database, table }));
 
     try {
-      const res = await call('db.columns', { connectionId, database, table });
+      // Both halves go over the bridge: the driver qualifies from them rather
+      // than reading a schema back out of the name it is handed.
+      const res = await call('db.columns', { connectionId, database, ...relation });
       return { connectionId, database, table, columns: res.columns };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
@@ -160,19 +172,21 @@ export const loadColumns = createAppThunk(
   },
   {
     // Asked once per table, ever: `null` (in flight, or failed) counts as asked,
-    // which is what keeps a per-keystroke effect off the bridge.
-    condition: ({ database, table }, { getState }) => {
-      const { session, explorer } = getState();
-      if (!session.activeConnectionId) return false;
-      return explorer.columns[session.activeConnectionId]?.[database]?.[table] === undefined;
+    // which is what keeps a per-keystroke effect off the bridge. Keyed by the
+    // resolved name, so the tree and the completion asking about one table hit
+    // one entry -- see `resolveSchema`.
+    condition: ({ database, ...ref }, { getState }) => {
+      const state = getState();
+      if (!state.session.activeConnectionId) return false;
+      const table = relationName(resolveSchema(state, database, ref));
+      return state.explorer.columns[state.session.activeConnectionId]?.[database]?.[table] === undefined;
     },
   }
 );
 
 /** A relation the context menu is acting on. Kind decides table-vs-view for both. */
-interface RelationArg {
+interface RelationArg extends Relation {
   database: string;
-  table: string;
   kind: 'table' | 'view';
 }
 
@@ -187,11 +201,11 @@ interface RelationArg {
  */
 export const fetchDdl = createAppThunk(
   'explorer/fetchDdl',
-  async ({ database, table, kind }: RelationArg, { getState, rejectWithValue }) => {
+  async ({ database, table, schema, kind }: RelationArg, { getState, rejectWithValue }) => {
     const connectionId = getState().session.activeConnectionId;
     if (!connectionId) return rejectWithValue('Not connected.');
     try {
-      const { ddl } = await call('db.ddl', { connectionId, database, table, kind });
+      const { ddl } = await call('db.ddl', { connectionId, database, table, schema, kind });
       return { ddl };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
@@ -207,12 +221,12 @@ export const fetchDdl = createAppThunk(
  */
 export const dropTable = createAppThunk(
   'explorer/dropTable',
-  async ({ database, table, kind }: RelationArg, { getState, rejectWithValue }) => {
+  async ({ database, table, schema, kind }: RelationArg, { getState, rejectWithValue }) => {
     const connectionId = getState().session.activeConnectionId;
     if (!connectionId) return rejectWithValue('Not connected.');
     try {
-      await call('db.drop', { connectionId, database, table, kind });
-      return { connectionId, database, table };
+      await call('db.drop', { connectionId, database, table, schema, kind });
+      return { connectionId, database, table, schema };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
     }
@@ -282,15 +296,20 @@ const explorerSlice = createSlice({
       // once, and it did not answer" -- handling it to clear the marker would
       // put the retry back on every keystroke.
       .addCase(dropTable.fulfilled, (state, action) => {
-        const { connectionId, database, table } = action.payload;
-        // Drop the one name from both caches. The tables array may not be
+        const { connectionId, database, table, schema } = action.payload;
+        // Drop the one relation from both caches. The tables array may not be
         // fetched (the menu can drop from a tree that was never expanded past its
         // list) -- only touch what is there, and never resurrect a connection a
         // disconnect cleared while the drop was in flight.
+        //
+        // Matched on both halves: two schemas may each hold a table of the same
+        // name, and dropping one of them must not take the other out of the tree.
         const list = state.tables[connectionId]?.[database];
-        if (list) state.tables[connectionId]![database] = list.filter((t) => t.name !== table);
+        if (list) {
+          state.tables[connectionId]![database] = list.filter((t) => !(t.name === table && t.schema === schema));
+        }
         const byTable = state.columns[connectionId]?.[database];
-        if (byTable) delete byTable[table];
+        if (byTable) delete byTable[relationName({ table, schema })];
       })
       //
       // The database list arrives with the connection itself, so the explorer

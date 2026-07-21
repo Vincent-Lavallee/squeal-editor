@@ -25,6 +25,12 @@ export interface OpenConnection {
    */
   dialect: SqlDialect;
   /**
+   * The schema that goes without saying on this engine, as the extension
+   * reported it. The tree leaves it off a relation's name; absent for an engine
+   * with no schema layer, where there is nothing to leave off.
+   */
+  defaultSchema?: string;
+  /**
    * What the rail labels this one. The name is the *connection's* -- every open
    * connection is a saved, named one now, so it is always set. It is deliberately
    * not the server: the titlebar names that, and one place names a thing.
@@ -130,6 +136,7 @@ export const connect = createAppThunk(
         config: server,
         databases: res.databases,
         dialect: res.dialect,
+        defaultSchema: res.defaultSchema,
         name: arg.name,
         workspaceId: arg.workspaceId,
         environment: arg.environment,
@@ -158,6 +165,7 @@ export const connectSaved = createAppThunk(
         config: res.config,
         databases: res.databases,
         dialect: res.dialect,
+        defaultSchema: res.defaultSchema,
         name: res.name,
         workspaceId: res.workspaceId,
         environment: res.environment,
@@ -272,12 +280,13 @@ const sessionSlice = createSlice({
         state.error = null;
       })
       .addMatcher(sessionOpened, (state, action) => {
-        const { connectionId, config, dialect, name, workspaceId, environment, readOnly } = action.payload;
+        const { connectionId, config, dialect, defaultSchema, name, workspaceId, environment, readOnly } = action.payload;
         state.connecting = false;
         state.connections[connectionId] = {
           connectionId,
           config,
           dialect,
+          defaultSchema,
           name,
           workspaceId,
           environment,
@@ -333,6 +342,9 @@ export function useSession() {
     // Plain SQL until a server says otherwise: the editor exists before a
     // session does, and outlives the last one closing.
     dialect: active?.dialect ?? 'sql',
+    // Undefined until a server says otherwise, which reads as "nothing to leave
+    // off a name" -- the same answer an engine without schemas gives.
+    defaultSchema: active?.defaultSchema,
     environment: active?.environment ?? null,
     name: active?.name ?? '',
     readOnly: active?.readOnly ?? false,

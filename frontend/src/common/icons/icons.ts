@@ -15,7 +15,9 @@ import {
   RiEyeLine,
   RiFileCopyLine,
   RiFlaskLine,
+  RiFolder3Line,
   RiGlobalLine,
+  RiListUnordered,
   RiKey2Line,
   RiLeafLine,
   RiLockLine,
@@ -45,6 +47,16 @@ import {
  */
 export const TableIcon = RiTableLine;
 export const ViewIcon = RiEyeLine;
+
+/**
+ * A schema heading in the tree, and the control that turns those headings on.
+ *
+ * Two bindings rather than one, because they answer different questions: the
+ * folder marks a group that exists, the list marks the tree *without* groups.
+ * The control shows whichever state clicking it would move to.
+ */
+export const SchemaIcon = RiFolder3Line;
+export const FlatTreeIcon = RiListUnordered;
 
 /**
  * The disclosure chevron on a tree row: closed points right, and CSS rotates it

@@ -2,6 +2,7 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import { useCallback } from 'react';
 import { useStore } from 'react-redux';
 
+import { relationName, type Relation } from '../common/db/relation.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
 import type { RootState } from './index.ts';
 import { disconnect, sessionOpened } from './sessionSlice.ts';
@@ -35,6 +36,12 @@ export interface Tab {
   database: string | null;
   /** Which table a `grid` tab is browsing. Absent on an `editor` tab. */
   table?: string;
+  /**
+   * The schema that table lives in, carried beside the name for the life of the
+   * tab rather than parsed back out of it when the tab re-browses. Absent for
+   * MySQL, which has no schema layer.
+   */
+  schema?: string;
   /**
    * Stored at open time rather than derived from position. Numbering the editor
    * tabs by index renumbers the survivors when one closes -- close Query 1 and
@@ -114,6 +121,7 @@ const tabsSlice = createSlice({
         kind: Tab['kind'];
         database?: string | null;
         table?: string;
+        schema?: string;
         /**
          * A title for an `editor` tab. Given only when the tab is opened *for*
          * something -- a table's definition -- so it is named for it and does not
@@ -122,14 +130,20 @@ const tabsSlice = createSlice({
         title?: string;
       }>
     ) {
-      const { connectionId, kind, table, title } = action.payload;
+      const { connectionId, kind, table, schema, title } = action.payload;
       // A tab opens on the database the caller named, and on this connection's
       // default when it named none -- which is the empty state's case, and the
       // one that strands you if the answer is null.
       const database = action.payload.database ?? state.defaultDatabase[connectionId] ?? null;
 
       if (kind === 'grid') {
-        mint(state, { connectionId, kind, database, table, title: table ?? 'Table' });
+        // The caller's label when it has one -- it knows which schema goes
+        // without saying and this reducer does not. Falling back to the full
+        // name rather than the bare one: the strip has no heading to sit under,
+        // so two schemas holding a `users` each must not open two tabs nothing
+        // tells apart.
+        const name = table === undefined ? 'Table' : relationName({ table, schema });
+        mint(state, { connectionId, kind, database, table, schema, title: title ?? name });
         return;
       }
       // A named editor tab keeps its name and leaves the query counter alone; an
@@ -289,10 +303,10 @@ export function useTabs() {
    * the only way `tabsSlice` can learn which connection a tab belongs to.
    */
   const openGridTab = useCallback(
-    (database: string, table: string): string | null => {
+    (database: string, { table, schema }: Relation, title?: string): string | null => {
       const id = store.getState().session.activeConnectionId;
       if (!id) return null;
-      dispatch(tabOpened({ connectionId: id, kind: 'grid', database, table }));
+      dispatch(tabOpened({ connectionId: id, kind: 'grid', database, table, schema, title }));
       return store.getState().tabs.activeTabId[id]!;
     },
     [dispatch, store]

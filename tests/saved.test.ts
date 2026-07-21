@@ -452,6 +452,37 @@ describe('across a restart', () => {
   });
 });
 
+describe('settings', () => {
+  const settings = async (): Promise<Record<string, string>> =>
+    ((await h.ok('settings.list', {})) as { settings: Record<string, string> }).settings;
+
+  test('a key nobody has written is absent, not empty', async () => {
+    // The store holds no vocabulary of keys and no defaults, so an unwritten
+    // preference has to come back missing -- that absence is what lets each
+    // reader spell its own default instead of inheriting one from here.
+    expect(await settings()).not.toHaveProperty('nothing.has.written.this');
+  });
+
+  test('a setting survives a new extension process', async () => {
+    await h.ok('settings.set', { key: 'tree.groupBySchema', value: 'false' });
+    expect((await settings())['tree.groupBySchema']).toBe('false');
+
+    await h.stop();
+    h = await startHarness(ENV);
+
+    // Global by design: it is a preference about trees, not a fact about any
+    // one server, so it outlives every connection including the process.
+    expect((await settings())['tree.groupBySchema']).toBe('false');
+  });
+
+  test('writing a key again replaces it rather than failing on the primary key', async () => {
+    await h.ok('settings.set', { key: 'tree.groupBySchema', value: 'false' });
+    await h.ok('settings.set', { key: 'tree.groupBySchema', value: 'true' });
+
+    expect((await settings())['tree.groupBySchema']).toBe('true');
+  });
+});
+
 describe('workspaces', () => {
   test('a store starts with one, so the feature can be ignored', async () => {
     const all = await workspaces();
@@ -607,6 +638,7 @@ const stamps = (): Stamp[] => {
 
 /** What each migration would have to undo, for the rewind below. Newest first. */
 const UNDO: Record<string, string[]> = {
+  settings: ['DROP TABLE settings'],
   'workspace-colour': ['ALTER TABLE workspaces DROP COLUMN color'],
   'connection-aws-iam': [
     'ALTER TABLE saved_connections DROP COLUMN aws_profile',
@@ -734,6 +766,11 @@ describe('migrating a store written before workspaces', () => {
       );
       db.run('DROP TABLE current_connections');
       db.run('DROP TABLE workspaces');
+      // Every table added since goes too, not just the ones this test is about.
+      // A store from before there were versions had none of them, and leaving one
+      // behind makes the walk back up fail on it -- which is the honest outcome
+      // for a file that claims to be older than a table it is holding.
+      db.run('DROP TABLE settings');
       db.run('DROP TABLE schema_migrations');
     })();
     const legacyNames = (db.query('SELECT name FROM saved_connections').all() as { name: string }[]).map((r) => r.name);

@@ -29,7 +29,7 @@
  *
  * The reason this is worth a paragraph rather than a line: **the tests would not
  * catch it.** They spawn `bun main.ts` against the source tree, where a
- * directory scan finds all six files and passes. The failure appears only in a
+ * directory scan finds every file and passes. The failure appears only in a
  * packaged build, as a store that quietly has no tables.
  *
  * ## The rules
@@ -53,6 +53,7 @@ import { migration as connectionSsl } from './1784289562-connection-ssl.ts';
 import { migration as connectionReadOnly } from './1784313318-connection-read-only.ts';
 import { migration as connectionAwsIam } from './1784374797-connection-aws-iam.ts';
 import { migration as workspaceColour } from './1784408527-workspace-colour.ts';
+import { migration as settings } from './1784584732-settings.ts';
 
 /** Oldest first. Append only. */
 export const MIGRATIONS: Migration[] = [
@@ -62,6 +63,7 @@ export const MIGRATIONS: Migration[] = [
   connectionReadOnly,
   connectionAwsIam,
   workspaceColour,
+  settings,
 ];
 
 /*

@@ -4,6 +4,7 @@ import { explorerReducer } from './explorerSlice.ts';
 import { resultsReducer } from './resultsSlice.ts';
 import { savedReducer } from './savedSlice.ts';
 import { sessionReducer } from './sessionSlice.ts';
+import { settingsReducer } from './settingsSlice.ts';
 import { tabsReducer } from './tabsSlice.ts';
 import { updaterReducer } from './updaterSlice.ts';
 import { workspacesReducer } from './workspacesSlice.ts';
@@ -30,6 +31,7 @@ export const store = configureStore({
     results: resultsReducer,
     tabs: tabsReducer,
     updater: updaterReducer,
+    settings: settingsReducer,
   },
 });
 

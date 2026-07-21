@@ -51,6 +51,30 @@ const treeItem = (label: string) => `
   [...document.querySelectorAll('[data-testid="tree-item"]')]
     .find(e => e.querySelector('[data-testid="tree-label"]')?.textContent === ${JSON.stringify(label)})`;
 
+/** Every relation label in the tree, grouped or flat. */
+const treeLabels = `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`;
+
+/** The schema headings, top to bottom. Empty when the tree is flat. */
+const schemaLabels = `[...document.querySelectorAll('[data-testid="tree-schema-label"]')].map(e => e.textContent)`;
+
+/** The relations under one schema heading, so a group can be read on its own. */
+const treeLabelsIn = (schema: string) => `
+  [...[...document.querySelectorAll('[data-testid="tree-schema"]')]
+    .find(e => e.querySelector('[data-testid="tree-schema-label"]').textContent === ${JSON.stringify(schema)})
+    .querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`;
+
+const toggleSchema = (schema: string) => `
+  [...document.querySelectorAll('[data-testid="tree-schema-row"]')]
+    .find(e => e.querySelector('[data-testid="tree-schema-label"]').textContent === ${JSON.stringify(schema)})
+    .click(); true;`;
+
+/** Type into the tree's filter, or clear it with an empty string. */
+const setFilter = (text: string) =>
+  `${REACT_SETTERS} setNative(document.querySelector('[data-testid="sidebar-filter"]'), ${JSON.stringify(text)}); true;`;
+
+const clickGroupToggle = `document.querySelector('[data-testid="sidebar-group-toggle"]').click(); true;`;
+const groupToggleExists = `!!document.querySelector('[data-testid="sidebar-group-toggle"]')`;
+
 /** Summon the context menu on a row, at its own top-left corner. */
 const rightClickTable = (label: string) => `
   (() => {
@@ -357,17 +381,76 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       const tables = await app.evaluate<string[]>(
         `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`
       );
+      // Its own name, not a schema glued to the front of it: the heading above
+      // says where it lives. Only the default schema's group is open, so this is
+      // what a freshly picked database shows.
       expect(tables).toContain('users');
-      expect(tables).toContain('reporting.daily_stats');
+      expect(await app.evaluate<string[]>(schemaLabels)).toContain('reporting');
     });
 
-    test('orders every table above every view', async () => {
-      // shop holds one view (active_users) among its tables, so ordering tables
-      // first means the view is last -- no heading, the icon tells them apart.
-      const labels = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`
-      );
-      expect(labels[labels.length - 1]).toBe('active_users');
+    test('groups relations under their schema, the one you are in first', async () => {
+      // Postgres, so every relation names a schema and the tree draws a heading
+      // per schema. `public` leads because it is the engine's default schema --
+      // the one group that starts open, so it is not left sitting under headings
+      // that open onto nothing.
+      expect(await app.evaluate<string[]>(schemaLabels)).toEqual(['public', 'reporting']);
+    });
+
+    test('only the default schema starts open', async () => {
+      // A dozen schemas all open cost the same scroll grouping exists to remove,
+      // so everything outside the one you are in starts shut.
+      expect(await app.evaluate<string[]>(treeLabelsIn('public'))).toContain('users');
+      expect(await app.evaluate<string[]>(treeLabelsIn('reporting'))).toEqual([]);
+    });
+
+    test('a schema heading opens and closes, taking only its own relations with it', async () => {
+      await app.evaluate(toggleSchema('reporting'));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(treeLabelsIn('reporting'))).toContain('daily_stats');
+      // The other group is untouched by its neighbour opening.
+      expect(await app.evaluate<string[]>(treeLabelsIn('public'))).toContain('users');
+
+      await app.evaluate(toggleSchema('reporting'));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(treeLabelsIn('reporting'))).toEqual([]);
+      // The heading stays either way -- it is how you get the group back.
+      expect(await app.evaluate<string[]>(schemaLabels)).toEqual(['public', 'reporting']);
+    });
+
+    test('a filter reveals the groups it matched in, and closing it restores them', async () => {
+      // `daily_stats` lives in the shut group, so a heading that stayed shut over
+      // it would read as "no matches" about a search that found one.
+      await app.evaluate(setFilter('daily'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(treeLabelsIn('reporting'))).toContain('daily_stats');
+
+      await app.evaluate(setFilter(''));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(treeLabelsIn('reporting'))).toEqual([]);
+    });
+
+    test('the toggle flattens the tree, and the names carry their schema again', async () => {
+      await app.evaluate(clickGroupToggle);
+      await Bun.sleep(300);
+
+      expect(await app.evaluate<string[]>(schemaLabels)).toEqual([]);
+      const labels = await app.evaluate<string[]>(treeLabels);
+      // Nothing above the rows now says which schema they are in, so the name
+      // has to -- otherwise two `users` would read identically.
+      expect(labels).toContain('reporting.daily_stats');
+      expect(labels).toContain('users');
+
+      await app.evaluate(clickGroupToggle);
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(schemaLabels)).toEqual(['public', 'reporting']);
+    });
+
+    test('orders every table above every view, inside each group', async () => {
+      // shop holds one view (active_users) among its public tables, so ordering
+      // tables first means the view is last *of that schema* -- no heading, the
+      // icon tells them apart. Grouped, "last" is per group rather than overall.
+      const publicLabels = await app.evaluate<string[]>(treeLabelsIn('public'));
+      expect(publicLabels[publicLabels.length - 1]).toBe('active_users');
     });
 
     test('a table expands in place to show its columns, marking the primary key', async () => {
@@ -1335,6 +1418,39 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       const note = await app.evaluate<string>(`document.querySelector('[data-testid="note-muted"]')?.textContent ?? ''`);
       expect(note).toContain('Nothing open');
     });
+
+    /*
+     * Last in this block on purpose: it reconnects, which resets the tabs and
+     * the numbering everything above depends on. The block that follows opens
+     * its own connection anyway, so ending on one costs nothing.
+     */
+    test('the grouping choice survives a relaunch, and is not tied to the connection', async () => {
+      // The test above left the empty state, and a tab is what the picker points
+      // -- with none there is nothing to point and no tree to group.
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1500);
+      await app.evaluate(clickGroupToggle);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(schemaLabels)).toEqual([]);
+
+      // `connect` reloads the webview, so this is the launch path: the settings
+      // are read fresh from the store and no React state survives it.
+      await connect(PG, 'pg-regroup');
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1500);
+
+      // Still flat -- a preference about trees, remembered globally rather than
+      // against the connection it happened to be changed on.
+      expect(await app.evaluate<string[]>(schemaLabels)).toEqual([]);
+      expect(await app.evaluate<string[]>(treeLabels)).toContain('reporting.daily_stats');
+
+      // Back to grouped, which is the default and what later blocks expect.
+      await app.evaluate(clickGroupToggle);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(schemaLabels)).toEqual(['public', 'reporting']);
+    });
   });
 
   describe('mysql', () => {
@@ -1761,8 +1877,6 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
    * the collision, and it is a real one rather than a contrived name.
    */
   describe('multiple connections', () => {
-    const treeLabels = `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`;
-
     beforeAll(async () => {
       await connect(PG, 'Shop dev', 'dev');
       await addConnection(MYSQL, 'Shop prod', 'production');
@@ -1821,7 +1935,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(400);
       await app.evaluate(selectDatabase('shop'));
       await Bun.sleep(1800);
-      expect(await app.evaluate<string[]>(treeLabels)).toContain('reporting.daily_stats');
+      // The `reporting` heading is the tell: MySQL's shop has no such schema, so
+      // the group existing at all means this tree answered for Postgres.
+      expect(await app.evaluate<string[]>(schemaLabels)).toContain('reporting');
 
       await app.evaluate(clickRail(1));
       await Bun.sleep(400);
@@ -1830,10 +1946,21 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       const mysql = await app.evaluate<string[]>(treeLabels);
       // MySQL's shop has a `users`, so the tree did fetch and did answer...
       expect(mysql).toContain('users');
-      // ...and it answered for MySQL. Postgres's schema-qualified table is the
+      // ...and it answered for MySQL. Postgres's second-schema table is the
       // proof: there is no such thing here, so its presence would mean this tree
-      // had read the other connection's cache.
-      expect(mysql).not.toContain('reporting.daily_stats');
+      // had read the other connection's cache. Asserted on the labels rather than
+      // the headings, since MySQL draws none either way.
+      expect(mysql).not.toContain('daily_stats');
+    });
+
+    test('MySQL has no schema layer, so it draws no groups and offers no toggle', async () => {
+      // Still on Shop prod (MySQL). Its database *is* its schema, so there is
+      // nothing to group by -- and a toggle that could only ever do nothing is
+      // not shown rather than shown disabled.
+      expect(await app.evaluate<string[]>(schemaLabels)).toEqual([]);
+      expect(await app.evaluate<boolean>(groupToggleExists)).toBe(false);
+      // The tree itself is untouched: names are bare, as they always were.
+      expect(await app.evaluate<string[]>(treeLabels)).toContain('users');
     });
 
     test("each connection's tab runs against that connection", async () => {

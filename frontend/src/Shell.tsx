@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import type { TableInfo } from '../../shared/protocol/index.ts';
+import { relationLabel, relationOf } from './common/db/relation.ts';
 import { useTabs } from './store/tabsSlice.ts';
 import { EditorPane, EditorProvider, useEditor } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
@@ -26,7 +27,7 @@ export default function Shell({ onAddConnection }: Props) {
 function ShellLayout({ onAddConnection }: Props) {
   const { tabs, activeTab, openGridTab, openEditorTab, selectDatabase } = useTabs();
   const { run, running, browseIn } = useResults();
-  const { fetchDdl } = useExplorer();
+  const { fetchDdl, defaultSchema } = useExplorer();
   const { setSql, peekSql } = useEditor();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -41,17 +42,20 @@ function ShellLayout({ onAddConnection }: Props) {
   }, []);
 
   const openTable = useCallback((database: string, table: TableInfo) => {
-    const tabId = openGridTab(database, table.name);
-    if (tabId) browseIn(tabId, table.name, 0);
-  }, [openGridTab, browseIn]);
+    const relation = relationOf(table);
+    const tabId = openGridTab(database, relation, relationLabel(relation, defaultSchema));
+    if (tabId) browseIn(tabId, relation.table, 0);
+  }, [openGridTab, browseIn, defaultSchema]);
 
   const showDefinition = useCallback(async (database: string, table: TableInfo) => {
+    const relation = relationOf(table);
+    const name = relationLabel(relation, defaultSchema);
     let text: string;
-    try { text = await fetchDdl(database, table.name, table.kind); }
-    catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${table.name}:\n-- ${reason}\n`; }
-    const tabId = openEditorTab(database, table.name);
+    try { text = await fetchDdl(database, relation, table.kind); }
+    catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
+    const tabId = openEditorTab(database, name);
     if (tabId) setSql(tabId, text);
-  }, [fetchDdl, openEditorTab, setSql]);
+  }, [fetchDdl, openEditorTab, setSql, defaultSchema]);
 
   /*
    * A copy of a tab is a new tab of the same kind on the same database, plus
@@ -68,7 +72,7 @@ function ShellLayout({ onAddConnection }: Props) {
     if (!tab) return;
 
     if (tab.kind === 'grid' && tab.table && tab.database) {
-      const id = openGridTab(tab.database, tab.table);
+      const id = openGridTab(tab.database, { table: tab.table, schema: tab.schema }, tab.title);
       if (id) browseIn(id, tab.table, 0);
       return;
     }
