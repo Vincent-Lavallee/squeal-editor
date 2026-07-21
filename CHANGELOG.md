@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.6](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.5...v0.6.6) (2026-07-21)
+
+
+### Bug Fixes
+
+* CI ([80fc3c1](https://github.com/Vincent-Lavallee/squeal-editor/commit/80fc3c1af1ab50e4fbc76b9d10e271c256ffb073))
+
 ## [0.6.5](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.4...v0.6.5) (2026-07-21)
 
 
