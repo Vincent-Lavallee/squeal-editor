@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
   "applicationId": "js.squeal.editor",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "defaultMode": "window",
   "port": 0,
   "documentRoot": "/resources/",
