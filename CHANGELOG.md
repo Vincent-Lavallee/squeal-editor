@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.8.0...v0.8.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* auto-completion on schema for postgres + disabled auto-complete on inputs ([41b1ac1](https://github.com/Vincent-Lavallee/squeal-editor/commit/41b1ac1dac5cf8da9471558e8f1781802ea15e03))
+* macos shortcuts (cmd+a/z/c/v) ([9c09e56](https://github.com/Vincent-Lavallee/squeal-editor/commit/9c09e56c093790a1ae9d5428057c3bbd9e8fffca))
+
 ## [0.8.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.7.0...v0.8.0) (2026-07-22)
 
 
