@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.7...v0.7.0) (2026-07-22)
+
+
+### Features
+
+* macos auto updater ([470705c](https://github.com/Vincent-Lavallee/squeal-editor/commit/470705c05c24545a1b5c388f4be739c488846ed1))
+
 ## [0.6.7](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.6...v0.6.7) (2026-07-22)
 
 
