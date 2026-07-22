@@ -64,7 +64,7 @@ describe('verifyEd25519', () => {
 });
 
 describe('selectAssets', () => {
-  const assets = [
+  const windowsAssets = [
     { name: 'squeal-editor-windows-v0.1.4.zip', browser_download_url: 'https://x/zip' },
     { name: 'squeal-editor-setup-v0.1.4.exe', browser_download_url: 'https://x/exe' },
     { name: 'squeal-editor-setup-v0.1.4.exe.sig', browser_download_url: 'https://x/sig' },
@@ -72,17 +72,41 @@ describe('selectAssets', () => {
   ];
 
   test('picks the installer, its signature and the checksums', () => {
-    const { installer, signature, checksums } = selectAssets(assets);
+    const { installer, signature, checksums } = selectAssets(windowsAssets, 'win32');
     expect(installer?.browser_download_url).toBe('https://x/exe');
     expect(signature?.browser_download_url).toBe('https://x/sig');
     expect(checksums?.browser_download_url).toBe('https://x/sums');
   });
 
   test('a release missing the signing assets resolves to undefined, so no update is offered', () => {
-    const bare = [assets[0], assets[1]]; // zip + installer only
-    const { installer, signature, checksums } = selectAssets(bare);
+    const bare = [windowsAssets[0], windowsAssets[1]]; // zip + installer only
+    const { installer, signature, checksums } = selectAssets(bare, 'win32');
     expect(installer).toBeDefined();
     expect(signature).toBeUndefined();
+    expect(checksums).toBeUndefined();
+  });
+
+  const macAssets = [
+    { name: 'squeal-editor-macos-arm64-v0.1.4.dmg', browser_download_url: 'https://x/dmg' },
+    { name: 'squeal-editor-macos-arm64-v0.1.4.dmg.sig', browser_download_url: 'https://x/dmg-sig' },
+    { name: 'SHA256SUMS-macos', browser_download_url: 'https://x/dmg-sums' },
+  ];
+
+  test('picks the .dmg, its signature and the macOS-specific checksums on darwin', () => {
+    const { installer, signature, checksums } = selectAssets(macAssets, 'darwin');
+    expect(installer?.browser_download_url).toBe('https://x/dmg');
+    expect(signature?.browser_download_url).toBe('https://x/dmg-sig');
+    expect(checksums?.browser_download_url).toBe('https://x/dmg-sums');
+  });
+
+  test('a Windows-only release resolves to undefined on darwin, and vice versa', () => {
+    expect(selectAssets(windowsAssets, 'darwin').installer).toBeUndefined();
+    expect(selectAssets(macAssets, 'win32').installer).toBeUndefined();
+  });
+
+  test('a platform with no update path at all resolves to undefined', () => {
+    const { installer, checksums } = selectAssets(windowsAssets, 'linux');
+    expect(installer).toBeUndefined();
     expect(checksums).toBeUndefined();
   });
 });

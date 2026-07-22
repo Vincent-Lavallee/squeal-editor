@@ -1,14 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession } from '../../store/sessionSlice.ts';
 import * as t from '../../common/tokens';
+import AboutDialog from './AboutDialog.tsx';
+import { useAbout } from './useAbout.ts';
 import { useWindowChrome } from './useWindowChrome.ts';
+import { useUpdater } from '../updater/index.ts';
 
 /**
  * macOS-styled traffic-light buttons drawn on the left of a borderless window.
  *
  * The native menu bar at the top of the screen (NSMenuBar) is always present when
- * the app is in the foreground — borderless does not affect it.  So this titlebar
- * only needs the traffic lights and a drag region, not File/About dropdowns.
+ * the app is in the foreground, but Neutralino never populates it — unlike
+ * Windows, where File/About live in our own custom titlebar HTML, macOS gets
+ * nothing there unless something puts it there. scripts/macos-window-chrome.m
+ * builds a literal File/About NSMenu (mirroring Titlebar.tsx's items exactly)
+ * and, since clicking a native menu item can't call a React handler directly,
+ * evaluates a small JS snippet in the webview that dispatches a `squeal:menu`
+ * CustomEvent. This effect is the other end of that pipe.
  */
 
 const DOT_SIZE = 12;
@@ -39,7 +47,23 @@ const dotBase: React.CSSProperties = {
 export default function TitlebarMacos() {
   const { maximized, minimize, toggleMaximize, close, dragProps } = useWindowChrome();
   const { connected, serverLabel } = useSession();
+  const { version, openDataDir } = useAbout();
+  const { check } = useUpdater();
   const [hovered, setHovered] = useState<string | null>(null);
+  const [showingAbout, setShowingAbout] = useState(false);
+
+  useEffect(() => {
+    function onNativeMenu(e: Event): void {
+      switch ((e as CustomEvent<string>).detail) {
+        case 'exit': close(); break;
+        case 'checkForUpdates': check(true); break;
+        case 'about': setShowingAbout(true); break;
+        case 'openDataDir': openDataDir(); break;
+      }
+    }
+    window.addEventListener('squeal:menu', onNativeMenu);
+    return () => window.removeEventListener('squeal:menu', onNativeMenu);
+  }, [close, check, openDataDir]);
 
   const dot = (colour: string, hoverColour: string, name: string, symbol: React.ReactNode) => (
     <button
@@ -89,6 +113,7 @@ export default function TitlebarMacos() {
       userSelect: 'none',
       background: t.BG,
     }}>
+      {showingAbout && <AboutDialog version={version} onClose={() => setShowingAbout(false)} />}
       {/* Traffic-light buttons */}
       <div style={{ display: 'flex', alignItems: 'center', gap: DOT_GAP, flex: 'none', paddingLeft: DOT_LEFT }}>
         {dot(RED, RED_HOVER, 'close', closeSymbol)}

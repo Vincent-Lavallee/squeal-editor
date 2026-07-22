@@ -173,3 +173,21 @@ jobs:
         run: |
           $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
           gh release upload "${{ needs.release-please.outputs.tag_name }}" "installer\squeal-editor-setup-v$version.exe.sig" "SHA256SUMS" --clobber
+
+      # macOS has no separate installer: the updater downloads and verifies the
+      # same .dmg already attached above, so it's what gets signed here. The
+      # checksums file gets its own name (SHA256SUMS-macos, not SHA256SUMS) so
+      # this leg's upload can never race Windows' — see scripts/sign-release.ts.
+      - name: Sign the update assets (macOS)
+        if: runner.os == 'macOS' && env.UPDATE_SIGNING_KEY != ''
+        run: |
+          version="${{ needs.release-please.outputs.tag_name }}"
+          bun run scripts/sign-release.ts "squeal-editor-macos-arm64-v${version#v}.dmg" SHA256SUMS-macos
+
+      - name: Attach the update assets to the release (macOS)
+        if: runner.os == 'macOS' && env.UPDATE_SIGNING_KEY != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ needs.release-please.outputs.tag_name }}"
+          gh release upload "$version" "squeal-editor-macos-arm64-v${version#v}.dmg.sig" "SHA256SUMS-macos" --clobber

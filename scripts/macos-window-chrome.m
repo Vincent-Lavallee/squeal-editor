@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <WebKit/WebKit.h>
 
 /*
  * Injected into the Neutralino shell via DYLD_INSERT_LIBRARIES (the launcher
@@ -36,6 +37,95 @@ static void restyle(NSWindow *window) {
   [window makeKeyAndOrderFront:nil];
 }
 
+/*
+ * Neutralino never populates NSApp.mainMenu, so the macOS menu bar is blank —
+ * unlike Windows, where File/About live in our own custom titlebar HTML
+ * (Titlebar.tsx). This rebuilds the same two menus, with the same items, as
+ * literal top-level NSMenus so macOS users get the same functionality in the
+ * place macOS convention puts it.
+ *
+ * A native menu item cannot call a React handler directly, so each one
+ * evaluates a small JS snippet in the webview that dispatches a `squeal:menu`
+ * CustomEvent; TitlebarMacos.tsx listens for it and calls the exact same
+ * handlers Titlebar.tsx's dropdowns already use. Exit is routed the same way
+ * rather than calling -[NSApplication terminate:] directly, so the native
+ * menu item shuts down exactly like the traffic-light close button does.
+ */
+
+@interface SquealMenuHandler : NSObject
+@end
+
+@implementation SquealMenuHandler
+
++ (WKWebView *)findWebViewIn:(NSView *)view {
+  if ([view isKindOfClass:[WKWebView class]]) return (WKWebView *)view;
+  for (NSView *sub in view.subviews) {
+    WKWebView *found = [self findWebViewIn:sub];
+    if (found) return found;
+  }
+  return nil;
+}
+
++ (void)dispatchEvent:(NSString *)name {
+  NSWindow *window = NSApp.keyWindow ?: NSApp.mainWindow ?: NSApp.windows.firstObject;
+  WKWebView *webView = window ? [self findWebViewIn:window.contentView] : nil;
+  if (!webView) return;
+  NSString *js = [NSString stringWithFormat:
+      @"window.dispatchEvent(new CustomEvent('squeal:menu', { detail: '%@' }))", name];
+  [webView evaluateJavaScript:js completionHandler:nil];
+}
+
+- (void)exit:(id)sender { [SquealMenuHandler dispatchEvent:@"exit"]; }
+- (void)checkForUpdates:(id)sender { [SquealMenuHandler dispatchEvent:@"checkForUpdates"]; }
+- (void)about:(id)sender { [SquealMenuHandler dispatchEvent:@"about"]; }
+- (void)openDataDir:(id)sender { [SquealMenuHandler dispatchEvent:@"openDataDir"]; }
+
+@end
+
+static void installMenuBar(void) {
+  /* Retained for the process's lifetime: NSMenuItem.target is weak-ish (not
+   * retained by the menu the way the docs imply on older AppKit), so a local
+   * would be collected the moment this function returns. */
+  static SquealMenuHandler *handler;
+  handler = [SquealMenuHandler new];
+
+  NSMenu *mainMenu = [NSMenu new];
+
+  /* AppKit always renames the first top-level item's title to the running
+   * process's name, no matter what is set here — so this stays an empty
+   * submenu rather than duplicating "File" into a slot it can't occupy. */
+  NSMenuItem *appMenuItem = [NSMenuItem new];
+  [mainMenu addItem:appMenuItem];
+  appMenuItem.submenu = [NSMenu new];
+
+  NSMenuItem *fileMenuItem = [NSMenuItem new];
+  [mainMenu addItem:fileMenuItem];
+  NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
+  fileMenuItem.submenu = fileMenu;
+  NSMenuItem *exitItem = [[NSMenuItem alloc] initWithTitle:@"Exit" action:@selector(exit:) keyEquivalent:@""];
+  exitItem.target = handler;
+  [fileMenu addItem:exitItem];
+
+  NSMenuItem *aboutMenuItem = [NSMenuItem new];
+  [mainMenu addItem:aboutMenuItem];
+  NSMenu *aboutMenu = [[NSMenu alloc] initWithTitle:@"About"];
+  aboutMenuItem.submenu = aboutMenu;
+
+  NSMenuItem *checkItem = [[NSMenuItem alloc] initWithTitle:@"Check for updates…" action:@selector(checkForUpdates:) keyEquivalent:@""];
+  checkItem.target = handler;
+  [aboutMenu addItem:checkItem];
+
+  NSMenuItem *versionItem = [[NSMenuItem alloc] initWithTitle:@"Version" action:@selector(about:) keyEquivalent:@""];
+  versionItem.target = handler;
+  [aboutMenu addItem:versionItem];
+
+  NSMenuItem *dataDirItem = [[NSMenuItem alloc] initWithTitle:@"Open app data" action:@selector(openDataDir:) keyEquivalent:@""];
+  dataDirItem.target = handler;
+  [aboutMenu addItem:dataDirItem];
+
+  NSApplication.sharedApplication.mainMenu = mainMenu;
+}
+
 __attribute__((constructor)) static void squealWindowChromeInit(void) {
   /*
    * dyld runs this before main, so the window does not exist yet, and
@@ -59,5 +149,19 @@ __attribute__((constructor)) static void squealWindowChromeInit(void) {
                     (window.styleMask & NSWindowStyleMaskClosable) != 0 &&
                     window.level == NSNormalWindowLevel;
                 if (isAppWindow && !restyled) restyle(window);
+              }];
+
+  /*
+   * Installed on did-finish-launching, not here: NSApp itself may not exist
+   * yet this early (dyld runs constructors before main), and setting the menu
+   * before Neutralino's own startup finishes risks Neutralino's init clobbering
+   * it right back to empty.
+   */
+  [[NSNotificationCenter defaultCenter]
+      addObserverForName:NSApplicationDidFinishLaunchingNotification
+                  object:nil
+                   queue:[NSOperationQueue mainQueue]
+              usingBlock:^(NSNotification *note) {
+                installMenuBar();
               }];
 }

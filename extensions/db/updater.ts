@@ -7,12 +7,16 @@
  * process that makes the calls the webview cannot. See `docs/decisions.md`.
  *
  * An update replaces the *whole* app (the native binary, `resources`, and this
- * compiled extension can each change between versions), and Windows cannot
- * overwrite a running `.exe`. So the download is the Inno installer that CI
- * already ships, staged while the app runs and launched on Restart: the
- * installer -- not the app -- closes the running instance, swaps every file, and
- * relaunches. Windows-only for now, which is the only platform that whole flow
- * is built and verified for.
+ * compiled extension can each change between versions), and neither platform
+ * can overwrite its own running binary. Windows downloads the Inno installer CI
+ * already ships and launches it on Restart: the installer -- not the app --
+ * closes the running instance, swaps every file, and relaunches. macOS has no
+ * installer to hand this to, so it downloads the same signed .dmg CI already
+ * ships for manual installs, and Restart mounts it, `ditto`s the new
+ * `Squeal Editor.app` over the running bundle (wherever the user put it, found
+ * by walking up from this extension's own binary), and reopens it. Both
+ * platforms wait for the app to actually exit first and run the swap from a
+ * process that outlives it -- see `applyUpdate`.
  *
  * Nothing is applied until the download is proven two ways: a SHA-256 checksum
  * against a corruption, and a detached ed25519 signature against a forgery. The
@@ -23,7 +27,7 @@
 import { createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import type { UpdateProgress, UpdateStatus } from '../../shared/protocol/index.ts';
 import { UPDATE_PUBLIC_KEY } from './updateKey.ts';
@@ -39,9 +43,24 @@ function latestReleaseUrl(): string {
   return process.env.SQUEAL_UPDATE_RELEASE_URL ?? `https://api.github.com/repos/${REPO}/releases/latest`;
 }
 
-/** The installer asset CI attaches, e.g. `squeal-editor-setup-v0.1.4.exe`. */
-const INSTALLER_RE = /^squeal-editor-setup-v.*\.exe$/;
-const CHECKSUMS_NAME = 'SHA256SUMS';
+/**
+ * The installer asset CI attaches, per platform this flow is built for, and the
+ * checksums file it's verified against. macOS gets its own checksums asset
+ * (`SHA256SUMS-macos`, not the shared `SHA256SUMS`) so its CI leg -- running on
+ * its own runner, in parallel with Windows' -- can never race the other's
+ * upload and clobber it.
+ */
+const INSTALLER_PATTERNS: Partial<Record<NodeJS.Platform, RegExp>> = {
+  win32: /^squeal-editor-setup-v.*\.exe$/,
+  darwin: /^squeal-editor-macos-arm64-v.*\.dmg$/,
+};
+const CHECKSUMS_NAMES: Partial<Record<NodeJS.Platform, string>> = {
+  win32: 'SHA256SUMS',
+  darwin: 'SHA256SUMS-macos',
+};
+
+/** The `Squeal Editor.app` bundle's own name, both inside the mounted .dmg and on disk. */
+const APP_BUNDLE_NAME = 'Squeal Editor.app';
 
 interface Asset {
   name: string;
@@ -111,15 +130,20 @@ export function verifyEd25519(bytes: Buffer, signatureB64: string, publicKeyB64:
   }
 }
 
-/** Find the three assets an update needs among a release's asset list. */
-export function selectAssets(assets: Asset[]): {
+/** Find the three assets an update needs among a release's asset list, for `platform`. */
+export function selectAssets(
+  assets: Asset[],
+  platform: NodeJS.Platform
+): {
   installer?: Asset;
   signature?: Asset;
   checksums?: Asset;
 } {
-  const installer = assets.find((a) => INSTALLER_RE.test(a.name));
+  const installerPattern = INSTALLER_PATTERNS[platform];
+  const checksumsName = CHECKSUMS_NAMES[platform];
+  const installer = installerPattern ? assets.find((a) => installerPattern.test(a.name)) : undefined;
   const signature = installer ? assets.find((a) => a.name === `${installer.name}.sig`) : undefined;
-  const checksums = assets.find((a) => a.name === CHECKSUMS_NAME);
+  const checksums = checksumsName ? assets.find((a) => a.name === checksumsName) : undefined;
   return { installer, signature, checksums };
 }
 
@@ -144,8 +168,9 @@ function sha256Hex(bytes: Buffer): string {
  * ------------------------------------------------------------------ */
 
 export async function checkForUpdate(currentVersion: string): Promise<UpdateStatus> {
+  const platform = process.platform;
   const base: UpdateStatus = {
-    supported: process.platform === 'win32',
+    supported: platform in INSTALLER_PATTERNS,
     checked: false,
     currentVersion,
     latestVersion: null,
@@ -166,7 +191,7 @@ export async function checkForUpdate(currentVersion: string): Promise<UpdateStat
     if (release.draft || release.prerelease) return { ...base, checked };
 
     const latestVersion = release.tag_name.replace(/^v/, '');
-    const { installer, signature, checksums } = selectAssets(release.assets ?? []);
+    const { installer, signature, checksums } = selectAssets(release.assets ?? [], platform);
     // Newer *and* fully shippable: a newer tag whose signing assets are missing
     // (a release cut before the signing key was set) is not offered, so the
     // download step can never find itself without something to verify against.
@@ -226,6 +251,11 @@ export async function downloadUpdate(onProgress: (p: UpdateProgress) => void): P
 export function applyUpdate(): void {
   if (!pending?.stagedPath) throw new Error('No verified update is staged.');
 
+  if (process.platform === 'darwin') {
+    applyUpdateDarwin(pending.stagedPath);
+    return;
+  }
+
   // `start` launches the installer as its own top-level process, so it survives
   // the app exit that is about to follow -- the swap must outlive the thing it
   // is swapping. Silent, and Inno's Restart Manager closes this instance (and
@@ -234,6 +264,63 @@ export function applyUpdate(): void {
     ['cmd', '/c', 'start', '', pending.stagedPath, '/SILENT', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS'],
     { stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' }
   );
+}
+
+/**
+ * Walk up from a path inside the bundle (here, this extension's own compiled
+ * binary) to the `<Name>.app` directory that contains it. Not a fixed count of
+ * `..`s: the extension sits four levels under the bundle root today
+ * (`Contents/Resources/extensions/db/`), and a layout change to that path
+ * should not silently point the swap at the wrong directory.
+ */
+function findAppBundle(startPath: string): string {
+  let dir = dirname(startPath);
+  while (dir !== dirname(dir)) {
+    if (dir.endsWith('.app')) return dir;
+    dir = dirname(dir);
+  }
+  throw new Error(`Could not find an enclosing .app bundle above ${startPath}.`);
+}
+
+/** Single-quote a path for embedding in the shell script below. */
+function shq(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * macOS has no installer to hand the swap to, so this *is* the installer: a
+ * detached shell script that outlives the app exit about to follow, waits for
+ * the app to actually quit (it's this extension's own parent process --
+ * Neutralino spawns extensions as its children, so `process.ppid` is exactly
+ * the PID to wait on), mounts the downloaded .dmg, `ditto`s the new
+ * `Squeal Editor.app` over whatever is at the running bundle's path -- found by
+ * `findAppBundle`, so this works wherever the user put the app, not just
+ * `/Applications` -- and reopens it. `ditto` (not `cp -R`) is what
+ * `scripts/package-macos.sh` uses to move a signed bundle without dropping the
+ * extended attributes that back its signature; the same reasoning applies here.
+ */
+function applyUpdateDarwin(dmgPath: string): void {
+  const appBundle = findAppBundle(process.execPath);
+  const appPid = process.ppid;
+
+  const script = [
+    'set -e',
+    `for i in $(seq 1 50); do kill -0 ${appPid} 2>/dev/null || break; sleep 0.2; done`,
+    'MOUNT="$(mktemp -d)"',
+    'STAGE="$(mktemp -d)"',
+    // Runs on any exit path, success or failure, so a failed swap never leaves
+    // the .dmg mounted or the staging copy behind.
+    'trap \'hdiutil detach "$MOUNT" -quiet >/dev/null 2>&1 || true; rm -rf "$STAGE"\' EXIT',
+    `hdiutil attach ${shq(dmgPath)} -mountpoint "$MOUNT" -nobrowse -quiet`,
+    `ditto "$MOUNT/${APP_BUNDLE_NAME}" "$STAGE/${APP_BUNDLE_NAME}"`,
+    // Only reached once the copy off the .dmg has fully succeeded, so a bad
+    // mount or a broken ditto never touches the app that is still there.
+    `rm -rf ${shq(appBundle)}`,
+    `mv "$STAGE/${APP_BUNDLE_NAME}" ${shq(appBundle)}`,
+    `open ${shq(appBundle)}`,
+  ].join('\n');
+
+  Bun.spawn(['/bin/sh', '-c', script], { stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' });
 }
 
 /* ------------------------------------------------------------------ *

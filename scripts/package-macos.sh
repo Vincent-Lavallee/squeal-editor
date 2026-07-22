@@ -76,6 +76,7 @@ ln -s ../MacOS/squeal-editor-bin "$resources/squeal-editor-bin"
 # build would need the dyld-environment-variables entitlement.
 clang -dynamiclib -fobjc-arc -arch arm64 -mmacosx-version-min=11.0 \
   -framework AppKit \
+  -framework WebKit \
   -o "$app/Contents/Frameworks/squeal-window-chrome.dylib" \
   scripts/macos-window-chrome.m
 

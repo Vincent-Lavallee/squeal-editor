@@ -1,14 +1,17 @@
 /**
  * Sign a release installer, so the app can prove it is genuine before applying
- * an update. Run in CI on the Windows leg:
+ * an update. Run in CI on each signed leg:
  *
- *   UPDATE_SIGNING_KEY=<base64 pkcs8> bun run scripts/sign-release.ts <installer>
+ *   UPDATE_SIGNING_KEY=<base64 pkcs8> bun run scripts/sign-release.ts <installer> [checksumsName]
  *
  * It emits two assets beside the installer:
  *   - `<installer>.sig` — a detached ed25519 signature over the installer bytes,
  *     verified against the public key baked into the app (`updateKey.ts`).
- *   - `SHA256SUMS` — the installer's digest, the cheaper corruption check the
- *     app runs first.
+ *   - `SHA256SUMS` (or `checksumsName`, if given) — the installer's digest, the
+ *     cheaper corruption check the app runs first. macOS passes
+ *     `SHA256SUMS-macos`: its CI leg runs on its own runner, in parallel with
+ *     Windows', and both writing the same filename would race whichever
+ *     `gh release upload --clobber` lands last.
  *
  * The private key comes from the environment and nowhere else; see `keygen.ts`.
  */
@@ -19,13 +22,14 @@ import { basename } from 'node:path';
 
 const keyB64 = process.env.UPDATE_SIGNING_KEY;
 const installerPath = process.argv[2];
+const checksumsName = process.argv[3] ?? 'SHA256SUMS';
 
 if (!keyB64) {
   console.error('UPDATE_SIGNING_KEY is not set — nothing to sign with.');
   process.exit(1);
 }
 if (!installerPath) {
-  console.error('Usage: bun run scripts/sign-release.ts <installer>');
+  console.error('Usage: bun run scripts/sign-release.ts <installer> [checksumsName]');
   process.exit(1);
 }
 
@@ -39,6 +43,6 @@ writeFileSync(`${installerPath}.sig`, signature);
 
 // sha256sum's own line format: `<hex>  <name>`, two spaces. The app parses this.
 const digest = createHash('sha256').update(bytes).digest('hex');
-writeFileSync('SHA256SUMS', `${digest}  ${basename(installerPath)}\n`);
+writeFileSync(checksumsName, `${digest}  ${basename(installerPath)}\n`);
 
-console.log(`Signed ${basename(installerPath)} and wrote SHA256SUMS.`);
+console.log(`Signed ${basename(installerPath)} and wrote ${checksumsName}.`);
