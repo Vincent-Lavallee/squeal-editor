@@ -21,28 +21,52 @@ version="${1:?usage: package-macos.sh <version>}"
 
 app="dist/Squeal Editor.app"
 macos="$app/Contents/MacOS"
+resources="$app/Contents/Resources"
 dmg="squeal-editor-macos-arm64-v$version.dmg"
 
 rm -rf "$app" dist/dmg "$dmg"
-mkdir -p "$macos" "$app/Contents/Resources" "$app/Contents/Frameworks"
+mkdir -p "$macos" "$resources" "$app/Contents/Frameworks"
 
 # Only executables may live in Contents/MacOS. codesign treats everything in
 # there as nested code, so a data file lands as an unsigned subcomponent and the
-# bundle fails `--verify --deep --strict`. That is why CI builds macOS with
-# `neu build --embed-resources`: resources.neu goes inside the binary via
-# postject and there is no data file left to misplace.
+# bundle fails `--verify --deep --strict`. resources.neu and neutralino.config.json
+# are data, so they go in Contents/Resources instead — the standard home for
+# bundle data, which codesign seals as resource hashes rather than nested code.
 #
-# The extension cannot follow it in, so it stays a real nested executable and
-# gets a real signature below. Its location is not a choice either: commandDarwin
-# resolves ${NL_PATH}/extensions/db/squeal-db-ext, and the launcher below is what
-# makes NL_PATH land here.
-if [ -f dist/squeal-editor/resources.neu ]; then
-  echo "resources.neu is still on disk — neu build ran without --embed-resources." >&2
+# This means `neu build` must run WITHOUT --embed-resources. Embedding packs
+# resources.neu into the binary via postject, which relies on the process
+# reading its own Mach-O file back off disk to find the embedded section. That
+# self-lookup breaks the instant DYLD_INSERT_LIBRARIES puts a second image in
+# front of it — confirmed by inserting a no-op dylib, which reproduces the same
+# "resources.neu is missing" fallback as the real window-chrome one. Since the
+# window-chrome dylib below is exactly that injection, embedding and the
+# titlebar fix cannot coexist; loose files in Resources sidestep the conflict
+# because they're opened by path, not by self-inspection.
+if [ ! -f dist/squeal-editor/resources.neu ]; then
+  echo "resources.neu is missing — neu build ran with --embed-resources; it must run plain for macOS." >&2
   exit 1
 fi
 
 cp dist/squeal-editor/squeal-editor-mac_arm64 "$macos/squeal-editor-bin"
-cp -R dist/squeal-editor/extensions "$macos/extensions"
+cp dist/squeal-editor/resources.neu "$resources/resources.neu"
+cp neutralino.config.json "$resources/neutralino.config.json"
+
+# The extension's location is not a choice: commandDarwin resolves
+# ${NL_PATH}/extensions/db/squeal-db-ext, and NL_PATH follows the working
+# directory (not the executable) — so it has to sit next to resources.neu and
+# neutralino.config.json, wherever the launcher below puts the cwd.
+cp -R dist/squeal-editor/extensions "$resources/extensions"
+
+# Neutralino locates resources.neu/neutralino.config.json relative to argv[0]'s
+# own directory, not the cwd directly — confirmed by the error string it logs
+# on failure, which echoes back dirname(argv[0]) verbatim (e.g. "../MacOS/
+# resources.neu is missing" when argv[0] was "../MacOS/squeal-editor-bin"). A
+# symlink here means the launcher can exec a *relative* "./squeal-editor-bin"
+# from within Resources, so dirname(argv[0]) is "." — Resources itself, right
+# where the loose files live — while the real Mach-O bytes stay put in MacOS
+# and keep their own signature. codesign treats the symlink as a resource
+# hash, not nested code, so it does not trip `--verify --deep --strict`.
+ln -s ../MacOS/squeal-editor-bin "$resources/squeal-editor-bin"
 
 # A borderless Neutralino window on macOS can never become the key window, so
 # it never gets keyboard input (neutralinojs#1197). The dylib restyles the
@@ -56,10 +80,13 @@ clang -dynamiclib -fobjc-arc -arch arm64 -mmacosx-version-min=11.0 \
   scripts/macos-window-chrome.m
 
 # NL_PATH follows the working directory, not the executable, and Finder launches
-# with the working directory set to `/` -- where Neutralino then looks for
-# /extensions/db/squeal-db-ext, finds nothing, and the app comes up with a dead
-# extension. So CFBundleExecutable is this shim rather than the binary: it moves
-# to its own directory first, which is the one place NL_PATH must be.
+# with the working directory set to `/` -- where Neutralino would look for
+# /resources.neu, /neutralino.config.json and /extensions/db/squeal-db-ext,
+# find nothing, and the app would come up with a dead extension and framework
+# defaults. So CFBundleExecutable is this shim rather than the binary: it moves
+# into Contents/Resources first, which is the one place NL_PATH must be — right
+# next to the loose resources.neu/config/extensions copied in above — then runs
+# the real binary out of Contents/MacOS by relative path.
 #
 # `exec` so the shell is replaced rather than left as a parent. The extension
 # heartbeats against the app and the UI suite reaps by process, and both want one
@@ -71,12 +98,12 @@ clang -dynamiclib -fobjc-arc -arch arm64 -mmacosx-version-min=11.0 \
 # through /bin/sh, and the variable dies at that boundary.
 cat > "$macos/squeal-editor" <<'LAUNCHER'
 #!/bin/sh
-cd "$(dirname "$0")" || exit 1
+cd "$(dirname "$0")/../Resources" || exit 1
 export DYLD_INSERT_LIBRARIES="$PWD/../Frameworks/squeal-window-chrome.dylib"
 exec ./squeal-editor-bin "$@"
 LAUNCHER
 
-chmod +x "$macos/squeal-editor" "$macos/squeal-editor-bin" "$macos/extensions/db/squeal-db-ext"
+chmod +x "$macos/squeal-editor" "$macos/squeal-editor-bin" "$resources/extensions/db/squeal-db-ext"
 
 iconset="dist/icon.iconset"
 rm -rf "$iconset"
@@ -85,7 +112,7 @@ for size in 16 32 128 256 512; do
   sips -z $size $size frontend/public/icon.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
   sips -z $((size * 2)) $((size * 2)) frontend/public/icon.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
 done
-iconutil -c icns "$iconset" -o "$app/Contents/Resources/icon.icns"
+iconutil -c icns "$iconset" -o "$resources/icon.icns"
 
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -108,7 +135,7 @@ PLIST
 
 # Inner-out: signing the bundle seals whatever its nested executables already
 # carry, so an extension signed afterwards would invalidate the outer signature.
-codesign --force --sign - --timestamp=none "$macos/extensions/db/squeal-db-ext"
+codesign --force --sign - --timestamp=none "$resources/extensions/db/squeal-db-ext"
 codesign --force --sign - --timestamp=none "$app/Contents/Frameworks/squeal-window-chrome.dylib"
 codesign --force --sign - --timestamp=none "$macos/squeal-editor-bin"
 codesign --force --sign - --timestamp=none "$app"

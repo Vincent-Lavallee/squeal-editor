@@ -84,18 +84,18 @@ jobs:
         shell: bash
         run: find extensions/db -mindepth 1 -maxdepth 1 ! -name 'squeal-db-ext' ! -name 'squeal-db-ext.exe' -exec rm -rf {} +
 
+      # macOS used to run this with --embed-resources, packing resources.neu into
+      # the binary via postject so no loose data file had to sit in Contents/MacOS
+      # (codesign reads everything there as nested code and fails an unsigned data
+      # file as a subcomponent). But postject-embedded resources are found via the
+      # process reading its own Mach-O file back off disk, and that self-lookup
+      # breaks the instant DYLD_INSERT_LIBRARIES puts a second image in front of
+      # it — which is exactly what the window-chrome dylib does (see
+      # scripts/package-macos.sh). So macOS needs the plain build too:
+      # package-macos.sh now keeps resources.neu/config as loose files, homed in
+      # Contents/Resources instead of Contents/MacOS to stay codesign-safe.
       - name: Package the app
-        if: runner.os != 'macOS'
         run: bunx neu build
-
-      # macOS embeds resources.neu into the binary rather than shipping it beside
-      # one. Inside an .app the only place NL_PATH can find a loose resources.neu
-      # is Contents/MacOS, and codesign reads every file there as nested code, so
-      # it fails the bundle as an unsigned subcomponent. Embedding removes the
-      # file, and with it the conflict.
-      - name: Package the app (macOS)
-        if: runner.os == 'macOS'
-        run: bunx neu build --embed-resources
 
       # Not Compress-Archive: it throws "Could not find a part of the path" on the
       # deep Monaco/extension paths in the bundle (Windows MAX_PATH). bsdtar ships
