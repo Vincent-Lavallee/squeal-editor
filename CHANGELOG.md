@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.7.0...v0.8.0) (2026-07-22)
+
+
+### Features
+
+* refresh tables + db ([ea81a2b](https://github.com/Vincent-Lavallee/squeal-editor/commit/ea81a2bff45d07c853677f13596cc0795d1e7907))
+
 ## [0.7.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.6.7...v0.7.0) (2026-07-22)
 
 
