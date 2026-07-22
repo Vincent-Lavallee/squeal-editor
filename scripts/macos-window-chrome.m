@@ -53,6 +53,7 @@ static void restyle(NSWindow *window) {
  */
 
 @interface SquealMenuHandler : NSObject
++ (WKWebView *)findWebViewIn:(NSView *)view;
 @end
 
 @implementation SquealMenuHandler
@@ -126,6 +127,83 @@ static void installMenuBar(void) {
   NSApplication.sharedApplication.mainMenu = mainMenu;
 }
 
+/*
+ * Once mainMenu is non-nil (installMenuBar above), AppKit routes Cmd+<key>
+ * through the menu bar's key-equivalent matching before it reaches the
+ * responder chain. With no Edit menu claiming c/v/x/a/z, those keystrokes have
+ * nowhere to resolve to copy:/paste:/cut:/selectAll:/undo:/redo: and silently
+ * no-op in every native text field the WKWebView hosts (e.g. the connection
+ * form's plain <input>s) — this is the regression an Edit menu would normally
+ * fix, but a visible Edit menu next to File/About isn't wanted here. A local
+ * event monitor gets the same effect invisibly: it sends the standard edit
+ * action straight to the first responder itself, exactly what a menu item's
+ * keyEquivalent would have dispatched.
+ *
+ * The event is always swallowed (return nil): letting it also reach WKWebView
+ * natively is what caused the audible error beep — WKWebView's own fallback
+ * handling re-checks for a validated menu item, finds none (there is still no
+ * real Edit menu), and beeps as if the shortcut were entirely unhandled, even
+ * though -sendAction: already performed it correctly.
+ *
+ * copy:/paste:/cut: only need -sendAction:, since WKWebView forwards those
+ * straight to the system pasteboard regardless of what's focused. selectAll:/
+ * undo:/redo: are different: Monaco keeps its own model-level selection and
+ * undo stack via a JS keydown listener, which -sendAction:'s AppKit-level
+ * selectAll:/undo:/redo: knows nothing about. Swallowing the real event would
+ * silently break Monaco's shortcuts, so those three are additionally
+ * replayed as a synthetic DOM keydown at the focused element — Monaco's own
+ * listener reacts to that exactly as it would to the real one, while native
+ * <input>s simply ignore it (browsers only apply built-in editing behavior to
+ * trusted, physically-originated key events, never to script-dispatched
+ * ones), leaving -sendAction:'s result as their only effect.
+ */
+static void replayKeydownAtFocusedElement(NSString *key, NSString *code, int keyCode, BOOL shift) {
+  NSWindow *window = NSApp.keyWindow ?: NSApp.mainWindow ?: NSApp.windows.firstObject;
+  WKWebView *webView = window ? [SquealMenuHandler findWebViewIn:window.contentView] : nil;
+  if (!webView) return;
+  NSString *js = [NSString stringWithFormat:
+      @"document.activeElement && document.activeElement.dispatchEvent(new KeyboardEvent('keydown', "
+       "{ key: '%@', code: '%@', keyCode: %d, which: %d, metaKey: true, shiftKey: %@, "
+       "bubbles: true, cancelable: true }))",
+      key, code, keyCode, keyCode, shift ? @"true" : @"false"];
+  [webView evaluateJavaScript:js completionHandler:nil];
+}
+
+static void installEditShortcuts(void) {
+  [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+                                         handler:^NSEvent *(NSEvent *event) {
+    NSEventModifierFlags flags = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    BOOL cmd = (flags & NSEventModifierFlagCommand) != 0;
+    BOOL shift = (flags & NSEventModifierFlagShift) != 0;
+    BOOL onlyCmdOrCmdShift = cmd && (flags & ~(NSEventModifierFlagCommand | NSEventModifierFlagShift)) == 0;
+    if (!onlyCmdOrCmdShift) return event;
+
+    NSString *key = event.charactersIgnoringModifiers;
+
+    if (!shift && [key isEqualToString:@"c"]) return [NSApp sendAction:@selector(copy:) to:nil from:nil] ? nil : event;
+    if (!shift && [key isEqualToString:@"v"]) return [NSApp sendAction:@selector(paste:) to:nil from:nil] ? nil : event;
+    if (!shift && [key isEqualToString:@"x"]) return [NSApp sendAction:@selector(cut:) to:nil from:nil] ? nil : event;
+
+    if (!shift && [key isEqualToString:@"a"]) {
+      [NSApp sendAction:@selector(selectAll:) to:nil from:nil];
+      replayKeydownAtFocusedElement(@"a", @"KeyA", 65, NO);
+      return nil;
+    }
+    if (!shift && [key isEqualToString:@"z"]) {
+      [NSApp sendAction:@selector(undo:) to:nil from:nil];
+      replayKeydownAtFocusedElement(@"z", @"KeyZ", 90, NO);
+      return nil;
+    }
+    if (shift && [key isEqualToString:@"z"]) {
+      [NSApp sendAction:@selector(redo:) to:nil from:nil];
+      replayKeydownAtFocusedElement(@"z", @"KeyZ", 90, YES);
+      return nil;
+    }
+
+    return event;
+  }];
+}
+
 __attribute__((constructor)) static void squealWindowChromeInit(void) {
   /*
    * dyld runs this before main, so the window does not exist yet, and
@@ -163,5 +241,6 @@ __attribute__((constructor)) static void squealWindowChromeInit(void) {
                    queue:[NSOperationQueue mainQueue]
               usingBlock:^(NSNotification *note) {
                 installMenuBar();
+                installEditShortcuts();
               }];
 }
