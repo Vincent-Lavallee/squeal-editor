@@ -1077,7 +1077,12 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await suggest('SELECT * FROM users WHERE name ILIK|')).toContain('ILIKE');
     });
 
-    test('the database\'s tables are suggested', async () => {
+    test('a default-schema table is suggested both qualified and bare', async () => {
+      // A `public` relation resolves either way, so both are offered -- type
+      // `users` or `public.users`. Each assertion prefixes with the form it wants
+      // so the virtualised list is narrowed to it: `public|` to the qualified,
+      // `user|` to the bare.
+      expect(await suggest('SELECT * FROM public|')).toContain('public.users');
       expect(await suggest('SELECT * FROM user|')).toContain('users');
     });
 
@@ -1111,6 +1116,21 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // catalog answers for, or the columns are fetched for a table that is not
       // there.
       expect(await suggest('SELECT d.| FROM "reporting"."daily_stats" d')).toContain('hits');
+    });
+
+    test('a schema followed by a dot offers that schema\'s relations', async () => {
+      // `public.` is the whole gesture: a name in the FROM ending in a dot is
+      // scanned as a bogus table, so this only works because an empty column
+      // answer for it falls through to the schema. The relations come out bare,
+      // the schema being already typed to the left of the dot.
+      const inPublic = await suggest('SELECT * FROM public.|');
+      expect(inPublic).toContain('users');
+      expect(inPublic).toContain('active_users');
+      // The other schema answers for its own relations, not public's -- proof it
+      // is the typed schema being read, not one list of every table.
+      const inReporting = await suggest('SELECT * FROM reporting.|');
+      expect(inReporting).toContain('daily_stats');
+      expect(inReporting).not.toContain('users');
     });
 
     /*

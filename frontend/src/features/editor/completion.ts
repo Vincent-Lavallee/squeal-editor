@@ -12,7 +12,7 @@
  */
 
 import type { ColumnInfo, TableInfo } from '../../../../shared/protocol/index.ts';
-import { relationLabel, relationOf } from '../../common/db/relation.ts';
+import { relationName, relationOf } from '../../common/db/relation.ts';
 import type { Word } from './keywords.ts';
 import { monaco } from './monaco.ts';
 import { resolveQualifier, type SqlScope } from './sqlScope.ts';
@@ -28,8 +28,9 @@ export interface CompletionSnapshot {
   /** The active tab's database's tables. Empty until they land. */
   tables: TableInfo[];
   /**
-   * The schema this engine leaves implied, so a suggested relation is qualified
-   * only when it has to be. Undefined means qualify nothing -- an engine with no
+   * The schema this engine leaves implied. A relation in it is offered both
+   * qualified and bare, since either resolves; one in any other schema only
+   * qualified. Undefined means no schema goes without saying -- an engine with no
    * schema layer, or no connection yet.
    */
   defaultSchema?: string;
@@ -106,6 +107,22 @@ const columnItem = (
   range,
 });
 
+// `name` is passed rather than derived because it differs by caller: the
+// unqualified list writes the schema-qualified label, while `schema.` writes the
+// bare name, the schema being already typed to the left of the dot.
+const tableItem = (
+  table: TableInfo,
+  range: monaco.IRange,
+  name: string
+): monaco.languages.CompletionItem => ({
+  label: name,
+  kind: table.kind === 'view' ? KIND.view : KIND.table,
+  detail: table.kind,
+  insertText: name,
+  sortText: SORT.table + name,
+  range,
+});
+
 /**
  * Builds the provider. `snapshot` is called per request, never captured.
  */
@@ -123,18 +140,37 @@ export function sqlCompletionProvider(
       const range = wordRange(model, position);
 
       /*
-       * After a dot, the qualifier is the entire question: `u.` asks for that
-       * table's columns and nothing else. Offering keywords here too would bury
-       * the answer under three hundred words that cannot follow a dot anyway.
+       * After a dot, the qualifier is the entire question, and it is one of two:
+       * a table or alias, whose columns are the answer (`u.` -> that table's
+       * columns and nothing else, since keywords cannot follow a dot); or a
+       * schema, whose relations are (`public.` -> the tables in `public`). Either
+       * way keywords are suppressed -- they would bury the answer under words the
+       * dot has already ruled out.
        */
       const qualifier = qualifierAt(model, position);
       if (qualifier) {
         const table = resolveQualifier(qualifier, scope);
         const columns = table ? columnsFor(table) : null;
-        // An unresolved qualifier and one whose columns have not landed are the
-        // same to the reader: nothing yet. Suggesting the whole dialect at them
-        // is worse than an empty popup, which at least closes on the next key.
-        return { suggestions: (columns ?? []).map((c) => columnItem(c, range, c.dataType)) };
+        // A resolved table with its columns in hand: those are the answer.
+        if (columns && columns.length > 0) {
+          return { suggestions: columns.map((c) => columnItem(c, range, c.dataType)) };
+        }
+        // Otherwise the qualifier may be a schema, and `public.` is then asking
+        // for the relations in it, named bare because the schema is already
+        // typed. This has to come second, not first: a name ending in a dot in
+        // the FROM (`FROM public.`) is scanned as a bogus table, so `resolveQualifier`
+        // claims `public` as a table -- but the catalog has no columns for it, so
+        // an empty column answer is the tell that the schema was meant. A real
+        // table sharing a schema's name keeps its columns, since those land here
+        // non-empty and never reach this branch.
+        const inSchema = tables.filter((t) => t.schema !== undefined && t.schema.toLowerCase() === qualifier.toLowerCase());
+        if (inSchema.length > 0) {
+          return { suggestions: inSchema.map((t) => tableItem(t, range, t.name)) };
+        }
+        // A real table whose columns have not landed yet, or a qualifier that is
+        // neither table nor schema: an empty popup that closes on the next key,
+        // never the whole dialect suggested at a dot.
+        return { suggestions: [] };
       }
 
       const suggestions: monaco.languages.CompletionItem[] = [];
@@ -161,19 +197,18 @@ export function sqlCompletionProvider(
       }
 
       for (const table of tables) {
-        // Qualified unless the schema goes without saying, because this text is
-        // going into a statement: an unqualified name in another schema resolves
-        // through `search_path`, so offering the bare one suggests SQL that does
-        // not run. The tree prints the same string for the same reason.
-        const name = relationLabel(relationOf(table), defaultSchema);
-        suggestions.push({
-          label: name,
-          kind: table.kind === 'view' ? KIND.view : KIND.table,
-          detail: table.kind,
-          insertText: name,
-          sortText: SORT.table + name,
-          range,
-        });
+        // Every relation is offered fully qualified -- `public.users` reads the
+        // same way `reporting.daily_stats` does.
+        suggestions.push(tableItem(table, range, relationName(relationOf(table))));
+        // A default-schema relation also resolves unqualified, so the bare name
+        // is offered too: `users` and `public.users` are both valid and either
+        // may be what you want. A relation in another schema gets only the
+        // qualified form -- a bare name there goes through `search_path` and does
+        // not resolve. (No-schema engines never enter this branch: the qualified
+        // name is already bare, so a second entry would just duplicate it.)
+        if (table.schema !== undefined && table.schema === defaultSchema) {
+          suggestions.push(tableItem(table, range, table.name));
+        }
       }
 
       for (const word of words) {

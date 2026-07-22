@@ -1,17 +1,17 @@
-import { type CSSProperties, type InputHTMLAttributes, useState } from 'react';
-import * as t from '../tokens';
+import { type CSSProperties, type InputHTMLAttributes, useState } from "react";
+import * as t from "../tokens";
 
 const base: CSSProperties = {
-  width: '100%',
+  width: "100%",
   height: 32,
-  padding: '0 9px',
+  padding: "0 9px",
   border: `1px solid ${t.BORDER_STRONG}`,
   borderRadius: t.RADIUS,
   background: t.BG,
   color: t.TEXT,
-  font: 'inherit',
+  font: "inherit",
   fontSize: t.TEXT_BODY,
-  outline: 'none',
+  outline: "none",
 };
 
 // The chrome form, matching `<Select variant="bare">` exactly: no box at rest,
@@ -21,16 +21,17 @@ const base: CSSProperties = {
 const bare: CSSProperties = {
   ...base,
   height: 24,
-  padding: '0 6px',
-  borderColor: 'transparent',
+  padding: "0 6px",
+  borderColor: "transparent",
 };
 
 interface Props extends InputHTMLAttributes<HTMLInputElement> {
-  variant?: 'default' | 'bare';
+  variant?: "default" | "bare";
 }
 
 export default function Input({
-  variant = 'default',
+  variant = "default",
+  autoComplete = "off",
   style,
   disabled,
   onFocus,
@@ -42,7 +43,7 @@ export default function Input({
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
 
-  const isBare = variant === 'bare';
+  const isBare = variant === "bare";
   const showsBox = focused || (hovered && !disabled);
 
   return (
@@ -51,9 +52,12 @@ export default function Input({
         ...(isBare ? bare : base),
         ...(disabled ? { color: t.TEXT_FAINT, borderColor: t.BORDER } : {}),
         ...(focused && !isBare ? { borderColor: t.ACCENT } : {}),
-        ...(isBare && showsBox && !disabled ? { borderColor: t.BORDER_STRONG } : {}),
+        ...(isBare && showsBox && !disabled
+          ? { borderColor: t.BORDER_STRONG }
+          : {}),
         ...(style ?? {}),
       }}
+      autoComplete={autoComplete}
       disabled={disabled}
       onFocus={(e) => {
         setFocused(true);
