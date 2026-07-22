@@ -19,11 +19,6 @@ tests/fixtures/shop.db
 .tmp/
 neutralinojs.log
 
-backlog.md
-completed.md
-claude.md
-.claude
-docs
 
 dist/
 # Temp file bun leaves behind when `bun build --compile` is interrupted.
