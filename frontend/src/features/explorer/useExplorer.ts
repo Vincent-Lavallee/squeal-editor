@@ -9,6 +9,7 @@ import {
   dropTable as dropTableThunk,
   fetchDdl as fetchDdlThunk,
   loadColumns,
+  loadDatabases,
   loadStars,
   loadTables,
   setStar as setStarThunk,
@@ -51,7 +52,7 @@ export function useExplorer() {
    * connection in its key.
    */
   useEffect(() => {
-    if (database) void dispatch(loadTables(database));
+    if (database) void dispatch(loadTables({ database }));
   }, [database, connectionId, dispatch]);
 
   /*
@@ -102,6 +103,19 @@ export function useExplorer() {
     [dispatch]
   );
 
+  // The picker's refresh button. Returns the unwrapped promise so the button
+  // can hold its own spinner rather than the store growing a flag for a state
+  // that lives and dies with one click.
+  const refreshDatabases = useCallback((): Promise<unknown> => dispatch(loadDatabases()).unwrap(), [dispatch]);
+
+  // The tree's refresh button, past `loadTables`' cache -- see `force` there.
+  // Reuses the same `loadingTables` marker a first fetch does, so the tree's
+  // existing "Loading…" note covers a refresh too.
+  const refreshTables = useCallback((): Promise<unknown> | undefined => {
+    if (!database) return undefined;
+    return dispatch(loadTables({ database, force: true })).unwrap();
+  }, [dispatch, database]);
+
   // Whether a relation is pinned in the tree, keyed the same way its cache is.
   const isStarred = useCallback(
     (db: string, relation: Relation): boolean =>
@@ -122,6 +136,8 @@ export function useExplorer() {
     dropTable,
     isStarred,
     toggleStar,
+    refreshDatabases,
+    refreshTables,
     /** The active connection is read-only; a drop is disabled and says why. */
     readOnly,
     /** The schema that goes without saying here, or undefined if none does. */

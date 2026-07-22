@@ -13,6 +13,13 @@ interface TablesRequest {
   database: string;
 }
 
+/** `loadTables`' arg: the database, and whether the tree's refresh button asked
+ *  for it -- see `condition` below. */
+interface LoadTablesArg {
+  database: string;
+  force?: boolean;
+}
+
 interface TablesError extends TablesRequest {
   message: string;
 }
@@ -103,7 +110,7 @@ const sameRequest = (a: TablesRequest | null, b: TablesRequest): boolean =>
  */
 export const loadTables = createAppThunk(
   'explorer/loadTables',
-  async (database: string, { getState, dispatch, rejectWithValue }) => {
+  async ({ database }: LoadTablesArg, { getState, dispatch, rejectWithValue }) => {
     const connectionId = getState().session.activeConnectionId;
     if (!connectionId) return rejectWithValue('Not connected.');
 
@@ -121,12 +128,35 @@ export const loadTables = createAppThunk(
   {
     // The tree's cache, expressed once, and now naming the connection it is
     // true of. Callers just ask for the tables and the already-fetched case
-    // never reaches the bridge.
-    condition: (database, { getState }) => {
+    // never reaches the bridge -- unless `force` is set, which is the tree's
+    // refresh button asking past the cache on purpose.
+    condition: ({ database, force }, { getState }) => {
+      if (force) return true;
       const { session, explorer } = getState();
       if (!session.activeConnectionId) return false;
       return explorer.tables[session.activeConnectionId]?.[database] === undefined;
     },
+  }
+);
+
+/**
+ * List a connection's databases again, for the picker's refresh button.
+ *
+ * There is no cache to bypass here the way `loadTables` has one: `databases`
+ * is written once by `sessionOpened` and never re-fetched otherwise, so every
+ * call this thunk makes is already "forced" by definition.
+ */
+export const loadDatabases = createAppThunk(
+  'explorer/loadDatabases',
+  async (_: void, { getState, rejectWithValue }) => {
+    const connectionId = getState().session.activeConnectionId;
+    if (!connectionId) return rejectWithValue('Not connected.');
+    try {
+      const { databases } = await call('db.databases', { connectionId });
+      return { connectionId, databases };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
   }
 );
 
@@ -344,6 +374,10 @@ const explorerSlice = createSlice({
         const { connectionId, database, tables } = action.payload;
         (state.tables[connectionId] ??= {})[database] = tables;
         if (sameRequest(state.loadingTables, action.payload)) state.loadingTables = null;
+      })
+      .addCase(loadDatabases.fulfilled, (state, action) => {
+        const { connectionId, databases } = action.payload;
+        state.databases[connectionId] = databases;
       })
       // `loadTables.rejected` is deliberately not handled: `tablesFailed`
       // carried the failure, with the connection in it, which is the one thing

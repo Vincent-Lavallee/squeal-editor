@@ -22,6 +22,7 @@ import {
   RiLeafLine,
   RiLockLine,
   RiLockUnlockLine,
+  RiRefreshLine,
   RiRocketLine,
   RiShoppingCartLine,
   RiStackLine,
@@ -118,6 +119,9 @@ export const UpdateIcon = RiDownloadCloud2Line;
 
 /** Copying text to the clipboard, on an error card or a result cell. */
 export const CopyIcon = RiFileCopyLine;
+
+/** Re-fetching a list from the server: the database picker and the table tree. */
+export const RefreshIcon = RiRefreshLine;
 
 /*
  * The read-only lock in the status bar. Two kinds, told apart by shape the way a

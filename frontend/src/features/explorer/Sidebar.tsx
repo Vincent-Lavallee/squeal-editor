@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 
 import type { TableInfo } from '../../../../shared/protocol/index.ts';
 import { relationLabel, relationName, relationOf } from '../../common/db/relation.ts';
-import { DisclosureIcon, FlatTreeIcon, KeyIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, StarIcon, TableIcon, ViewIcon } from '../../common/icons/icons.ts';
+import { DisclosureIcon, FlatTreeIcon, KeyIcon, RefreshIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, StarIcon, TableIcon, ViewIcon } from '../../common/icons/icons.ts';
 import DropTableConfirm from './DropTableConfirm.tsx';
 import { useExplorer } from './useExplorer.ts';
 import Button from '../../common/components/Button.tsx';
@@ -31,15 +31,23 @@ interface Props {
 }
 
 export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition, collapsed, onToggleCollapse }: Props) {
-  const { databases, database, hasTab, tables, columnsFor, loadTableColumns, dropTable, isStarred, toggleStar, readOnly, defaultSchema, loading, error } = useExplorer();
+  const { databases, database, hasTab, tables, columnsFor, loadTableColumns, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, error } = useExplorer();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [flippedSchemas, setFlippedSchemas] = useState<ReadonlySet<string>>(() => new Set());
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<{ table: TableInfo; x: number; y: number } | null>(null);
   const [dropping, setDropping] = useState<TableInfo | null>(null);
   const [groupBySchema, setGroupBySchema] = useBooleanSetting(GROUP_BY_SCHEMA, true);
+  // No store flag for this one -- see `refreshDatabases` -- so the spinner is
+  // this click's alone, not a fact the tree needs to know either.
+  const [refreshingDatabases, setRefreshingDatabases] = useState(false);
 
   const copyName = (name: string) => void Neutralino.clipboard.writeText(name);
+
+  const onRefreshDatabases = () => {
+    setRefreshingDatabases(true);
+    void refreshDatabases().finally(() => setRefreshingDatabases(false));
+  };
 
   // Drop is refused on a read-only connection: read-only is the server refusing
   // writes, and that does not reliably cover DDL, so honouring the intent for a
@@ -197,6 +205,15 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
           // at the right edge.
           style={{ flex: 1, minWidth: 0, ...(collapsed ? { display: 'none' } : {}) }} />
 
+        {!collapsed && (
+          <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0 }}
+            onClick={onRefreshDatabases} disabled={!hasTab || refreshingDatabases}
+            title="Refresh databases" aria-label="Refresh databases"
+            data-testid="sidebar-db-refresh">
+            <RefreshIcon className={refreshingDatabases ? 'spin' : undefined} style={iconSvg} aria-hidden="true" />
+          </Button>
+        )}
+
         <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0, ...(collapsed ? { marginLeft: 0 } : { marginLeft: 'auto' }) }}
           onClick={onToggleCollapse} title={collapsed ? 'Show sidebar (Ctrl+B)' : 'Hide sidebar (Ctrl+B)'}
           aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}>
@@ -225,6 +242,13 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
             {groupBySchema ? <FlatTreeIcon style={iconSvg} aria-hidden="true" /> : <SchemaIcon style={iconSvg} aria-hidden="true" />}
           </Button>
         )}
+
+        <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0 }}
+          onClick={refreshTables} disabled={!database || loading}
+          title="Refresh tables" aria-label="Refresh tables"
+          data-testid="sidebar-tables-refresh">
+          <RefreshIcon className={loading ? 'spin' : undefined} style={iconSvg} aria-hidden="true" />
+        </Button>
       </div>
 
       <nav style={{ flex: 1, overflowY: 'auto', padding: `${t.GAP_SM}px 6px`, display: collapsed ? 'none' : undefined }}>

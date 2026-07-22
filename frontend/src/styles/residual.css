@@ -120,6 +120,11 @@ input::placeholder { color: var(--text-faint); }
   width: 40%;
   animation: update-banner-sweep 1.1s ease-in-out infinite;
 }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin { animation: spin 0.6s linear infinite; }
 
 /* ---- :has() rules (no inline equivalent) ---- */
 .ws-icons__pick:has(input:focus-visible),
