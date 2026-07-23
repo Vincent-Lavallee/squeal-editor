@@ -3,13 +3,13 @@ import { useState } from 'react';
 import type { PasswordUpdate, SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import Button from '../../common/components/Button.tsx';
-import Note from '../../common/components/Note.tsx';
 import Callout from '../../common/components/Callout.tsx';
+import Skeleton from '../../common/components/Skeleton.tsx';
 import * as t from '../../common/tokens';
 import { isFileBased } from '../../common/db/engines.ts';
 import ConnectionForm, { type FormValues } from './ConnectionForm.tsx';
 import PasswordPrompt from './PasswordPrompt.tsx';
-import SavedConnectionList from './SavedConnectionList.tsx';
+import SavedConnectionList, { connectPhaseLabel } from './SavedConnectionList.tsx';
 import WorkspaceForm, { type WorkspaceFormValues } from './WorkspaceForm.tsx';
 import WorkspacePicker from './WorkspacePicker.tsx';
 import { useSavedConnections } from './useSavedConnections.ts';
@@ -87,7 +87,16 @@ export default function ConnectScreen({ onCancel }: Props) {
     (view.view === 'list' || view.view === 'new') && !workspaceById(view.workspaceId) ? { view: 'workspaces' } : view;
 
   function renderScreen() {
-    if (loading) return <Note kind="muted">Loading…</Note>;
+    if (loading) return (
+      <>
+        <ConnectionListSkeleton />
+        {session.connectingPhase && (
+          <div style={{ marginTop: t.GAP, textAlign: 'center', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>
+            {connectPhaseLabel(session.connectingPhase)}
+          </div>
+        )}
+      </>
+    );
 
     switch (resolved.view) {
       case 'workspaces':
@@ -105,7 +114,7 @@ export default function ConnectScreen({ onCancel }: Props) {
         return <ConnectionForm mode="new" busy={busy} onSubmit={(values) => void submitNew(resolved.workspaceId, values)} onCancel={populated ? () => go({ view: 'list', workspaceId: resolved.workspaceId }) : () => go({ view: 'workspaces' })} />;
       }
       case 'list':
-        return <SavedConnectionList workspace={workspaceById(resolved.workspaceId)!} connections={saved.connections.filter((c) => c.workspaceId === resolved.workspaceId)} connectingId={session.connecting ? connectingId : null} busy={busy} onPick={pick} onEdit={(connection) => go({ view: 'edit', connection })} onDelete={(id) => { go({ view: 'list', workspaceId: resolved.workspaceId }); saved.remove(id); }} onNew={() => go({ view: 'new', workspaceId: resolved.workspaceId })} onBack={() => go({ view: 'workspaces' })} />;
+        return <SavedConnectionList workspace={workspaceById(resolved.workspaceId)!} connections={saved.connections.filter((c) => c.workspaceId === resolved.workspaceId)} connectingId={session.connecting ? connectingId : null} connectingPhase={session.connectingPhase} busy={busy} onPick={pick} onEdit={(connection) => go({ view: 'edit', connection })} onDelete={(id) => { go({ view: 'list', workspaceId: resolved.workspaceId }); saved.remove(id); }} onNew={() => go({ view: 'new', workspaceId: resolved.workspaceId })} onBack={() => go({ view: 'workspaces' })} />;
     }
   }
 
@@ -126,5 +135,28 @@ export default function ConnectScreen({ onCancel }: Props) {
         {error && <div style={{ marginTop: t.GAP_LG }}><Callout>{error}</Callout></div>}
       </div>
     </div>
+  );
+}
+
+function ConnectionListSkeleton() {
+  const rowH = 46;
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, marginBottom: t.GAP_LG, padding: `${t.GAP_SM}px 10px`, border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS }}>
+        <Skeleton width={16} height={16} borderRadius={3} />
+        <Skeleton width={16} height={16} borderRadius={3} />
+        <Skeleton width={120} height={14} />
+      </div>
+      <Skeleton width={50} height={11} style={{ marginBottom: t.GAP_SM }} />
+      <div style={{ border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, overflow: 'hidden' }}>
+        {[0.6, 0.45, 0.55, 0.5, 0.65].map((w, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, height: rowH, padding: '0 10px', ...(i > 0 ? { borderTop: `1px solid ${t.BORDER}` } : {}) }}>
+            <Skeleton width={`${w * 100}%`} height={14} style={{ maxWidth: 220 }} />
+            <Skeleton width={50} height={20} borderRadius={t.RADIUS_PILL} style={{ flex: 'none' }} />
+          </div>
+        ))}
+      </div>
+      <Skeleton width="100%" height={t.BUTTON_H} style={{ marginTop: t.GAP }} />
+    </>
   );
 }

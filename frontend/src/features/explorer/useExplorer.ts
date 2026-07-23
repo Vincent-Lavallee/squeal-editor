@@ -110,7 +110,7 @@ export function useExplorer() {
 
   // The tree's refresh button, past `loadTables`' cache -- see `force` there.
   // Reuses the same `loadingTables` marker a first fetch does, so the tree's
-  // existing "Loading…" note covers a refresh too.
+  // existing skeleton covers a refresh too.
   const refreshTables = useCallback((): Promise<unknown> | undefined => {
     if (!database) return undefined;
     return dispatch(loadTables({ database, force: true })).unwrap();

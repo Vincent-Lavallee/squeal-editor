@@ -125,6 +125,11 @@ input::placeholder { color: var(--text-faint); }
   to { transform: rotate(360deg); }
 }
 .spin { animation: spin 0.6s linear infinite; }
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+.skeleton { animation: skeleton-pulse 1.6s ease-in-out infinite; }
 
 /* ---- :has() rules (no inline equivalent) ---- */
 .ws-icons__pick:has(input:focus-visible),

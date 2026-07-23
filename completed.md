@@ -3,6 +3,8 @@
 Shipped work, newest last. Items arrive here from `backlog.md` unchanged, with
 the date they were finished.
 
+- **2026-07-23** — **Skeleton loading states** — Replace every "Loading…" text placeholder (table tree, query results, connection list) with pulsing skeleton rectangles shaped like the content that will load into each area.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

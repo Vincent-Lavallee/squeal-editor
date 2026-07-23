@@ -49,5 +49,5 @@ export type { UpdateProgress, UpdateStatus } from './updater.ts';
 
 export type { CommandName, CommandReq, CommandRes, Commands } from './commands.ts';
 
-export type { DbResponse } from './events.ts';
-export { DB_RESPONSE_EVENT, UPDATE_PROGRESS_EVENT } from './events.ts';
+export type { ConnectProgress, DbResponse } from './events.ts';
+export { CONNECT_PROGRESS_EVENT, DB_RESPONSE_EVENT, UPDATE_PROGRESS_EVENT } from './events.ts';

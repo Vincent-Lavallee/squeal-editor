@@ -82,20 +82,30 @@ export interface ConnectionHandle {
  * `readOnly` is seeded before the eager `listDatabases()` forces the first client
  * open, so a connection asked to be read-only is never briefly writable.
  */
-export async function openConnection(config: ConnectionConfig, readOnly: boolean): Promise<ConnectionHandle> {
+export async function openConnection(
+  config: ConnectionConfig,
+  readOnly: boolean,
+  onProgress?: (phase: 'iam-token' | 'connecting' | 'verifying') => void
+): Promise<ConnectionHandle> {
   // An IAM token is a bearer secret; sending it in the clear would hand it to
   // anyone on the wire. Refused here as well as in the UI, so the extension is
   // never the thing that lets an unencrypted IAM connection through.
   if (config.iam && !config.ssl) {
     throw new Error('AWS IAM authentication requires SSL. Enable SSL on this connection.');
   }
-  const handle = withDriver(config.type, (driver) => build(driver, config, readOnly));
+  const handle = withDriver(config.type, (driver) => build(driver, config, readOnly, onProgress));
   // Force the default client open now; throws here if the server rejects us.
+  onProgress?.('verifying');
   await handle.listDatabases();
   return handle;
 }
 
-function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: boolean): ConnectionHandle {
+function build<C>(
+  driver: Driver<C>,
+  config: ConnectionConfig,
+  initialReadOnly: boolean,
+  onProgress?: (phase: 'iam-token' | 'connecting' | 'verifying') => void
+): ConnectionHandle {
   /**
    * One client per database. Postgres pins a connection to a single database, so
    * switching means a new client; MySQL does not need this, but sharing the shape
@@ -117,7 +127,9 @@ function build<C>(driver: Driver<C>, config: ConnectionConfig, initialReadOnly: 
     // For an IAM connection the "password" is a freshly minted token, good for
     // ~15 minutes -- so it is resolved here, per client opened, not baked into
     // `config` once at connect. A password connection uses its stored secret.
+    if (config.iam) onProgress?.('iam-token');
     const resolved = config.iam ? { ...config, password: await rdsAuthToken(config) } : config;
+    onProgress?.('connecting');
     const client = await driver.createClient(resolved, database);
     // Apply before it is cached and handed out, so a read-only connection's new
     // database is read-only from its first query -- not just the ones open when

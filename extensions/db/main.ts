@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 
 import {
+  CONNECT_PROGRESS_EVENT,
   DB_RESPONSE_EVENT,
   UPDATE_PROGRESS_EVENT,
   type CommandName,
@@ -88,7 +89,7 @@ async function establish(
   config: ConnectionConfig,
   readOnly: boolean
 ): Promise<{ connectionId: string; databases: string[]; dialect: SqlDialect; defaultSchema?: string }> {
-  const conn = await openConnection(config, readOnly);
+  const conn = await openConnection(config, readOnly, (phase) => send(CONNECT_PROGRESS_EVENT, { phase }));
   const databases = await conn.listDatabases();
 
   const connectionId = randomUUID();

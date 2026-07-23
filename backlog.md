@@ -15,8 +15,6 @@ Things that already work, but not well enough.
 
 - **Red delete button** — The delete button in the connection list should be red to signal a destructive action.
 
-- **Skeleton loading states** — Replace every "Loading…" text placeholder (table tree, query results, connection list) with pulsing skeleton rectangles shaped like the content that will load into each area.
-
 - **Per-connection session restore** — Quitting loses whatever was open, so coming
   back to a database means hunting down the same tables and rewriting the same
   queries. Launch still lands on the connections list, and connecting to a saved

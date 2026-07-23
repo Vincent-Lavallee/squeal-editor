@@ -13,6 +13,15 @@ import * as t from '../../common/tokens';
 
 const iconSvg = { flex: 'none', width: 16, height: 16 };
 
+export function connectPhaseLabel(phase: string | null): string {
+  switch (phase) {
+    case 'iam-token': return 'Authenticating with AWS…';
+    case 'connecting': return 'Opening connection…';
+    case 'verifying': return 'Verifying…';
+    default: return 'Connecting…';
+  }
+}
+
 const wsBar: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: t.GAP_SM, width: '100%', marginBottom: t.GAP_LG, padding: `${t.GAP_SM}px 10px`, border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, background: 'none', color: t.TEXT_MUTED, font: 'inherit', textAlign: 'left', cursor: 'pointer' };
 
 const labelRow: React.CSSProperties = { fontSize: t.TEXT_LABEL, textTransform: 'uppercase', letterSpacing: t.TRACKING_LABEL, color: t.TEXT_MUTED, fontWeight: 500, display: 'block', marginBottom: t.GAP_SM };
@@ -25,6 +34,7 @@ interface Props {
   workspace: Workspace;
   connections: SavedConnection[];
   connectingId: string | null;
+  connectingPhase: string | null;
   busy: boolean;
   onPick: (connection: SavedConnection) => void;
   onEdit: (connection: SavedConnection) => void;
@@ -33,7 +43,7 @@ interface Props {
   onBack: () => void;
 }
 
-export default function SavedConnectionList({ workspace, connections, connectingId, busy, onPick, onEdit, onDelete, onNew, onBack }: Props) {
+export default function SavedConnectionList({ workspace, connections, connectingId, connectingPhase, busy, onPick, onEdit, onDelete, onNew, onBack }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const WorkspaceGlyph = workspaceGlyph(workspace.icon);
@@ -72,7 +82,7 @@ export default function SavedConnectionList({ workspace, connections, connecting
                         <Badge kind="accent">{engineLabel(c.config.type)}</Badge>
                       </span>
                       <span data-testid="saved-server" style={{ overflow: 'hidden', color: t.TEXT_MUTED, fontFamily: t.MONO, fontSize: t.TEXT_BADGE, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {connectingId === c.id ? 'Connecting…' : serverLabel(c.config)}
+                        {connectingId === c.id ? connectPhaseLabel(connectingPhase) : serverLabel(c.config)}
                         {/* `hasPassword` is false for three different reasons and only
                             one of them means a prompt: an IAM row mints a token and a
                             file engine has no auth at all, so neither is ever asked. */}

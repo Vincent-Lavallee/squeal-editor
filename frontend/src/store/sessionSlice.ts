@@ -1,7 +1,7 @@
 import { createSlice, isAnyOf, type PayloadAction } from '@reduxjs/toolkit';
 import { useCallback } from 'react';
 
-import type { ConnectionConfig, Environment, ServerConfig, SqlDialect } from '../../../shared/protocol/index.ts';
+import type { ConnectProgress, ConnectionConfig, Environment, ServerConfig, SqlDialect } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { isFileBased } from '../common/db/engines.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
@@ -96,6 +96,7 @@ interface SessionState {
   order: string[];
   activeConnectionId: string | null;
   connecting: boolean;
+  connectingPhase: string | null;
   error: string | null;
 }
 
@@ -104,6 +105,7 @@ const initialState: SessionState = {
   order: [],
   activeConnectionId: null,
   connecting: false,
+  connectingPhase: null,
   error: null,
 };
 
@@ -265,6 +267,11 @@ const sessionSlice = createSlice({
         state.activeConnectionId = action.payload.connectionId;
       }
     },
+
+    /** Progress broadcast from the extension during a connection attempt. */
+    connectionProgressReceived(state, action: PayloadAction<ConnectProgress>) {
+      state.connectingPhase = action.payload.phase;
+    },
   },
   extraReducers: (builder) => {
     // Typing a server and picking a saved one differ only in how the extension
@@ -291,12 +298,14 @@ const sessionSlice = createSlice({
       })
       .addMatcher(isAnyOf(connect.pending, connectSaved.pending), (state) => {
         state.connecting = true;
+        state.connectingPhase = null;
         state.error = null;
       })
       .addMatcher(sessionOpened, (state, action) => {
         const { connectionId, savedConnectionId, config, dialect, defaultSchema, name, workspaceId, environment, readOnly } =
           action.payload;
         state.connecting = false;
+        state.connectingPhase = null;
         state.connections[connectionId] = {
           connectionId,
           savedConnectionId,
@@ -317,12 +326,13 @@ const sessionSlice = createSlice({
       })
       .addMatcher(isAnyOf(connect.rejected, connectSaved.rejected), (state, action) => {
         state.connecting = false;
+        state.connectingPhase = null;
         state.error = action.payload ?? 'Could not connect.';
       });
   },
 });
 
-export const { errorDismissed, connectionActivated } = sessionSlice.actions;
+export const { errorDismissed, connectionActivated, connectionProgressReceived } = sessionSlice.actions;
 export const sessionReducer = sessionSlice.reducer;
 
 /**
@@ -354,7 +364,7 @@ export const selectConnections = (s: RootState): OpenConnection[] =>
  */
 export function useSession() {
   const dispatch = useAppDispatch();
-  const { connecting, error, activeConnectionId } = useAppSelector((s) => s.session);
+  const { connecting, connectingPhase, error, activeConnectionId } = useAppSelector((s) => s.session);
   const active = useAppSelector(selectActiveConnection);
   const connections = useAppSelector(selectConnections);
 
@@ -373,6 +383,7 @@ export function useSession() {
     name: active?.name ?? '',
     readOnly: active?.readOnly ?? false,
     connecting,
+    connectingPhase,
     error,
     connected: activeConnectionId !== null,
     serverLabel: active ? serverLabel(active.config) : '',

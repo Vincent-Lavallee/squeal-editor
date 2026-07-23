@@ -9,6 +9,7 @@ import Button from '../../common/components/Button.tsx';
 import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import Input from '../../common/components/Input.tsx';
 import Select from '../../common/components/Select.tsx';
+import Skeleton from '../../common/components/Skeleton.tsx';
 import { useBooleanSetting } from '../../store/settingsSlice.ts';
 import * as t from '../../common/tokens';
 
@@ -252,7 +253,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
       </div>
 
       <nav style={{ flex: 1, overflowY: 'auto', padding: `${t.GAP_SM}px 6px`, display: collapsed ? 'none' : undefined }}>
-        {loading && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>Loading…</div>}
+        {loading && <TreeSkeleton />}
         {error && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.RED_TEXT }}>{error}</div>}
         {sorted?.length === 0 && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No tables</div>}
         {filteredEverythingOut && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No matches</div>}
@@ -294,7 +295,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
 
 function Columns({ columns, indented }: { columns: ReturnType<ReturnType<typeof useExplorer>['columnsFor']>; indented: boolean }) {
   const pad = indented ? 42 : 30;
-  if (columns == null) return <div data-testid="tree-note" style={{ padding: `5px 8px 5px ${pad}px`, fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>Loading…</div>;
+  if (columns == null) return <ColumnsSkeleton pad={pad} />;
   if (columns.length === 0) return <div data-testid="tree-note" style={{ padding: `5px 8px 5px ${pad}px`, fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No columns</div>;
 
   return (
@@ -308,5 +309,31 @@ function Columns({ columns, indented }: { columns: ReturnType<ReturnType<typeof 
         </li>
       ))}
     </ul>
+  );
+}
+
+function TreeSkeleton() {
+  return (
+    <div data-testid="tree-note">
+      {[0.55, 0.7, 0.45, 0.65, 0.5, 0.75, 0.4, 0.6].map((w, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_DENSE, padding: '0 6px' }}>
+          <Skeleton width={16} height={16} borderRadius={3} style={{ flex: 'none' }} />
+          <Skeleton width={`${w * 100}%`} height={12} style={{ maxWidth: 180 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ColumnsSkeleton({ pad }: { pad: number }) {
+  return (
+    <div data-testid="tree-note">
+      {[0.55, 0.7, 0.4, 0.6].map((w, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_DENSE, padding: `0 6px 0 ${pad}px` }}>
+          <Skeleton width={100 + w * 60} height={12} />
+          <Skeleton width={50 + w * 30} height={12} style={{ marginLeft: 'auto' }} />
+        </div>
+      ))}
+    </div>
   );
 }

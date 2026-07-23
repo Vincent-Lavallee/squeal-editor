@@ -7,6 +7,7 @@ import Button from '../../common/components/Button.tsx';
 import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import FilterBar from './FilterBar.tsx';
 import Note from '../../common/components/Note.tsx';
+import Skeleton from '../../common/components/Skeleton.tsx';
 import * as t from '../../common/tokens';
 
 const iconSvg = { flex: 'none', width: 16, height: 16 };
@@ -36,7 +37,7 @@ export default function ResultsTable() {
   // grid beneath is showing -- and a rejected filter is exactly the case where
   // the bar has to still be there to be corrected. It draws nothing on an
   // editor tab, so a query's result is unchanged.
-  if (running) return <><FilterBar /><div style={emptyCtr}><Note kind="muted">Running…</Note></div></>;
+  if (running) return <><FilterBar /><GridSkeleton /></>;
   if (error) return (
     <>
       <FilterBar />
@@ -238,5 +239,50 @@ function CellEditor({ initial, canNull, onCommit, onNull, onCancel }: {
           onMouseDown={(e) => { e.preventDefault(); onNull(); }}>∅</button>
       )}
     </span>
+  );
+}
+
+const COL_WIDTHS = [120, 180, 140, 100];
+
+function GridSkeleton() {
+  const barH = 32;
+  const rows = 10;
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `0 ${t.GAP_LG}px`, height: barH, borderBottom: `1px solid ${t.BORDER}`, fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>
+        <Skeleton width={100} height={12} />
+        <Skeleton width={60} height={12} style={{ marginLeft: 'auto' }} />
+      </div>
+      <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+        <table className="grid" style={{ borderCollapse: 'separate', borderSpacing: 0, fontFamily: t.MONO, fontSize: t.TEXT_BODY, whiteSpace: 'nowrap' }}>
+          <thead>
+            <tr>
+              <th className="gutter" style={{ position: 'sticky', left: 0, zIndex: 2, background: t.BG, color: t.TEXT_FAINT, textAlign: 'right', userSelect: 'none', fontSize: t.TEXT_BADGE, height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}`, top: 0 }}>
+                <Skeleton width={28} height={12} style={{ marginLeft: 'auto' }} />
+              </th>
+              {COL_WIDTHS.map((w, i) => (
+                <th key={i} style={{ position: 'sticky', top: 0, zIndex: 1, background: t.BG, height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}`, textAlign: 'left' }}>
+                  <Skeleton width={w * 0.7} height={12} />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: rows }).map((_, r) => (
+              <tr key={r}>
+                <td className="gutter" style={{ position: 'sticky', left: 0, zIndex: 1, background: t.BG, color: t.TEXT_FAINT, textAlign: 'right', userSelect: 'none', fontSize: t.TEXT_BADGE, height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}` }}>
+                  <Skeleton width={28} height={12} style={{ marginLeft: 'auto' }} />
+                </td>
+                {COL_WIDTHS.map((w, c) => (
+                  <td key={c} style={{ height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}`, textAlign: 'left', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <Skeleton width={w * (0.5 + ((r * 3 + c) % 7) * 0.07)} height={12} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

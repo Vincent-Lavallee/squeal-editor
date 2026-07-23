@@ -2,9 +2,10 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 
-import { UPDATE_PROGRESS_EVENT, type UpdateProgress } from '../../shared/protocol/index.ts';
+import { CONNECT_PROGRESS_EVENT, UPDATE_PROGRESS_EVENT, type ConnectProgress, type UpdateProgress } from '../../shared/protocol/index.ts';
 import App from './App.tsx';
 import { store } from './store/index.ts';
+import { connectionProgressReceived } from './store/sessionSlice.ts';
 import { loadSettings } from './store/settingsSlice.ts';
 import { progressReceived } from './store/updaterSlice.ts';
 import { initBridge } from './common/bridge/bridge.ts';
@@ -22,6 +23,11 @@ void store.dispatch(loadSettings());
 // so this is where the extension's out-of-band event meets it.
 void Neutralino.events.on(UPDATE_PROGRESS_EVENT, (evt: CustomEvent) => {
   store.dispatch(progressReceived(evt.detail as UpdateProgress));
+});
+
+// Connection progress is the same fire-and-forget pattern as update progress.
+void Neutralino.events.on(CONNECT_PROGRESS_EVENT, (evt: CustomEvent) => {
+  store.dispatch(connectionProgressReceived(evt.detail as ConnectProgress));
 });
 
 const root = document.getElementById('root');

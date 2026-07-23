@@ -20,3 +20,9 @@ export const DB_RESPONSE_EVENT = 'db.response';
  * this is only the bar filling in between.
  */
 export const UPDATE_PROGRESS_EVENT = 'update.progress';
+
+/** Broadcast the extension emits during `db.connect` / `db.saved.connect`. */
+export type ConnectProgress = {
+  phase: 'iam-token' | 'connecting' | 'verifying';
+};
+export const CONNECT_PROGRESS_EVENT = 'connect.progress';
