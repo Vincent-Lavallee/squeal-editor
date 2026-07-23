@@ -6,6 +6,14 @@ import { disconnect } from './sessionSlice.ts';
 import { tabsClosed } from './tabsSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
+const queryControllers = new Map<string, AbortController>();
+
+/** Abort a running query on `tabId` so the UI can move on immediately. */
+export function cancelQuery(tabId: string): void {
+  queryControllers.get(tabId)?.abort();
+  queryControllers.delete(tabId);
+}
+
 /**
  * Which table the grid is paging through, and where in it.
  *
@@ -45,6 +53,8 @@ export interface ResultsState {
   browse: BrowseState | null;
   error: string | null;
   running: boolean;
+  /** `Date.now()` when the query was dispatched, so the UI can show elapsed time. */
+  startedAt: number | null;
   /**
    * The columns of the last page this tab browsed *successfully*, kept when a
    * later browse fails.
@@ -70,7 +80,7 @@ type ResultsByTab = Record<string, ResultsState>;
 
 const initialState: ResultsByTab = {};
 
-const blank = (): ResultsState => ({ result: null, browse: null, error: null, running: false, columns: [] });
+const blank = (): ResultsState => ({ result: null, browse: null, error: null, running: false, startedAt: null, columns: [] });
 
 /**
  * Reads its target off the state rather than taking it as an argument. That is
@@ -94,14 +104,18 @@ export const runQuery = createAppThunk(
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
     if (!tab) return rejectWithValue('That tab is gone.');
 
+    const controller = new AbortController();
+    queryControllers.set(arg.tabId, controller);
     try {
       return await call('db.query', {
         connectionId: tab.connectionId,
         database: tab.database ?? undefined,
         sql: arg.sql.trim(),
-      });
+      }, 60_000, controller.signal);
     } catch (err) {
       return rejectWithValue(errorMessage(err));
+    } finally {
+      if (queryControllers.get(arg.tabId) === controller) queryControllers.delete(arg.tabId);
     }
   },
   { condition: (arg) => arg.sql.trim().length > 0 }
@@ -138,6 +152,8 @@ export const browseTable = createAppThunk(
     if (!tab) return rejectWithValue('That tab is gone.');
     if (!tab.database) return rejectWithValue('Select a database first.');
 
+    const controller = new AbortController();
+    queryControllers.set(arg.tabId, controller);
     try {
       const page = await call('db.browse', {
         // The tab's, not the session's -- see `runQuery`. Paging a grid on a
@@ -152,13 +168,15 @@ export const browseTable = createAppThunk(
         schema: tab.schema,
         offset: arg.offset,
         filter: arg.filter ?? undefined,
-      });
+      }, 60_000, controller.signal);
       // The filter is echoed into the payload rather than read back off
       // `meta.arg` in the reducer, so what the page *was fetched with* and what
       // came back are one fact arriving together.
       return { database: tab.database, table: arg.table, filter: arg.filter ?? null, page };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
+    } finally {
+      if (queryControllers.get(arg.tabId) === controller) queryControllers.delete(arg.tabId);
     }
   }
 );
@@ -236,6 +254,7 @@ const resultsSlice = createSlice({
         // the tab id has to be in the arg: `pending` has no payload to carry one.
         const s = (state[action.meta.arg.tabId] ??= blank());
         s.running = true;
+        s.startedAt = Date.now();
         s.error = null;
       })
       .addCase(runQuery.fulfilled, (state, action) => {
@@ -245,6 +264,7 @@ const resultsSlice = createSlice({
         // life of the session, and nothing would ever collect it again.
         if (!s) return;
         s.running = false;
+        s.startedAt = null;
         s.result = action.payload;
         // The grid now holds SQL the user wrote, which has no page N to step to.
         s.browse = null;
@@ -253,6 +273,7 @@ const resultsSlice = createSlice({
         const s = state[action.meta.arg.tabId];
         if (!s) return;
         s.running = false;
+        s.startedAt = null;
         s.result = null;
         s.browse = null;
         s.error = action.payload ?? 'The query failed.';
@@ -260,6 +281,7 @@ const resultsSlice = createSlice({
       .addCase(browseTable.pending, (state, action) => {
         const s = (state[action.meta.arg.tabId] ??= blank());
         s.running = true;
+        s.startedAt = Date.now();
         s.error = null;
       })
       .addCase(browseTable.fulfilled, (state, action) => {
@@ -267,6 +289,7 @@ const resultsSlice = createSlice({
         if (!s) return;
         const { database, table, filter, page } = action.payload;
         s.running = false;
+        s.startedAt = null;
         s.result = page.result;
         s.browse = {
           database,
@@ -286,6 +309,7 @@ const resultsSlice = createSlice({
         const s = state[action.meta.arg.tabId];
         if (!s) return;
         s.running = false;
+        s.startedAt = null;
         s.result = null;
         // A failed page leaves nothing to page from, so the pager goes with it.
         // `columns` deliberately stays: the filter bar survives the failure and

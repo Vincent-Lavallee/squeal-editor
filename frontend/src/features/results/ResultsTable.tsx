@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { CellValue } from '../../../../shared/protocol/index.ts';
 import { CopyIcon, NextPageIcon, PrevPageIcon } from '../../common/icons/icons.ts';
+import { useAppSelector } from '../../store/hooks.ts';
+import { selectActiveTab } from '../../store/tabsSlice.ts';
 import { useResults } from './useResults.ts';
+import { cancelQuery } from '../../store/resultsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import FilterBar from './FilterBar.tsx';
@@ -22,14 +25,24 @@ const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
 
 export default function ResultsTable() {
-  const { result, browse, error, running, next, prev, editable, readOnlyReason, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, dirtyCount, saving, saveError, filterActive, clearFilter } = useResults();
+  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, dirtyCount, saving, saveError, filterActive, clearFilter } = useResults();
+  const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const anchor = useRef<number | null>(null);
   const [editing, setEditing] = useState<Cell | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => { setSelected(new Set()); setEditing(null); setMenu(null); anchor.current = null; }, [result]);
+
+  useEffect(() => {
+    if (!running || !startedAt) { setElapsed(0); return; }
+    const tick = () => setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [running, startedAt]);
 
   const emptyCtr: React.CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 0, padding: t.GAP_XL, textAlign: 'center' };
 
@@ -37,7 +50,20 @@ export default function ResultsTable() {
   // grid beneath is showing -- and a rejected filter is exactly the case where
   // the bar has to still be there to be corrected. It draws nothing on an
   // editor tab, so a query's result is unchanged.
-  if (running) return <><FilterBar /><GridSkeleton /></>;
+  if (running) return (
+    <>
+      <FilterBar />
+      <div data-testid="results-bar" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `0 ${t.GAP_LG}px`, height: 32, borderBottom: `1px solid ${t.BORDER}`, fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>
+        <span>Running for {elapsed}s…</span>
+        {activeTabId && (
+          <Button variant="ghost" style={{ height: 24, padding: '0 8px', marginLeft: 'auto' }} onClick={() => cancelQuery(activeTabId)}>
+            Cancel
+          </Button>
+        )}
+      </div>
+      <GridSkeleton />
+    </>
+  );
   if (error) return (
     <>
       <FilterBar />

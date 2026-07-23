@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { environmentLabel } from '../../common/db/environments.ts';
 import { engineLabel } from '../../common/db/engines.ts';
 import { ReadOnlyIcon, WritableIcon } from '../../common/icons/icons.ts';
+import { useAppSelector } from '../../store/hooks.ts';
+import { selectActiveTab } from '../../store/tabsSlice.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import Badge from '../../common/components/Badge.tsx';
 import * as t from '../../common/tokens';
@@ -14,6 +16,19 @@ export default function StatusBar() {
   const [confirming, setConfirming] = useState(false);
   const [lockHovered, setLockHovered] = useState(false);
   const [discHovered, setDiscHovered] = useState(false);
+  const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
+  const queryRunning = useAppSelector((s) => (activeTabId ? s.results[activeTabId]?.running : false) ?? false);
+  const queryStartedAt = useAppSelector((s) => (activeTabId ? s.results[activeTabId]?.startedAt : null) ?? null);
+  const [queryElapsed, setQueryElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!queryRunning || !queryStartedAt) { setQueryElapsed(0); return; }
+    const tick = () => setQueryElapsed(Math.floor((Date.now() - queryStartedAt) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [queryRunning, queryStartedAt]);
+
   if (!connectionId || !environment) return null;
 
   function toggle(): void {
@@ -32,6 +47,11 @@ export default function StatusBar() {
       </button>
       <span data-testid="statusbar-env" style={{ display: 'flex', alignItems: 'center', height: '100%', padding: `0 ${t.GAP}px`, borderLeft: `1px solid ${t.BORDER}`, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE }}
         title="The environment this connection is in">{environmentLabel(environment)}</span>
+      {queryRunning && (
+        <span style={{ display: 'flex', alignItems: 'center', height: '100%', padding: `0 ${t.GAP}px`, borderLeft: `1px solid ${t.BORDER}`, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE }}>
+          Query running for {queryElapsed}s…
+        </span>
+      )}
       <div style={{ flex: 1 }} />
       {config && <Badge kind="neutral" style={{ marginRight: t.GAP_XS }}>{engineLabel(config.type)}</Badge>}
       <button type="button" data-testid="statusbar-lock"

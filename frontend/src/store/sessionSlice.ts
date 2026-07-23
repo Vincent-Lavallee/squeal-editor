@@ -8,6 +8,14 @@ import { useAppDispatch, useAppSelector } from './hooks.ts';
 import type { RootState } from './index.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
+let connectController: AbortController | null = null;
+
+/** Abort the connection attempt in flight so the UI can move on immediately. */
+export function cancelConnect(): void {
+  connectController?.abort();
+  connectController = null;
+}
+
 /**
  * One open connection: a server we are holding, and how it reads.
  *
@@ -142,8 +150,10 @@ export const connect = createAppThunk(
     },
     { rejectWithValue }
   ): Promise<Opened | ReturnType<typeof rejectWithValue>> => {
+    const controller = new AbortController();
+    connectController = controller;
     try {
-      const res = await call('db.connect', { config: arg.config, readOnly: arg.readOnly });
+      const res = await call('db.connect', { config: arg.config, readOnly: arg.readOnly }, 60_000, controller.signal);
       const { password: _password, ...server } = arg.config;
       return {
         connectionId: res.connectionId,
@@ -159,6 +169,8 @@ export const connect = createAppThunk(
       };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
+    } finally {
+      if (connectController === controller) connectController = null;
     }
   }
 );
@@ -173,8 +185,10 @@ export const connectSaved = createAppThunk(
     arg: { id: string; password?: string },
     { rejectWithValue }
   ): Promise<Opened | ReturnType<typeof rejectWithValue>> => {
+    const controller = new AbortController();
+    connectController = controller;
     try {
-      const res = await call('db.saved.connect', arg);
+      const res = await call('db.saved.connect', arg, 60_000, controller.signal);
       return {
         connectionId: res.connectionId,
         savedConnectionId: arg.id,
@@ -189,6 +203,8 @@ export const connectSaved = createAppThunk(
       };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
+    } finally {
+      if (connectController === controller) connectController = null;
     }
   }
 );

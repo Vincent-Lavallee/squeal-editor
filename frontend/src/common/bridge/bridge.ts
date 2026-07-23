@@ -79,22 +79,35 @@ export function initBridge(): void {
 export async function call<K extends CommandName>(
   event: K,
   payload: CommandReq<K>,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  signal?: AbortSignal
 ): Promise<CommandRes<K>> {
   await extensionReady;
   const reqId = nextReqId++;
 
   return new Promise<CommandRes<K>>((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const cleanup = () => {
       pending.delete(reqId);
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    const onAbort = () => {
+      cleanup();
+      reject(new Error('Cancelled.'));
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    const timer = setTimeout(() => {
+      cleanup();
       reject(new Error('The database did not respond in time.'));
     }, timeoutMs);
 
     pending.set(reqId, { resolve: resolve as Pending['resolve'], reject, timer });
 
     Neutralino.extensions.dispatch(EXT_ID, event, { ...payload, reqId }).catch((err: unknown) => {
-      pending.delete(reqId);
-      clearTimeout(timer);
+      cleanup();
       reject(err instanceof Error ? err : new Error(String(err)));
     });
   });

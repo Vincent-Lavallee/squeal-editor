@@ -47,7 +47,7 @@ export function useResults() {
    * edit away instead of a re-open.
    */
   const gridTable = activeTab?.kind === 'grid' ? (activeTab.table ?? null) : null;
-  const { result, browse, error, running, columns } = useAppSelector(
+  const { result, browse, error, running, startedAt, columns } = useAppSelector(
     (s) => (activeTabId ? s.results[activeTabId] : undefined) ?? EMPTY
   );
 
@@ -222,6 +222,7 @@ export function useResults() {
     browse,
     error,
     running,
+    startedAt,
     run,
     browseIn,
     // Editing surface. `pending` is what the grid reads its dirty state from.
@@ -372,4 +373,4 @@ function filterKey(filter: TableFilter | null): string {
  * reference, so returning a fresh object here would re-render on every action
  * the store ever sees.
  */
-const EMPTY = Object.freeze({ result: null, browse: null, error: null, running: false, columns: [] });
+const EMPTY = Object.freeze({ result: null, browse: null, error: null, running: false, startedAt: null, columns: [] });

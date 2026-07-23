@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import type { PasswordUpdate, SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
-import { useSession } from '../../store/sessionSlice.ts';
+import { cancelConnect, useSession } from '../../store/sessionSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import Callout from '../../common/components/Callout.tsx';
 import Skeleton from '../../common/components/Skeleton.tsx';
@@ -131,6 +131,12 @@ export default function ConnectScreen({ onCancel }: Props) {
         )}
 
         {renderScreen()}
+
+        {session.connecting && (
+          <Button variant="ghost" style={{ justifyContent: 'center', width: '100%', marginTop: t.GAP_LG }} onClick={() => { cancelConnect(); go(null); }}>
+            Cancel
+          </Button>
+        )}
 
         {error && <div style={{ marginTop: t.GAP_LG }}><Callout>{error}</Callout></div>}
       </div>
