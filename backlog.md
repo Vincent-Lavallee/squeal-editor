@@ -165,6 +165,14 @@ Things that do not exist yet.
 
 - **Saved queries** — Save the current editor content as a named query with Ctrl+S, then reopen any saved query into a new tab from a button at the right of the tab bar. Queries are global, not scoped to any connection.
 
+- **Split the editor** — Working two queries means constantly switching tabs and
+  losing your place, whether comparing two results, referencing one query while
+  writing another, or copying between them. Let a tab be dragged to the side to
+  dock it into a second pane beside the current one — two tabs of the same
+  connection, each with its own editor and result grid. Session-only state, same
+  as today's sidebar/results resizing; closing either pane's tab collapses back
+  to a single view.
+
 - **Rename a tab** — Tabs are named "Query 1", "Query 2" and within minutes
   they are indistinguishable — you have to click into each one to find the query
   you want. Double-click the tab label to edit it inline, the way browser tabs and
