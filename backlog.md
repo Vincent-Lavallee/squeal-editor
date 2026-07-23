@@ -15,6 +15,25 @@ Things that already work, but not well enough.
 
 - **Red delete button** — The delete button in the connection list should be red to signal a destructive action.
 
+- **Database selector polish** — The font is 13px while every other chrome label
+  sits at 12px, so the picker reads a half-step too loud. Drop it to match. Also,
+  there is no way to copy the database name without selecting the text in a query
+  by hand — right-click the selector to copy it to the clipboard, with a brief
+  hint that the name was copied.
+
+- **Per-connection color** — Connections have no color of their own, so every
+  connection in a workspace looks identical in the rail — and people work with
+  connections, not workspaces. Give each saved connection its own color, defaulting
+  to its workspace's color but overridable in the connection form. The rail chips
+  use the connection color; the workspace heading stays in the regular text color.
+
+- **Edit results from manual SQL** — Results are only editable when browsing a
+  table opened from the tree, because the system needs a table to write back to
+  and key columns to target. Typing `SELECT * FROM some_table` by hand gives the
+  same result with none of the editing. Detect simple single-table `SELECT *`
+  queries — parse the table name, fetch the key columns, and make the grid
+  editable exactly as if the table had been opened from the explorer.
+
 - **Per-connection session restore** — Quitting loses whatever was open, so coming
   back to a database means hunting down the same tables and rewriting the same
   queries. Launch still lands on the connections list, and connecting to a saved
@@ -27,6 +46,37 @@ Things that already work, but not well enough.
 ## Bugs
 
 Things that are wrong.
+
+- **Windows icon is too small** — The icon SVG was scaled to 80% to satisfy macOS
+  Dock compositing, but Windows shows the icon at native size and the padding
+  makes it read as shrunken in the taskbar. Restore the full-bleed SVG and move
+  the 80% downscale into the macOS packaging script that already generates the
+  .icns, so each platform gets the artwork it needs from the same source.
+
+- **Editing an open connection** — The edit form for a saved connection is
+  reachable even while that connection is open, but saving changes to a live
+  connection has no effect until reconnect — the edit silently diverges from
+  what is running. Block the edit form (or warn that the connection must be
+  closed first) when the connection is currently active.
+
+- **Staging environment should be QA** — The environment list offers Staging,
+  but the standard name for the pre-production tier is QA. Replace the
+  `staging` value with `qa`, migrate existing connections set to staging
+  automatically, and update the label and abbreviation everywhere.
+
+- **Unbounded table listing** — `listTables` fetches every table in the database
+  with no limit, so a database with thousands of tables is slow to query,
+  renders an unusable tree, and chokes autocomplete. Cap the result at a fixed
+  limit (e.g., 500) with a note in the tree that more exist — the filter bar
+  still searches the full set on the server side. Autocomplete respects the
+  same cap.
+
+- **Configurable environments** — The four environments are hardcoded, so every
+  team is stuck with local/dev/staging/production even when their pipeline uses
+  different names. Add a screen under the File menu to add and remove
+  environments — the four defaults ship with the app and can be removed.
+  Existing connections keep their environment even if it is later removed from
+  the list. Stored in the extension's SQLite store, like workspaces.
 
 ## Features
 
@@ -115,6 +165,12 @@ Things that do not exist yet.
 
 - **Saved queries** — Save the current editor content as a named query with Ctrl+S, then reopen any saved query into a new tab from a button at the right of the tab bar. Queries are global, not scoped to any connection.
 
+- **Rename a tab** — Tabs are named "Query 1", "Query 2" and within minutes
+  they are indistinguishable — you have to click into each one to find the query
+  you want. Double-click the tab label to edit it inline, the way browser tabs and
+  editor tabs work everywhere. The name is a display label only — tabs are not
+  backed by files — so renaming never touches disk.
+
 - **Command palette** — Every action is reachable exactly one way: a menu, a
   button, or a keybinding you already have to know. Put the common ones behind a
   palette — run, format, switch connection or database, toggle read-only,
@@ -134,6 +190,13 @@ Things that do not exist yet.
   destination on disk and a bound on how large it may grow. Nothing a database
   returned may appear in it: a log holding query results is a copy of the data
   outside the encryption the store exists to provide.
+
+- **Linux AppImage release** — Linux builds ship as raw zips with no desktop
+  integration — no icon in the launcher, no .desktop entry, nothing. Wrap the
+  Neutralino binary output in an AppImage with a .desktop file and the app icon,
+  so Linux users get the same download-and-run experience as the other platforms.
+  AppImage only for now; deb and other formats can follow once the format is
+  proven to work.
 
 ## Tech debts
 
