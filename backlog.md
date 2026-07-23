@@ -64,6 +64,13 @@ Things that are wrong.
   `staging` value with `qa`, migrate existing connections set to staging
   automatically, and update the label and abbreviation everywhere.
 
+- **Enter discards typed-confirmation modals** — In both the read-only-toggle
+  confirm and the drop table/view confirm, pressing Enter after typing the
+  confirmation text dismisses the modal instead of confirming — the Cancel
+  button sits before the confirm button with no explicit type, so the browser's
+  implicit form submission activates it first. Give Cancel an explicit button
+  type in both modals so Enter reaches the real submit button.
+
 - **Unbounded table listing** — `listTables` fetches every table in the database
   with no limit, so a database with thousands of tables is slow to query,
   renders an unusable tree, and chokes autocomplete. Cap the result at a fixed
