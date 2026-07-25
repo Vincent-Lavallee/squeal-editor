@@ -270,6 +270,26 @@ identifies the row, and a primary key forbids NULL outright), so the ∅ button 
 the menu item are absent there. Copying is a webview clipboard write
 (`Neutralino.clipboard`), crossing nothing — the same as the tree's *Copy name*.
 
+**"Copy as SQL" builds an `INSERT INTO` client-side, beside "Copy row" in the
+same context menu.** It reads `result.rows`/`result.columns` the same way
+`copyRows` builds its TSV — no round trip, and every value written exactly as
+the server sent it, never through JS `Date` or `Number`; `NULL` is the one
+value that is never a literal. Table, schema and column names are quoted per
+engine through `quoteIdentifier` (`common/db/sql.ts`), the module `FilterBar`
+also reads from now — a second copy of that function was the alternative and
+would have been the two-tables-that-disagree outcome the filter bar's own
+comment already warns about. **Gated on `browse !== null`, the same boundary
+editing and FK navigation draw**: the table name an INSERT needs is the one a
+browsed grid carries, and a hand-typed query's result has none — exposed as
+`canCopyAsSql` since it needs none of `editable`'s read-only/key-column
+reasoning.
+
+**The row gutter opens the same context menu a data cell does.** `Menu.col` is
+`number | null` rather than always a real column — right-clicking the row
+number carries no cell to target, so *Set NULL* (which needs one) leaves
+itself out while *Copy row*, *Copy as SQL* and *Delete row* — all row-level —
+still show.
+
 The browse page also carries each column's type (`columnInfo`, beside
 `keyColumns`), so the grid header shows the type next to the name the way the tree
 does when a table is expanded — one more fact travelling with the page that needs

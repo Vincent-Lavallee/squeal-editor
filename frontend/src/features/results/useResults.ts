@@ -6,9 +6,11 @@ import type {
   FilterOperator,
   RowDelete,
   RowEdit,
+  SqlDialect,
   TableFilter,
 } from '../../../../shared/protocol/index.ts';
 import { relationLabel } from '../../common/db/relation.ts';
+import { quoteIdentifier, sqlLiteral } from '../../common/db/sql.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { browseTable, runQuery, saveEdits } from '../../store/resultsSlice.ts';
 import { useSession } from '../../store/sessionSlice.ts';
@@ -261,6 +263,27 @@ export function useResults() {
     [result]
   );
 
+  /**
+   * Copy rows as an `INSERT INTO` statement, built client-side from
+   * `result.rows` the same way `copyRows` builds its TSV -- no round trip, and
+   * every value written exactly as the server sent it, never through JS `Date`
+   * or `Number`. Table and column names are quoted per engine, the same call
+   * the filter bar already makes (`quoteIdentifier`).
+   *
+   * Gated on `browse`, the same boundary editing and FK navigation already
+   * draw: the table name an INSERT needs is the one a browsed grid carries and
+   * a hand-typed query's result does not.
+   */
+  const copyRowsAsSql = useCallback(
+    (rowIndices: number[]) => {
+      if (!result || !browse || rowIndices.length === 0) return;
+      const rows = rowIndices.map((r) => result.rows[r] ?? []);
+      const sql = insertStatement(browse.table, activeTab?.schema, result.columns, rows, dialect);
+      void Neutralino.clipboard.writeText(sql);
+    },
+    [result, browse, activeTab, dialect]
+  );
+
   return {
     result,
     browse,
@@ -295,6 +318,11 @@ export function useResults() {
     discard,
     save,
     copyRows,
+    copyRowsAsSql,
+    // Same boundary `editable` draws around `browse`, exposed on its own
+    // because copying as SQL needs none of `editable`'s read-only/key-column
+    // reasoning -- only that a table name exists to build the statement from.
+    canCopyAsSql: browse !== null,
     dirtyCount,
     saving: (activeTabId && view.saving[activeTabId]) || false,
     saveError: (activeTabId && view.saveError[activeTabId]) || null,
@@ -337,6 +365,34 @@ export function useResults() {
     applyFilter,
     clearFilter,
   };
+}
+
+/**
+ * Renders selected rows as one multi-row `INSERT INTO`, quoted per engine.
+ *
+ * Values are quoted as string literals unconditionally, the same call
+ * `conditionsToWhere` in `FilterBar.tsx` already makes for a filter's typed
+ * values: an unqualified string literal is coerced to whatever type the
+ * target column turns out to be, on every engine this app speaks, so there is
+ * no "needs it or doesn't" judgment to get wrong. `NULL` is the one value that
+ * is never a literal -- writing it quoted would insert the four-character
+ * string instead of the absence of one.
+ */
+function insertStatement(
+  table: string,
+  schema: string | undefined,
+  columns: string[],
+  rows: CellValue[][],
+  dialect: SqlDialect
+): string {
+  const qualifiedTable = schema
+    ? `${quoteIdentifier(schema, dialect)}.${quoteIdentifier(table, dialect)}`
+    : quoteIdentifier(table, dialect);
+  const columnList = columns.map((c) => quoteIdentifier(c, dialect)).join(', ');
+  const valueList = rows
+    .map((row) => `(${row.map((cell) => (cell === null ? 'NULL' : sqlLiteral(String(cell)))).join(', ')})`)
+    .join(',\n');
+  return `INSERT INTO ${qualifiedTable} (${columnList}) VALUES\n${valueList};`;
 }
 
 /** The two operators that compare against nothing, so a value is not part of them. */

@@ -215,17 +215,6 @@ Things that do not exist yet.
   arrangement is not remembered — it lays out fresh each time the diagram is
   opened.
 
-- **Copy a row as SQL** — Recreating a row elsewhere means retyping an INSERT
-  by hand, because the existing "Copy row" / "Copy N rows" only writes
-  tab-separated text. Add "Copy as SQL" beside it in the same context menu,
-  building an `INSERT INTO` statement client-side from the selected rows —
-  consistent with how "Copy row" already builds its text from `result.rows`
-  without a round trip, since values arrive from the server pre-formatted and
-  never pass through JS `Date` or `Number` — quoted per engine the same way
-  the filter bar already quotes. Only available for tables opened by browsing
-  from the tree, the same boundary as editing and FK navigation, since the
-  table name an INSERT needs isn't known for a hand-typed query.
-
 - **Linux AppImage release** — Linux builds ship as raw zips with no desktop
   integration — no icon in the launcher, no .desktop entry, nothing. Wrap the
   Neutralino binary output in an AppImage with a .desktop file and the app icon,

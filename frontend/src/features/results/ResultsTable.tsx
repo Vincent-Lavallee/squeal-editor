@@ -16,7 +16,10 @@ import * as t from '../../common/tokens';
 const iconSvg = { flex: 'none', width: 16, height: 16 };
 
 interface Cell { row: number; col: number; }
-interface Menu extends Cell { x: number; y: number; }
+// `col` is null when the menu was opened from the row gutter rather than a
+// cell -- there is no column to target, so column-specific items (Set NULL)
+// leave themselves out rather than guessing one.
+interface Menu { row: number; col: number | null; x: number; y: number; }
 
 const gridTable: React.CSSProperties = { borderCollapse: 'separate', borderSpacing: 0, fontFamily: t.MONO, fontSize: t.TEXT_BODY, whiteSpace: 'nowrap' };
 const cellBase: React.CSSProperties = { height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}`, textAlign: 'left', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis' };
@@ -25,7 +28,7 @@ const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
 
 export default function ResultsTable() {
-  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey } = useResults();
+  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey } = useResults();
   const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -159,7 +162,7 @@ export default function ResultsTable() {
     else if (selectedCell && e.key === 'ArrowRight') { moveCell(0, 1); e.preventDefault(); }
   };
 
-  const openMenu = (r: number, c: number) => (e: React.MouseEvent) => {
+  const openMenu = (r: number, c: number | null) => (e: React.MouseEvent) => {
     e.preventDefault();
     setSelectedCell(null);
     if (!selected.has(r)) { setSelected(new Set([r])); anchor.current = r; }
@@ -169,8 +172,9 @@ export default function ResultsTable() {
   const menuItems = (m: Menu): MenuItem[] => {
     const rows = selected.size > 0 ? [...selected].sort((a, b) => a - b) : [m.row];
     const items: MenuItem[] = [{ label: rows.length > 1 ? `Copy ${rows.length} rows` : 'Copy row', onSelect: () => copyRows(rows) }];
+    if (canCopyAsSql) items.push({ label: 'Copy as SQL', onSelect: () => copyRowsAsSql(rows) });
     if (editable) {
-      items.push({ label: 'Set NULL', disabled: isDeleted(m.row) || isKeyCol(m.col), onSelect: () => setNull(m.row, m.col) });
+      if (m.col !== null) items.push({ label: 'Set NULL', disabled: isDeleted(m.row) || isKeyCol(m.col), onSelect: () => setNull(m.row, m.col!) });
       items.push({ label: isDeleted(m.row) ? 'Keep row' : 'Delete row', danger: !isDeleted(m.row), onSelect: () => toggleDelete(m.row) });
     }
     return items;
@@ -243,7 +247,7 @@ export default function ResultsTable() {
               return (
                 <tr key={r} className={rowCls}>
                   <td className="gutter" style={{ ...gutterStyle, ...(sel ? { cursor: 'pointer' } : {}) }}
-                    onClick={(e) => selectRow(r, e)} title="Click to select the row">{firstRow + r}</td>
+                    onClick={(e) => selectRow(r, e)} onContextMenu={openMenu(r, null)} title="Click to select the row">{firstRow + r}</td>
                   {row.map((_cell, c) => {
                     const isEditing = editing?.row === r && editing.col === c;
                     const isCellSelected = selectedCell?.row === r && selectedCell.col === c;

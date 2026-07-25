@@ -210,6 +210,14 @@ const gridCell = (r: number, c: number) =>
   `document.querySelectorAll('.grid tbody tr')[${r}].querySelectorAll('td:not(.gutter)')[${c}]`;
 /** Double-click an element expression -- how a cell opens its editor. */
 const dblClick = (expr: string) => `${expr}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); true;`;
+/** Right-click the row-number gutter, the other way into the row's context menu. */
+const rightClickGutter = (r: number) => `(() => {
+  const el = document.querySelectorAll('.grid tbody tr')[${r}].querySelector('.gutter');
+  const rect = el.getBoundingClientRect();
+  el.dispatchEvent(new MouseEvent('contextmenu',
+    { bubbles: true, cancelable: true, clientX: rect.left + 5, clientY: rect.top + 5 }));
+  return true;
+})()`;
 /** A save-bar action button by its trimmed text (Save / Discard). */
 const saveAction = (label: 'Save' | 'Discard') =>
   `[...document.querySelectorAll('[data-testid="results-save-actions"] button')].find(e => e.textContent.trim() === ${JSON.stringify(label)})`;
@@ -1019,6 +1027,39 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // Two rows, columns tab-separated -- label then weight.
       expect(clip.split('\n')).toHaveLength(2);
       expect(clip).toContain('\t');
+
+      await app.evaluate(closeTab('tags'));
+      await Bun.sleep(300);
+    });
+
+    test('copies a row as an INSERT statement, reachable from a cell or the row gutter', async () => {
+      await app.evaluate(clickTable('tags'));
+      await Bun.sleep(1500);
+
+      // The weight column is mutated (and left mutated) by the save test above,
+      // so the row is read back rather than assuming a literal survives a run.
+      const label = await app.evaluate<string>(`${gridCell(0, 0)}.textContent`);
+      const weight = await app.evaluate<string>(`${gridCell(0, 1)}.textContent`);
+
+      // The row gutter opens the same menu a data cell does, but with no cell
+      // in context -- "Set NULL" targets a column and leaves itself out.
+      await app.evaluate(rightClickGutter(0));
+      await Bun.sleep(200);
+      expect(await app.evaluate<string[]>(menuItemLabels)).toEqual(['Copy row', 'Copy as SQL', 'Delete row']);
+
+      await app.evaluate(clickContextItem('Copy as SQL'));
+      await Bun.sleep(300);
+      // Table and column names quoted per dialect, values as literals.
+      expect(await app.evaluate<string>(`Neutralino.clipboard.readText()`)).toBe(
+        `INSERT INTO "public"."tags" ("label", "weight") VALUES\n('${label}', '${weight}');`
+      );
+
+      // A data cell's menu carries the same item, alongside the column-specific one.
+      await app.evaluate(`${gridCell(0, 0)}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); true;`);
+      await Bun.sleep(200);
+      expect(await app.evaluate<string[]>(menuItemLabels)).toEqual(['Copy row', 'Copy as SQL', 'Set NULL', 'Delete row']);
+      await app.evaluate(pressEscape);
+      await Bun.sleep(150);
 
       await app.evaluate(closeTab('tags'));
       await Bun.sleep(300);

@@ -410,3 +410,14 @@ This is a record, not a plan. Nothing here is waiting on anything.
   one reopens the tables and queries belonging to that connection — shape restored
   from the extension's store, contents refetched, never cached rows that could be
   hours stale.
+
+- **2026-07-25** — **Copy a row as SQL** — Recreating a row elsewhere means retyping an INSERT
+  by hand, because the existing "Copy row" / "Copy N rows" only writes
+  tab-separated text. Add "Copy as SQL" beside it in the same context menu,
+  building an `INSERT INTO` statement client-side from the selected rows —
+  consistent with how "Copy row" already builds its text from `result.rows`
+  without a round trip, since values arrive from the server pre-formatted and
+  never pass through JS `Date` or `Number` — quoted per engine the same way
+  the filter bar already quotes. Only available for tables opened by browsing
+  from the tree, the same boundary as editing and FK navigation, since the
+  table name an INSERT needs isn't known for a hand-typed query. You should also be able to copy a row by clicking the row number
