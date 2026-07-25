@@ -31,6 +31,7 @@ import {
   dataDir,
   deleteSaved,
   deleteWorkspace,
+  getSession,
   listSaved,
   listSettings,
   listStars,
@@ -38,6 +39,7 @@ import {
   resolveSaved,
   saveConnection,
   saveWorkspace,
+  setSession,
   setSetting,
   setStar,
 } from './store.ts';
@@ -175,7 +177,16 @@ const COMMANDS: Handlers = {
       environment,
       workspaceId,
       readOnly,
+      // What this connection had open last time, for the UI to reopen. The row's
+      // own id keys it, not the runtime one just minted -- the session outlives
+      // the connection, the same as the stars below.
+      session: getSession(id),
     };
+  },
+
+  async 'db.session.save'({ savedConnectionId, session }) {
+    setSession(savedConnectionId, session);
+    return { ok: true };
   },
 
   async 'db.stars.list'({ savedConnectionId }) {

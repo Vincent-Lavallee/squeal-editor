@@ -6,6 +6,7 @@ import { call } from '../common/bridge/bridge.ts';
 import { isFileBased } from '../common/db/engines.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
 import type { RootState } from './index.ts';
+import { parseSnapshot, type SessionSnapshot } from './sessionSnapshot.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
 let connectController: AbortController | null = null;
@@ -124,6 +125,14 @@ const initialState: SessionState = {
  */
 interface Opened extends OpenConnection {
   databases: string[];
+  /**
+   * The tabs this connection had open last time, for `tabsSlice` to restore --
+   * present only on the saved path, since a connection typed out fresh has none
+   * stored. It rides the payload the way `databases` does and is consumed by
+   * `tabsSlice`'s `sessionOpened` matcher; the session state itself keeps none of
+   * it. `undefined` on `connect`, `null` on a saved connection with nothing stored.
+   */
+  session?: SessionSnapshot | null;
 }
 
 /**
@@ -200,6 +209,10 @@ export const connectSaved = createAppThunk(
         workspaceId: res.workspaceId,
         environment: res.environment,
         readOnly: res.readOnly,
+        // Parsed here rather than in the reducer, so `tabsSlice` receives a shape
+        // and not a string to decode -- the same reason the filter is echoed into
+        // `browseTable`'s payload already parsed.
+        session: parseSnapshot(res.session),
       };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
@@ -246,6 +259,24 @@ export const disconnect = createAppThunk(
     return { connectionId, tabIds };
   },
   { condition: (connectionId, { getState }) => getState().session.connections[connectionId] !== undefined }
+);
+
+/**
+ * Persist a connection's open tabs, so reconnecting reopens them.
+ *
+ * A thin bridge wrapper: the snapshot is already serialised and already diffed
+ * against what was last saved by the session-sync listener, which is the only
+ * caller. It lands in no slice -- the saved shape is the extension's copy of what
+ * the store already holds, so there is nothing to keep here and a failure is not
+ * worth surfacing: the next change re-saves, and a preference that did not persist
+ * is a smaller harm than a banner over an action the user did not take.
+ */
+export const saveSession = createAppThunk(
+  'session/saveSession',
+  async (arg: { savedConnectionId: string; session: string }) => {
+    await call('db.session.save', arg).catch(() => undefined);
+    return arg;
+  }
 );
 
 /**

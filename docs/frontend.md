@@ -35,7 +35,7 @@ src/features/
   rail/                 ConnectionRail: the open connections, and the way between
   tabs/                 TabStrip: the strip, its menu, and its drag
   explorer/             Sidebar, DropTableConfirm, useExplorer
-  editor/               EditorPane, EditorContext (useEditor), monaco (theme + worker),
+  editor/               EditorPane, useEditor (text surface over the tabs slice), monaco (theme + worker),
                         completion + keywords + sqlScope + useSqlCompletion,
                         format + useSqlFormatter
   results/              ResultsTable, ResultsContext (useResultsView), useResults
@@ -71,8 +71,8 @@ that lives apart from its values is two sources for one fact.
 |---|---|---|
 | open connections: id, `savedConnectionId`, config, `dialect`, `name`, `workspaceId`, `environment`, `readOnly` | `session` slice | crossed |
 | `order`, `activeConnectionId` | `session` slice | never left, but see above |
-| a tab's `connectionId`, `database` and `table` | `tabs` slice | crossed |
-| `tabs`, `activeTabId`, `kind`, `title`, `defaultDatabase` | `tabs` slice | never left, but see above |
+| a tab's `connectionId`, `database`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
+| `tabs`, `activeTabId`, `kind`, `title`, `defaultDatabase`, a grid tab's `filter` seed | `tabs` slice | never left, but see above |
 | `databases`, `tables`, `columns`, `stars` | `explorer` slice | crossed |
 | `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), per tab | `results` slice | crossed |
 | staged cell edits + row deletes, per tab (+ `saving`, `saveError`) | `results` context | never left, until Save |
@@ -81,7 +81,6 @@ that lives apart from its values is two sources for one fact.
 | workspaces | `workspaces` slice | crossed |
 | the release check, download `progress`, banner `dismissed` | `updater` slice | crossed |
 | every stored preference, and whether the launch read has landed | `settings` slice | crossed |
-| `sqlByTab` (editor text) | `editor` context | never left |
 | `adding` (the connect screen, with connections open) | `App` local state | never left |
 | which connect screen is showing, and which workspace it is inside | `ConnectScreen` local state | never left |
 | `maximized`, the open menu | `titlebar` local state | never left |
@@ -100,13 +99,15 @@ about "is it native". `useWindowChrome` talks to Neutralino's window API all day
 but the extension has never heard of any of it and it dies with the webview — so
 it is not a slice.
 
-The editor's text is the instructive case, and tabs made it more so rather than
-less. It looks like app state, and it now sits keyed by an id the store owns —
-but the extension has still never known about it, so it is still a context. **A
-tab is deliberately not one object: it is a store row plus a context entry,
-joined by id.** That split is the rule earning its keep on the tempting case
-instead of being bent to keep a tab tidy. The day a query has to survive a quit,
-the extension stores it, it crosses, and it earns a slice. Not before.
+The editor's text is the instructive case, and it is the one that flipped.
+It used to be a context, keyed by tab id, because the extension had never heard
+of it — the standing exception the bridge test allowed. **Per-connection session
+restore ended that exception**: a query now has to survive a quit, so the
+extension stores it, so it crossed, so it is a slice (`tabs.sqlByTab`). A tab is
+no longer a store row plus a context entry joined by id — it is wholly a store
+row. The doc that used to end this paragraph named the trigger — *"the day a query
+has to survive a quit, it earns a slice"* — and that day is what shipped it. See
+`docs/decisions.md`.
 
 `dialect` is the same test pointing the other way: it is only ever read by the
 editor, one feature, and it is in a slice regardless — because the extension is
@@ -114,23 +115,71 @@ what said it. It crossed; that is the whole rule. **"Three features read it" is
 not a reason for a slice** — that is the argument for a slice living in `store/`
 rather than inside a feature, which is a different question.
 
-Anything keyed by tab must be dropped when the tab closes, and each owner does
-that for itself by **diffing the store's tab list in an effect** — never from the
-close handler. `resultsSlice` reacts to `tabsClosed`; `EditorProvider` prunes
-`sqlByTab`; `EditorPane` disposes models. Hook the one handler instead and the
-next thing that closes a tab ("close others", a disconnect) silently leaks.
+Anything keyed by tab must be dropped when the tab closes. `sqlByTab` is now in
+`tabsSlice`, so it is pruned in the same reducer that removes tabs — `tabsClosed`
+and `disconnect.fulfilled` each delete the text of the tabs they drop, which is
+every way a tab leaves. The webview-only owners still **diff the store's tab list
+in an effect** rather than hooking the close handler: `resultsSlice` reacts to
+`tabsClosed`, `EditorPane` disposes Monaco models by diffing. Hook the one handler
+instead and the next thing that closes a tab ("close others", a disconnect)
+silently leaks.
 
-**A disconnect is that second thing, and it arrived.** `EditorProvider` and
-`EditorPane` needed no change for it — they diff, so tabs vanishing is tabs
-vanishing. `resultsSlice` is not a component and cannot diff, so
-`disconnect.fulfilled` carries the departed `tabIds` in its payload; it used to
-reset to `initialState`, which would now blank the grids of every server still
-open. One event, carrying what its readers need — the same shape as
-`sessionOpened` handing `databases` to the explorer.
+**A disconnect is that second thing, and it arrived.** `EditorPane` needed no
+change for it — it diffs, so tabs vanishing is tabs vanishing. `resultsSlice` is
+not a component and cannot diff, so `disconnect.fulfilled` carries the departed
+`tabIds` in its payload; it used to reset to `initialState`, which would now blank
+the grids of every server still open. One event, carrying what its readers need —
+the same shape as `sessionOpened` handing `databases` to the explorer.
 
 **"Close others" was the third, and it cost nothing.** Both diffing owners took
 it for free, exactly as this section predicted they would; only `resultsSlice`
 needed a line, and only because it still cannot diff.
+
+## Session restore
+
+Connecting to a saved connection reopens the tabs and queries it had open last
+time — shape restored from the extension's store, contents refetched. Launch still
+lands on the connections list; nothing auto-connects.
+
+**The shape is a `SessionSnapshot`** (`store/sessionSnapshot.ts`) — the tabs
+(kind, database, table/schema, title, editor `sql`, grid `filter`), which one was
+active by position, `nextQueryNo` and `defaultDatabase`. It leaves out runtime tab
+ids, which are minted fresh every session. It lives in its own file, not in a
+slice, because both slices touch it and importing a runtime value between them
+would close a cycle — `tabsSlice` already imports `sessionSlice` for its matchers.
+
+**Restore rides the connect, not a separate call.** `db.saved.connect` carries the
+stored blob back as a `session` string; `connectSaved` parses it and puts a
+`SessionSnapshot` on the payload, and `tabsSlice`'s `sessionOpened` matcher mints
+the tabs from it in that one synchronous reducer — fresh ids, `sqlByTab` and the
+grid-filter seed keyed by them, active tab by `activeIndex`. Bundling it (rather
+than a stars-style `db.session.get` a beat later) is what stops a flash of the
+default "Query 1" the matcher would otherwise mint and then have to unmint. A
+snapshot with no tabs — or a `connect` from the typed form, which carries none —
+falls through to that default. See `docs/decisions.md`.
+
+**Saving is a listener middleware** (`store/sessionSyncListener.ts`), not a hook:
+it watches the actions that reshape a session (`tabOpened`, `tabsClosed`,
+`tabMoved`, `tabActivated`, `databaseChanged`, `sqlChanged`, `browseTable.fulfilled`)
+and, debounced ~600ms, serialises every connection still open and dispatches
+`saveSession` for the ones whose snapshot changed (a per-saved-id cache skips the
+rest). It reads the whole store — a hook could not, and the editor text now living
+in a slice is exactly what makes that reachable. `disconnect.pending` fires an
+**immediate** save while the tabs still exist, so the last edit before a close is
+not lost to the debounce; `fulfilled` is deliberately not listened to, because it
+has removed the tabs and would save an empty session over a good one. Only open
+connections are ever serialised, so a teardown never overwrites a stored snapshot.
+
+**Grid tabs re-browse lazily, and the filter seeds on the tab.** A restored grid
+tab has a `table` but no `results` entry, and the `Shell` effect that catches
+exactly that browses it — only when it is first in front, so reopening ten tables
+does not fire ten browses at once. A hand-opened tab browses imperatively and
+already has a `results` entry by the time the effect runs, so the effect only ever
+catches restored ones. The `WHERE` a restored tab was on rides on `Tab.filter` as
+a one-shot seed the first browse consumes; after that `results[tabId].browse.filter`
+is authoritative, and the serialiser reads the live one for a browsed tab and the
+seed for one never viewed. Contents are always refetched — the snapshot carries no
+rows, only the shape.
 
 ## The tab strip
 
@@ -198,8 +247,9 @@ separate, unbuilt feature — row copy already covers grabbing data in bulk.
 
 **The staged edits are a context, not a slice** — the bridge test again. They have
 not crossed until Save (only the `db.write` arguments do), and they are keyed by
-tab, so `ResultsContext` is the exact shape of the editor's `sqlByTab`: pruned by
-diffing the tab list in an effect, never from a close handler. One twist rows
+tab, so `ResultsContext` prunes them by diffing the tab list in an effect, never
+from a close handler — the shape the editor's text held before session restore
+moved it into a slice that prunes in the reducer instead. One twist rows
 force: an edit is keyed by its **row index into the page on screen**, so each entry
 stamps the `table@offset` page it belongs to and a different page starts fresh —
 paging discards staging, switching tabs keeps it. The original key values are read
@@ -425,14 +475,18 @@ Six things there look incidental and are not:
 - **A table's definition is the one inbound writer, and it writes at birth.**
   "Open definition" opens a new editor tab holding the table's `CREATE`, which
   looks like writing text in from outside — but it does not touch a live model.
-  `modelFor` seeds the model from `EditorContext.peekSql(tabId)` when the model is
+  `modelFor` seeds the model from `useEditor().peekSql(tabId)` when the model is
   *created*, so the seed and `sqlByTab` agree from the first frame and text still
-  only flows out after. `peekSql` reads a **synchronous ref** rather than the
-  `sqlByTab` state: the shell opens the tab and sets its text in the same turn,
-  and the model is created in an effect a beat later, so the state may not have
-  reached that effect's commit — the ref is written before any effect runs. This
-  is the seam the "write only when it differs" warning anticipated; seeding at
-  creation sidesteps it entirely, and no live `setValue` ever happens.
+  only flows out after. `peekSql` reads `store.getState().tabs.sqlByTab` **synchronously**:
+  the shell opens the tab and sets its text in the same turn, and the model is
+  created in an effect a beat later — but a Redux dispatch commits synchronously, so
+  `getState` already holds the text by the time the model is born. (This is what
+  the old context needed a `sqlRef` shadow for: a `useState` had not committed yet
+  at that point, and the slice removed the need for the ref.) Session restore uses
+  the same seam: `sessionOpened` writes `sqlByTab` in the reducer that mints the
+  tabs, before any render, so a restored tab's model is born holding its text. This
+  is the "write only when it differs" warning's seam; seeding at creation sidesteps
+  it entirely, and no live `setValue` ever happens.
 - **The dialect is set on every model, not the attached one.** Miss the others
   and a background tab comes back highlighted as plain SQL.
 - **`layout()` before `restoreViewState`.** The pane is `display: none` on a grid

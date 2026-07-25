@@ -55,6 +55,7 @@ import { migration as connectionAwsIam } from './1784374797-connection-aws-iam.t
 import { migration as workspaceColour } from './1784408527-workspace-colour.ts';
 import { migration as settings } from './1784584732-settings.ts';
 import { migration as stars } from './1784629337-stars.ts';
+import { migration as connectionSessions } from './1784997641-connection-sessions.ts';
 
 /** Oldest first. Append only. */
 export const MIGRATIONS: Migration[] = [
@@ -66,6 +67,7 @@ export const MIGRATIONS: Migration[] = [
   workspaceColour,
   settings,
   stars,
+  connectionSessions,
 ];
 
 /*

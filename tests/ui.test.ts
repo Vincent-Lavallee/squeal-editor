@@ -1852,6 +1852,54 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
   });
 
+  describe('session restore', () => {
+    // Its own connection, wiped after: the reconnect that restores tabs is the
+    // whole subject, so nothing else may have written this connection's session.
+    beforeAll(async () => {
+      await clearSavedConnections();
+    });
+
+    test('reconnecting reopens the tabs, the query text and the tables', async () => {
+      await connect(PG, 'pg-session');
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1500);
+
+      // A table tab and a query, then let the debounced save settle. The order
+      // matters: the grid tab is opened second, so the strip reads [Query 1, users].
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(1200);
+      await app.evaluate(clickTab('Query 1'));
+      await Bun.sleep(300);
+      await app.evaluate(setEditorText('select 42 as restored'));
+      await Bun.sleep(900);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'users']);
+
+      // Disconnect flushes the final shape, then reconnect the *same* saved row --
+      // the restore path, not a fresh connect (which mints one blank Query 1).
+      await disconnect();
+      await app.waitFor(`(${savedRow('pg-session')}) ? true : null`);
+      await app.evaluate(`${savedRow('pg-session')}.querySelector('[data-testid="saved-pick"]').click(); true;`);
+      await Bun.sleep(3000);
+
+      // Both tabs are back, in the order they were left.
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'users']);
+
+      // The query text survived the quit.
+      await app.evaluate(clickTab('Query 1'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string>(editorText)).toBe('select 42 as restored');
+
+      // The grid tab refetches its rows the first time it is viewed -- lazily, so
+      // it had none until the click above's sibling here brings it forward.
+      await app.evaluate(clickTab('users'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<number>(rowCount)).toBeGreaterThan(0);
+
+      await disconnect();
+      await clearSavedConnections();
+    });
+  });
+
   // Late on purpose: these leave a second workspace behind for most of their
   // run, and every describe above is written against a launch screen that skips
   // the picker. They end on a single empty workspace, which is what the describe

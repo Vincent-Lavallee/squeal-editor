@@ -2,6 +2,7 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import { useCallback } from 'react';
 import { useStore } from 'react-redux';
 
+import type { TableFilter } from '../../../shared/protocol/index.ts';
 import { relationName, type Relation } from '../common/db/relation.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
 import type { RootState } from './index.ts';
@@ -43,6 +44,15 @@ export interface Tab {
    */
   schema?: string;
   /**
+   * A grid tab's filter *seed*: the `WHERE` a restored tab should re-browse with
+   * on first view. It is consumed once, by that first browse -- after which
+   * `results[tabId].browse.filter` is authoritative and this is never read again.
+   * Absent for a tab opened fresh (which browses imperatively) and for editor
+   * tabs. This exists only so a lazily-restored grid tab, which has no `browse`
+   * yet, still knows the filter it was reopened with. See `docs/frontend.md`.
+   */
+  filter?: TableFilter;
+  /**
    * Stored at open time rather than derived from position. Numbering the editor
    * tabs by index renumbers the survivors when one closes -- close Query 1 and
    * Query 2 silently becomes Query 1, renaming a tab the user never touched.
@@ -80,6 +90,17 @@ interface TabsState {
   defaultDatabase: Record<string, string | null>;
   /** Per connection: a second server's first query is Query 1, not Query 4. */
   nextQueryNo: Record<string, number>;
+  /**
+   * The statement being written in each editor tab, keyed by tab id.
+   *
+   * This used to live in a React context, because it had never crossed the
+   * bridge -- the one rule that decides slice-vs-context. Per-connection session
+   * restore is what changed that: a query now has to survive a quit, so the
+   * extension stores it, it crosses, and it earns its place here. A tab is no
+   * longer a store row plus a context entry joined by id -- it is wholly a store
+   * row, with its text under this map. See `docs/frontend.md`.
+   */
+  sqlByTab: Record<string, string>;
   nextId: number;
 }
 
@@ -88,6 +109,7 @@ const initialState: TabsState = {
   activeTabId: {},
   defaultDatabase: {},
   nextQueryNo: {},
+  sqlByTab: {},
   nextId: 1,
 };
 
@@ -103,11 +125,12 @@ const initialState: TabsState = {
  * same fact as `tabs` being flat: `results` is keyed by a bare tab id, so two
  * connections each minting a "1" would put one's rows under the other's tab.
  */
-function mint(state: TabsState, tab: Omit<Tab, 'id'>): void {
+function mint(state: TabsState, tab: Omit<Tab, 'id'>): string {
   const created = { ...tab, id: String(state.nextId) };
   state.nextId += 1;
   state.tabs.push(created);
   state.activeTabId[tab.connectionId] = created.id;
+  return created.id;
 }
 
 const tabsSlice = createSlice({
@@ -186,6 +209,12 @@ const tabsSlice = createSlice({
       }
       if (landingIndex.size === 0) return;
 
+      // The text of a closed tab goes with it. This replaces the editor context's
+      // pruning effect: the map lives here now, so it is pruned here, in the one
+      // action that removes tabs -- "close others", "close to the right" and the
+      // single close all funnel through it.
+      for (const id of closing) delete state.sqlByTab[id];
+
       state.tabs = state.tabs.filter((tab) => !closing.has(tab.id));
 
       // Closing the tab you are looking at hands you the neighbour to the right,
@@ -237,6 +266,15 @@ const tabsSlice = createSlice({
       const tab = state.tabs.find((t) => t.id === action.payload.tabId);
       if (tab) tab.database = action.payload.database;
     },
+
+    /**
+     * An editor tab's text changed. Dispatched on every keystroke, the way the
+     * context's `setSql` was called before it -- the difference is only that this
+     * lands in the store, so the session-sync listener can serialise it.
+     */
+    sqlChanged(state, action: PayloadAction<{ tabId: string; sql: string }>) {
+      state.sqlByTab[action.payload.tabId] = action.payload.sql;
+    },
   },
 
   extraReducers: (builder) => {
@@ -246,6 +284,9 @@ const tabsSlice = createSlice({
         // Only this connection's. The others are still open and still have tabs
         // -- this used to clear the lot, back when closing one connection and
         // closing every connection were the same event.
+        for (const tab of state.tabs) {
+          if (tab.connectionId === connectionId) delete state.sqlByTab[tab.id];
+        }
         state.tabs = state.tabs.filter((t) => t.connectionId !== connectionId);
         delete state.activeTabId[connectionId];
         delete state.defaultDatabase[connectionId];
@@ -258,20 +299,51 @@ const tabsSlice = createSlice({
       // Match the event, not a connect thunk: a connection opened is a
       // connection opened, whichever path opened it. See `sessionSlice`.
       .addMatcher(sessionOpened, (state, action) => {
-        const { connectionId, config, databases } = action.payload;
+        const { connectionId, config, databases, session } = action.payload;
         // Nothing is cleared. The tabs already open belong to other connections,
         // and this event now means "one more server", not "a new session".
+        const fallbackDatabase = config.database ?? databases[0] ?? null;
+
+        // A saved connection reopening with tabs it had before. Fresh ids all
+        // round -- the stored ones are last session's -- so `sqlByTab` and
+        // `activeTabId` are keyed by the ones minted here, and `activeIndex`
+        // names the front tab by position.
+        if (session && session.tabs.length > 0) {
+          state.defaultDatabase[connectionId] = session.defaultDatabase ?? fallbackDatabase;
+          const ids = session.tabs.map((tab) =>
+            mint(state, {
+              connectionId,
+              kind: tab.kind,
+              database: tab.database,
+              table: tab.table,
+              schema: tab.schema,
+              filter: tab.filter ?? undefined,
+              title: tab.title,
+            })
+          );
+          session.tabs.forEach((tab, i) => {
+            if (tab.kind === 'editor' && tab.sql !== undefined) state.sqlByTab[ids[i]!] = tab.sql;
+          });
+          state.nextQueryNo[connectionId] = session.nextQueryNo;
+          const { activeIndex } = session;
+          state.activeTabId[connectionId] =
+            activeIndex !== null && activeIndex >= 0 && activeIndex < ids.length
+              ? ids[activeIndex]!
+              : (ids[ids.length - 1] ?? null);
+          return;
+        }
+
+        // Nothing to restore: one blank query tab on something sensible, so the
+        // editor is usable immediately.
         state.nextQueryNo[connectionId] = 1;
-        // Something sensible to open on, so the editor is usable immediately.
-        const database = config.database ?? databases[0] ?? null;
-        state.defaultDatabase[connectionId] = database;
-        mint(state, { connectionId, kind: 'editor', database, title: 'Query 1' });
+        state.defaultDatabase[connectionId] = fallbackDatabase;
+        mint(state, { connectionId, kind: 'editor', database: fallbackDatabase, title: 'Query 1' });
         state.nextQueryNo[connectionId] = 2;
       });
   },
 });
 
-export const { tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged } = tabsSlice.actions;
+export const { tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged } = tabsSlice.actions;
 export const tabsReducer = tabsSlice.reducer;
 
 /** The active connection's tabs, in order. The strip draws these and no others. */

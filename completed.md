@@ -403,3 +403,10 @@ This is a record, not a plan. Nothing here is waiting on anything.
   tree, not a hand-typed query, for the same reason those results aren't
   editable today) that opens the related table, always in a new tab, filtered
   to the one row the FK value points at.
+
+- **2026-07-25** — **Per-connection session restore** — Quitting loses whatever was open, so coming
+  back to a database means hunting down the same tables and rewriting the same
+  queries. Launch still lands on the connections list, and connecting to a saved
+  one reopens the tables and queries belonging to that connection — shape restored
+  from the extension's store, contents refetched, never cached rows that could be
+  hours stale.

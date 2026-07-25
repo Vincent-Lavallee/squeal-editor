@@ -2745,3 +2745,66 @@ pipeline — it is only a trap for a manual run that calls `neu run` on its own.
 means "the parent's primary key," not "nothing to report" — `pragma_foreign_key_
 list` answers a null `to` for it, resolved with one `pragma_table_info` lookup
 per distinct referenced table rather than left as a gap.
+
+---
+
+## Session restore moved the editor's text into a slice
+
+**Why now, and not before.** The frontend's one state rule is the *bridge test*:
+state that crossed the bridge is a slice, state that never left the webview is a
+feature context. The editor's text was the standing exception — a query had never
+been sent to or received from the extension, so `sqlByTab` lived in an
+`EditorContext`, and both that file and `docs/frontend.md` named the day it would
+change: *"the day a query has to survive a quit, the extension stores it, it
+crosses the bridge, and it earns a slice."* Per-connection session restore is that
+day. It is not a taste change reversing the earlier "editor text stays a context"
+call; it is that call's own stated trigger firing. The text now lives in
+`tabsSlice.sqlByTab`, and a tab is wholly a store row rather than a store row plus
+a context entry joined by id.
+
+**It was also forced, not merely allowed.** The save half is a listener
+middleware — it watches state outside React so a burst of keystrokes debounces
+into one write. A listener cannot read a React context, so persisting the text
+*requires* it to be in the store. The rule and the mechanism agreed.
+
+**Why an opaque blob, not a typed snapshot in the protocol.** The store keeps one
+TEXT string per saved connection and never parses it — the settings rule, applied
+to a whole session: the meaning is the UI's, so a tab shape has no business in the
+shared contract or the store's schema. `SessionSnapshot` lives in the frontend
+(`store/sessionSnapshot.ts`), JSON-encoded on the way out and decoded on the way
+in. Only the UI reads it, so a typed column would be a vocabulary two layers that
+never inspect it would have to carry.
+
+**Why bundle the restore onto `db.saved.connect` rather than a separate
+`db.session.get`.** Stars are fetched separately because they *annotate* a tree
+that renders fine without them. A session *replaces* the default "Query 1" tab
+`sessionOpened` would otherwise mint, so fetching it a beat later would flash an
+empty tab and race the mint. Bundling it into the connect response lands the shape
+with the connection in one synchronous reducer, no ordering to get wrong. The
+typed `connect` path carries no session — it saves a brand-new row that has none —
+so only the saved path restores.
+
+**Why continuous debounced saving, not a save-on-quit.** The whole point is
+surviving a quit, and a quit is not always clean — the extension heartbeats and
+the app can be hard-killed. A hook on "quit" would be the one moment it cannot
+rely on. So the shape is written ~600ms after it settles, throughout the session,
+and once more immediately on `disconnect.pending` (while the tabs still exist —
+`fulfilled` removes them, and serialising then would save an empty session over a
+good one). The listener only ever serialises connections still open, so a
+teardown never overwrites a stored snapshot with the empty shape it leaves behind.
+
+**Why lazy re-browse, and why the filter seeds on the tab.** Restoring ten table
+tabs must not fire ten browses at a server the instant a connection reopens, so a
+grid tab refetches only when it is first in front — the `Shell` effect that
+catches a tab with a `table` but no `results` entry, which is only ever a restored
+one (a hand-opened tab browses imperatively and already has an entry by then).
+That browse needs the filter the tab was reopened on, but the restored tab has no
+`browse` yet to read it from — so it rides on `Tab.filter` as a one-shot seed,
+consumed by that first browse, after which `results[tabId].browse.filter` is
+authoritative again. The serialiser reads the live filter for a browsed tab and
+falls back to the seed for one never viewed, so an untouched restored tab keeps
+its filter across quits.
+
+**Keyed by the saved connection, like stars, with the same accepted limit.**
+Opening the same saved connection twice shares one snapshot; the runtime id is
+minted fresh each session and could not persist. Not solved, for stars' reasons.

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 
 import type { TableInfo } from '../../shared/protocol/index.ts';
 import { relationLabel, relationOf } from './common/db/relation.ts';
+import { useAppSelector } from './store/hooks.ts';
 import { useTabs } from './store/tabsSlice.ts';
-import { EditorPane, EditorProvider, useEditor } from './features/editor/index.ts';
+import { EditorPane, useEditor } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
 import { ConnectionRail } from './features/rail/index.ts';
 import { ResultsProvider, ResultsTable, useResults } from './features/results/index.ts';
@@ -26,11 +27,9 @@ interface Props { onAddConnection: () => void; }
 
 export default function Shell({ onAddConnection }: Props) {
   return (
-    <EditorProvider>
-      <ResultsProvider>
-        <ShellLayout onAddConnection={onAddConnection} />
-      </ResultsProvider>
-    </EditorProvider>
+    <ResultsProvider>
+      <ShellLayout onAddConnection={onAddConnection} />
+    </ResultsProvider>
   );
 }
 
@@ -65,6 +64,26 @@ function ShellLayout({ onAddConnection }: Props) {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  /*
+   * Lazily browse a restored grid tab the first time it is in front.
+   *
+   * A tab opened by hand browses imperatively (openTable, FK-nav, duplicate), so
+   * by the time this runs it already has a `results` entry -- which is exactly the
+   * guard here: only a tab with *no* entry (never attempted) is caught, and the
+   * only tabs in that state are the ones `sessionOpened` restored. Their contents
+   * are refetched, never cached, and each waits until it is actually viewed rather
+   * than firing every table's browse the instant a connection reopens. The seed
+   * `filter` is the `WHERE` it was reopened on.
+   */
+  const activeNeedsBrowse = useAppSelector((s) =>
+    activeTab?.kind === 'grid' && activeTab.table ? s.results[activeTab.id] === undefined : false
+  );
+  useEffect(() => {
+    if (activeTab?.kind === 'grid' && activeTab.table && activeNeedsBrowse) {
+      browseIn(activeTab.id, activeTab.table, 0, activeTab.filter);
+    }
+  }, [activeTab, activeNeedsBrowse, browseIn]);
 
   const openTable = useCallback((database: string, table: TableInfo) => {
     const relation = relationOf(table);

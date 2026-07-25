@@ -80,9 +80,14 @@ export function useResults() {
     [dispatch, activeTabId]
   );
 
-  /** Browsing names its tab: opening a table browses into the tab just minted for it. */
+  /**
+   * Browsing names its tab: opening a table browses into the tab just minted for
+   * it. `filter` is how a *restored* grid tab re-browses with the `WHERE` it was
+   * reopened on -- freshly opened tables pass none.
+   */
   const browseIn = useCallback(
-    (tabId: string, table: string, offset: number) => void dispatch(browseTable({ tabId, table, offset })),
+    (tabId: string, table: string, offset: number, filter?: TableFilter | null) =>
+      void dispatch(browseTable({ tabId, table, offset, filter })),
     [dispatch]
   );
 

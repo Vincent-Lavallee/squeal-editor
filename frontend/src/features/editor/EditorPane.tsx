@@ -4,7 +4,7 @@ import { useSession } from '../../store/sessionSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import * as t from '../../common/tokens';
-import { useEditor } from './EditorContext.tsx';
+import { useEditor } from './useEditor.ts';
 import { defineTheme, monaco, px, THEME, token } from './monaco.ts';
 import { useSqlCompletion } from './useSqlCompletion.ts';
 import { useSqlFormatter } from './useSqlFormatter.ts';

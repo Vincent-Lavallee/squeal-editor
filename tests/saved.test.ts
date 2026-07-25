@@ -626,6 +626,87 @@ describe('starred tables', () => {
   });
 });
 
+describe('saved sessions', () => {
+  // The store keeps the snapshot verbatim and never parses it -- the UI owns the
+  // shape -- so the tests treat it as the opaque string it is.
+  const SNAPSHOT = JSON.stringify({
+    tabs: [{ kind: 'editor', database: FIXTURE_DB, title: 'Query 1', sql: 'select 1' }],
+    activeIndex: 0,
+    nextQueryNo: 2,
+    defaultDatabase: FIXTURE_DB,
+  });
+
+  // Connecting is how the session comes back, so this actually opens PG. These
+  // connections store no password (`mode: 'none'`), so the connect supplies it,
+  // exactly as the "does not store a password" connect test does.
+  const sessionOf = async (id: string): Promise<string | null> => {
+    const res = (await h.ok('db.saved.connect', { id, password: PG_PASSWORD })) as {
+      connectionId: string;
+      session: string | null;
+    };
+    await h.ok('db.disconnect', { connectionId: res.connectionId });
+    return res.session;
+  };
+
+  test('a fresh connection restores nothing', async () => {
+    const saved = await save({ name: 'session-fresh', config: PG_SERVER, password: { mode: 'none' } });
+    expect(await sessionOf(saved.id)).toBeNull();
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+
+  test('a saved snapshot comes back on connect, verbatim', async () => {
+    const saved = await save({ name: 'session-roundtrip', config: PG_SERVER, password: { mode: 'none' } });
+    await h.ok('db.session.save', { savedConnectionId: saved.id, session: SNAPSHOT });
+    expect(await sessionOf(saved.id)).toBe(SNAPSHOT);
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+
+  test('saving again replaces the snapshot rather than failing on the primary key', async () => {
+    const saved = await save({ name: 'session-replace', config: PG_SERVER, password: { mode: 'none' } });
+    await h.ok('db.session.save', { savedConnectionId: saved.id, session: SNAPSHOT });
+    const next = JSON.stringify({ tabs: [], activeIndex: null, nextQueryNo: 1, defaultDatabase: null });
+    await h.ok('db.session.save', { savedConnectionId: saved.id, session: next });
+    expect(await sessionOf(saved.id)).toBe(next);
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+
+  test('two connections keep their sessions apart', async () => {
+    const a = await save({ name: 'session-conn-a', config: PG_SERVER, password: { mode: 'none' } });
+    const b = await save({ name: 'session-conn-b', config: PG_SERVER, password: { mode: 'none' } });
+    await h.ok('db.session.save', { savedConnectionId: a.id, session: SNAPSHOT });
+    expect(await sessionOf(a.id)).toBe(SNAPSHOT);
+    expect(await sessionOf(b.id)).toBeNull();
+    await h.ok('db.saved.delete', { id: a.id });
+    await h.ok('db.saved.delete', { id: b.id });
+  });
+
+  test('deleting a connection takes its session with it', async () => {
+    const saved = await save({ name: 'session-deleted', config: PG_SERVER, password: { mode: 'none' } });
+    await h.ok('db.session.save', { savedConnectionId: saved.id, session: SNAPSHOT });
+    await h.ok('db.saved.delete', { id: saved.id });
+
+    // Gone with the connection via ON DELETE CASCADE, not merely unreachable -- so
+    // a re-saved connection reusing the id could never inherit a stale session.
+    const db = new Database(DB_FILE);
+    const remaining = db
+      .query('SELECT COUNT(*) AS n FROM connection_sessions WHERE connection_id = ?')
+      .get(saved.id) as { n: number };
+    db.close();
+    expect(remaining.n).toBe(0);
+  });
+
+  test('a session survives a new extension process', async () => {
+    const saved = await save({ name: 'session-survivor', config: PG_SERVER, password: { mode: 'none' } });
+    await h.ok('db.session.save', { savedConnectionId: saved.id, session: SNAPSHOT });
+
+    await h.stop();
+    h = await startHarness(ENV);
+
+    expect(await sessionOf(saved.id)).toBe(SNAPSHOT);
+    await h.ok('db.saved.delete', { id: saved.id });
+  });
+});
+
 describe('workspaces', () => {
   test('a store starts with one, so the feature can be ignored', async () => {
     const all = await workspaces();
@@ -781,6 +862,7 @@ const stamps = (): Stamp[] => {
 
 /** What each migration would have to undo, for the rewind below. Newest first. */
 const UNDO: Record<string, string[]> = {
+  'connection-sessions': ['DROP TABLE connection_sessions'],
   stars: ['DROP TABLE stars'],
   settings: ['DROP TABLE settings'],
   'workspace-colour': ['ALTER TABLE workspaces DROP COLUMN color'],
@@ -916,6 +998,7 @@ describe('migrating a store written before workspaces', () => {
       // for a file that claims to be older than a table it is holding.
       db.run('DROP TABLE settings');
       db.run('DROP TABLE stars');
+      db.run('DROP TABLE connection_sessions');
       db.run('DROP TABLE schema_migrations');
     })();
     const legacyNames = (db.query('SELECT name FROM saved_connections').all() as { name: string }[]).map((r) => r.name);

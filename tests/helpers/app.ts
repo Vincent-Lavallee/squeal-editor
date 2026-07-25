@@ -250,6 +250,8 @@ export async function launchApp(
   await send("Runtime.enable");
   await send("Page.enable");
 
+  const rootRendered = `document.querySelector('#root')?.children.length > 0 ? true : null`;
+
   const page: AppSession = {
     async evaluate<T>(expression: string): Promise<T> {
       const r = await send("Runtime.evaluate", {
@@ -294,9 +296,7 @@ export async function launchApp(
       // is a property of the machine -- and the failure when it is too short is
       // a null element, which surfaces as an unrelated-looking TypeError deep in
       // whichever helper touched it first.
-      await this.waitFor(
-        `document.querySelector('#root')?.children.length > 0 ? true : null`,
-      );
+      await this.waitFor(rootRendered);
     },
 
     async screenshot(path: string) {
@@ -324,6 +324,13 @@ export async function launchApp(
       }
     },
   };
+
+  // The CDP target exists as soon as the window opens, long before the bundle
+  // has loaded and React has mounted -- returning here is what let a test run
+  // start against a page that was "up enough to accept an evaluate and not up
+  // enough to have rendered", the collapse `docs/testing.md` describes. Wait
+  // for the same thing `reload()` waits for before handing the session back.
+  await page.waitFor(rootRendered, 30_000);
 
   return page;
 }

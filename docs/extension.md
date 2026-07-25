@@ -667,6 +667,24 @@ insert reading as a fresh row rather than the same one again. The empty string
 is a real value the `UNIQUE (connection_id, database, schema, table_name)`
 index can actually compare, which a `NULL` cannot be asked to do.
 
+### Saved sessions
+
+`connection_sessions` holds one **opaque snapshot string** per saved connection —
+the tabs and queries it had open, so `db.saved.connect` can hand them back and the
+UI can reopen them. `connection_id` is the primary key and `REFERENCES
+saved_connections(id) ON DELETE CASCADE`, the same rule the stars and the password
+follow: keyed by the *saved* row (a session filed under the runtime `connectionId`
+would be forgotten the moment the connection closed), and taken with the
+connection when it is deleted.
+
+**The store keeps text and no vocabulary of what a tab is** — `getSession` reads
+the string, `setSession` upserts it, and neither parses it. This is the settings
+rule applied to a whole session: the meaning is the UI's, so a tab shape has no
+business in the schema here, and adding a tab kind is not a change to this file.
+`db.session.save` writes it; `db.saved.connect` returns it beside `config` and the
+stars. Only the UI encodes and decodes it (`SessionSnapshot`); see
+`docs/frontend.md` and `docs/decisions.md`.
+
 `dataDir()` is exported for one caller: `app.dataDir`, which the About menu's
 *Open app data* asks for and then hands to `Neutralino.os.open`. The webview opens
 the folder perfectly well — the only thing it lacks is the path, and the path is a
@@ -700,6 +718,7 @@ migrations/
   1784408527-workspace-colour.ts
   1784584732-settings.ts                the key/value table user preferences live in
   1784629337-stars.ts                   starred tables, keyed by saved connection
+  1784997641-connection-sessions.ts     the opaque per-connection session snapshot
 ```
 
 A file is `<epoch>-what-it-does.ts` and **that epoch is its `version`** — the

@@ -308,19 +308,20 @@ It earns its keep. Connecting from a saved connection rendered a shell with an
 else in the project could have caught it: the extension was right, the types were
 right, and the screen looked plausible. See `docs/decisions.md`.
 
-## When the whole suite collapses
+## The collapse this used to have
 
-Roughly every other run ends `0 pass / 20 fail` within ~60s, every failure some
-variant of "cannot read properties of undefined" — the app is up enough to accept
-a few evaluates and not up enough to have rendered. It is not the change under
-test: it reproduces on a clean tree.
+Roughly every other run used to end `0 pass / 20 fail` within ~60s, every failure
+some variant of "cannot read properties of undefined". The cause was `launchApp`:
+it returned as soon as `findPage` saw a CDP target, and WebView2 exposes that
+target the moment the window opens — well before the several-megabyte bundle has
+loaded and React has mounted. The suite then started driving a page that was "up
+enough to accept an evaluate and not up enough to have rendered." It reproduced
+on a clean tree, which is what made it read as the app being broken rather than
+the harness.
 
-What is observably true is that a failed run leaves a `squeal-db-ext` process
-behind, and it takes the heartbeat's 30s timeout to notice and exit. Runs started
-close together are the ones that collapse, so **check for a stray extension
-process and let it die before re-running** rather than reading a collapsed run as
-a result. A collapsed run says nothing; a run that reaches 78+ tests says
-something.
+`launchApp` now waits on the same expression `reload()` already waited on
+(`#root` has rendered something) before handing the session back, so a test
+never starts against a page CDP can see but React has not touched yet.
 
 ## Verifying by hand
 

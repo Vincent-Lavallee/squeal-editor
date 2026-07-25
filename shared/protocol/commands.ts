@@ -220,7 +220,35 @@ export interface Commands {
       environment: Environment;
       workspaceId: string;
       readOnly: boolean;
+      /**
+       * The tabs and queries this connection had open when it was last saved, so
+       * connecting reopens them. `null` when the connection has none stored --
+       * a brand-new one, or one that has never been left with anything open.
+       *
+       * An **opaque string**, the settings rule applied to a whole session: the
+       * store keeps text and the UI owns its meaning. Only the UI reads it and
+       * the extension never parses it, so putting a tab shape into this shared
+       * contract would be a vocabulary neither the store nor this file needs.
+       * The UI JSON-encodes its own `SessionSnapshot` on the way out (see
+       * `db.session.save`) and decodes it here. Bundled onto connect rather than
+       * fetched separately so restore lands with the connection in one shot,
+       * with no window where the default tab is minted before it arrives.
+       */
+      session: string | null;
     };
+  };
+
+  /**
+   * Persist a connection's open tabs and queries, so `db.saved.connect` can hand
+   * them back next time. `session` is the UI's JSON'd snapshot, stored verbatim.
+   *
+   * Keyed by the *saved* connection's id, never the runtime one -- a session has
+   * to outlive the connection that wrote it, the same reason stars are. The store
+   * keeps one snapshot per saved connection, replaced outright on each save.
+   */
+  'db.session.save': {
+    req: { savedConnectionId: string; session: string };
+    res: { ok: true };
   };
 
   /**
