@@ -134,6 +134,22 @@ const COMMANDS: Handlers = {
     return { ddl: await getConnection(connectionId).tableDdl(database, { table, schema }, kind) };
   },
 
+  async 'db.triggers'({ connectionId, database, table, schema }) {
+    return { triggers: await getConnection(connectionId).listTriggers(database, { table, schema }) };
+  },
+
+  async 'db.triggerDdl'({ connectionId, database, table, schema, trigger }) {
+    return { ddl: await getConnection(connectionId).triggerDdl(database, { table, schema }, trigger) };
+  },
+
+  async 'db.functions'({ connectionId, database }) {
+    return { functions: await getConnection(connectionId).listFunctions(database) };
+  },
+
+  async 'db.functionDdl'({ connectionId, database, function: func, schema }) {
+    return { ddl: await getConnection(connectionId).functionDdl(database, func, schema) };
+  },
+
   async 'db.drop'({ connectionId, database, table, schema, kind }) {
     await getConnection(connectionId).dropRelation(database, { table, schema }, kind);
     return { ok: true };

@@ -460,3 +460,14 @@ This is a record, not a plan. Nothing here is waiting on anything.
   there is no way to copy the database name without selecting the text in a query
   by hand — right-click the selector to copy it to the clipboard, with a brief
   hint that the name was copied.
+
+- **2026-07-25** — **Trigger and function definitions in the tree** — Checking what a trigger or
+  function actually does means leaving the app for another tool, because the tree
+  only knows tables and views. Nested each table's triggers under it (since a
+  trigger always belongs to exactly one table), and added a top-level Functions
+  node listing functions and stored procedures together (since neither is scoped
+  to a table). Selecting any of them opens its definition the same way "Open
+  definition" does for a table today. Functions and procedures only apply where
+  the engine has them — Postgres and MySQL, not SQLite; triggers apply to all
+  three. Added test triggers and functions to the test databases for Postgres,
+  MySQL and SQLite.

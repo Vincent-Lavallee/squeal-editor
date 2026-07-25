@@ -6,6 +6,7 @@ import {
   RiArrowDownSLine,
   RiArrowRightDoubleLine,
   RiArrowRightSLine,
+  RiBroadcastLine,
   RiBarChart2Line,
   RiBox3Line,
   RiBuilding2Line,
@@ -18,6 +19,7 @@ import {
   RiFileCopyLine,
   RiFlaskLine,
   RiFolder3Line,
+  RiFunctions,
   RiGlobalLine,
   RiListUnordered,
   RiKey2Line,
@@ -51,6 +53,8 @@ import {
  */
 export const TableIcon = RiTableLine;
 export const ViewIcon = RiEyeLine;
+export const TriggerIcon = RiBroadcastLine;
+export const FunctionIcon = RiFunctions;
 
 /**
  * A schema heading in the tree, and the control that turns those headings on.

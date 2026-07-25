@@ -37,6 +37,7 @@ export type {
   FilterCondition,
   FilterOperator,
   ForeignKeyRef,
+  FunctionInfo,
   QueryResult,
   RowDelete,
   RowEdit,
@@ -44,6 +45,7 @@ export type {
   TableFilter,
   TableInfo,
   TablePage,
+  TriggerInfo,
 } from './results.ts';
 
 export type { UpdateProgress, UpdateStatus } from './updater.ts';

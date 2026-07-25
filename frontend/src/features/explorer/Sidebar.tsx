@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import type { TableInfo } from '../../../../shared/protocol/index.ts';
+import type { FunctionInfo, TableInfo, TriggerInfo } from '../../../../shared/protocol/index.ts';
 import { relationLabel, relationName, relationOf } from '../../common/db/relation.ts';
-import { CopiedIcon, DisclosureIcon, FlatTreeIcon, KeyIcon, RefreshIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, StarIcon, TableIcon, ViewIcon } from '../../common/icons/icons.ts';
+import { CopiedIcon, DisclosureIcon, FlatTreeIcon, FunctionIcon, KeyIcon, RefreshIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, StarIcon, TableIcon, TriggerIcon, ViewIcon } from '../../common/icons/icons.ts';
 import DropTableConfirm from './DropTableConfirm.tsx';
 import { useExplorer } from './useExplorer.ts';
 import Badge from '../../common/components/Badge.tsx';
@@ -28,12 +28,14 @@ interface Props {
   onSelectTable: (database: string, table: TableInfo) => void;
   onSelectDatabase: (database: string) => void;
   onShowDefinition: (database: string, table: TableInfo) => void;
+  onShowTriggerDefinition: (database: string, table: string, trigger: TriggerInfo, schema?: string) => void;
+  onShowFunctionDefinition: (database: string, func: FunctionInfo) => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }
 
-export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition, collapsed, onToggleCollapse }: Props) {
-  const { databases, database, tables, columnsFor, loadTableColumns, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, error } = useExplorer();
+export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition, onShowTriggerDefinition, onShowFunctionDefinition, collapsed, onToggleCollapse }: Props) {
+  const { databases, database, tables, columnsFor, loadTableColumns, triggersFor, loadTableTriggers, functionsFor, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, error } = useExplorer();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [flippedSchemas, setFlippedSchemas] = useState<ReadonlySet<string>>(() => new Set());
   const [filter, setFilter] = useState('');
@@ -207,6 +209,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
           </button>
         </div>
         {open && <Columns columns={columnsFor(db, relationOf(table))} indented={indented} />}
+        {open && <Triggers triggers={triggersFor(db, table.name)} table={table.name} schema={table.schema} indented={indented} onLoadTriggers={() => loadTableTriggers(db, table.name, table.schema)} onShowDefinition={(trigger) => onShowTriggerDefinition(db, table.name, trigger, table.schema)} />}
       </div>
     );
   };
@@ -329,6 +332,25 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
         })}
 
         {database && !grouped && unpinned?.map((table) => renderRow(table, database, false))}
+
+        {database && functionsFor(database) && functionsFor(database)!.length > 0 && (
+          <div data-testid="tree-functions" style={{ marginTop: t.GAP_SM, paddingTop: t.GAP_SM, borderTop: `1px solid ${t.BORDER}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', height: t.ROW_H_DENSE, padding: '0 6px', color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE }}>
+              <FunctionIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
+              <span>Functions</span>
+            </div>
+            {functionsFor(database)?.map((func) => (
+              <div key={func.name} data-testid="tree-function" style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_DENSE, padding: '0 6px' }}>
+                <button style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, height: '100%', padding: 0, border: 'none', background: 'none', color: t.TEXT, font: 'inherit', fontSize: t.TEXT_BADGE, textAlign: 'left', cursor: 'pointer' }}
+                  onClick={() => onShowFunctionDefinition(database, func)} title={`${func.name} — click to view definition`}>
+                  <FunctionIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{func.name}</span>
+                  <span style={{ marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: t.TEXT_MUTED, fontSize: '0.85em' }}>{func.kind}</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </nav>
 
       {menu && database && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.table, database)} onClose={() => setMenu(null)} />}
@@ -350,6 +372,34 @@ function Columns({ columns, indented }: { columns: ReturnType<ReturnType<typeof 
           <span data-testid="tree-col-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: t.TEXT_BADGE, color: t.TEXT, fontFamily: t.MONO }}>{c.name}</span>
           {c.primaryKey && <KeyIcon data-testid="tree-key" style={{ ...iconSvg, flex: 'none', color: t.TEXT_MUTED }} aria-label="primary key" />}
           <span style={{ marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>{c.dataType}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Triggers({ triggers, table, schema: _schema, indented, onLoadTriggers, onShowDefinition }: { triggers: ReturnType<ReturnType<typeof useExplorer>['triggersFor']>; table: string; schema?: string; indented: boolean; onLoadTriggers: () => void; onShowDefinition: (trigger: TriggerInfo) => void }) {
+  const pad = indented ? 42 : 30;
+
+  // Load triggers when first rendered if not already loaded
+  useEffect(() => {
+    if (triggers === undefined) {
+      onLoadTriggers();
+    }
+  }, [table, triggers, onLoadTriggers]);
+
+  if (triggers == null) return null;
+  if (triggers.length === 0) return null;
+
+  return (
+    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+      {triggers.map((trigger) => (
+        <li key={trigger.name} data-testid="tree-trigger" style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_DENSE, padding: `0 6px 0 ${pad}px` }}>
+          <button style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, height: '100%', padding: 0, border: 'none', background: 'none', color: t.TEXT, font: 'inherit', fontSize: t.TEXT_BADGE, textAlign: 'left', cursor: 'pointer' }}
+            onClick={() => onShowDefinition(trigger)} title={`${trigger.name} — click to view definition`}>
+            <TriggerIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trigger.name}</span>
+          </button>
         </li>
       ))}
     </ul>

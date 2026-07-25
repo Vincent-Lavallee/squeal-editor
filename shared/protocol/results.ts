@@ -212,3 +212,19 @@ export interface RowEdit {
 export interface RowDelete {
   key: Record<string, CellValue>;
 }
+
+/** A trigger in the tree, nested under its table. */
+export interface TriggerInfo {
+  name: string;
+  /** Schema for Postgres; absent for MySQL/SQLite. */
+  schema?: string;
+}
+
+/** A function or stored procedure in the tree, at the top level. */
+export interface FunctionInfo {
+  name: string;
+  /** Schema for Postgres; absent for MySQL. SQLite has no functions. */
+  schema?: string;
+  /** 'function' or 'procedure' for Postgres; 'function' for MySQL. */
+  kind: 'function' | 'procedure';
+}

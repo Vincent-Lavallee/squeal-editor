@@ -63,6 +63,27 @@ CREATE TABLE tags (label text NOT NULL UNIQUE, weight int);
 INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
 CREATE TABLE logs (msg text);
 INSERT INTO logs (msg) VALUES ('one'), ('two');
+CREATE FUNCTION increment_counter(tablename text, colname text) RETURNS int AS $$
+  DECLARE result int;
+  BEGIN
+    EXECUTE 'SELECT COUNT(*) FROM ' || quote_ident(tablename) INTO result;
+    RETURN result;
+  END;
+$$ LANGUAGE plpgsql;
+CREATE FUNCTION square(x int) RETURNS int AS $$
+BEGIN
+  RETURN x * x;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER events_audit AFTER INSERT ON events
+FOR EACH ROW EXECUTE FUNCTION audit_trigger();
+CREATE TRIGGER users_audit BEFORE DELETE ON users
+FOR EACH ROW EXECUTE FUNCTION audit_trigger();
+CREATE FUNCTION audit_trigger() RETURNS TRIGGER AS $$
+BEGIN
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 `;
 
 const MYSQL_SEED = `
@@ -98,6 +119,25 @@ CREATE TABLE tags (label varchar(50) NOT NULL UNIQUE, weight int);
 INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
 CREATE TABLE logs (msg varchar(100));
 INSERT INTO logs (msg) VALUES ('one'), ('two');
+CREATE TRIGGER events_audit AFTER INSERT ON events
+FOR EACH ROW INSERT INTO logs (msg) VALUES (CONCAT('event: ', NEW.label));
+CREATE TRIGGER users_audit BEFORE DELETE ON users
+FOR EACH ROW INSERT INTO logs (msg) VALUES (CONCAT('deleted user: ', OLD.name));
+DELIMITER //
+CREATE FUNCTION square(x INT) RETURNS INT DETERMINISTIC
+BEGIN
+  RETURN x * x;
+END//
+CREATE FUNCTION count_rows(tablename VARCHAR(255)) RETURNS INT DETERMINISTIC READS SQL DATA
+BEGIN
+  DECLARE result INT;
+  SET @sql = CONCAT('SELECT COUNT(*) INTO @cnt FROM ', tablename);
+  PREPARE stmt FROM @sql;
+  EXECUTE stmt;
+  DEALLOCATE PREPARE stmt;
+  RETURN @cnt;
+END//
+DELIMITER ;
 `;
 
 /**
@@ -141,6 +181,14 @@ CREATE TABLE tags (label TEXT NOT NULL UNIQUE, weight INT);
 INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
 CREATE TABLE logs (msg TEXT);
 INSERT INTO logs (msg) VALUES ('one'), ('two');
+CREATE TRIGGER events_audit AFTER INSERT ON events
+BEGIN
+  INSERT INTO logs (msg) VALUES ('event: ' || NEW.label);
+END;
+CREATE TRIGGER users_audit BEFORE DELETE ON users
+BEGIN
+  INSERT INTO logs (msg) VALUES ('deleted user: ' || OLD.name);
+END;
 `;
 
 /**

@@ -55,6 +55,14 @@ export interface ConnectionHandle {
   browse(database: string, relation: Relation, offset: number, filter?: TableFilter): Promise<TableRows>;
   /** A relation's `CREATE` statement, for the context menu's "open definition". */
   tableDdl(database: string, relation: Relation, kind: 'table' | 'view'): Promise<string>;
+  /** Triggers for a specific table. */
+  listTriggers(database: string, relation: Relation): Promise<Array<{ name: string; schema?: string }>>;
+  /** A trigger's definition. */
+  triggerDdl(database: string, relation: Relation, trigger: string): Promise<string>;
+  /** Functions and stored procedures in a database. */
+  listFunctions(database: string): Promise<Array<{ name: string; schema?: string; kind: 'function' | 'procedure' }>>;
+  /** A function's or procedure's definition. */
+  functionDdl(database: string, func: string, schema?: string): Promise<string>;
   /** Drop a relation. Not undoable -- the UI guards it behind a typed confirmation. */
   dropRelation(database: string, relation: Relation, kind: 'table' | 'view'): Promise<void>;
   /**
@@ -233,6 +241,22 @@ function build<C>(
 
     async tableDdl(database, relation, kind) {
       return driver.tableDdl(await getClient(database), relation, kind);
+    },
+
+    async listTriggers(database, relation) {
+      return driver.listTriggers(await getClient(database), database, relation);
+    },
+
+    async triggerDdl(database, relation, trigger) {
+      return driver.triggerDdl(await getClient(database), database, relation, trigger);
+    },
+
+    async listFunctions(database) {
+      return driver.listFunctions(await getClient(database), database);
+    },
+
+    async functionDdl(database, func, schema) {
+      return driver.functionDdl(await getClient(database), database, func, schema);
     },
 
     async dropRelation(database, relation, kind) {

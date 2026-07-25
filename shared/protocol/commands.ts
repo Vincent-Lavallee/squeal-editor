@@ -19,6 +19,7 @@ import type {
 } from './config.ts';
 import type {
   ColumnInfo,
+  FunctionInfo,
   QueryResult,
   RowDelete,
   RowEdit,
@@ -26,6 +27,7 @@ import type {
   TableFilter,
   TableInfo,
   TablePage,
+  TriggerInfo,
 } from './results.ts';
 import type { UpdateStatus } from './updater.ts';
 
@@ -104,6 +106,44 @@ export interface Commands {
    */
   'db.ddl': {
     req: { connectionId: string; database: string; table: string; schema?: string; kind: 'table' | 'view' };
+    res: { ddl: string };
+  };
+  /**
+   * Triggers for a specific table.
+   *
+   * Triggers are per-table in all three engines, so they are fetched by table name.
+   * The list is per-table and per-database, never global.
+   */
+  'db.triggers': {
+    req: { connectionId: string; database: string; table: string; schema?: string };
+    res: { triggers: TriggerInfo[] };
+  };
+  /**
+   * A trigger's definition, for "open definition" in the tree.
+   *
+   * The UI names a trigger and its table; the extension queries per-engine.
+   */
+  'db.triggerDdl': {
+    req: { connectionId: string; database: string; table: string; trigger: string; schema?: string };
+    res: { ddl: string };
+  };
+  /**
+   * Functions and stored procedures in the database.
+   *
+   * Functions and procedures are not scoped to tables, so this is a database-wide list.
+   * Only Postgres and MySQL support this; SQLite has no functions.
+   */
+  'db.functions': {
+    req: { connectionId: string; database: string };
+    res: { functions: FunctionInfo[] };
+  };
+  /**
+   * A function's or procedure's definition, for "open definition" in the tree.
+   *
+   * The UI names a function and its schema (if applicable); the extension queries per-engine.
+   */
+  'db.functionDdl': {
+    req: { connectionId: string; database: string; function: string; schema?: string };
     res: { ddl: string };
   };
   /**

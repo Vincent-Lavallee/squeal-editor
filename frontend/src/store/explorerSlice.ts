@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-import type { ColumnInfo, TableInfo } from '../../../shared/protocol/index.ts';
+import type { ColumnInfo, FunctionInfo, TableInfo, TriggerInfo } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { relationName, resolveRelation, type Relation } from '../common/db/relation.ts';
 import type { RootState } from './index.ts';
@@ -76,6 +76,16 @@ interface ExplorerState {
    */
   stars: Record<string, Record<string, Record<string, true>>>;
   /**
+   * Triggers, keyed connection -> database -> table.
+   * `null` means asked (in flight or failed), undefined means not asked.
+   */
+  triggers: Record<string, Record<string, Record<string, TriggerInfo[] | null>>>;
+  /**
+   * Functions and procedures, keyed connection -> database.
+   * `null` means asked (in flight or failed), undefined means not asked.
+   */
+  functions: Record<string, Record<string, FunctionInfo[] | null>>;
+  /**
    * The tree's in-flight fetch, and its failure. Singular because one tree is
    * drawn at a time -- but each names its connection, because the fetch that
    * lands is not always the one the tree is still waiting for.
@@ -89,6 +99,8 @@ const initialState: ExplorerState = {
   tables: {},
   columns: {},
   stars: {},
+  triggers: {},
+  functions: {},
   loadingTables: null,
   error: null,
 };
@@ -330,6 +342,123 @@ export const setStar = createAppThunk(
   }
 );
 
+/** Argument for loading triggers for a specific table. */
+interface TriggersArg {
+  database: string;
+  table: string;
+  schema?: string;
+}
+
+/**
+ * Fetch triggers for a table. Like columns, this is called on-demand when a table
+ * is expanded to show nested triggers.
+ */
+export const loadTriggers = createAppThunk(
+  'explorer/loadTriggers',
+  async ({ database, table, schema }: TriggersArg, { getState, dispatch, rejectWithValue }) => {
+    const connectionId = getState().session.activeConnectionId;
+    if (!connectionId) return rejectWithValue('Not connected.');
+
+    dispatch(triggersRequested({ connectionId, database, table }));
+
+    try {
+      const res = await call('db.triggers', { connectionId, database, table, schema });
+      return { connectionId, database, table, triggers: res.triggers };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  },
+  {
+    condition: ({ database, table }, { getState }) => {
+      if (!getState().session.activeConnectionId) return false;
+      const connectionId = getState().session.activeConnectionId!;
+      return getState().explorer.triggers[connectionId]?.[database]?.[table] === undefined;
+    },
+  }
+);
+
+/** Argument for loading functions for a database. */
+interface FunctionsArg {
+  database: string;
+}
+
+/**
+ * Fetch functions and procedures for a database. Called once when the database is
+ * selected, similar to how tables are fetched.
+ */
+export const loadFunctions = createAppThunk(
+  'explorer/loadFunctions',
+  async ({ database }: FunctionsArg, { getState, dispatch, rejectWithValue }) => {
+    const connectionId = getState().session.activeConnectionId;
+    if (!connectionId) return rejectWithValue('Not connected.');
+
+    dispatch(functionsRequested({ connectionId, database }));
+
+    try {
+      const res = await call('db.functions', { connectionId, database });
+      return { connectionId, database, functions: res.functions };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  },
+  {
+    condition: ({ database }, { getState }) => {
+      if (!getState().session.activeConnectionId) return false;
+      const connectionId = getState().session.activeConnectionId!;
+      return getState().explorer.functions[connectionId]?.[database] === undefined;
+    },
+  }
+);
+
+/** Argument for fetching a trigger's DDL. */
+interface TriggerDdlArg {
+  database: string;
+  table: string;
+  trigger: string;
+  schema?: string;
+}
+
+/**
+ * Fetch a trigger's CREATE statement for "open definition".
+ */
+export const fetchTriggerDdl = createAppThunk(
+  'explorer/fetchTriggerDdl',
+  async ({ database, table, trigger, schema }: TriggerDdlArg, { getState, rejectWithValue }) => {
+    const connectionId = getState().session.activeConnectionId;
+    if (!connectionId) return rejectWithValue('Not connected.');
+    try {
+      const { ddl } = await call('db.triggerDdl', { connectionId, database, table, trigger, schema });
+      return { ddl };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  }
+);
+
+/** Argument for fetching a function's DDL. */
+interface FunctionDdlArg {
+  database: string;
+  function: string;
+  schema?: string;
+}
+
+/**
+ * Fetch a function or procedure's CREATE statement for "open definition".
+ */
+export const fetchFunctionDdl = createAppThunk(
+  'explorer/fetchFunctionDdl',
+  async ({ database, function: func, schema }: FunctionDdlArg, { getState, rejectWithValue }) => {
+    const connectionId = getState().session.activeConnectionId;
+    if (!connectionId) return rejectWithValue('Not connected.');
+    try {
+      const { ddl } = await call('db.functionDdl', { connectionId, database, function: func, schema });
+      return { ddl };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  }
+);
+
 const explorerSlice = createSlice({
   name: 'explorer',
   initialState,
@@ -355,6 +484,21 @@ const explorerSlice = createSlice({
       const byTable = (byDatabase[database] ??= {});
       byTable[table] = null;
     },
+
+    /** `loadTriggers` dispatches this the moment it starts; nothing else may. */
+    triggersRequested(state, action: PayloadAction<{ connectionId: string; database: string; table: string }>) {
+      const { connectionId, database, table } = action.payload;
+      const byDatabase = (state.triggers[connectionId] ??= {});
+      const byTable = (byDatabase[database] ??= {});
+      byTable[table] = null;
+    },
+
+    /** `loadFunctions` dispatches this the moment it starts; nothing else may. */
+    functionsRequested(state, action: PayloadAction<{ connectionId: string; database: string }>) {
+      const { connectionId, database } = action.payload;
+      const byDatabase = (state.functions[connectionId] ??= {});
+      byDatabase[database] = null;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -367,6 +511,8 @@ const explorerSlice = createSlice({
         delete state.tables[connectionId];
         delete state.columns[connectionId];
         delete state.stars[connectionId];
+        delete state.triggers[connectionId];
+        delete state.functions[connectionId];
         if (state.loadingTables?.connectionId === connectionId) state.loadingTables = null;
         if (state.error?.connectionId === connectionId) state.error = null;
       })
@@ -432,6 +578,18 @@ const explorerSlice = createSlice({
         if (starred) byTable[key] = true;
         else delete byTable[key];
       })
+      .addCase(loadTriggers.fulfilled, (state, action) => {
+        const { connectionId, database, table, triggers } = action.payload;
+        const byTable = state.triggers[connectionId]?.[database];
+        if (!byTable || byTable[table] === undefined) return;
+        byTable[table] = triggers;
+      })
+      .addCase(loadFunctions.fulfilled, (state, action) => {
+        const { connectionId, database, functions } = action.payload;
+        const byDatabase = state.functions[connectionId];
+        if (!byDatabase || byDatabase[database] === undefined) return;
+        byDatabase[database] = functions;
+      })
       //
       // The database list arrives with the connection itself, so the explorer
       // reads it off the session's event rather than fetching it again. Matching
@@ -451,6 +609,6 @@ const explorerSlice = createSlice({
 // and by nothing else -- `columnsRequested` without the fetch behind it pins a
 // table at "asked, never answered" forever, which is precisely the state that is
 // never retried.
-const { tablesRequested, tablesFailed, columnsRequested } = explorerSlice.actions;
+const { tablesRequested, tablesFailed, columnsRequested, triggersRequested, functionsRequested } = explorerSlice.actions;
 
 export const explorerReducer = explorerSlice.reducer;

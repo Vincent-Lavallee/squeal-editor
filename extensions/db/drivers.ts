@@ -142,6 +142,23 @@ export interface Driver<C> {
    */
   tableDdl(client: C, relation: Relation, kind: 'table' | 'view'): Promise<string>;
   /**
+   * Triggers for a specific table, queried per-engine from the catalog.
+   */
+  listTriggers(client: C, database: string, relation: Relation): Promise<Array<{ name: string; schema?: string }>>;
+  /**
+   * A trigger's definition.
+   */
+  triggerDdl(client: C, database: string, relation: Relation, trigger: string): Promise<string>;
+  /**
+   * Functions and stored procedures in a database, queried per-engine from the catalog.
+   * Empty for SQLite, which has no server-side functions.
+   */
+  listFunctions(client: C, database: string): Promise<Array<{ name: string; schema?: string; kind: 'function' | 'procedure' }>>;
+  /**
+   * A function's or procedure's definition.
+   */
+  functionDdl(client: C, database: string, func: string, schema?: string): Promise<string>;
+  /**
    * Drop a relation. `DROP TABLE` and `DROP VIEW` differ per kind and the
    * identifier is quoted per engine, which is why the UI names one and never
    * writes the SQL. No `CASCADE`: a relation something else depends on stays put,
@@ -698,6 +715,58 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     return ddl;
   },
 
+  async listTriggers(client, database, { table }) {
+    const [rows] = (await client.query(
+      {
+        sql: `SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ? AND EVENT_OBJECT_TABLE = ? ORDER BY TRIGGER_NAME`,
+        rowsAsArray: true,
+      },
+      [database, table]
+    )) as [string[][], FieldPacket[]];
+    return rows.map((r) => ({ name: r[0] as string }));
+  },
+
+  async triggerDdl(client, _database, { table: _table }, trigger) {
+    const [rows] = (await client.query({ sql: `SHOW CREATE TRIGGER ${this.quoteIdent(trigger)}`, rowsAsArray: true })) as [
+      unknown[][],
+      FieldPacket[],
+    ];
+    const ddl = rows[0]?.[2];
+    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of trigger ${trigger}.`);
+    return ddl;
+  },
+
+  async listFunctions(client, database) {
+    const [rows] = (await client.query(
+      {
+        sql: `SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? ORDER BY ROUTINE_NAME`,
+        rowsAsArray: true,
+      },
+      [database]
+    )) as [unknown[][], FieldPacket[]];
+    return rows.map((r) => ({
+      name: r[0] as string,
+      kind: (r[1] as string).toLowerCase() === 'procedure' ? ('procedure' as const) : ('function' as const),
+    }));
+  },
+
+  async functionDdl(client, _database, func) {
+    const [rows] = (await client.query({ sql: `SHOW CREATE FUNCTION ${this.quoteIdent(func)}`, rowsAsArray: true })) as [
+      unknown[][],
+      FieldPacket[],
+    ];
+    let ddl = rows[0]?.[2];
+    if (typeof ddl !== 'string') {
+      const [procRows] = (await client.query({ sql: `SHOW CREATE PROCEDURE ${this.quoteIdent(func)}`, rowsAsArray: true })) as [
+        unknown[][],
+        FieldPacket[],
+      ];
+      ddl = procRows[0]?.[2];
+    }
+    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of ${func}.`);
+    return ddl;
+  },
+
   async dropRelation(client, relation, kind) {
     await client.query(`DROP ${kind === 'view' ? 'VIEW' : 'TABLE'} ${this.qualify(relation)}`);
   },
@@ -1067,6 +1136,67 @@ export const postgresDriver: Driver<pg.Client> = {
     return [`CREATE TABLE ${qualified} (\n${body}\n);`, ...indexLines].join('\n');
   },
 
+  async listTriggers(client, _database, ref) {
+    const { schema, relation } = splitRelation(ref);
+    const res = await client.query({
+      text: `SELECT t.tgname
+               FROM pg_trigger t
+               JOIN pg_class c ON c.oid = t.tgrelid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = $1 AND c.relname = $2 AND NOT t.tgisinternal
+              ORDER BY t.tgname`,
+      values: [schema, relation],
+      rowMode: 'array',
+    });
+    return (res.rows as string[][]).map((r) => ({ name: r[0] as string, schema }));
+  },
+
+  async triggerDdl(client, _database, ref, trigger) {
+    const { schema, relation } = splitRelation(ref);
+    const res = await client.query({
+      text: `SELECT pg_get_triggerdef(t.oid)
+               FROM pg_trigger t
+               JOIN pg_class c ON c.oid = t.tgrelid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = $1 AND c.relname = $2 AND t.tgname = $3`,
+      values: [schema, relation, trigger],
+      rowMode: 'array',
+    });
+    const ddl = (res.rows[0] as string[] | undefined)?.[0];
+    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of trigger ${trigger}.`);
+    return ddl;
+  },
+
+  async listFunctions(client, _database) {
+    const res = await client.query({
+      text: `SELECT p.proname, n.nspname,
+                    CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END
+               FROM pg_proc p
+               JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname <> ALL($1)
+              ORDER BY n.nspname, p.proname`,
+      values: [PG_SYSTEM_SCHEMAS],
+      rowMode: 'array',
+    });
+    return (res.rows as unknown[][]).map((r) => ({
+      name: r[0] as string,
+      schema: r[1] as string,
+      kind: r[2] as 'function' | 'procedure',
+    }));
+  },
+
+  async functionDdl(client, _database, func, schema) {
+    const { schema: funcSchema, relation: funcName } = splitRelation({ table: func, schema });
+    const res = await client.query({
+      text: `SELECT pg_get_functiondef('${funcSchema}'::regnamespace, $1::regprocedure)`,
+      values: [`${funcSchema}.${this.quoteIdent(funcName)}`],
+      rowMode: 'array',
+    });
+    const ddl = (res.rows[0] as string[] | undefined)?.[0];
+    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of ${func}.`);
+    return ddl;
+  },
+
   async dropRelation(client, ref, kind) {
     await client.query(`DROP ${kind === 'view' ? 'VIEW' : 'TABLE'} ${this.qualify(ref)}`);
   },
@@ -1374,6 +1504,27 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
       [table]
     );
     return [`${ddl};`, ...indexes.map((r) => `${r[0] as string};`)].join('\n');
+  },
+
+  async listTriggers(client, _database, { table }) {
+    const rows = sqliteRows(client, `SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ? ORDER BY name`, [table]);
+    return rows.map((r) => ({ name: r[0] as string }));
+  },
+
+  async triggerDdl(client, _database, { table: _table }, trigger) {
+    const rows = sqliteRows(client, 'SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', ['trigger', trigger]);
+    const ddl = rows[0]?.[0];
+    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of trigger ${trigger}.`);
+    return `${ddl};`;
+  },
+
+  async listFunctions() {
+    // SQLite has no server-side functions.
+    return [];
+  },
+
+  async functionDdl() {
+    throw new Error('SQLite has no server-side functions.');
   },
 
   async dropRelation(client, relation, kind) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import type { TableInfo } from '../../shared/protocol/index.ts';
+import type { FunctionInfo, TableInfo, TriggerInfo } from '../../shared/protocol/index.ts';
 import { relationLabel, relationOf } from './common/db/relation.ts';
 import { useAppSelector } from './store/hooks.ts';
 import { useTabs } from './store/tabsSlice.ts';
@@ -36,7 +36,7 @@ export default function Shell({ onAddConnection }: Props) {
 function ShellLayout({ onAddConnection }: Props) {
   const { tabs, activeTab, openGridTab, openEditorTab, selectDatabase, setDefaultDatabase } = useTabs();
   const { run, running, browseIn } = useResults();
-  const { fetchDdl, defaultSchema } = useExplorer();
+  const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema } = useExplorer();
   const { setSql, peekSql } = useEditor();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -101,6 +101,24 @@ function ShellLayout({ onAddConnection }: Props) {
     if (tabId) setSql(tabId, text);
   }, [fetchDdl, openEditorTab, setSql, defaultSchema]);
 
+  const showTriggerDefinition = useCallback(async (database: string, table: string, trigger: TriggerInfo, schema?: string) => {
+    const name = trigger.name;
+    let text: string;
+    try { text = await fetchTriggerDdl(database, table, name, schema); }
+    catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
+    const tabId = openEditorTab(database, name);
+    if (tabId) setSql(tabId, text);
+  }, [fetchTriggerDdl, openEditorTab, setSql]);
+
+  const showFunctionDefinition = useCallback(async (database: string, func: FunctionInfo) => {
+    const name = func.name;
+    let text: string;
+    try { text = await fetchFunctionDdl(database, name, func.schema); }
+    catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
+    const tabId = openEditorTab(database, name);
+    if (tabId) setSql(tabId, text);
+  }, [fetchFunctionDdl, openEditorTab, setSql]);
+
   /*
    * A copy of a tab is a new tab of the same kind on the same database, plus
    * whatever the original was holding: a grid tab re-browses its table, an editor
@@ -144,7 +162,7 @@ function ShellLayout({ onAddConnection }: Props) {
       <ConnectionRail onAdd={onAddConnection} />
 
       <div style={{ display: 'grid', gridTemplateColumns: sidebarCollapsed ? '28px 1fr' : `${sidebarWidth}px auto 1fr`, flex: 1, minHeight: 0 }}>
-        <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} onShowDefinition={showDefinition}
+        <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} onShowDefinition={showDefinition} onShowTriggerDefinition={showTriggerDefinition} onShowFunctionDefinition={showFunctionDefinition}
           collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
         {!sidebarCollapsed && <ResizeHandle orientation="vertical" onDrag={dragSidebar} />}
 

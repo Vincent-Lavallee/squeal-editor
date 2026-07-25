@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 
-import type { ColumnInfo } from '../../../../shared/protocol/index.ts';
+import type { ColumnInfo, FunctionInfo, TriggerInfo } from '../../../../shared/protocol/index.ts';
 import { relationName, type Relation } from '../../common/db/relation.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { selectDefaultDatabase, useTabs } from '../../store/tabsSlice.ts';
@@ -8,10 +8,14 @@ import { selectActiveConnection } from '../../store/sessionSlice.ts';
 import {
   dropTable as dropTableThunk,
   fetchDdl as fetchDdlThunk,
+  fetchFunctionDdl as fetchFunctionDdlThunk,
+  fetchTriggerDdl as fetchTriggerDdlThunk,
   loadColumns,
   loadDatabases,
+  loadFunctions,
   loadStars,
   loadTables,
+  loadTriggers,
   setStar as setStarThunk,
 } from '../../store/explorerSlice.ts';
 
@@ -25,7 +29,7 @@ const NO_DATABASES: string[] = [];
 /** The explorer's whole public surface. Its components use nothing else. */
 export function useExplorer() {
   const dispatch = useAppDispatch();
-  const { databases, tables, columns, stars, loadingTables, error } = useAppSelector((s) => s.explorer);
+  const { databases, tables, columns, stars, triggers, functions, loadingTables, error } = useAppSelector((s) => s.explorer);
   const connectionId = useAppSelector((s) => s.session.activeConnectionId);
   // The active connection's lock, so the menu can refuse a drop on a connection
   // the user has held read-only -- read-only does not reliably cover DDL at the
@@ -58,7 +62,10 @@ export function useExplorer() {
    * connection in its key.
    */
   useEffect(() => {
-    if (database) void dispatch(loadTables({ database }));
+    if (database) {
+      void dispatch(loadTables({ database }));
+      void dispatch(loadFunctions({ database }));
+    }
   }, [database, connectionId, dispatch]);
 
   /*
@@ -93,12 +100,49 @@ export function useExplorer() {
     [dispatch]
   );
 
+  // Triggers for a table, with lazy loading when the table is expanded
+  const triggersFor = useCallback(
+    (db: string, table: string): TriggerInfo[] | null | undefined =>
+      connectionId ? triggers[connectionId]?.[db]?.[table] : undefined,
+    [connectionId, triggers]
+  );
+
+  const loadTableTriggers = useCallback(
+    (db: string, table: string, schema?: string) => {
+      void dispatch(loadTriggers({ database: db, table, schema }));
+    },
+    [dispatch]
+  );
+
+  // Functions for a database
+  const functionsFor = useCallback(
+    (db: string): FunctionInfo[] | null | undefined =>
+      connectionId ? functions[connectionId]?.[db] : undefined,
+    [connectionId, functions]
+  );
+
   // The context menu's two bridge-crossing actions. Each returns the thunk's
   // unwrapped result, so the caller sees the DDL string or the rejection reason
   // directly -- a failed drop surfaces in the confirm modal, where it was asked.
   const fetchDdl = useCallback(
     (db: string, relation: Relation, kind: 'table' | 'view'): Promise<string> =>
       dispatch(fetchDdlThunk({ database: db, ...relation, kind }))
+        .unwrap()
+        .then((r) => r.ddl),
+    [dispatch]
+  );
+
+  const fetchTriggerDdl = useCallback(
+    (db: string, table: string, trigger: string, schema?: string): Promise<string> =>
+      dispatch(fetchTriggerDdlThunk({ database: db, table, trigger, schema }))
+        .unwrap()
+        .then((r) => r.ddl),
+    [dispatch]
+  );
+
+  const fetchFunctionDdl = useCallback(
+    (db: string, func: string, schema?: string): Promise<string> =>
+      dispatch(fetchFunctionDdlThunk({ database: db, function: func, schema }))
         .unwrap()
         .then((r) => r.ddl),
     [dispatch]
@@ -138,7 +182,12 @@ export function useExplorer() {
   return {
     columnsFor,
     loadTableColumns,
+    triggersFor,
+    loadTableTriggers,
+    functionsFor,
     fetchDdl,
+    fetchTriggerDdl,
+    fetchFunctionDdl,
     dropTable,
     isStarred,
     toggleStar,
