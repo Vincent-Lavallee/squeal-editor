@@ -436,3 +436,15 @@ This is a record, not a plan. Nothing here is waiting on anything.
   new tab for it — with nothing open at all. Picking a database from the empty
   state writes that same default rather than a tab's, so it is what the next
   tab from `+` opens on too.
+
+- **2026-07-25** — **Staging environment should be QA** — The environment list offers Staging,
+  but the standard name for the pre-production tier is QA. Replace the
+  `staging` value with `qa`, migrate existing connections set to staging
+  automatically, and update the label and abbreviation everywhere.
+
+- **2026-07-25** — **Enter discards typed-confirmation modals** — In both the read-only-toggle
+  confirm and the drop table/view confirm, pressing Enter after typing the
+  confirmation text dismisses the modal instead of confirming — the Cancel
+  button sits before the confirm button with no explicit type, so the browser's
+  implicit form submission activates it first. Give Cancel an explicit button
+  type in both modals so Enter reaches the real submit button.

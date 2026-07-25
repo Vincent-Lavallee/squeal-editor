@@ -50,7 +50,7 @@ export default function ReadOnlyConfirm({ environment, name, onConfirm, onCancel
         </Field>
 
         <div style={{ display: 'flex', gap: t.GAP_SM, marginTop: t.GAP_XS }}>
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button type="button" onClick={onCancel}>Cancel</Button>
           <Button type="submit" data-testid="modal-submit" variant="primary" style={{ justifyContent: 'center', height: 34, flex: 1 }} disabled={!matches}>
             Turn off read-only
           </Button>

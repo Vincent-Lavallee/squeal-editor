@@ -887,8 +887,8 @@ query is Query 1.
 
 **`--env-*` is its own ramp, not the semantic hues.** Four environments needed
 four colours and every hue was spoken for — red is error, green is success, amber
-is warning. Colouring Staging green would have it mean "success" in the one place
-it must mean "staging". Same argument, and the same shape, as `--syntax-*`: a
+is warning. Colouring QA green would have it mean "success" in the one place
+it must mean "QA". Same argument, and the same shape, as `--syntax-*`: a
 string is not a success and an environment is not a status, so retuning `--red`
 for a callout must not repaint the rail. They land on the same Radix steps today,
 which is not the same as being the same token. *Rejected: Production red and the
@@ -2808,3 +2808,24 @@ its filter across quits.
 **Keyed by the saved connection, like stars, with the same accepted limit.**
 Opening the same saved connection twice shares one snapshot; the runtime id is
 minted fresh each session and could not persist. Not solved, for stars' reasons.
+
+---
+
+## `staging` renamed to `qa`
+
+**Why.** QA is the standard name for the pre-production tier; `staging` was not
+what any team using this app actually called it.
+
+**Why a data migration, not a schema one.** Unlike `ssl`, `read_only` or the
+workspace colour, `environment` needed no new column — it has always been a
+bare `TEXT` with no `CHECK` constraint, so the extension never validated it
+against `ENVIRONMENTS` at the store layer, only the UI's fixed dropdown did.
+The migration is therefore a single `UPDATE ... WHERE environment = 'staging'`,
+not a rebuild.
+
+**The old value is spelled out in the migration itself, not read from a
+shared constant.** Same rule as every migration before it: `'staging'` is what
+this migration is rewriting away from, and it must keep saying so even after
+`ENVIRONMENTS` no longer lists it — reaching for a constant would rewrite the
+migration's own history the day someone tries to delete the last trace of the
+old name.

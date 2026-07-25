@@ -66,7 +66,7 @@ export default function DropTableConfirm({ table, onConfirm, onCancel }: Props) 
         {error && <Callout>{error}</Callout>}
 
         <div style={{ display: 'flex', gap: t.GAP_SM, marginTop: t.GAP_XS }}>
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button type="button" onClick={onCancel}>Cancel</Button>
           <Button type="submit" data-testid="modal-submit" variant="primary" style={{ justifyContent: 'center', height: 34, flex: 1 }} disabled={!matches || dropping}>
             {dropping ? 'Dropping…' : `Drop ${noun}`}
           </Button>

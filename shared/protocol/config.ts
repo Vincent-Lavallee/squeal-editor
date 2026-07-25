@@ -139,7 +139,7 @@ export interface ConnectionConfig extends ServerConfig {
  * a free-text field gives you `prod`, `Prod` and `production` as three groups.
  * Any number of connections may share one -- these are labels, not slots.
  */
-export type Environment = 'local' | 'dev' | 'staging' | 'production';
+export type Environment = 'local' | 'dev' | 'qa' | 'production';
 
 /**
  * A workspace's mark, as an id rather than a glyph.

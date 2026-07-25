@@ -777,11 +777,11 @@ describe('workspaces', () => {
     // Any number per environment, rather than four slots.
     await save({ workspaceId: w.id, name: 'prod-a', config: PG_SERVER, environment: 'production', password: { mode: 'none' } });
     await save({ workspaceId: w.id, name: 'prod-b', config: PG_SERVER, environment: 'production', password: { mode: 'none' } });
-    await save({ workspaceId: w.id, name: 'staging-a', config: PG_SERVER, environment: 'staging', password: { mode: 'none' } });
+    await save({ workspaceId: w.id, name: 'qa-a', config: PG_SERVER, environment: 'qa', password: { mode: 'none' } });
 
     const mine = (await list()).filter((c) => c.workspaceId === w.id);
     expect(mine.filter((c) => c.environment === 'production').map((c) => c.name).sort()).toEqual(['prod-a', 'prod-b']);
-    expect(mine.filter((c) => c.environment === 'staging')).toHaveLength(1);
+    expect(mine.filter((c) => c.environment === 'qa')).toHaveLength(1);
   });
 
   test('deleting one takes its connections with it', async () => {
@@ -862,6 +862,9 @@ const stamps = (): Stamp[] => {
 
 /** What each migration would have to undo, for the rewind below. Newest first. */
 const UNDO: Record<string, string[]> = {
+  // A data rewrite, not a column addition -- environment has always been a bare
+  // TEXT, so there is no column for a rewind to drop.
+  'environment-qa': [],
   'connection-sessions': ['DROP TABLE connection_sessions'],
   stars: ['DROP TABLE stars'],
   settings: ['DROP TABLE settings'],
@@ -1172,6 +1175,33 @@ describe('migrating a store written before workspace colours', () => {
     // Still writable through the normal path, colour and all.
     const edited = await saveWorkspace({ id: migrated.id, name: 'Pre-colour', icon: 'globe', color: 'green' });
     expect(edited.color).toBe('green');
+  });
+});
+
+/**
+ * `staging` renamed to `qa`. Unlike every migration above, the column is
+ * unchanged -- environment has always been a bare TEXT -- so there is no
+ * schema to rewind: the row is edited directly to look like a store the old
+ * app wrote, and only the migration's own stamp needs undoing.
+ */
+describe('migrating a store written before the environment rename', () => {
+  test('a connection saved as staging comes back as qa', async () => {
+    // Resolved live, not from `DEFAULT_WS`: an earlier describe rebuilt the
+    // store, so the default workspace is a different row with a new id than
+    // the one `beforeAll` saw.
+    const ws = (await workspaces())[0]!.id;
+    const conn = await save({ workspaceId: ws, name: 'pre-qa-conn', config: PG_SERVER, password: { mode: 'none' } });
+    await h.stop();
+
+    const db = new Database(DB_FILE);
+    db.run("UPDATE saved_connections SET environment = 'staging' WHERE id = ?", [conn.id]);
+    db.run('DELETE FROM schema_migrations WHERE version > ?', [versionOf('connection-sessions')]);
+    db.close();
+
+    h = await startHarness(ENV);
+
+    const migrated = (await list()).find((c) => c.name === 'pre-qa-conn')!;
+    expect(migrated.environment).toBe('qa');
   });
 });
 

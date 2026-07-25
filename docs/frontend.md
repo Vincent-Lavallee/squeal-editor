@@ -489,7 +489,7 @@ Three things fall out of that, and each is invisible until it bites:
   workspace is gone" instead of two that could differ.
 
 Environments are a *grouping*, not a step: a workspace's connections render under
-`Local / Dev / Staging / Production` headings, in that order, and an environment
+`Local / Dev / QA / Production` headings, in that order, and an environment
 nobody used has no heading. Any number of connections may share one — they are
 labels, not slots.
 

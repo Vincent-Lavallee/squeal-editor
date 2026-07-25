@@ -27,7 +27,7 @@ export interface EnvironmentOption {
 export const ENVIRONMENTS: EnvironmentOption[] = [
   { value: 'local', label: 'Local', abbrev: 'Local' },
   { value: 'dev', label: 'Dev', abbrev: 'Dev.' },
-  { value: 'staging', label: 'Staging', abbrev: 'Stag.' },
+  { value: 'qa', label: 'QA', abbrev: 'QA' },
   { value: 'production', label: 'Production', abbrev: 'Prod.' },
 ];
 
