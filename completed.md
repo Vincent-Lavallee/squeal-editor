@@ -479,3 +479,15 @@ This is a record, not a plan. Nothing here is waiting on anything.
   databases, verified against the live Docker containers. Also tightened the
   row height of a table's expanded columns (`ROW_H_TIGHT`), separate from every
   other tree row.
+
+- **2026-07-25** — **Column name never truncates before the type does** — A narrow sidebar
+  clipped a column's name and its type together, in proportion, so the more
+  important half (the name) lost characters exactly when the less important
+  half (the type) did. Gave the type a `999`-to-`1` flex-shrink ratio against
+  the name, so it absorbs essentially all the negative space and is driven to
+  fully invisible before the name loses a pixel — truncating the name is now
+  a genuine last resort, only reached once the type is already gone and the
+  sidebar is still too narrow. Verified against the running app with
+  DOM-measured `offsetWidth < scrollWidth`, not a screenshot read by eye — a
+  scaled or zoomed capture turned out to shift font hinting enough to
+  disagree with the real, native-scale layout.

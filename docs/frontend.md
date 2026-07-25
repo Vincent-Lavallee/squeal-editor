@@ -1046,6 +1046,24 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   never crossed the bridge, so it lives in `Sidebar`, not a slice — and
   `useExplorer` grew `columnsFor`/`loadTableColumns` as the surface onto that
   shared cache.
+
+  **A narrowing sidebar clips the type before it clips the name, and by a lot
+  more than "before" implies.** Both are `flex` items with `minWidth: 0` (the
+  usual requirement for `text-overflow: ellipsis` to engage inside a flex
+  container at all), but the *shrink* factor is asymmetric — the type's is
+  `999` against the name's default `1`. Flexbox distributes negative space
+  proportionally to `shrink × basis`, so at that ratio the type absorbs
+  essentially all of it and is driven to its floor (0, invisible) before the
+  name loses a pixel; only once the type is fully gone does any further
+  narrowing reach the name. This is a pure-CSS two-stage priority with no
+  measurement in JS — the number is arbitrary in the sense that any
+  sufficiently large ratio does the same job, not in the sense that a smaller
+  one would (proportional shrink with an ordinary `1:1` split was tried first
+  and clipped both together, which is the bug this replaced). Verified against
+  the running app: DOM-measured `offsetWidth < scrollWidth` per element, not a
+  screenshot read by eye — a scaled or zoomed capture shifts font hinting
+  enough to disagree with the native-scale layout it was supposed to be
+  checking.
 - **The tree's filter matches names only, and hides rows and nothing else.**
   Ordering, tables-above-views, which rows are expanded and the context menu all
   behave exactly as they do unfiltered. It deliberately does not match columns:
