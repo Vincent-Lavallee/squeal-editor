@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.8.1...v0.9.0) (2026-07-25)
+
+
+### Features
+
+* copy as sql ([cfb076e](https://github.com/Vincent-Lavallee/squeal-editor/commit/cfb076ed4aaf316f8bc4fd94cff9c74d83410145))
+* FK navigation between tables ([94f0779](https://github.com/Vincent-Lavallee/squeal-editor/commit/94f0779fbfa15429339f0bea0ad7eba45d95d43d))
+* Restore connection state ([fa6a0fd](https://github.com/Vincent-Lavallee/squeal-editor/commit/fa6a0fd04416de1e9a6dd579efd294a97038f2d0))
+* Single-cell selection ([52e8a3d](https://github.com/Vincent-Lavallee/squeal-editor/commit/52e8a3dc0352fd789154482a7013bd5f937bd6ea))
+* Skeletons ([b214cbb](https://github.com/Vincent-Lavallee/squeal-editor/commit/b214cbbd16437b85a267e0a659b3d35517a6afc0))
+* Tab rename ([d6fe132](https://github.com/Vincent-Lavallee/squeal-editor/commit/d6fe132b7300ad0b2d24c7d7e139424e2ffa357d))
+* unblocked event loop when querying db ([f4bf89a](https://github.com/Vincent-Lavallee/squeal-editor/commit/f4bf89afd2773b8fc92afa91fa071fca2b8cb580))
+
+
+### Bug Fixes
+
+* renamed staging to QA and enter key on confirm modal now works ([31c61e7](https://github.com/Vincent-Lavallee/squeal-editor/commit/31c61e7860e934bd8532a9607662f33a8cf4eab8))
+
 ## [0.8.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.8.0...v0.8.1) (2026-07-22)
 
 
