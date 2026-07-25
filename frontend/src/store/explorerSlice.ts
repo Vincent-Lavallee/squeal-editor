@@ -439,6 +439,7 @@ export const fetchTriggerDdl = createAppThunk(
 interface FunctionDdlArg {
   database: string;
   function: string;
+  kind: 'function' | 'procedure';
   schema?: string;
 }
 
@@ -447,11 +448,11 @@ interface FunctionDdlArg {
  */
 export const fetchFunctionDdl = createAppThunk(
   'explorer/fetchFunctionDdl',
-  async ({ database, function: func, schema }: FunctionDdlArg, { getState, rejectWithValue }) => {
+  async ({ database, function: func, kind, schema }: FunctionDdlArg, { getState, rejectWithValue }) => {
     const connectionId = getState().session.activeConnectionId;
     if (!connectionId) return rejectWithValue('Not connected.');
     try {
-      const { ddl } = await call('db.functionDdl', { connectionId, database, function: func, schema });
+      const { ddl } = await call('db.functionDdl', { connectionId, database, function: func, kind, schema });
       return { ddl };
     } catch (err) {
       return rejectWithValue(errorMessage(err));

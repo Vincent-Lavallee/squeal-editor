@@ -160,6 +160,13 @@ export const ROW_H = 44; /* reference table row height */
  * but scrolling — so grids and the object tree use the dense height instead.
  */
 export const ROW_H_DENSE = 30;
+/*
+ * Tighter still, for a tree row's own detail rows -- a table's expanded columns.
+ * These are read as one glance down a short list rather than clicked
+ * individually the way a dense row is, so the extra breathing room ROW_H_DENSE
+ * gives every tree row is a gap to close here rather than to keep.
+ */
+export const ROW_H_TIGHT = 22;
 
 export const GAP_XS = 4;
 export const GAP_SM = 8;

@@ -39,7 +39,11 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [flippedSchemas, setFlippedSchemas] = useState<ReadonlySet<string>>(() => new Set());
   const [filter, setFilter] = useState('');
-  const [menu, setMenu] = useState<{ table: TableInfo; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<
+    | { kind: 'table'; table: TableInfo; x: number; y: number }
+    | { kind: 'function'; func: FunctionInfo; x: number; y: number }
+    | null
+  >(null);
   const [dropping, setDropping] = useState<TableInfo | null>(null);
   const [groupBySchema, setGroupBySchema] = useBooleanSetting(GROUP_BY_SCHEMA, true);
   // No store flag for this one -- see `refreshDatabases` -- so the spinner is
@@ -86,6 +90,11 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
       { label: `Drop ${table.kind === 'view' ? 'view' : 'table'}`, danger: true, disabled: readOnly, title: readOnly ? 'This connection is read-only.' : undefined, onSelect: () => setDropping(table) },
     ];
   };
+
+  const functionMenuItems = (func: FunctionInfo, db: string): MenuItem[] => [
+    { label: 'Copy name', onSelect: () => copyName(func.name) },
+    { label: 'Open definition', onSelect: () => onShowFunctionDefinition(db, func) },
+  ];
 
   // Keyed by the qualified name, because two schemas may each hold a `users` and
   // expanding one of them must not open the other.
@@ -158,13 +167,31 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
     // returns to the shape you chose when the filter clears.
     query !== '' || (schema === defaultSchema) !== flippedSchemas.has(schema);
 
+  const functions = database ? functionsFor(database) : undefined;
+
+  // Grouped the same way tables are, so a schema's functions can fold into that
+  // schema's own heading instead of needing one of their own -- see `grouped`.
+  const functionsBySchema = useMemo(() => {
+    const groups = new Map<string, FunctionInfo[]>();
+    if (!functions) return groups;
+    for (const func of functions) {
+      const schema = func.schema ?? '';
+      const existing = groups.get(schema);
+      if (existing) existing.push(func);
+      else groups.set(schema, [func]);
+    }
+    return groups;
+  }, [functions]);
+
   /*
    * MySQL reports no schema, because its database *is* its schema -- so there is
    * nothing to group by and the toggle does not apply. That is read off the data
    * rather than off the engine: the UI does not know what MySQL is, and "these
    * relations name a schema" is exactly the question being asked anyway.
    */
-  const hasSchemas = unpinned?.some((table) => table.schema !== undefined) ?? false;
+  const hasSchemas =
+    (unpinned?.some((table) => table.schema !== undefined) ?? false) ||
+    (functions?.some((f) => f.schema !== undefined) ?? false);
   const grouped = useMemo(() => {
     if (!unpinned || !hasSchemas || !groupBySchema) return null;
     // Grouping preserves the order within each group, so the sort above still
@@ -176,6 +203,12 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
       if (existing) existing.push(table);
       else groups.set(schema, [table]);
     }
+    // A schema holding functions but no tables still needs a group to render
+    // them under -- a function's schema is the same fact a table's is, so it
+    // folds into that schema's own heading rather than earning one of its own.
+    for (const schema of functionsBySchema.keys()) {
+      if (!groups.has(schema)) groups.set(schema, []);
+    }
     // The schema you are in comes first, then the rest alphabetically: it holds
     // the tables being worked on, it is the one group that starts open, and a
     // heading that opens onto rows should not sit below several that do not.
@@ -185,7 +218,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
       if (b === defaultSchema) return 1;
       return a.localeCompare(b);
     });
-  }, [unpinned, hasSchemas, groupBySchema, defaultSchema]);
+  }, [unpinned, hasSchemas, groupBySchema, defaultSchema, functionsBySchema]);
 
   const renderRow = (table: TableInfo, db: string, indented: boolean) => {
     const key = relationName(relationOf(table));
@@ -197,7 +230,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
     return (
       <div key={key} data-testid="tree-item">
         <div data-testid="tree-row" style={{ display: 'flex', alignItems: 'center', height: t.ROW_H_DENSE, borderRadius: t.RADIUS, paddingLeft: indented ? 12 : 0 }}
-          onContextMenu={(e) => { e.preventDefault(); setMenu({ table, x: e.clientX, y: e.clientY }); }}>
+          onContextMenu={(e) => { e.preventDefault(); setMenu({ kind: 'table', table, x: e.clientX, y: e.clientY }); }}>
           <button data-testid="tree-toggle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', width: 18, height: '100%', padding: 0, border: 'none', background: 'none', color: t.TEXT_FAINT, cursor: 'pointer' }}
             onClick={() => toggle(table)} aria-expanded={open} aria-label={open ? `Collapse ${label}` : `Expand ${label}`}>
             <DisclosureIcon style={{ ...iconSvg, transition: 'transform 0.12s ease', ...(open ? { transform: 'rotate(90deg)' } : {}) }} aria-hidden="true" />
@@ -213,6 +246,31 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
       </div>
     );
   };
+
+  // A function row shares the table row's shape (name, icon, context menu) but
+  // has nothing to disclose -- no columns, no triggers -- so the toggle button
+  // becomes an inert spacer, keeping the name lined up with a table's own.
+  //
+  // Its own testids throughout, never `tree-item`/`tree-label`: those name a
+  // *relation*, which the UI suite reads schema groups by (`treeLabelsIn`, the
+  // tables-above-views ordering check) -- a function folded into a schema
+  // group under those same ids would read as one more relation and land after
+  // every view, breaking "the view is last in its group" the moment a schema
+  // holds both.
+  const renderFunctionRow = (func: FunctionInfo, db: string, indented: boolean) => (
+    <div key={func.name} data-testid="tree-function-item">
+      <div data-testid="tree-function-row" style={{ display: 'flex', alignItems: 'center', height: t.ROW_H_DENSE, borderRadius: t.RADIUS, paddingLeft: indented ? 12 : 0 }}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ kind: 'function', func, x: e.clientX, y: e.clientY }); }}>
+        <div style={{ flex: 'none', width: 18 }} aria-hidden="true" />
+        <button data-testid="tree-function-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, height: '100%', padding: '0 6px 0 0', border: 'none', background: 'none', color: t.TEXT, font: 'inherit', fontSize: t.TEXT_BADGE, textAlign: 'left', cursor: 'pointer' }}
+          onClick={() => onShowFunctionDefinition(db, func)} title={`${func.name} — click to view definition`}>
+          <FunctionIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
+          <span data-testid="tree-function-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{func.name}</span>
+          <span style={{ marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: t.TEXT_MUTED, fontSize: '0.85em' }}>{func.kind}</span>
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <aside data-testid="sidebar" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, borderRight: `1px solid ${t.BORDER}` }}>
@@ -317,43 +375,44 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
 
         {database && grouped?.map(([schema, group]) => {
           const open = schemaOpen(schema);
+          const schemaFunctions = functionsBySchema.get(schema) ?? [];
+          const count = group.length + schemaFunctions.length;
           return (
             <div key={schema} data-testid="tree-schema">
               <button data-testid="tree-schema-row" style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', height: t.ROW_H_DENSE, padding: '0 6px 0 0', border: 'none', background: 'none', color: t.TEXT_MUTED, font: 'inherit', fontSize: t.TEXT_BADGE, textAlign: 'left', cursor: 'pointer', borderRadius: t.RADIUS }}
                 onClick={() => toggleSchema(schema)} aria-expanded={open}
-                title={`${schema} — ${group.length} ${group.length === 1 ? 'relation' : 'relations'}`}>
+                title={`${schema} — ${count} ${count === 1 ? 'item' : 'items'}`}>
                 <DisclosureIcon style={{ ...iconSvg, flex: 'none', color: t.TEXT_FAINT, transition: 'transform 0.12s ease', ...(open ? { transform: 'rotate(90deg)' } : {}) }} aria-hidden="true" />
                 <SchemaIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
                 <span data-testid="tree-schema-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{schema}</span>
               </button>
               {open && group.map((table) => renderRow(table, database, true))}
+              {open && schemaFunctions.map((func) => renderFunctionRow(func, database, true))}
             </div>
           );
         })}
 
         {database && !grouped && unpinned?.map((table) => renderRow(table, database, false))}
 
-        {database && functionsFor(database) && functionsFor(database)!.length > 0 && (
+        {/*
+          * Only reached when nothing schema-groups functions above -- flat mode,
+          * or an engine with no schema layer (MySQL). There each function has no
+          * heading of its own to fold under, so this is the one place it still
+          * earns one.
+          */}
+        {database && !grouped && functions && functions.length > 0 && (
           <div data-testid="tree-functions" style={{ marginTop: t.GAP_SM, paddingTop: t.GAP_SM, borderTop: `1px solid ${t.BORDER}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', height: t.ROW_H_DENSE, padding: '0 6px', color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE }}>
               <FunctionIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
               <span>Functions</span>
             </div>
-            {functionsFor(database)?.map((func) => (
-              <div key={func.name} data-testid="tree-function" style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_DENSE, padding: '0 6px' }}>
-                <button style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, height: '100%', padding: 0, border: 'none', background: 'none', color: t.TEXT, font: 'inherit', fontSize: t.TEXT_BADGE, textAlign: 'left', cursor: 'pointer' }}
-                  onClick={() => onShowFunctionDefinition(database, func)} title={`${func.name} — click to view definition`}>
-                  <FunctionIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{func.name}</span>
-                  <span style={{ marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: t.TEXT_MUTED, fontSize: '0.85em' }}>{func.kind}</span>
-                </button>
-              </div>
-            ))}
+            {functions.map((func) => renderFunctionRow(func, database, false))}
           </div>
         )}
       </nav>
 
-      {menu && database && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.table, database)} onClose={() => setMenu(null)} />}
+      {menu && database && menu.kind === 'table' && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.table, database)} onClose={() => setMenu(null)} />}
+      {menu && database && menu.kind === 'function' && <ContextMenu x={menu.x} y={menu.y} items={functionMenuItems(menu.func, database)} onClose={() => setMenu(null)} />}
       {dropping && database && <DropTableConfirm table={dropping} onConfirm={async () => { await dropTable(database, relationOf(dropping), dropping.kind); setDropping(null); }} onCancel={() => setDropping(null)} />}
     </aside>
   );
@@ -367,7 +426,7 @@ function Columns({ columns, indented }: { columns: ReturnType<ReturnType<typeof 
   return (
     <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
       {columns.map((c) => (
-        <li key={c.name} data-testid="tree-col" style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_DENSE, padding: `0 6px 0 ${pad}px` }}
+        <li key={c.name} data-testid="tree-col" style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_TIGHT, padding: `0 6px 0 ${pad}px` }}
           title={`${c.name} ${c.dataType}${c.primaryKey ? ' · primary key' : ''}`}>
           <span data-testid="tree-col-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: t.TEXT_BADGE, color: t.TEXT, fontFamily: t.MONO }}>{c.name}</span>
           {c.primaryKey && <KeyIcon data-testid="tree-key" style={{ ...iconSvg, flex: 'none', color: t.TEXT_MUTED }} aria-label="primary key" />}
@@ -423,7 +482,7 @@ function ColumnsSkeleton({ pad }: { pad: number }) {
   return (
     <div data-testid="tree-note">
       {[0.55, 0.7, 0.4, 0.6].map((w, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_DENSE, padding: `0 6px 0 ${pad}px` }}>
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_TIGHT, padding: `0 6px 0 ${pad}px` }}>
           <Skeleton width={100 + w * 60} height={12} />
           <Skeleton width={50 + w * 30} height={12} style={{ marginLeft: 'auto' }} />
         </div>

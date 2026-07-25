@@ -113,7 +113,7 @@ function ShellLayout({ onAddConnection }: Props) {
   const showFunctionDefinition = useCallback(async (database: string, func: FunctionInfo) => {
     const name = func.name;
     let text: string;
-    try { text = await fetchFunctionDdl(database, name, func.schema); }
+    try { text = await fetchFunctionDdl(database, name, func.kind, func.schema); }
     catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
     const tabId = openEditorTab(database, name);
     if (tabId) setSql(tabId, text);

@@ -464,10 +464,18 @@ This is a record, not a plan. Nothing here is waiting on anything.
 - **2026-07-25** — **Trigger and function definitions in the tree** — Checking what a trigger or
   function actually does means leaving the app for another tool, because the tree
   only knows tables and views. Nested each table's triggers under it (since a
-  trigger always belongs to exactly one table), and added a top-level Functions
-  node listing functions and stored procedures together (since neither is scoped
-  to a table). Selecting any of them opens its definition the same way "Open
-  definition" does for a table today. Functions and procedures only apply where
-  the engine has them — Postgres and MySQL, not SQLite; triggers apply to all
-  three. Added test triggers and functions to the test databases for Postgres,
-  MySQL and SQLite.
+  trigger always belongs to exactly one table), and functions/procedures fold
+  into their schema's own heading where the engine has one (Postgres) — a schema
+  holding functions but no tables still gets a heading — falling back to a flat
+  "Functions" section only where nothing schema-groups them (MySQL, whose
+  database is its schema, or the tree's flat mode). Functions get their own
+  context menu (Copy name, Open definition). Selecting a trigger or function
+  opens its definition the same way "Open definition" does for a table.
+  Functions and procedures only apply where the engine has them — Postgres and
+  MySQL, not SQLite; triggers apply to all three. MySQL's function DDL needs
+  `kind` carried from the tree rather than guessed — `SHOW CREATE FUNCTION` on a
+  name that is actually a procedure throws outright, with nothing to fall back
+  from. Added real test triggers and functions/procedures to all three test
+  databases, verified against the live Docker containers. Also tightened the
+  row height of a table's expanded columns (`ROW_H_TIGHT`), separate from every
+  other tree row.

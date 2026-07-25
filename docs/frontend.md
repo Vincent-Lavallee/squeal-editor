@@ -1127,6 +1127,34 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   the fallback and the one that has no tab to inherit from — a tab pointed at
   nothing has an empty tree and nothing to run, and if the picker is disabled
   too, the only way out of the app's own empty state is to reconnect.
+- **Triggers nest under their table; functions fold into their schema's own
+  heading rather than earning one of their own.** A trigger belongs to exactly
+  one table, so it renders inside that table's expanded row, lazily fetched the
+  same way columns are (`triggersFor`/`loadTableTriggers`, the same
+  asked-vs-answered `null` marker `columns` already uses). A function is not
+  scoped to a table but it *is* scoped to a schema on an engine that has one —
+  `functionsBySchema` groups them the same way `grouped` groups tables, and a
+  schema's functions render after that schema's tables under the heading
+  already there. A schema holding functions but no tables still gets a group
+  for exactly this reason (`grouped`'s loop over `functionsBySchema.keys()`).
+  Only when nothing schema-groups them — flat mode, or MySQL, whose database
+  *is* its schema — does a flat **Functions** section with its own heading
+  appear at the bottom, because there each function has nowhere else to fold
+  into.
+
+  **Function rows carry their own testids, never `tree-item`/`tree-label`.**
+  Those name a *relation*, which the UI suite reads a schema group's contents
+  by (`treeLabelsIn`) and asserts tables sort above views inside — a function
+  landing under those same ids would count as one more relation and land after
+  every view, breaking that ordering the moment a schema holds both. Its own
+  `tree-function-item`/`tree-function-label` keep it a fact the suite has to
+  ask for by name rather than one that silently rides along.
+
+  Selecting either opens its definition in a new editor tab, same as a table's
+  "Open definition" — `showTriggerDefinition`/`showFunctionDefinition` in
+  `Shell`, the same shape as `showDefinition` beside them. A function's context
+  menu (`Copy name`, `Open definition`) is a fixed two items, not `menuItems`'
+  four: there is no star and no drop for something that is not a relation.
 - **Starring a table lifts it into a "Starred" group at the top, out of the list
   below rather than repeated in it.** Starred and unstarred are computed once
   from the same sorted, filtered list (`pinned`/`unpinned` in `Sidebar`), so both

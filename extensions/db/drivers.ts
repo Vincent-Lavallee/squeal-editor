@@ -157,7 +157,7 @@ export interface Driver<C> {
   /**
    * A function's or procedure's definition.
    */
-  functionDdl(client: C, database: string, func: string, schema?: string): Promise<string>;
+  functionDdl(client: C, database: string, func: string, kind: 'function' | 'procedure', schema?: string): Promise<string>;
   /**
    * Drop a relation. `DROP TABLE` and `DROP VIEW` differ per kind and the
    * identifier is quoted per engine, which is why the UI names one and never
@@ -750,19 +750,16 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     }));
   },
 
-  async functionDdl(client, _database, func) {
-    const [rows] = (await client.query({ sql: `SHOW CREATE FUNCTION ${this.quoteIdent(func)}`, rowsAsArray: true })) as [
+  async functionDdl(client, _database, func, kind) {
+    // `kind` decides the verb rather than trying FUNCTION and falling back:
+    // `SHOW CREATE FUNCTION` on a name that is actually a procedure throws
+    // ER_SP_DOES_NOT_EXIST outright, leaving nothing to fall back from.
+    const verb = kind === 'procedure' ? 'SHOW CREATE PROCEDURE' : 'SHOW CREATE FUNCTION';
+    const [rows] = (await client.query({ sql: `${verb} ${this.quoteIdent(func)}`, rowsAsArray: true })) as [
       unknown[][],
       FieldPacket[],
     ];
-    let ddl = rows[0]?.[2];
-    if (typeof ddl !== 'string') {
-      const [procRows] = (await client.query({ sql: `SHOW CREATE PROCEDURE ${this.quoteIdent(func)}`, rowsAsArray: true })) as [
-        unknown[][],
-        FieldPacket[],
-      ];
-      ddl = procRows[0]?.[2];
-    }
+    const ddl = rows[0]?.[2];
     if (typeof ddl !== 'string') throw new Error(`Could not read the definition of ${func}.`);
     return ddl;
   },
@@ -1185,11 +1182,22 @@ export const postgresDriver: Driver<pg.Client> = {
     }));
   },
 
-  async functionDdl(client, _database, func, schema) {
+  async functionDdl(client, _database, func, _kind, schema) {
+    // `kind` goes unread: pg_get_functiondef renders either uniformly, unlike
+    // MySQL's two distinct SHOW CREATE verbs.
     const { schema: funcSchema, relation: funcName } = splitRelation({ table: func, schema });
+    // pg_get_functiondef takes a single oid, not a schema-qualified name --
+    // found by the pg_proc/pg_namespace pair listFunctions already reads.
+    // LIMIT 1 rather than resolving overloads: neither this nor listFunctions
+    // disambiguates by argument types, so "open definition" on an overloaded
+    // name is already an approximation.
     const res = await client.query({
-      text: `SELECT pg_get_functiondef('${funcSchema}'::regnamespace, $1::regprocedure)`,
-      values: [`${funcSchema}.${this.quoteIdent(funcName)}`],
+      text: `SELECT pg_get_functiondef(p.oid)
+               FROM pg_proc p
+               JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = $1 AND p.proname = $2
+              LIMIT 1`,
+      values: [funcSchema, funcName],
       rowMode: 'array',
     });
     const ddl = (res.rows[0] as string[] | undefined)?.[0];

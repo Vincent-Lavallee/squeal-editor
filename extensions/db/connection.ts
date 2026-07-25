@@ -62,7 +62,7 @@ export interface ConnectionHandle {
   /** Functions and stored procedures in a database. */
   listFunctions(database: string): Promise<Array<{ name: string; schema?: string; kind: 'function' | 'procedure' }>>;
   /** A function's or procedure's definition. */
-  functionDdl(database: string, func: string, schema?: string): Promise<string>;
+  functionDdl(database: string, func: string, kind: 'function' | 'procedure', schema?: string): Promise<string>;
   /** Drop a relation. Not undoable -- the UI guards it behind a typed confirmation. */
   dropRelation(database: string, relation: Relation, kind: 'table' | 'view'): Promise<void>;
   /**
@@ -255,8 +255,8 @@ function build<C>(
       return driver.listFunctions(await getClient(database), database);
     },
 
-    async functionDdl(database, func, schema) {
-      return driver.functionDdl(await getClient(database), database, func, schema);
+    async functionDdl(database, func, kind, schema) {
+      return driver.functionDdl(await getClient(database), database, func, kind, schema);
     },
 
     async dropRelation(database, relation, kind) {

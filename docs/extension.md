@@ -385,6 +385,42 @@ connection held read-only, refused there too — read-only is a session mode tha
 does not reliably cover DDL, so the extension does not gate on it and the UI
 does. See `docs/decisions.md`.
 
+## Triggers and functions
+
+`db.triggers`/`db.triggerDdl` and `db.functions`/`db.functionDdl` back the
+tree's trigger and function nodes, the same shape `db.ddl` is for a table:
+the UI names what it wants and never writes the catalog query, because only
+this side may. Triggers are per-table everywhere (`db.triggers` takes a
+`Relation`); functions and procedures are database-wide (`db.functions` takes
+only a database) since neither is scoped to a table.
+
+**SQLite has no server-side functions.** `listFunctions` returns `[]`
+unconditionally and `functionDdl` is unreachable from an empty list; SQLite's
+triggers work the same as the other two engines, read straight out of
+`sqlite_master.sql` the way `tableDdl` already is for a table there.
+
+**MySQL's `functionDdl` needs to be told `kind`, not guess it.**
+`SHOW CREATE FUNCTION` on a name that is actually a procedure throws
+`ER_SP_DOES_NOT_EXIST` outright rather than answering empty, so there is no
+failed-then-fall-back path the way `tableDdl` has none to fall back from
+either. `db.functionDdl` therefore carries the `kind` the tree's `db.functions`
+row already reported, the same way `db.ddl` is already told `table` vs `view`.
+
+**Postgres's `pg_get_functiondef` takes a single `oid`, not a schema-qualified
+name.** Casting a bare `"schema"."name"` string to `regprocedure` is the
+tempting shortcut and the wrong one: it requires the full argument-type list to
+resolve an overloaded name, which neither this nor `listFunctions` tracks. The
+oid comes off `pg_proc`/`pg_namespace` instead, the same pair `listFunctions`
+already joins, with `LIMIT 1` standing in for the overload resolution this
+driver does not attempt anywhere else.
+
+Postgres reads its own triggers from `pg_trigger` (`NOT tgisinternal`, which
+excludes the ones a constraint creates for itself) and renders them with
+`pg_get_triggerdef`, the same "the engine renders its own definition" rule
+`tableDdl` follows. MySQL reads `information_schema.TRIGGERS`/`ROUTINES` and
+takes `SHOW CREATE TRIGGER`/`FUNCTION`/`PROCEDURE` verbatim, the same as
+`SHOW CREATE TABLE`.
+
 ## Writing back edited rows
 
 `db.write` applies a browsed grid's staged edits and deletes. It exists for the

@@ -75,15 +75,20 @@ BEGIN
   RETURN x * x;
 END;
 $$ LANGUAGE plpgsql;
-CREATE TRIGGER events_audit AFTER INSERT ON events
-FOR EACH ROW EXECUTE FUNCTION audit_trigger();
-CREATE TRIGGER users_audit BEFORE DELETE ON users
-FOR EACH ROW EXECUTE FUNCTION audit_trigger();
 CREATE FUNCTION audit_trigger() RETURNS TRIGGER AS $$
 BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+CREATE TRIGGER events_audit AFTER INSERT ON events
+FOR EACH ROW EXECUTE FUNCTION audit_trigger();
+CREATE TRIGGER users_audit BEFORE DELETE ON users
+FOR EACH ROW EXECUTE FUNCTION audit_trigger();
+CREATE PROCEDURE log_note(note text) LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO logs (msg) VALUES (note);
+END;
+$$;
 `;
 
 const MYSQL_SEED = `
@@ -128,14 +133,12 @@ CREATE FUNCTION square(x INT) RETURNS INT DETERMINISTIC
 BEGIN
   RETURN x * x;
 END//
-CREATE FUNCTION count_rows(tablename VARCHAR(255)) RETURNS INT DETERMINISTIC READS SQL DATA
+CREATE PROCEDURE count_rows(IN tablename VARCHAR(255))
 BEGIN
-  DECLARE result INT;
-  SET @sql = CONCAT('SELECT COUNT(*) INTO @cnt FROM ', tablename);
+  SET @sql = CONCAT('SELECT COUNT(*) FROM ', tablename);
   PREPARE stmt FROM @sql;
   EXECUTE stmt;
   DEALLOCATE PREPARE stmt;
-  RETURN @cnt;
 END//
 DELIMITER ;
 `;
