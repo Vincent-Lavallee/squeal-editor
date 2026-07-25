@@ -1024,6 +1024,40 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(300);
     });
 
+    test('clicking a cell selects it alone, arrow keys move it, and Ctrl+C copies its value', async () => {
+      await app.evaluate(clickTable('tags'));
+      await Bun.sleep(1500);
+
+      await app.evaluate(`${gridCell(0, 0)}.click(); true;`);
+      await Bun.sleep(150);
+      expect(await app.evaluate<boolean>(`${gridCell(0, 0)}.classList.contains('grid__cell--selected')`)).toBe(true);
+      // Cell and row selection are mutually exclusive.
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid__row--selected').length`)).toBe(0);
+
+      const label = await app.evaluate<string>(`${gridCell(0, 0)}.textContent`);
+      await app.evaluate(
+        `document.querySelector('[data-testid="grid-scroll"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(300);
+      expect(await app.evaluate<string>(`Neutralino.clipboard.readText()`)).toBe(label);
+
+      // Arrow-right moves the highlight to the next column, not a copy of it.
+      await app.evaluate(
+        `document.querySelector('[data-testid="grid-scroll"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); true;`
+      );
+      await Bun.sleep(150);
+      expect(await app.evaluate<boolean>(`${gridCell(0, 1)}.classList.contains('grid__cell--selected')`)).toBe(true);
+      expect(await app.evaluate<boolean>(`${gridCell(0, 0)}.classList.contains('grid__cell--selected')`)).toBe(false);
+
+      // Selecting a row in turn clears the cell selection -- each clears the other.
+      await app.evaluate(`document.querySelectorAll('.grid tbody tr')[0].querySelector('.gutter').click(); true;`);
+      await Bun.sleep(150);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid__cell--selected').length`)).toBe(0);
+
+      await app.evaluate(closeTab('tags'));
+      await Bun.sleep(300);
+    });
+
     /*
      * The point of reporting the dialect as data: nothing in the renderer maps
      * an engine to a grammar, so the only way to know this is wired is to ask

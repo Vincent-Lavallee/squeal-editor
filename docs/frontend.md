@@ -181,6 +181,21 @@ bar says why. `useResults` computes `editable`/`readOnlyReason` and is the whole
 surface; `ResultsTable` and its context menu touch neither `dispatch` nor the
 context directly, the same feature-hook rule as everywhere else.
 
+**A cell can be selected instead of a row, and the two are mutually exclusive** —
+selecting one clears the other, both directions, so Ctrl+C keeps meaning "copy
+what is selected" without asking which kind. `selectedCell` is component state
+in `ResultsTable`, the same shape as `selected` (the row set) and reset by the
+same effect on a new `result`. A single click on a data cell selects it (editing
+still opens on double click, so nothing already free had to be rebound); the
+arrow keys move it, clamped to the grid's own bounds; and Ctrl+C copies its
+value alone, reading the *effective* value (staged edit if there is one, else
+the original) rather than `copyRows`' raw row — a copy should match what is
+highlighted on screen. A NULL cell copies as an empty string, never the word
+the grid draws for it. Delete/Backspace still only touches row selection: a
+selected cell is not a selected row, so nothing stages a delete from it.
+Rectangular ranges (drag, shift-click, a tab-separated shape) are a deliberately
+separate, unbuilt feature — row copy already covers grabbing data in bulk.
+
 **The staged edits are a context, not a slice** — the bridge test again. They have
 not crossed until Save (only the `db.write` arguments do), and they are keyed by
 tab, so `ResultsContext` is the exact shape of the editor's `sqlByTab`: pruned by

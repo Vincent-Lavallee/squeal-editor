@@ -30,11 +30,12 @@ export default function ResultsTable() {
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const anchor = useRef<number | null>(null);
+  const [selectedCell, setSelectedCell] = useState<Cell | null>(null);
   const [editing, setEditing] = useState<Cell | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
-  useEffect(() => { setSelected(new Set()); setEditing(null); setMenu(null); anchor.current = null; }, [result]);
+  useEffect(() => { setSelected(new Set()); setSelectedCell(null); setEditing(null); setMenu(null); anchor.current = null; }, [result]);
 
   useEffect(() => {
     if (!running || !startedAt) { setElapsed(0); return; }
@@ -118,19 +119,43 @@ export default function ResultsTable() {
   const setNull = (row: number, col: number) => { if (isKeyCol(col)) return; if (original(row, col) === null) clearCell(row, col); else setCell(row, col, null); setEditing(null); };
 
   const selectRow = (r: number, e: React.MouseEvent) => {
+    setSelectedCell(null);
     if (e.shiftKey && anchor.current !== null) { const [lo, hi] = [Math.min(anchor.current, r), Math.max(anchor.current, r)]; const range = new Set<number>(); for (let i = lo; i <= hi; i++) range.add(i); setSelected(range); }
     else if (e.ctrlKey || e.metaKey) { setSelected((prev) => { const next = new Set(prev); if (next.has(r)) next.delete(r); else next.add(r); return next; }); anchor.current = r; }
     else { setSelected(new Set([r])); anchor.current = r; }
   };
 
+  const selectCell = (r: number, c: number) => {
+    setSelected(new Set());
+    anchor.current = null;
+    setSelectedCell({ row: r, col: c });
+  };
+
+  const moveCell = (dr: number, dc: number) => {
+    setSelectedCell((cur) => {
+      if (!cur) return cur;
+      const row = Math.min(Math.max(cur.row + dr, 0), result.rows.length - 1);
+      const col = Math.min(Math.max(cur.col + dc, 0), result.columns.length - 1);
+      return { row, col };
+    });
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (editing) return;
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) { if (selected.size > 0) { copyRows([...selected].sort((a, b) => a - b)); e.preventDefault(); } }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+      if (selectedCell) { const value = effective(selectedCell.row, selectedCell.col); void Neutralino.clipboard.writeText(value === null ? '' : String(value)); e.preventDefault(); }
+      else if (selected.size > 0) { copyRows([...selected].sort((a, b) => a - b)); e.preventDefault(); }
+    }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && editable && selected.size > 0) { for (const r of selected) if (!isDeleted(r)) toggleDelete(r); e.preventDefault(); }
+    else if (selectedCell && e.key === 'ArrowUp') { moveCell(-1, 0); e.preventDefault(); }
+    else if (selectedCell && e.key === 'ArrowDown') { moveCell(1, 0); e.preventDefault(); }
+    else if (selectedCell && e.key === 'ArrowLeft') { moveCell(0, -1); e.preventDefault(); }
+    else if (selectedCell && e.key === 'ArrowRight') { moveCell(0, 1); e.preventDefault(); }
   };
 
   const openMenu = (r: number, c: number) => (e: React.MouseEvent) => {
     e.preventDefault();
+    setSelectedCell(null);
     if (!selected.has(r)) { setSelected(new Set([r])); anchor.current = r; }
     setEditing(null); setMenu({ row: r, col: c, x: e.clientX, y: e.clientY });
   };
@@ -215,11 +240,17 @@ export default function ResultsTable() {
                     onClick={(e) => selectRow(r, e)} title="Click to select the row">{firstRow + r}</td>
                   {row.map((_cell, c) => {
                     const isEditing = editing?.row === r && editing.col === c;
+                    const isCellSelected = selectedCell?.row === r && selectedCell.col === c;
                     const value = effective(r, c);
                     const dirty = stagedCell(r, c) !== undefined;
-                    const cellCls = isEditing ? 'grid__cell--editing' : dirty ? 'grid__cell--dirty' : undefined;
+                    const cellCls = [
+                      isEditing && 'grid__cell--editing',
+                      isCellSelected && 'grid__cell--selected',
+                      dirty && 'grid__cell--dirty',
+                    ].filter(Boolean).join(' ') || undefined;
                     return (
                       <td key={c} className={cellCls} style={cellBase}
+                        onClick={() => !isEditing && selectCell(r, c)}
                         onDoubleClick={() => startEdit(r, c)} onContextMenu={openMenu(r, c)}>
                         {isEditing ? (
                           <CellEditor initial={value} canNull={!isKeyCol(c)}

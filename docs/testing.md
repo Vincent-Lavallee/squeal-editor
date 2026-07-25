@@ -73,6 +73,18 @@ prerequisite. `stop()` reaps the extension too, for the same reason — it is
 *designed* to outlive the app by up to the heartbeat timeout, which is right in
 production and wrong between two test runs.
 
+**A `bun start`/`bun run dev` window left open surfaces as `NE_CL_IVCTOKN`,
+not as a familiar collapse.** Neither script passes a fixed debug port, so
+`reapStaleApp`'s `cdpAlive()` check never sees one — it isn't "on the port"
+from this suite's point of view. `reap.ts` still kills it at the very start of
+`test:ui` (that call is forced, unconditionally by name), but the ~50s of
+`build` + `build:ext` between that and the actual `neu run` is long enough to
+start one again by hand. Two live instances then fight over Neutralino's
+one-time token handshake, and the *new* one is what fails. `launchApp`'s own
+pre-spawn `reapStaleApp` call is therefore forced too, not `cdpAlive()`-gated
+like the rest of that function's callers — it has no port to check for a dev
+instance, so it always kills by name right before spawning.
+
 **The cost is deliberate: this kills a copy of the app you have open yourself.**
 That was already true of `stop()`, and it is what a fixed debug port buys.
 

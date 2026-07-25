@@ -41,6 +41,15 @@ Things that already work, but not well enough.
   from the extension's store, contents refetched, never cached rows that could be
   hours stale.
 
+- **Multi-cell selection** — Copying more than one value at a time means
+  either a whole row via the gutter or a single cell — there is no way to
+  select a rectangle of cells. Unify `selectedCell` into the same range
+  concept already used for rows: a single cell is a 1×1 range. Extend a range
+  by shift-click, the same gesture rows already use, or by click-and-drag.
+  Copies as tab-separated text — rows on newlines, cells on tabs — the same
+  shape "Copy row" already produces, so the clipboard format stays consistent
+  across the whole grid.
+
 - **Modify window release** — Can you remove the standalone exe and make the setup as the main windows exe without the setup in the file name. Not sure if the installer relies on the other exe tho.
 
 ## Bugs
@@ -78,17 +87,16 @@ Things that are wrong.
   still searches the full set on the server side. Autocomplete respects the
   same cap.
 
+## Features
+
+Things that do not exist yet.
+
 - **Configurable environments** — The four environments are hardcoded, so every
   team is stuck with local/dev/staging/production even when their pipeline uses
   different names. Add a screen under the File menu to add and remove
   environments — the four defaults ship with the app and can be removed.
   Existing connections keep their environment even if it is later removed from
   the list. Stored in the extension's SQLite store, like workspaces.
-
-## Features
-
-Things that do not exist yet.
-
 - **Export and import connections** — Moving connections to another machine means
   retyping every one of them. Export all workspaces and their connections from the
   File menu to a file chosen by a native save dialog, and import one back, merging
@@ -111,18 +119,6 @@ Things that do not exist yet.
   which is how you know you hit the right box rather than a box; failure shows the
   server's own message, and an expired AWS SSO session says that, instead of arriving
   as a database access error.
-
-- **Select a cell** — The grid selects whole rows and nothing smaller, so lifting one
-  value out means copying the entire row and cutting the rest away by hand. Click a
-  cell to highlight it and Ctrl+C copies that value alone; arrow keys move the
-  selection, since the grid already takes focus and reads keys, and a highlight that
-  cannot move is half an interaction. Single click is free today — editing opens on
-  double click — so nothing has to be rebound. Cell and row selection are mutually
-  exclusive, each clearing the other, which keeps Ctrl+C meaning "copy what is
-  selected" and leaves Delete applying to rows only. A NULL cell copies as nothing
-  rather than the word the grid draws. Rectangular ranges are a separate item: the
-  drag, the shift-click and the tab-separated shape are their own problem, and row
-  copy already covers grabbing data in bulk.
 
 - **Export a table** — Getting a table out of the app means selecting rows by
   hand or writing the dump query yourself. Add an export that streams a whole
@@ -205,6 +201,47 @@ Things that do not exist yet.
   destination on disk and a bound on how large it may grow. Nothing a database
   returned may appear in it: a log holding query results is a copy of the data
   outside the encryption the store exists to provide.
+
+- **Trigger and function definitions in the tree** — Checking what a trigger or
+  function actually does means leaving the app for another tool, because the
+  tree only knows tables and views. Nest each table's triggers under it, since a
+  trigger always belongs to exactly one table, and add a top-level Functions
+  node listing functions and stored procedures together, since neither is
+  scoped to a table. Selecting any of them opens its definition the same way
+  "Open definition" does for a table today. Functions and procedures only
+  apply where the engine has them — Postgres and MySQL, not SQLite; triggers
+  apply to all three.
+
+- **Relationship diagram** — Understanding how tables relate means reading DDL
+  or reaching for another tool, because nothing in the app shows foreign keys
+  at all — the tree only marks primary keys. Add a diagram, opened from a new
+  top-level menu item, laying out every table in the current database with
+  their columns and primary/foreign keys marked, connected by lines for each
+  FK. Clicking a table node opens that table the same way clicking it in the
+  tree does; nodes can be dragged to declutter an auto-layout, but the
+  arrangement is not remembered — it lays out fresh each time the diagram is
+  opened.
+
+- **Navigate a foreign key to its related row** — Following a foreign key to
+  the row it points at means retyping the lookup by hand, because nothing
+  marks FK columns anywhere — `ColumnInfo` in the protocol carries only
+  `primaryKey` today, no engine reports FK metadata at all. Add FK detection
+  to each driver alongside the existing primary-key read, and show a small
+  icon in each cell of a FK column (in a table opened by browsing from the
+  tree, not a hand-typed query, for the same reason those results aren't
+  editable today) that opens the related table, always in a new tab, filtered
+  to the one row the FK value points at.
+
+- **Copy a row as SQL** — Recreating a row elsewhere means retyping an INSERT
+  by hand, because the existing "Copy row" / "Copy N rows" only writes
+  tab-separated text. Add "Copy as SQL" beside it in the same context menu,
+  building an `INSERT INTO` statement client-side from the selected rows —
+  consistent with how "Copy row" already builds its text from `result.rows`
+  without a round trip, since values arrive from the server pre-formatted and
+  never pass through JS `Date` or `Number` — quoted per engine the same way
+  the filter bar already quotes. Only available for tables opened by browsing
+  from the tree, the same boundary as editing and FK navigation, since the
+  table name an INSERT needs isn't known for a hand-typed query.
 
 - **Linux AppImage release** — Linux builds ship as raw zips with no desktop
   integration — no icon in the launcher, no .desktop entry, nothing. Wrap the

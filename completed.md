@@ -381,3 +381,15 @@ This is a record, not a plan. Nothing here is waiting on anything.
   borderless hides. Neither macOS nor Linux has ever been launched, so the rest of
   what the bar does there — dragging, resizing, snapping — is unknown rather than
   known to work.
+
+- **2026-07-24** — **Select a cell** — The grid selects whole rows and nothing smaller, so lifting one
+  value out means copying the entire row and cutting the rest away by hand. Click a
+  cell to highlight it and Ctrl+C copies that value alone; arrow keys move the
+  selection, since the grid already takes focus and reads keys, and a highlight that
+  cannot move is half an interaction. Single click is free today — editing opens on
+  double click — so nothing has to be rebound. Cell and row selection are mutually
+  exclusive, each clearing the other, which keeps Ctrl+C meaning "copy what is
+  selected" and leaves Delete applying to rows only. A NULL cell copies as nothing
+  rather than the word the grid draws. Rectangular ranges are a separate item: the
+  drag, the shift-click and the tab-separated shape are their own problem, and row
+  copy already covers grabbing data in bulk.
