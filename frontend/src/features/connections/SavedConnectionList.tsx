@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ThinkingOrb } from 'thinking-orbs';
 
 import type { SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
 import { engineLabel, isFileBased } from '../../common/db/engines.ts';
@@ -83,13 +84,20 @@ export default function SavedConnectionList({ workspace, connections, connecting
                         <span data-testid="saved-name" style={{ overflow: 'hidden', fontSize: t.TEXT_BODY, fontWeight: 500, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
                         <Badge kind="accent">{engineLabel(c.config.type)}</Badge>
                       </span>
-                      <span data-testid="saved-server" style={{ overflow: 'hidden', color: t.TEXT_MUTED, fontFamily: t.MONO, fontSize: t.TEXT_BADGE, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {connectingId === c.id ? connectPhaseLabel(connectingPhase) : serverLabel(c.config)}
-                        {/* `hasPassword` is false for three different reasons and only
-                            one of them means a prompt: an IAM row mints a token and a
-                            file engine has no auth at all, so neither is ever asked. */}
-                        {!c.hasPassword && !c.config.iam && !isFileBased(c.config.type) && connectingId !== c.id && <span style={{ color: t.TEXT_FAINT, fontFamily: t.FONT, fontSize: t.TEXT_BADGE }}> · asks for a password</span>}
-                      </span>
+                      {connectingId === c.id ? (
+                        <span data-testid="saved-server" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, color: t.TEXT_MUTED, fontFamily: t.MONO, fontSize: t.TEXT_BADGE }}>
+                          <ThinkingOrb state="shaping" size={20} theme="dark" aria-label={connectPhaseLabel(connectingPhase)} />
+                          {connectPhaseLabel(connectingPhase)}
+                        </span>
+                      ) : (
+                        <span data-testid="saved-server" style={{ overflow: 'hidden', color: t.TEXT_MUTED, fontFamily: t.MONO, fontSize: t.TEXT_BADGE, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {serverLabel(c.config)}
+                          {/* `hasPassword` is false for three different reasons and only
+                              one of them means a prompt: an IAM row mints a token and a
+                              file engine has no auth at all, so neither is ever asked. */}
+                          {!c.hasPassword && !c.config.iam && !isFileBased(c.config.type) && <span style={{ color: t.TEXT_FAINT, fontFamily: t.FONT, fontSize: t.TEXT_BADGE }}> · asks for a password</span>}
+                        </span>
+                      )}
                     </button>
 
                     <div data-testid="saved-actions" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none' }}>

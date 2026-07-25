@@ -38,6 +38,7 @@
         "react-dom": "^18.3.1",
         "react-redux": "^9.3.0",
         "sql-formatter": "^15.8.2",
+        "thinking-orbs": "^0.1.1",
       },
       "devDependencies": {
         "@types/react": "^18.3.17",
@@ -563,6 +564,8 @@
     "supports-color": ["supports-color@7.2.0", "", { "dependencies": { "has-flag": "^4.0.0" } }, "sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw=="],
 
     "tcp-port-used": ["tcp-port-used@1.0.3", "", { "dependencies": { "debug": "4.3.1", "is2": "2.0.1" } }, "sha512-4CEQ3qRJYo+mtEbJ+OoQu3dF4TDkwaO3RDVC4UzP5cpAOIUWwuwPjD7sdxDFFqsMUjsXVVYBMlg/boAaloThMA=="],
+
+    "thinking-orbs": ["thinking-orbs@0.1.1", "", { "peerDependencies": { "react": ">=18.0.0", "react-dom": ">=18.0.0" } }, "sha512-nLvLTGJtk74K13MmP7XiRdzFiQx7UsoZAIyBZNgXyl7Q3h2mdz0r3eKn9LCsuzb3DGOVjwDvMhtnAkIqJJRVQA=="],
 
     "tinyglobby": ["tinyglobby@0.2.17", "", { "dependencies": { "fdir": "^6.5.0", "picomatch": "^4.0.4" } }, "sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g=="],
 

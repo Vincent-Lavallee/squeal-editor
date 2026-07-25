@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ThinkingOrb } from 'thinking-orbs';
 
 import type { CellValue } from '../../../../shared/protocol/index.ts';
 import { CopyIcon, ForeignKeyIcon, NextPageIcon, PrevPageIcon } from '../../common/icons/icons.ts';
@@ -58,6 +59,7 @@ export default function ResultsTable() {
     <>
       <FilterBar />
       <div data-testid="results-bar" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `0 ${t.GAP_LG}px`, height: 32, borderBottom: `1px solid ${t.BORDER}`, fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>
+        <ThinkingOrb state="shaping" size={20} theme="dark" aria-label="Running" />
         <span>Running for {elapsed}s…</span>
         {activeTabId && (
           <Button variant="ghost" style={{ height: 24, padding: '0 8px', marginLeft: 'auto' }} onClick={() => cancelQuery(activeTabId)}>

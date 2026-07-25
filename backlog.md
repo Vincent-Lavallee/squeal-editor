@@ -15,12 +15,6 @@ Things that already work, but not well enough.
 
 - **Red delete button** — The delete button in the connection list should be red to signal a destructive action.
 
-- **Database selector polish** — The font is 13px while every other chrome label
-  sits at 12px, so the picker reads a half-step too loud. Drop it to match. Also,
-  there is no way to copy the database name without selecting the text in a query
-  by hand — right-click the selector to copy it to the clipboard, with a brief
-  hint that the name was copied.
-
 - **Edit results from manual SQL** — Results are only editable when browsing a
   table opened from the tree, because the system needs a table to write back to
   and key columns to target. Typing `SELECT * FROM some_table` by hand gives the

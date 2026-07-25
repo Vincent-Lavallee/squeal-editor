@@ -9,6 +9,7 @@ import {
   RiBarChart2Line,
   RiBox3Line,
   RiBuilding2Line,
+  RiCheckLine,
   RiCloseLine,
   RiCodeSSlashLine,
   RiDownloadCloud2Line,
@@ -123,6 +124,9 @@ export const UpdateIcon = RiDownloadCloud2Line;
 
 /** Copying text to the clipboard, on an error card or a result cell. */
 export const CopyIcon = RiFileCopyLine;
+
+/** The confirmation a copy actually landed -- the database picker's copy hint. */
+export const CopiedIcon = RiCheckLine;
 
 /** Re-fetching a list from the server: the database picker and the table tree. */
 export const RefreshIcon = RiRefreshLine;

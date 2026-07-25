@@ -2911,3 +2911,36 @@ first wearing its own hue and the second wearing the neutral default, side by
 side under one plain-text heading; the saved list shows both strips before
 either is opened; the workspace form shows no colour control at all — all
 four read off the running app's own screenshots.
+
+---
+
+## The busy-wait mark is the `thinking-orbs` package, not hand-rolled
+
+**Why it took two hand-rolled attempts first.** The first cut was a solid
+`clip-path` square → triangle → circle, which shipped looking wrong: filled
+polygons interpolate straight lines between mismatched vertices, so a
+mid-morph frame is a kite-shaped blob, not a shape settling into another one.
+The second cut read `thinking-orbs`' own source for its technique — a dotted
+outline walked by arc length so dots stay evenly spaced at every instant —
+and reimplemented it on a plain `<canvas>`. That version had two real bugs
+before it worked at all: the dot count and radius, tuned against a 160px test
+probe, painted nothing visible at the real 16px size; and a query fast enough
+to resolve before the first `requestAnimationFrame` callback fired could
+unmount the canvas having painted zero frames, ever.
+
+**Then the ask changed to using the real package.** Once told to just install
+it, the second cut's hand-rolled `<canvas>` component was deleted outright
+rather than kept as a fallback — two implementations of the same animation is
+exactly the kind of unrequested option this project's conventions warn
+against, and the package is now the one place this logic lives.
+
+**`theme` is pinned to `"dark"`, not left `"auto"`.** The package resolves
+light-vs-dark from `prefers-color-scheme` or an ancestor `data-theme`
+attribute, and this app has neither: it is Radix dark with no light mode yet
+(see "Light theme" in the backlog). Leaving it `"auto"` would read a signal
+that says nothing about this chrome and risk flipping ink colour the day
+someone's OS theme does.
+
+**`size` is `20`, the package's tuned "inline-text" preset, not `64`.** The
+two sizes are separate hand-tuned designs, not one scaled by CSS — asking for
+an in-between size was never on the table.

@@ -454,3 +454,9 @@ This is a record, not a plan. Nothing here is waiting on anything.
   connections, not workspaces. Give each saved connection its own color, defaulting
   to its workspace's color but overridable in the connection form. The rail chips
   use the connection color; the workspace heading stays in the regular text color.
+
+- **2026-07-25** — **Database selector polish** — The font is 13px while every other chrome label
+  sits at 12px, so the picker reads a half-step too loud. Drop it to match. Also,
+  there is no way to copy the database name without selecting the text in a query
+  by hand — right-click the selector to copy it to the clipboard, with a brief
+  hint that the name was copied.

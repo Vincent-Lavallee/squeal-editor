@@ -86,6 +86,7 @@ const bare: CSSProperties = {
   height: 24,
   padding: '0 2px 0 6px',
   fontWeight: 600,
+  fontSize: t.TEXT_BADGE,
   borderColor: 'transparent',
 };
 
@@ -364,7 +365,11 @@ export default function Select({
   };
 
   const isBare = variant === 'bare';
-  const showsBox = focused || open || (hovered && !disabled);
+  // Deliberately not `focused`: `close()` refocuses the trigger after a pick,
+  // so a bare select would otherwise keep the box lit long after the pointer
+  // left it. `:focus-visible` still rings a keyboard-focused one -- this box
+  // is the hover affordance, not the focus one.
+  const showsBox = open || (hovered && !disabled);
   const searching = open && searchable && !disabled;
 
   return (

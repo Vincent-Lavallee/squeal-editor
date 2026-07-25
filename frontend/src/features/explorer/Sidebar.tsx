@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { TableInfo } from '../../../../shared/protocol/index.ts';
 import { relationLabel, relationName, relationOf } from '../../common/db/relation.ts';
-import { DisclosureIcon, FlatTreeIcon, KeyIcon, RefreshIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, StarIcon, TableIcon, ViewIcon } from '../../common/icons/icons.ts';
+import { CopiedIcon, DisclosureIcon, FlatTreeIcon, KeyIcon, RefreshIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, StarIcon, TableIcon, ViewIcon } from '../../common/icons/icons.ts';
 import DropTableConfirm from './DropTableConfirm.tsx';
 import { useExplorer } from './useExplorer.ts';
+import Badge from '../../common/components/Badge.tsx';
 import Button from '../../common/components/Button.tsx';
 import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import Input from '../../common/components/Input.tsx';
@@ -42,8 +43,27 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
   // No store flag for this one -- see `refreshDatabases` -- so the spinner is
   // this click's alone, not a fact the tree needs to know either.
   const [refreshingDatabases, setRefreshingDatabases] = useState(false);
+  // 'hiding' plays the entrance animation in reverse rather than vanishing
+  // outright -- an abrupt unmount was the thing this state exists to avoid.
+  const [copyHint, setCopyHint] = useState<'idle' | 'shown' | 'hiding'>('idle');
+  const copyHintTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const copyName = (name: string) => void Neutralino.clipboard.writeText(name);
+
+  // The tree's "Copy name" has a title tooltip to lean on; the picker has
+  // nothing beside it, so the hint is the only way this ever gets noticed.
+  const copyDatabaseName = () => {
+    if (!database) return;
+    copyName(database);
+    clearTimeout(copyHintTimer.current);
+    setCopyHint('shown');
+    copyHintTimer.current = setTimeout(() => {
+      setCopyHint('hiding');
+      copyHintTimer.current = setTimeout(() => setCopyHint('idle'), 160);
+    }, 1200);
+  };
+
+  useEffect(() => () => clearTimeout(copyHintTimer.current), []);
 
   const onRefreshDatabases = () => {
     setRefreshingDatabases(true);
@@ -194,17 +214,35 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
   return (
     <aside data-testid="sidebar" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, borderRight: `1px solid ${t.BORDER}` }}>
       <div data-testid="sidebar-head" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, height: t.TAB_H, padding: '0 6px', borderBottom: collapsed ? 'none' : `1px solid ${t.BORDER}`, flex: 'none', ...(collapsed ? { justifyContent: 'center', padding: 0 } : {}) }}>
-        <Select variant="bare" searchable value={database ?? ''} onSelect={onSelectDatabase}
-          options={databases.map((db) => ({ value: db, label: db }))}
-          placeholder={databases.length === 0 ? 'No databases' : 'Select a database…'}
-          disabled={databases.length === 0} aria-label="Database"
-          data-testid="sidebar-db-select"
-          // Spread the hidden case rather than writing `display: undefined`: the
-          // key would still exist and would overwrite the component's own
-          // `display: flex`, which React then drops, leaving a block box whose
-          // label cannot grow and whose caret sits against the text instead of
-          // at the right edge.
-          style={{ flex: 1, minWidth: 0, ...(collapsed ? { display: 'none' } : {}) }} />
+        <div style={{ position: 'relative', flex: 1, minWidth: 0, display: collapsed ? 'none' : 'block' }}
+          onContextMenu={(e) => { e.preventDefault(); copyDatabaseName(); }}>
+          <Select variant="bare" searchable value={database ?? ''} onSelect={onSelectDatabase}
+            options={databases.map((db) => ({ value: db, label: db }))}
+            placeholder={databases.length === 0 ? 'No databases' : 'Select a database…'}
+            disabled={databases.length === 0} aria-label="Database"
+            data-testid="sidebar-db-select"
+            title={database ? `${database} — right-click to copy` : undefined}
+            style={{ width: '100%' }} />
+
+          {copyHint !== 'idle' && (
+            // The badge recipe already used for the engine chip, not a one-off
+            // tooltip box: a pill + checkmark reads as a toast rather than as a
+            // debug label, and it pops in/out instead of snapping. The full
+            // database name stays out of it on purpose -- a SQLite one is a full
+            // file path, easily wider than the sidebar, and the confirmation is
+            // "it copied", not "here is what", which the picker already shows.
+            <div role="status" data-testid="sidebar-db-copied" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 50 }}>
+              <Badge kind="green" style={{
+                animation: copyHint === 'hiding'
+                  ? 'copy-hint-pop 0.16s ease-in reverse both'
+                  : 'copy-hint-pop 0.16s ease-out both',
+              }}>
+                <CopiedIcon style={iconSvg} aria-hidden="true" />
+                Copied
+              </Badge>
+            </div>
+          )}
+        </div>
 
         {!collapsed && (
           <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0 }}
@@ -233,6 +271,19 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
           * to leave the tree to change is one nobody finds. It is absent on an
           * engine with no schemas -- a toggle that could only ever do nothing.
           */}
+        {/*
+          * Refresh before the group toggle, not after: the header above ends in
+          * [db-refresh][collapse], so this bar's last slot has to be the other
+          * toggle-like control (group-by-schema) for the two refresh icons to
+          * land in the same column instead of one sitting a button-width off.
+          */}
+        <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0 }}
+          onClick={refreshTables} disabled={!database || loading}
+          title="Refresh tables" aria-label="Refresh tables"
+          data-testid="sidebar-tables-refresh">
+          <RefreshIcon className={loading ? 'spin' : undefined} style={iconSvg} aria-hidden="true" />
+        </Button>
+
         {hasSchemas && (
           <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0 }}
             onClick={() => setGroupBySchema(!groupBySchema)}
@@ -243,13 +294,6 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
             {groupBySchema ? <FlatTreeIcon style={iconSvg} aria-hidden="true" /> : <SchemaIcon style={iconSvg} aria-hidden="true" />}
           </Button>
         )}
-
-        <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0 }}
-          onClick={refreshTables} disabled={!database || loading}
-          title="Refresh tables" aria-label="Refresh tables"
-          data-testid="sidebar-tables-refresh">
-          <RefreshIcon className={loading ? 'spin' : undefined} style={iconSvg} aria-hidden="true" />
-        </Button>
       </div>
 
       <nav style={{ flex: 1, overflowY: 'auto', padding: `${t.GAP_SM}px 6px`, display: collapsed ? 'none' : undefined }}>

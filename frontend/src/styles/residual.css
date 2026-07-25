@@ -130,6 +130,10 @@ input::placeholder { color: var(--text-faint); }
   50% { opacity: 0.8; }
 }
 .skeleton { animation: skeleton-pulse 1.6s ease-in-out infinite; }
+@keyframes copy-hint-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 
 /* ---- :has() rules (no inline equivalent) ---- */
 .ws-icons__pick:has(input:focus-visible),
