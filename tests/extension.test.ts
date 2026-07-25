@@ -165,6 +165,20 @@ describe.each([
     expect(columns.find((c) => c.name === 'name')?.primaryKey).toBe(false);
   });
 
+  test('flags a single-column foreign key, pointing at the referenced table and column', async () => {
+    // The grid's whole reason to show a navigable icon: the column that carries
+    // the constraint says where it points, and every other column says nothing.
+    const columns = await columnsOf('events');
+
+    const fk = columns.find((c) => c.name === 'user_id')?.foreignKey;
+    expect(fk?.table).toBe('users');
+    expect(fk?.column).toBe('id');
+    expect(fk?.schema).toBe(expectSchemaQualified ? 'public' : undefined);
+
+    expect(columns.find((c) => c.name === 'id')?.foreignKey).toBeUndefined();
+    expect(columns.find((c) => c.name === 'label')?.foreignKey).toBeUndefined();
+  });
+
   test('a view has columns like a table does', async () => {
     // The editor completes against a view exactly as it does a table, so the
     // catalog query must not quietly be tables-only.
@@ -641,6 +655,14 @@ describe.each([
       expect(cols.map((c) => c.name).slice(0, 3)).toEqual(['id', 'name', 'email']);
       expect(cols.find((c) => c.name === 'id')?.dataType).toMatch(/int/i);
       expect(cols.find((c) => c.name === 'id')?.primaryKey).toBe(true);
+    });
+
+    test('browse carries a foreign-key column\'s target, for the grid to follow', async () => {
+      // Same call, same rule as `dataType` and `primaryKey` above -- browse rides
+      // the same driver.listColumns as db.columns, so this is the wiring, not the
+      // detection (that is tested against db.columns directly).
+      const cols = (await browse('events')).columnInfo;
+      expect(cols.find((c) => c.name === 'user_id')?.foreignKey?.table).toBe('users');
     });
 
     test('writes edits and deletes back as one batch', async () => {

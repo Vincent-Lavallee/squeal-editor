@@ -274,6 +274,45 @@ Three rules, and the last is the one that will bite:
   free — the catalog query simply matches no rows — and there is a test pinning
   it, because "fix" it into a throw and the editor errors on every keystroke.
 
+### Foreign keys, for the grid to follow
+
+`ColumnInfo.foreignKey` names the relation and column a foreign-key column
+points at, read from the same catalog pass as `dataType` and `primaryKey`. It is
+what lets a browsed cell offer to open the row it references, in the frontend.
+
+**Only a single-column foreign key is ever reported.** A composite key needs
+every column's value to name one row, and a cell holds exactly one of them —
+reporting it on the first column would let the grid filter the related table by
+a fraction of the key and land on every row sharing that fraction, silently.
+`pickForeignKeys` (shared by all three drivers, the same shape as `pickRowKey`
+beside it) groups a table's foreign-key columns by constraint name and drops any
+group with more than one member, rather than guessing which column to report it
+on.
+
+Each engine reads its own catalog for the mapping:
+
+- **MySQL reads `information_schema.KEY_COLUMN_USAGE`**, filtered to rows where
+  `REFERENCED_TABLE_NAME` is not null — the same table also answers a plain
+  unique-key row, which has no referenced table and is excluded by that filter.
+  `REFERENCED_TABLE_SCHEMA` goes unread the way every schema does in this
+  driver: the client is pinned to one database, and a cross-database foreign key
+  is not a case any other query here handles either.
+- **Postgres reads `pg_constraint`** (`contype = 'f'`), unnesting `conkey` and
+  `confkey` — the local and referenced columns' attnums, as parallel arrays — and
+  joining them back together by position (`WITH ORDINALITY`), which is what
+  pairs a local column with the referenced column it actually points at rather
+  than an arbitrary cross of the two arrays.
+- **SQLite reads `pragma_foreign_key_list`**, grouped by its own `id` (which
+  groups a composite key's rows the way a constraint name does on the other two
+  engines). Its `to` column is null for a column-less `REFERENCES parent`, which
+  means "the parent's own primary key" rather than nothing — resolved with a
+  second `pragma_table_info` lookup per distinct referenced table, since more
+  than one foreign key commonly points at the same parent.
+
+`db.browse`'s `columnInfo` carries the same field, because it comes from the
+same `driver.listColumns` call `db.columns` does — there is no separate
+detection for the browsed path to drift from the completion/tree path.
+
 ## A relation is a name *and* a schema
 
 `Relation` (`{ table, schema? }`) is what every command about one relation

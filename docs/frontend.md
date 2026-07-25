@@ -225,6 +225,38 @@ The browse page also carries each column's type (`columnInfo`, beside
 does when a table is expanded — one more fact travelling with the page that needs
 it, rather than the grid reaching into the explorer's catalog cache.
 
+## Following a foreign key
+
+A cell whose column carries `ColumnInfo.foreignKey` (see `docs/extension.md`)
+shows a small icon beside its value. Clicking it always opens a **new** tab —
+never re-points the current one — browsed straight to the referenced table with
+a one-condition filter: the referenced column equal to the value the cell held.
+Deliberately not reused, the same rule "Clicking a table always opens a new tab"
+already states: following a reference is exactly the moment you want to compare
+it against where you came from.
+
+**Reachable only from a browsed grid**, the same boundary editing and "Open
+definition" already draw around a hand-typed query: `foreignKey` rides on
+`browse.columnInfo`, which is `[]` for a query's result the same way
+`keyColumns` is `null` there. A `SELECT * FROM events` typed by hand gets no
+icon, for the reason it gets no edit affordance either — the extension does not
+know which table's catalog to have read.
+
+**`navigateForeignKey` (in `useResults`) mints the tab and browses it in one
+motion**, reading `openGridTab` off `useTabs()` directly rather than being wired
+through `Shell` — this spans tabs and results only, never the explorer, so it is
+not the multi-feature case `Shell` exists for (see "Features never import each
+other" below; `useTabs` is app-level infrastructure, the same as `useSession`,
+not a sibling feature). A `NULL` value points at nothing, so the icon's handler
+is simply not reachable — `ResultsTable` never renders it over a `NULL` cell in
+the first place.
+
+**The new tab's filter is never seeded into `ResultsContext`'s draft.** It does
+not need to be: an untouched draft derives itself from `browse.filter`
+(`filterToDraft` in `useResults`), so the bar shows the very condition that just
+ran the moment the freshly opened tab reads it back — one `browseTable` carrying
+the filter is the whole of the wiring, the same as `applyFilter` beside it.
+
 ## Filtering a browsed grid
 
 `FilterBar` sits above the results bar on a **grid tab only**. It is either the

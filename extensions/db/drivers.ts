@@ -9,6 +9,7 @@ import type {
   ConnectionConfig,
   EngineType,
   FilterOperator,
+  ForeignKeyRef,
   RowDelete,
   RowEdit,
   SqlDialect,
@@ -292,6 +293,48 @@ function pickRowKey(parts: KeyPart[]): string[] | null {
     }
   }
   return null;
+}
+
+/** One column's participation in one foreign-key constraint, as the catalog reports it. */
+interface FkPart {
+  constraint: string;
+  column: string;
+  /** Absent for MySQL, whose database is its schema. */
+  refSchema?: string;
+  refTable: string;
+  /** Null for SQLite's column-less `REFERENCES parent`, before the caller resolves it. */
+  refColumn: string | null;
+}
+
+/**
+ * Picks the single-column foreign keys out of a table's constraint catalog,
+ * keyed by the local column name.
+ *
+ * Shared for `pickRowKey`'s reason: the grouping must not drift per engine, and
+ * each driver only has to shape its own catalog rows into `FkPart`s.
+ *
+ * **A composite constraint is dropped, not reported on its first column.** A
+ * cell holds one value; navigating on it alone would filter the related table by
+ * a fraction of the key and land on every row sharing that fraction, silently --
+ * the same class of wrong answer `pickRowKey` refuses a nullable unique column
+ * for. `ForeignKeyRef` documents this as the reason it exists at all.
+ */
+function pickForeignKeys(parts: FkPart[]): Map<string, ForeignKeyRef> {
+  const byConstraint = new Map<string, FkPart[]>();
+  for (const p of parts) {
+    const list = byConstraint.get(p.constraint) ?? [];
+    list.push(p);
+    byConstraint.set(p.constraint, list);
+  }
+
+  const result = new Map<string, ForeignKeyRef>();
+  for (const cols of byConstraint.values()) {
+    if (cols.length !== 1) continue;
+    const p = cols[0]!;
+    if (p.refColumn === null) continue;
+    result.set(p.column, { table: p.refTable, schema: p.refSchema, column: p.refColumn });
+  }
+  return result;
 }
 
 /**
@@ -582,7 +625,36 @@ export const mysqlDriver: Driver<MysqlConnection> = {
       [database, table]
     )) as [string[][], FieldPacket[]];
 
-    return rows.map((r) => ({ name: r[0] as string, dataType: r[1] as string, primaryKey: r[2] === 'PRI' }));
+    // KEY_COLUMN_USAGE carries a referenced table only for a foreign key -- a
+    // plain unique or primary key row has REFERENCED_TABLE_NAME NULL, which the
+    // WHERE below excludes. REFERENCED_TABLE_SCHEMA goes unread the way every
+    // schema does in this driver: the client is already pinned to one database,
+    // and a cross-database foreign key is not a case any other query here
+    // handles either.
+    const [fkRows] = (await client.query(
+      {
+        sql: `SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+                FROM information_schema.KEY_COLUMN_USAGE
+               WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL`,
+        rowsAsArray: true,
+      },
+      [database, table]
+    )) as [string[][], FieldPacket[]];
+    const foreignKeys = pickForeignKeys(
+      fkRows.map((r) => ({
+        constraint: r[0] as string,
+        column: r[1] as string,
+        refTable: r[2] as string,
+        refColumn: r[3] as string,
+      }))
+    );
+
+    return rows.map((r) => ({
+      name: r[0] as string,
+      dataType: r[1] as string,
+      primaryKey: r[2] === 'PRI',
+      foreignKey: foreignKeys.get(r[0] as string),
+    }));
   },
 
   async query(client, sql, params) {
@@ -825,10 +897,48 @@ export const postgresDriver: Driver<pg.Client> = {
       rowMode: 'array',
     });
 
+    // pg_constraint's conkey/confkey are parallel arrays of attnums, one column
+    // position each -- unnest with ordinality and join them back together on
+    // that position, which is what lines up a local column with the referenced
+    // one it actually points at rather than an arbitrary pairing across the two
+    // arrays. Filtered on the *local* relation via a second class/namespace join
+    // rather than `conrelid = $1::regclass`, so this reads the same as the query
+    // above it instead of introducing a second way to name a relation.
+    const fkRes = await client.query({
+      text: `SELECT c.conname,
+                    a.attname,
+                    rn.nspname,
+                    rc.relname,
+                    ra.attname
+               FROM pg_constraint c
+               JOIN pg_class lc ON lc.oid = c.conrelid
+               JOIN pg_namespace ln ON ln.oid = lc.relnamespace
+               JOIN pg_class rc ON rc.oid = c.confrelid
+               JOIN pg_namespace rn ON rn.oid = rc.relnamespace
+               JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS ck(attnum, ord) ON true
+               JOIN LATERAL unnest(c.confkey) WITH ORDINALITY AS fk(attnum, ord) ON fk.ord = ck.ord
+               JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ck.attnum
+               JOIN pg_attribute ra ON ra.attrelid = c.confrelid AND ra.attnum = fk.attnum
+              WHERE c.contype = 'f' AND ln.nspname = $1 AND lc.relname = $2
+              ORDER BY c.conname, ck.ord`,
+      values: [schema, relation],
+      rowMode: 'array',
+    });
+    const foreignKeys = pickForeignKeys(
+      (fkRes.rows as unknown[][]).map((r) => ({
+        constraint: r[0] as string,
+        column: r[1] as string,
+        refSchema: r[2] as string,
+        refTable: r[3] as string,
+        refColumn: r[4] as string,
+      }))
+    );
+
     return (res.rows as unknown[][]).map((r) => ({
       name: r[0] as string,
       dataType: r[1] as string,
       primaryKey: r[2] === true,
+      foreignKey: foreignKeys.get(r[0] as string),
     }));
   },
 
@@ -1181,6 +1291,31 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
     // PRAGMA takes no parameters. A name that is not a table yields no rows,
     // which is the `[]`-not-an-error rule this engine gets for free.
     const rows = sqliteRows(client, 'SELECT name, type, pk FROM pragma_table_info(?)', [table]);
+
+    // `id` groups a foreign key's columns (more than one row shares it for a
+    // composite key); `from`/`to` are the local and referenced columns. `to` is
+    // NULL for a column-less `REFERENCES parent`, which means "the parent's own
+    // primary key" rather than nothing -- resolved per referenced table, once per
+    // distinct name, since more than one foreign key commonly points at the same
+    // parent.
+    const fkRows = sqliteRows(client, 'SELECT id, "table", "from", "to" FROM pragma_foreign_key_list(?)', [table]);
+    const resolvedPk = new Map<string, string | null>();
+    const pkOf = (refTable: string): string | null => {
+      if (!resolvedPk.has(refTable)) {
+        const cols = sqliteRows(client, 'SELECT name FROM pragma_table_info(?) WHERE pk = 1', [refTable]);
+        resolvedPk.set(refTable, cols.length === 1 ? (cols[0]![0] as string) : null);
+      }
+      return resolvedPk.get(refTable)!;
+    };
+    const foreignKeys = pickForeignKeys(
+      fkRows.map((r) => ({
+        constraint: String(r[0]),
+        column: r[2] as string,
+        refTable: r[1] as string,
+        refColumn: (r[3] as string | null) ?? pkOf(r[1] as string),
+      }))
+    );
+
     return rows.map((r) => ({
       name: r[0] as string,
       // SQLite's declared type, verbatim -- including the empty string, which is
@@ -1188,6 +1323,7 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
       // same rule as MySQL's `int` against Postgres' `integer`.
       dataType: r[1] as string,
       primaryKey: Number(r[2]) > 0,
+      foreignKey: foreignKeys.get(r[0] as string),
     }));
   },
 

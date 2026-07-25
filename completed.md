@@ -393,3 +393,13 @@ This is a record, not a plan. Nothing here is waiting on anything.
   rather than the word the grid draws. Rectangular ranges are a separate item: the
   drag, the shift-click and the tab-separated shape are their own problem, and row
   copy already covers grabbing data in bulk.
+
+- **2026-07-24** — **Navigate a foreign key to its related row** — Following a foreign key to
+  the row it points at means retyping the lookup by hand, because nothing
+  marks FK columns anywhere — `ColumnInfo` in the protocol carries only
+  `primaryKey` today, no engine reports FK metadata at all. Add FK detection
+  to each driver alongside the existing primary-key read, and show a small
+  icon in each cell of a FK column (in a table opened by browsing from the
+  tree, not a hand-typed query, for the same reason those results aren't
+  editable today) that opens the related table, always in a new tab, filtered
+  to the one row the FK value points at.

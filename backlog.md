@@ -222,16 +222,6 @@ Things that do not exist yet.
   arrangement is not remembered — it lays out fresh each time the diagram is
   opened.
 
-- **Navigate a foreign key to its related row** — Following a foreign key to
-  the row it points at means retyping the lookup by hand, because nothing
-  marks FK columns anywhere — `ColumnInfo` in the protocol carries only
-  `primaryKey` today, no engine reports FK metadata at all. Add FK detection
-  to each driver alongside the existing primary-key read, and show a small
-  icon in each cell of a FK column (in a table opened by browsing from the
-  tree, not a hand-typed query, for the same reason those results aren't
-  editable today) that opens the related table, always in a new tab, filtered
-  to the one row the FK value points at.
-
 - **Copy a row as SQL** — Recreating a row elsewhere means retyping an INSERT
   by hand, because the existing "Copy row" / "Copy N rows" only writes
   tab-separated text. Add "Copy as SQL" beside it in the same context menu,

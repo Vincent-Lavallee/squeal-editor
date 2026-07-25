@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { CellValue } from '../../../../shared/protocol/index.ts';
-import { CopyIcon, NextPageIcon, PrevPageIcon } from '../../common/icons/icons.ts';
+import { CopyIcon, ForeignKeyIcon, NextPageIcon, PrevPageIcon } from '../../common/icons/icons.ts';
 import { useAppSelector } from '../../store/hooks.ts';
 import { selectActiveTab } from '../../store/tabsSlice.ts';
 import { useResults } from './useResults.ts';
@@ -25,7 +25,7 @@ const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
 
 export default function ResultsTable() {
-  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, dirtyCount, saving, saveError, filterActive, clearFilter } = useResults();
+  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey } = useResults();
   const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -105,6 +105,12 @@ export default function ResultsTable() {
 
   const typeByName = new Map(columnInfo.map((c) => [c.name, c.dataType]));
   const typeOf = (col: string): string | undefined => typeByName.get(col);
+
+  // Only a browsed grid's columns ever carry `foreignKey` -- a query's result
+  // has no `columnInfo` at all, which is the same boundary editing and "Open
+  // definition" already draw around a hand-typed query.
+  const fkByName = new Map(columnInfo.filter((c) => c.foreignKey).map((c) => [c.name, c.foreignKey!]));
+  const isFkCol = (c: number): boolean => fkByName.has(result.columns[c] ?? '');
 
   const keyCols = new Set(keyColumns ?? []);
   const isKeyCol = (c: number): boolean => keyCols.has(result.columns[c] ?? '');
@@ -257,6 +263,15 @@ export default function ResultsTable() {
                             onCommit={(draft) => commit(r, c, draft)} onNull={() => setNull(r, c)} onCancel={() => setEditing(null)} />
                         ) : value === null ? (
                           <span data-testid="null-value" style={{ color: t.TEXT_FAINT, fontStyle: 'italic' }}>NULL</span>
+                        ) : isFkCol(c) ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: t.GAP_XS }}>
+                            {String(value)}
+                            <button type="button" data-testid="fk-nav" title={`Open the row ${result.columns[c]} points at`}
+                              style={{ flex: 'none', display: 'inline-flex', padding: 0, border: 'none', background: 'transparent', color: t.TEXT_FAINT, cursor: 'pointer' }}
+                              onClick={(e) => { e.stopPropagation(); navigateForeignKey(result.columns[c]!, value); }}>
+                              <ForeignKeyIcon style={{ flex: 'none', width: 14, height: 14 }} aria-hidden="true" />
+                            </button>
+                          </span>
                         ) : (String(value))}
                       </td>
                     );

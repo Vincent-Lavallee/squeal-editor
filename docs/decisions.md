@@ -2710,3 +2710,38 @@ side is `INSERT ... ON CONFLICT DO NOTHING` / a plain `DELETE` — both no-ops o
 a row already in the state asked for. A context menu opened twice, or a click
 racing a slow response, cannot flip a star backwards by asking for the same
 thing twice.
+
+---
+
+## Foreign-key navigation only ever reports a single-column key
+
+**Why not report it on the first column of a composite one.** A cell holds one
+value; a composite foreign key needs every one of its columns to name a single
+row. Reporting `ForeignKeyRef` on the first column anyway would let the grid
+filter the related table by a fraction of the key — landing on every row that
+shares that fraction, silently, with no way for the reader to tell a genuine
+single match from an accidental one. That is the same category of wrong answer
+`pickRowKey` already refuses for a nullable unique column, one layer over: a
+guess dressed as a fact is worse than no icon at all.
+
+**`pickForeignKeys` groups by constraint name and drops any group of more than
+one**, shared by all three drivers so the rule cannot drift per engine — the
+same shape as `pickRowKey` beside it. A table with only composite foreign keys
+simply offers no navigation on those columns; that is accepted rather than
+solved, because solving it means asking the reader to click a *row*, not a
+*cell*, and that is a different feature this backlog item did not ask for.
+
+**Verified against a real gotcha, not just the drivers.** `neu run` (and
+therefore the CDP-driven manual check this shipped with) spawns the *compiled*
+`extensions/db/squeal-db-ext.exe`, never `main.ts` from source — only the test
+harness (`tests/helpers/harness.ts`) runs the source directly. `bun start` and
+`bun run test:ui` both rebuild the binary first (`build:ext`) for exactly this
+reason; a driver change checked by eye against a running `neu run` without that
+rebuild reads as the feature not working when it is only the binary that is
+stale. `docs/extension.md`'s "no build step" is still true of `bun start`'s own
+pipeline — it is only a trap for a manual run that calls `neu run` on its own.
+
+**SQLite's column-less `REFERENCES parent`** (no explicit referenced column)
+means "the parent's primary key," not "nothing to report" — `pragma_foreign_key_
+list` answers a null `to` for it, resolved with one `pragma_table_info` lookup
+per distinct referenced table rather than left as a gap.

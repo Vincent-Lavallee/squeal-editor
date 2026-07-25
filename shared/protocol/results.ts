@@ -42,6 +42,23 @@ export interface StarredTable {
 }
 
 /**
+ * What a foreign-key column points at: the referenced relation and column.
+ *
+ * Only ever reported for a *single*-column foreign key. A composite key needs
+ * every column's value to name one row, and a cell holds exactly one of them --
+ * showing a navigable icon on it would filter the related table by a fifth of a
+ * key and land on every row that shares that fifth, silently. `null`, not a
+ * guess, is this rule's answer for a composite constraint: see `pickForeignKeys`
+ * in `drivers.ts`.
+ */
+export interface ForeignKeyRef {
+  table: string;
+  /** Absent for MySQL, whose database is its schema. */
+  schema?: string;
+  column: string;
+}
+
+/**
  * A column of a table, as the catalog describes it.
  *
  * `dataType` is the engine's *own* rendering of the type -- `varchar(255)` from
@@ -57,11 +74,15 @@ export interface StarredTable {
  * editable grid needs to know which columns identify a row. Each driver reads it
  * from the catalog beside the type -- `COLUMN_KEY` in MySQL, `pg_index` in
  * Postgres -- so the two never drift on what "primary" means.
+ *
+ * `foreignKey` is read from the same catalog pass, for the same reason: the tree
+ * and the grid both need to know before the grid can offer to follow one.
  */
 export interface ColumnInfo {
   name: string;
   dataType: string;
   primaryKey: boolean;
+  foreignKey?: ForeignKeyRef;
 }
 
 export interface QueryResult {

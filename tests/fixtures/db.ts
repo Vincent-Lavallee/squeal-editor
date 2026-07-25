@@ -11,6 +11,8 @@
  * `events` is sized for paging: 150 rows is more than one 100-row page, and it
  * makes the case that broke the old row-count guess reachable without a second
  * table -- page from row 51 and a *full* page comes back with nothing after it.
+ * Its `user_id` is a single-column foreign key to `users.id`, set on exactly one
+ * row (`e1` -> Ada) -- what FK navigation exists to follow.
  *
  * `tags` and `logs` are for the editable grid's row identity: `tags` has a
  * UNIQUE NOT NULL column and no primary key (so its identity is the unique key),
@@ -54,8 +56,9 @@ CREATE TABLE reporting.daily_stats (day date, hits bigint);
 INSERT INTO reporting.daily_stats VALUES ('2026-01-05', 9007199254740993);
 CREATE TABLE reporting."daily.stats" (day date, hits bigint);
 INSERT INTO reporting."daily.stats" VALUES ('2026-01-06', 1);
-CREATE TABLE events (id serial primary key, label text);
+CREATE TABLE events (id serial primary key, label text, user_id int REFERENCES users(id));
 INSERT INTO events (label) SELECT 'e' || g FROM generate_series(1, 150) g;
+UPDATE events SET user_id = (SELECT id FROM users WHERE name = 'Ada') WHERE label = 'e1';
 CREATE TABLE tags (label text NOT NULL UNIQUE, weight int);
 INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
 CREATE TABLE logs (msg text);
@@ -79,12 +82,18 @@ INSERT INTO users (name, email, meta, avatar, big, eventType) VALUES
   ('Ada', 'ada@x.io', '{"role":"admin"}', UNHEX('0102FF'), 9007199254740993, 'page_view'),
   ('Grace', NULL, NULL, NULL, NULL, NULL);
 CREATE VIEW active_users AS SELECT id, name FROM users;
-CREATE TABLE events (id int auto_increment primary key, label varchar(20));
+CREATE TABLE events (
+  id int auto_increment primary key,
+  label varchar(20),
+  user_id int,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
 INSERT INTO events (label)
 WITH RECURSIVE series AS (
   SELECT 1 AS n UNION ALL SELECT n + 1 FROM series WHERE n < 150
 )
 SELECT CONCAT('e', n) FROM series;
+UPDATE events SET user_id = (SELECT id FROM users WHERE name = 'Ada') WHERE label = 'e1';
 CREATE TABLE tags (label varchar(50) NOT NULL UNIQUE, weight int);
 INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
 CREATE TABLE logs (msg varchar(100));
@@ -121,12 +130,13 @@ INSERT INTO users (name, email, created_at, meta, avatar, big, eventType) VALUES
   ('Ada', 'ada@x.io', '2026-01-05 09:30:00', '{"role":"admin"}', X'0102FF', 9007199254740993, 'page_view'),
   ('Grace', NULL, '2026-01-05 09:30:00', NULL, NULL, NULL, NULL);
 CREATE VIEW active_users AS SELECT id, name FROM users;
-CREATE TABLE events (id INTEGER PRIMARY KEY, label TEXT);
+CREATE TABLE events (id INTEGER PRIMARY KEY, label TEXT, user_id INTEGER REFERENCES users(id));
 INSERT INTO events (label)
 WITH RECURSIVE series(n) AS (
   SELECT 1 UNION ALL SELECT n + 1 FROM series WHERE n < 150
 )
 SELECT 'e' || n FROM series;
+UPDATE events SET user_id = (SELECT id FROM users WHERE name = 'Ada') WHERE label = 'e1';
 CREATE TABLE tags (label TEXT NOT NULL UNIQUE, weight INT);
 INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
 CREATE TABLE logs (msg TEXT);

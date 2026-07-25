@@ -12,6 +12,7 @@ import {
   RiCloseLine,
   RiCodeSSlashLine,
   RiDownloadCloud2Line,
+  RiExternalLinkLine,
   RiEyeLine,
   RiFileCopyLine,
   RiFlaskLine,
@@ -79,6 +80,9 @@ export const SelectCaretIcon = RiArrowDownSLine;
 /** Marks a primary-key column in an expanded tree row. Shape, not colour: it
  *  reads as muted as any other tree glyph. */
 export const KeyIcon = RiKey2Line;
+
+/** A foreign-key cell's affordance to follow it to the row it points at. */
+export const ForeignKeyIcon = RiExternalLinkLine;
 
 /** The pinned group's heading, and a starred table's mark -- always filled:
  *  there is no "unstarred" drawing of this glyph, since an unstarred table

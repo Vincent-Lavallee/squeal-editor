@@ -8,10 +8,11 @@ import type {
   RowEdit,
   TableFilter,
 } from '../../../../shared/protocol/index.ts';
+import { relationLabel } from '../../common/db/relation.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { browseTable, runQuery, saveEdits } from '../../store/resultsSlice.ts';
 import { useSession } from '../../store/sessionSlice.ts';
-import { selectActiveTab } from '../../store/tabsSlice.ts';
+import { selectActiveTab, useTabs } from '../../store/tabsSlice.ts';
 import { EMPTY_PENDING, useResultsView, type FilterDraft } from './ResultsContext.tsx';
 
 /**
@@ -31,7 +32,8 @@ import { EMPTY_PENDING, useResultsView, type FilterDraft } from './ResultsContex
 export function useResults() {
   const dispatch = useAppDispatch();
   const view = useResultsView();
-  const { readOnly, dialect } = useSession();
+  const { readOnly, dialect, defaultSchema } = useSession();
+  const { openGridTab } = useTabs();
   // Through the selector rather than off `tabs.activeTabId`, which is a pointer
   // per connection now: the grid on screen belongs to the tab in front of the
   // connection in front, and that is the one question the selector answers.
@@ -82,6 +84,43 @@ export function useResults() {
   const browseIn = useCallback(
     (tabId: string, table: string, offset: number) => void dispatch(browseTable({ tabId, table, offset })),
     [dispatch]
+  );
+
+  /**
+   * Follow a foreign-key cell to the row it points at: a new tab, always, on
+   * the relation `ColumnInfo.foreignKey` names, browsed straight into a filter
+   * of one condition -- the referenced column equal to the value the cell held.
+   *
+   * Only reachable from a browsed grid: `foreignKey` rides on `browse.columnInfo`,
+   * which is empty for a query's result the same way `keyColumns` is null there
+   * -- the editable-grid boundary and this one are the same boundary for the
+   * same reason, see `docs/extension.md`. A NULL value points at nothing, so
+   * there is no row to open.
+   *
+   * The new tab's filter is never seeded into `ResultsContext`'s draft: it does
+   * not need to be. `useResults` derives an untouched draft from `browse.filter`
+   * (`filterToDraft`), so the bar shows the condition that just ran the moment
+   * the freshly opened tab reads it back.
+   */
+  const navigateForeignKey = useCallback(
+    (column: string, value: CellValue) => {
+      const fk = browse?.columnInfo.find((c) => c.name === column)?.foreignKey;
+      if (!fk || value === null || !activeTab?.database) return;
+
+      const relation = { table: fk.table, schema: fk.schema };
+      const tabId = openGridTab(activeTab.database, relation, relationLabel(relation, defaultSchema));
+      if (!tabId) return;
+
+      void dispatch(
+        browseTable({
+          tabId,
+          table: fk.table,
+          offset: 0,
+          filter: { kind: 'builder', conjunction: 'AND', conditions: [{ column: fk.column, operator: '=', value: String(value) }] },
+        })
+      );
+    },
+    [browse, activeTab, openGridTab, defaultSchema, dispatch]
   );
 
   // Staging is a no-op unless the page is editable; the component still calls
@@ -225,6 +264,7 @@ export function useResults() {
     startedAt,
     run,
     browseIn,
+    navigateForeignKey,
     // Editing surface. `pending` is what the grid reads its dirty state from.
     editable,
     readOnlyReason,

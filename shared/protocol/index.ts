@@ -36,6 +36,7 @@ export type {
   ColumnInfo,
   FilterCondition,
   FilterOperator,
+  ForeignKeyRef,
   QueryResult,
   RowDelete,
   RowEdit,
