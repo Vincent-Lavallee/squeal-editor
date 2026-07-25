@@ -578,6 +578,35 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     /*
+     * The tree used to go dark along with the last tab: the picker read a tab's
+     * database and there was none, so it disabled itself and the tree had
+     * nothing to fetch for. There is still a connection with nothing open, and
+     * this is the fix -- the picker and the tree work *before* `+` is ever
+     * clicked, not only after. Ends back at the empty state it started from, so
+     * the next test still finds one.
+     */
+    test('the tree is usable from the empty state, with no tab open at all', async () => {
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+      expect(
+        await app.evaluate<string | null>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('aria-disabled')`)
+      ).toBeNull();
+
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string[]>(treeLabels)).toContain('users');
+
+      // Clicking a table from here mints a tab for it -- the picker having
+      // something to say from the empty state was the means, not the end.
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['users']);
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+    });
+
+    /*
      * The empty state has to have a way out of it, and `+` is the only one.
      *
      * There is no active tab to inherit a database from, so the tab opens on the
@@ -1469,6 +1498,71 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(clickTab('Query 3'));
       await Bun.sleep(400);
       expect(await app.evaluate<string | null>(editorText)).toContain('the original');
+    });
+
+    /*
+     * Renaming, and the three ways out of the inline editor: Enter commits,
+     * Escape discards the draft, and a blank commit is discarded too -- a tab
+     * always has a name. Ends by renaming back to `Query 3`, the name every
+     * later test in this block reads by, so nothing downstream has to change.
+     */
+    test('double-clicking a tab label renames it inline', async () => {
+      const dblClickLabel = (label: string) => `
+        ${tab(label)}.querySelector('[data-testid="tab-label"]')
+          .dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); true;`;
+      const renameInput = `document.querySelector('[data-testid="tab-rename-input"]')`;
+      const pressKey = (key: string) => `${renameInput}.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true })); true;`;
+      const setDraft = (text: string) => `${REACT_SETTERS} setNative(${renameInput}, ${JSON.stringify(text)}); true;`;
+      // `execCommand('insertText', ...)` inserts respecting whatever is
+      // selected, the way a real keystroke does -- unlike `setNative`, which
+      // force-writes the whole value and would sail straight past the bug this
+      // guards: an inline ref callback that re-selected the input's contents
+      // after every keystroke, so each new character replaced the fully
+      // selected one before it and only the last one ever stuck.
+      const typeChar = (ch: string) => `document.execCommand('insertText', false, ${JSON.stringify(ch)}); true;`;
+
+      await app.evaluate(dblClickLabel('Query 3'));
+      await Bun.sleep(200);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="tab-rename-input"]').length`)).toBe(1);
+
+      for (const ch of 'Renamed') {
+        await app.evaluate(typeChar(ch));
+        await Bun.sleep(50);
+      }
+      expect(await app.evaluate<string>(`${renameInput}.value`)).toBe('Renamed');
+
+      await app.evaluate(pressKey('Enter'));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(tabLabels)).toContain('Renamed');
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="tab-rename-input"]').length`)).toBe(0);
+
+      // A blank commit is discarded rather than saved empty.
+      await app.evaluate(dblClickLabel('Renamed'));
+      await Bun.sleep(200);
+      await app.evaluate(setDraft(''));
+      await Bun.sleep(150);
+      await app.evaluate(pressKey('Enter'));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(tabLabels)).toContain('Renamed');
+
+      // Escape discards the draft without committing it.
+      await app.evaluate(dblClickLabel('Renamed'));
+      await Bun.sleep(200);
+      await app.evaluate(setDraft('Should not stick'));
+      await Bun.sleep(150);
+      await app.evaluate(pressKey('Escape'));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(tabLabels)).toContain('Renamed');
+      expect(await app.evaluate<string[]>(tabLabels)).not.toContain('Should not stick');
+
+      // Restored, so the rest of this block still finds `Query 3`.
+      await app.evaluate(dblClickLabel('Renamed'));
+      await Bun.sleep(200);
+      await app.evaluate(setDraft('Query 3'));
+      await Bun.sleep(150);
+      await app.evaluate(pressKey('Enter'));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(tabLabels)).toContain('Query 3');
     });
 
     /*

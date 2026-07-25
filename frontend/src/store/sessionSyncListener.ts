@@ -3,7 +3,7 @@ import { createListenerMiddleware, isAnyOf } from '@reduxjs/toolkit';
 import { browseTable } from './resultsSlice.ts';
 import type { SessionSnapshot } from './sessionSnapshot.ts';
 import { disconnect, saveSession } from './sessionSlice.ts';
-import { databaseChanged, sqlChanged, tabActivated, tabMoved, tabOpened, tabsClosed } from './tabsSlice.ts';
+import { databaseChanged, defaultDatabaseChanged, sqlChanged, tabActivated, tabMoved, tabOpened, tabRenamed, tabsClosed } from './tabsSlice.ts';
 import type { AppDispatch, RootState } from './index.ts';
 
 /**
@@ -79,7 +79,9 @@ function saveIfChanged(state: RootState, dispatch: AppDispatch, connectionId: st
 // the open ones are serialised, so a disconnect can never overwrite a stored
 // snapshot with the empty shape its own teardown leaves behind.
 startAppListening({
-  matcher: isAnyOf(tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged, browseTable.fulfilled),
+  matcher: isAnyOf(
+    tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, defaultDatabaseChanged, sqlChanged, tabRenamed, browseTable.fulfilled
+  ),
   effect: async (_action, api) => {
     api.cancelActiveListeners();
     await api.delay(DEBOUNCE_MS);

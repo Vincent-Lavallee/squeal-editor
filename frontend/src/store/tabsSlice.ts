@@ -268,12 +268,41 @@ const tabsSlice = createSlice({
     },
 
     /**
+     * The picker moved with no tab to point -- the empty state, where there is
+     * nothing for `databaseChanged` to target. Writes the same field a fresh tab
+     * already falls back to (`tabOpened` reads `defaultDatabase[connectionId]`
+     * when its caller names none), so picking a database from the empty state
+     * and then clicking `+` lands the new tab on it rather than on whatever the
+     * session opened on.
+     */
+    defaultDatabaseChanged(state, action: PayloadAction<{ connectionId: string; database: string }>) {
+      state.defaultDatabase[action.payload.connectionId] = action.payload.database;
+    },
+
+    /**
      * An editor tab's text changed. Dispatched on every keystroke, the way the
      * context's `setSql` was called before it -- the difference is only that this
      * lands in the store, so the session-sync listener can serialise it.
      */
     sqlChanged(state, action: PayloadAction<{ tabId: string; sql: string }>) {
       state.sqlByTab[action.payload.tabId] = action.payload.sql;
+    },
+
+    /**
+     * A tab renamed by hand, from the strip's inline editor.
+     *
+     * Dispatched once on commit (blur or Enter), not per keystroke -- unlike
+     * `sqlChanged`, the draft while typing is the strip's own component state, the
+     * same split `ResultsTable`'s cell editor already draws between an in-progress
+     * edit and the value it commits. A blank title is not a title: it is left
+     * untouched rather than saved as empty, so clearing the field and clicking away
+     * cannot leave a tab with no name.
+     */
+    tabRenamed(state, action: PayloadAction<{ id: string; title: string }>) {
+      const title = action.payload.title.trim();
+      if (!title) return;
+      const tab = state.tabs.find((t) => t.id === action.payload.id);
+      if (tab) tab.title = title;
     },
   },
 
@@ -343,7 +372,8 @@ const tabsSlice = createSlice({
   },
 });
 
-export const { tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged } = tabsSlice.actions;
+export const { tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, defaultDatabaseChanged, sqlChanged, tabRenamed } =
+  tabsSlice.actions;
 export const tabsReducer = tabsSlice.reducer;
 
 /** The active connection's tabs, in order. The strip draws these and no others. */
@@ -358,6 +388,17 @@ export const selectActiveTab = (s: RootState): Tab | null => {
   if (!connectionId) return null;
   const id = s.tabs.activeTabId[connectionId];
   return s.tabs.tabs.find((t) => t.id === id) ?? null;
+};
+
+/**
+ * What the active connection opens a tab on when nothing else says -- the same
+ * field `tabOpened` itself falls back to. The explorer reads this behind
+ * `activeTab?.database` so the tree has an answer with no tab open at all, not
+ * only once one exists to ask.
+ */
+export const selectDefaultDatabase = (s: RootState): string | null => {
+  const connectionId = s.session.activeConnectionId;
+  return connectionId ? (s.tabs.defaultDatabase[connectionId] ?? null) : null;
 };
 
 export function useTabs() {
@@ -442,9 +483,22 @@ export function useTabs() {
       [dispatch]
     ),
     activateTab: useCallback((id: string) => dispatch(tabActivated({ id })), [dispatch]),
+    renameTab: useCallback((id: string, title: string) => dispatch(tabRenamed({ id, title })), [dispatch]),
     selectDatabase: useCallback(
       (tabId: string, database: string) => dispatch(databaseChanged({ tabId, database })),
       [dispatch]
+    ),
+    /**
+     * The picker moved with no tab open to point at -- reads the connection off
+     * state the way `openGridTab` does, since there is nothing for a caller in
+     * the empty state to hand it.
+     */
+    setDefaultDatabase: useCallback(
+      (database: string) => {
+        const id = store.getState().session.activeConnectionId;
+        if (id) dispatch(defaultDatabaseChanged({ connectionId: id, database }));
+      },
+      [dispatch, store]
     ),
   };
 }

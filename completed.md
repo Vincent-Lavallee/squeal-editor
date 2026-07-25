@@ -421,3 +421,18 @@ This is a record, not a plan. Nothing here is waiting on anything.
   the filter bar already quotes. Only available for tables opened by browsing
   from the tree, the same boundary as editing and FK navigation, since the
   table name an INSERT needs isn't known for a hand-typed query. You should also be able to copy a row by clicking the row number
+
+- **2026-07-25** — **Rename a tab** — Tabs are named "Query 1", "Query 2" and within minutes
+  they are indistinguishable — you have to click into each one to find the query
+  you want. Double-click the tab label to edit it inline, the way browser tabs and
+  editor tabs work everywhere. The name is a display label only — tabs are not
+  backed by files — so renaming never touches disk.
+
+- **2026-07-25** — **The tree with nothing open** — Closing every tab left the database
+  picker and the table tree dark until `+` was clicked, because both read the
+  active tab's database and an empty state has none. They now fall back to the
+  connection's default database, the same fact a fresh tab already falls back to,
+  so the tree can still be browsed and a table can still be opened — minting a
+  new tab for it — with nothing open at all. Picking a database from the empty
+  state writes that same default rather than a tab's, so it is what the next
+  tab from `+` opens on too.

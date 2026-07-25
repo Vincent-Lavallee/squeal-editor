@@ -169,12 +169,6 @@ Things that do not exist yet.
   as today's sidebar/results resizing; closing either pane's tab collapses back
   to a single view.
 
-- **Rename a tab** — Tabs are named "Query 1", "Query 2" and within minutes
-  they are indistinguishable — you have to click into each one to find the query
-  you want. Double-click the tab label to edit it inline, the way browser tabs and
-  editor tabs work everywhere. The name is a display label only — tabs are not
-  backed by files — so renaming never touches disk.
-
 - **Command palette** — Every action is reachable exactly one way: a menu, a
   button, or a keybinding you already have to know. Put the common ones behind a
   palette — run, format, switch connection or database, toggle read-only,

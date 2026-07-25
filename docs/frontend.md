@@ -220,6 +220,50 @@ imports a sibling. The copy takes the next `Query N` rather than the original's
 name, the same answer the tree gives when a table is opened twice: two tabs, and
 you can tell them apart.
 
+**Renaming double-clicks the label, and the draft while typing never leaves
+`TabStrip`.** `title` is a tab field that crossed the bridge (session restore
+carries it), but the in-progress text is component state — the same split
+`ResultsTable`'s cell editor draws between an edit in flight and the value it
+commits — so `tabRenamed` dispatches once, on blur or Enter, not per keystroke
+the way `sqlChanged` does. A blank commit is discarded rather than saved empty,
+the reducer's job rather than the input's, so there is one place that decides
+what counts as a name. The input is a sibling of `tab-pick`, not a child of it:
+a `<button>` may not nest an `<input>` (interactive content inside interactive
+content), and the button's own mousedown handling is exactly the kind of thing
+that would steal focus back the instant the input appeared. `tabRenamed` joins
+the session-sync listener's watched actions in `sessionSyncListener.ts`, or a
+rename would type-check and paint but not survive a restart.
+
+**Focus and select-all happen once, in an effect keyed by the tab id, not in an
+inline ref callback.** The first cut used `ref={(el) => { el.focus(); el.select(); }}`,
+which shipped with only one character ever landing: a callback ref's *identity*
+is what React diffs, and an inline arrow function is a new one on every render —
+so React re-invoked it, `select()` and all, after every keystroke. Re-selecting
+the whole field on every render meant the next keystroke replaced everything
+typed so far, the way typing over a selected word does. `useEffect(..., [renaming?.id])`
+runs once when rename mode is entered for a given tab and not again while its
+draft changes, which is the fix.
+
+## Picking a database with nothing open
+
+The tree and the database picker used to go dark the moment the last tab
+closed: both read `activeTab?.database`, and an empty state has no active tab.
+`useExplorer`'s `database` now falls back to `selectDefaultDatabase` — the same
+field `tabOpened` already falls back to when minting a tab with nothing else to
+go on — so there is still an answer with no tab open at all, not only once one
+exists to ask. The picker's own disabled check dropped its `hasTab` half
+alongside it; `databases.length === 0` is the only reason left to grey it out.
+
+**Picking a database from the empty state writes the connection's default,
+not a tab's.** `Shell`'s `changeDatabase` already had two things to do
+depending on whether a tab was active; this is the third branch, not a new
+handler — no active tab means there is nothing for `databaseChanged` to target,
+so it dispatches `defaultDatabaseChanged` instead, and the picker, the tree and
+the next tab opened from `+` all read the same fact afterward. Clicking a table
+row needed nothing new: `openGridTab` already reads the connection off state
+rather than off a caller-supplied tab, so it mints one whether or not one
+existed a moment ago.
+
 ## The editable grid
 
 A browsed grid can be edited: change a cell, delete a row, copy selected rows as

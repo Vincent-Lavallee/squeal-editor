@@ -32,7 +32,7 @@ interface Props {
 }
 
 export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition, collapsed, onToggleCollapse }: Props) {
-  const { databases, database, hasTab, tables, columnsFor, loadTableColumns, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, error } = useExplorer();
+  const { databases, database, tables, columnsFor, loadTableColumns, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, error } = useExplorer();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [flippedSchemas, setFlippedSchemas] = useState<ReadonlySet<string>>(() => new Set());
   const [filter, setFilter] = useState('');
@@ -197,7 +197,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
         <Select variant="bare" searchable value={database ?? ''} onSelect={onSelectDatabase}
           options={databases.map((db) => ({ value: db, label: db }))}
           placeholder={databases.length === 0 ? 'No databases' : 'Select a database…'}
-          disabled={!hasTab || databases.length === 0} aria-label="Database"
+          disabled={databases.length === 0} aria-label="Database"
           data-testid="sidebar-db-select"
           // Spread the hidden case rather than writing `display: undefined`: the
           // key would still exist and would overwrite the component's own
@@ -208,7 +208,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
 
         {!collapsed && (
           <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0 }}
-            onClick={onRefreshDatabases} disabled={!hasTab || refreshingDatabases}
+            onClick={onRefreshDatabases} disabled={refreshingDatabases}
             title="Refresh databases" aria-label="Refresh databases"
             data-testid="sidebar-db-refresh">
             <RefreshIcon className={refreshingDatabases ? 'spin' : undefined} style={iconSvg} aria-hidden="true" />

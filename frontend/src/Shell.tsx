@@ -34,7 +34,7 @@ export default function Shell({ onAddConnection }: Props) {
 }
 
 function ShellLayout({ onAddConnection }: Props) {
-  const { tabs, activeTab, openGridTab, openEditorTab, selectDatabase } = useTabs();
+  const { tabs, activeTab, openGridTab, openEditorTab, selectDatabase, setDefaultDatabase } = useTabs();
   const { run, running, browseIn } = useResults();
   const { fetchDdl, defaultSchema } = useExplorer();
   const { setSql, peekSql } = useEditor();
@@ -127,11 +127,15 @@ function ShellLayout({ onAddConnection }: Props) {
     if (id) setSql(id, peekSql(tabId) ?? '');
   }, [tabs, openGridTab, openEditorTab, browseIn, setSql, peekSql]);
 
+  // With no active tab -- the empty state -- there is nothing for the picker to
+  // point at, so it moves the connection's default instead: the same fact a
+  // fresh tab already falls back to, and what lets the tree answer for a
+  // database before any tab exists to ask on its behalf.
   const changeDatabase = useCallback((database: string) => {
-    if (!activeTab) return;
+    if (!activeTab) { setDefaultDatabase(database); return; }
     selectDatabase(activeTab.id, database);
     if (activeTab.kind === 'grid' && activeTab.table) browseIn(activeTab.id, activeTab.table, 0);
-  }, [activeTab, selectDatabase, browseIn]);
+  }, [activeTab, selectDatabase, setDefaultDatabase, browseIn]);
 
   const showEditor = activeTab?.kind === 'editor';
 

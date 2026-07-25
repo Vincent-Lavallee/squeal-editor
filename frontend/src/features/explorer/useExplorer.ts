@@ -3,7 +3,7 @@ import { useCallback, useEffect } from 'react';
 import type { ColumnInfo } from '../../../../shared/protocol/index.ts';
 import { relationName, type Relation } from '../../common/db/relation.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
-import { useTabs } from '../../store/tabsSlice.ts';
+import { selectDefaultDatabase, useTabs } from '../../store/tabsSlice.ts';
 import { selectActiveConnection } from '../../store/sessionSlice.ts';
 import {
   dropTable as dropTableThunk,
@@ -35,7 +35,13 @@ export function useExplorer() {
   // name. It is the extension's answer, not a fact the UI knows about Postgres.
   const defaultSchema = useAppSelector((s) => selectActiveConnection(s)?.defaultSchema);
   const { activeTab } = useTabs();
-  const database = activeTab?.database ?? null;
+  // With nothing open there is no tab to name a database, but there is still a
+  // connection -- and `defaultDatabase` is exactly the fact one carries for
+  // this reason (`tabOpened` already falls back to it when minting a tab with
+  // nothing else to go on). Reading it here is what lets the tree answer, and
+  // the picker stay usable, before a first tab exists rather than only after.
+  const defaultDatabase = useAppSelector(selectDefaultDatabase);
+  const database = activeTab?.database ?? defaultDatabase;
 
   /*
    * The tree lists the active tab's database, and that changes for reasons other
@@ -144,8 +150,6 @@ export function useExplorer() {
     defaultSchema,
     databases: connectionId ? (databases[connectionId] ?? NO_DATABASES) : NO_DATABASES,
     database,
-    /** With nothing open there is no tab to point, so there is nothing to pick. */
-    hasTab: activeTab !== null,
     // Everything below is read against the node actually being shown -- this
     // connection, this database. A slow fetch for a database this tab no longer
     // points at is not this tree's news, and neither is one for a server the rail
