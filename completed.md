@@ -448,3 +448,9 @@ This is a record, not a plan. Nothing here is waiting on anything.
   button sits before the confirm button with no explicit type, so the browser's
   implicit form submission activates it first. Give Cancel an explicit button
   type in both modals so Enter reaches the real submit button.
+
+- **2026-07-25** — **Per-connection color** — Connections have no color of their own, so every
+  connection in a workspace looks identical in the rail — and people work with
+  connections, not workspaces. Give each saved connection its own color, defaulting
+  to its workspace's color but overridable in the connection form. The rail chips
+  use the connection color; the workspace heading stays in the regular text color.

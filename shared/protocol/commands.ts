@@ -7,6 +7,7 @@
  */
 
 import type {
+  ConnectionColorId,
   ConnectionConfig,
   Environment,
   PasswordUpdate,
@@ -14,7 +15,6 @@ import type {
   ServerConfig,
   SqlDialect,
   Workspace,
-  WorkspaceColorId,
   WorkspaceIconId,
 } from './config.ts';
 import type {
@@ -179,6 +179,7 @@ export interface Commands {
       environment: Environment;
       readOnly: boolean;
       password: PasswordUpdate;
+      color: ConnectionColorId;
     };
     res: { connection: SavedConnection };
   };
@@ -191,12 +192,13 @@ export interface Commands {
    * extension decrypts its own otherwise. Echoes the config back rather than
    * letting the UI seed its session from a list row that may be stale.
    *
-   * `name`, `environment` and `workspaceId` come back for that same reason, and
-   * they are what a session is labelled and grouped by once more than one can be
-   * open. None is anything the extension does with a connection -- it carries
-   * them the way it carries `dialect`, because the row they live in is its to
-   * read. `workspaceId` is what lets the rail group the connection under its
-   * workspace and tint it with that workspace's colour.
+   * `name`, `environment`, `workspaceId` and `color` come back for that same
+   * reason, and they are what a session is labelled, grouped and tinted by once
+   * more than one can be open. None is anything the extension does with a
+   * connection -- it carries them the way it carries `dialect`, because the row
+   * they live in is its to read. `workspaceId` is what lets the rail group the
+   * connection under its workspace; `color` is what lets its chip wear its own
+   * swatch, since the workspace it is grouped under carries none of its own.
    *
    * `readOnly` is the exception that *is* acted on: it is the stored row's, so it
    * comes back rather than being recomputed up top, and the extension has already
@@ -219,6 +221,7 @@ export interface Commands {
       name: string;
       environment: Environment;
       workspaceId: string;
+      color: ConnectionColorId;
       readOnly: boolean;
       /**
        * The tabs and queries this connection had open when it was last saved, so
@@ -285,7 +288,7 @@ export interface Commands {
   };
   /** Omit `id` to add; pass one to update it in place. */
   'db.workspaces.save': {
-    req: { id?: string; name: string; icon: WorkspaceIconId; color: WorkspaceColorId };
+    req: { id?: string; name: string; icon: WorkspaceIconId };
     res: { workspace: Workspace };
   };
   /**

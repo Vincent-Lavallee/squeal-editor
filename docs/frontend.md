@@ -13,7 +13,7 @@ src/App.tsx             the titlebar, then routing: connected && !adding
 src/Shell.tsx           the composition root; wires the features together
 src/common/             shared infrastructure, no components
   bridge/bridge.ts      typed request/response over the extension channel
-  icons/                icon bindings, workspace glyphs, workspace colours
+  icons/                icon bindings, workspace glyphs, the connection colour palette
   db/                   the UI's engine table and environment list
 src/store/              every slice; bridge-crossed state and the keys it is held under
   index.ts              configureStore + RootState/AppDispatch
@@ -69,7 +69,7 @@ that lives apart from its values is two sources for one fact.
 
 | | Where | Why |
 |---|---|---|
-| open connections: id, `savedConnectionId`, config, `dialect`, `name`, `workspaceId`, `environment`, `readOnly` | `session` slice | crossed |
+| open connections: id, `savedConnectionId`, config, `dialect`, `name`, `workspaceId`, `color`, `environment`, `readOnly` | `session` slice | crossed |
 | `order`, `activeConnectionId` | `session` slice | never left, but see above |
 | a tab's `connectionId`, `database`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
 | `tabs`, `activeTabId`, `kind`, `title`, `defaultDatabase`, a grid tab's `filter` seed | `tabs` slice | never left, but see above |
@@ -497,10 +497,15 @@ labels, not slots.
 typed, and `submitNew` saves the row before it connects. There is no unnamed,
 workspace-less throwaway connection any more: every open connection is a saved,
 named member of a workspace, which is what lets the rail group every one of them
-under its workspace and tint it with that workspace's colour. `session.connect`
-therefore carries the `workspaceId` it was launched from, the same UI-side fact as
-the `name` and `environment` it already threaded — `db.connect` never hears any of
-the three.
+under its workspace. `session.connect` therefore carries the `workspaceId` it was
+launched from, the same UI-side fact as the `name`, `environment` and `color` it
+already threaded — `db.connect` never hears any of the four.
+
+**Every connection has a colour; a workspace has none.** The form's picker sits
+beside the environment select: the same nine swatches `WorkspaceForm`'s icon
+picker shape offers, defaulting new to the neutral `slate`. `flexWrap: 'nowrap'`
+and a tightened gap keep all nine on one row at the card's fixed width. See
+`docs/decisions.md`.
 
 `ConnectionForm` chooses an authentication method: a password, or an RDS IAM
 token minted from an AWS profile. Choosing IAM swaps the password field for a
@@ -930,7 +935,8 @@ and the name of its **environment**. Both are here rather than in the editor's
 toolbar because that toolbar is per-tab and hidden on a grid tab, while these are
 facts about the whole connection that have to be visible on every tab. The
 environment reads as plain grayscale text: it used to be the rail's colour, but
-the rail's colour is the workspace's now, so the environment moved here as a word.
+the rail's colour is each connection's own now, so the environment moved here as
+a word.
 It reads `useSession` only and owns its own modal, so it imports no sibling
 feature -- `Shell` stacks the connection rail, the `.app` grid, and this bar in a
 column, so the rail spans the full width on top and the status bar spans it

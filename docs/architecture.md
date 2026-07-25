@@ -45,7 +45,7 @@ frontend/             React + Vite → builds into resources/
   src/main.tsx        entry point: bridge init, Redux provider, mount
   src/common/         shared infrastructure, no components live here
     bridge/bridge.ts  request/response layer over the extension channel
-    icons/            icon bindings, workspace glyphs, workspace colours
+    icons/            icon bindings, workspace glyphs, the connection colour palette
     db/               engine definitions, environment list
   src/store/          the slices and the session: what every feature shares
   src/features/       titlebar, connections, explorer, editor, results

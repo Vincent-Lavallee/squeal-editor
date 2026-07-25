@@ -84,25 +84,26 @@ export const SYNTAX_COMMENT = TEXT_FAINT;
 export const SYNTAX_PUNCTUATION = TEXT_MUTED;
 
 /*
- * ---- Workspaces: whose project a connection belongs to ----
+ * ---- Connections: which saved connection this one is ----
  *
- * Its own ramp for the same reason --syntax-* was: a workspace's identity is
- * not a status. Retuning GREEN for a callout must not repaint a workspace that
+ * Its own ramp for the same reason --syntax-* was: a connection's identity is
+ * not a status. Retuning GREEN for a callout must not repaint a connection that
  * happens to be green. Same Radix dark lineage (~step-11).
  *
- * Unlike --env-*, this is not an ordered ramp — a workspace's colour means
- * nothing but "this project", so the set is a palette to tell one from another,
- * not a pipeline to read down. WS_SLATE is the neutral default.
+ * Unlike --env-*, this is not an ordered ramp — a connection's colour means
+ * nothing but "this one", so the set is a palette to tell one from another, not
+ * a pipeline to read down. CONN_SLATE is the neutral default. A workspace
+ * carries no colour of its own; see `docs/decisions.md`.
  */
-export const WS_SLATE = '#b0b4ba'; /* slate-11: the neutral default */
-export const WS_BLUE = '#5eb0ef'; /* blue-11 */
-export const WS_CYAN = '#4ccce6'; /* cyan-11 */
-export const WS_GREEN = '#3dd68c'; /* green-11 */
-export const WS_AMBER = '#ffca16'; /* amber-11 */
-export const WS_ORANGE = '#ffa057'; /* orange-11 */
-export const WS_RED = '#ff9592'; /* red-11 */
-export const WS_PINK = '#ff8dcc'; /* pink-11 */
-export const WS_PURPLE = '#bf7af0'; /* purple-11 */
+export const CONN_SLATE = '#b0b4ba'; /* slate-11: the neutral default */
+export const CONN_BLUE = '#5eb0ef'; /* blue-11 */
+export const CONN_CYAN = '#4ccce6'; /* cyan-11 */
+export const CONN_GREEN = '#3dd68c'; /* green-11 */
+export const CONN_AMBER = '#ffca16'; /* amber-11 */
+export const CONN_ORANGE = '#ffa057'; /* orange-11 */
+export const CONN_RED = '#ff9592'; /* red-11 */
+export const CONN_PINK = '#ff8dcc'; /* pink-11 */
+export const CONN_PURPLE = '#bf7af0'; /* purple-11 */
 
 /* ---- Shape: pills for status, 6-8px for everything else ---- */
 export const RADIUS_PILL = 999; /* badges, chips, filter controls, search */

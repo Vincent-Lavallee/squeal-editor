@@ -3,14 +3,13 @@ import { environmentAbbrev, environmentLabel } from '../../common/db/environment
 import { useAppSelector } from '../../store/hooks.ts';
 import { serverLabel, useSession, type OpenConnection } from '../../store/sessionSlice.ts';
 import { selectWorkspaces } from '../../store/workspacesSlice.ts';
-import { DEFAULT_WORKSPACE_COLOR, workspaceColor } from '../../common/icons/workspaceColors.ts';
+import { connectionColor } from '../../common/icons/connectionColors.ts';
 import { workspaceGlyph } from '../../common/icons/workspaceIcons.ts';
 import SrOnly from '../../common/components/SrOnly.tsx';
 import * as t from '../../common/tokens';
 
 const iconSvg = { flex: 'none', width: 16, height: 16 };
 
-const HEADING_TINT = 0.6;
 const CHIP_BORDER_TINT = 0.3;
 const CHIP_WASH_TINT = 0.07;
 const ACTIVE_FILL_TINT = 0.72;
@@ -52,22 +51,21 @@ export default function ConnectionRail({ onAdd }: Props) {
       <ul style={{ display: 'flex', alignItems: 'stretch', listStyle: 'none', margin: 0, padding: 0 }}>
         {grouped.map(({ workspace, connections: conns }, i) => {
           const Glyph = workspaceGlyph(workspace?.icon ?? 'stack');
-          const tint = workspaceColor(workspace?.color ?? DEFAULT_WORKSPACE_COLOR);
           const name = workspace?.name ?? 'Workspace';
-          const heading = blendOverBg(tint, HEADING_TINT);
-          const chipBorder = blendOverBg(tint, CHIP_BORDER_TINT);
-          const wash = blendOverBg(tint, CHIP_WASH_TINT);
-          const activeFill = blendOverBg(tint, ACTIVE_FILL_TINT);
 
           return (
             <li key={workspace?.id ?? `missing-${i}`}
               style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, padding: `0 ${t.GAP}px`, ...(i === 0 ? { paddingLeft: 0 } : {}), ...(i > 0 ? { borderLeft: `1px solid ${t.BORDER}` } : {}) }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, color: heading, fontSize: t.TEXT_MICRO, fontWeight: 700, lineHeight: 1, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, color: t.TEXT_MUTED, fontSize: t.TEXT_MICRO, fontWeight: 700, lineHeight: 1, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
                 <Glyph style={iconSvg} /><span>{name}</span>
               </div>
               <ul style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, listStyle: 'none', margin: 0, padding: 0 }}>
                 {conns.map((c) => {
                   const active = c.connectionId === activeConnectionId;
+                  const tint = connectionColor(c.color);
+                  const chipBorder = blendOverBg(tint, CHIP_BORDER_TINT);
+                  const wash = blendOverBg(tint, CHIP_WASH_TINT);
+                  const activeFill = blendOverBg(tint, ACTIVE_FILL_TINT);
                   return (
                     <li key={c.connectionId}>
                       <button type="button" data-testid="rail-item"

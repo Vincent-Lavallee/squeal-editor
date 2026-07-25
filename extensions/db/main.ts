@@ -159,8 +159,8 @@ const COMMANDS: Handlers = {
     return { connections: listSaved() };
   },
 
-  async 'db.saved.save'({ id, workspaceId, name, config, environment, readOnly, password }) {
-    return { connection: await saveConnection({ id, workspaceId, name, config, environment, readOnly, password }) };
+  async 'db.saved.save'({ id, workspaceId, name, config, environment, readOnly, password, color }) {
+    return { connection: await saveConnection({ id, workspaceId, name, config, environment, readOnly, password, color }) };
   },
 
   async 'db.saved.delete'({ id }) {
@@ -169,13 +169,14 @@ const COMMANDS: Handlers = {
   },
 
   async 'db.saved.connect'({ id, password }) {
-    const { config, password: secret, name, environment, workspaceId, readOnly } = await resolveSaved(id, password);
+    const { config, password: secret, name, environment, workspaceId, color, readOnly } = await resolveSaved(id, password);
     return {
       ...(await establish({ ...config, password: secret }, readOnly)),
       config,
       name,
       environment,
       workspaceId,
+      color,
       readOnly,
       // What this connection had open last time, for the UI to reopen. The row's
       // own id keys it, not the runtime one just minted -- the session outlives
@@ -204,8 +205,8 @@ const COMMANDS: Handlers = {
     return { workspaces: listWorkspaces() };
   },
 
-  async 'db.workspaces.save'({ id, name, icon, color }) {
-    return { workspace: saveWorkspace({ id, name, icon, color }) };
+  async 'db.workspaces.save'({ id, name, icon }) {
+    return { workspace: saveWorkspace({ id, name, icon }) };
   },
 
   async 'db.workspaces.delete'({ id }) {

@@ -57,6 +57,8 @@ import { migration as settings } from './1784584732-settings.ts';
 import { migration as stars } from './1784629337-stars.ts';
 import { migration as connectionSessions } from './1784997641-connection-sessions.ts';
 import { migration as environmentQa } from './1784997700-environment-qa.ts';
+import { migration as connectionColour } from './1784997750-connection-colour.ts';
+import { migration as dropWorkspaceColour } from './1784997850-drop-workspace-colour.ts';
 
 /** Oldest first. Append only. */
 export const MIGRATIONS: Migration[] = [
@@ -70,6 +72,8 @@ export const MIGRATIONS: Migration[] = [
   stars,
   connectionSessions,
   environmentQa,
+  connectionColour,
+  dropWorkspaceColour,
 ];
 
 /*

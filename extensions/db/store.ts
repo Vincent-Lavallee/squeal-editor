@@ -20,13 +20,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type {
+  ConnectionColorId,
   EngineType,
   Environment,
   PasswordUpdate,
   SavedConnection,
   ServerConfig,
   Workspace,
-  WorkspaceColorId,
   WorkspaceIconId,
 } from '../../shared/protocol/index.ts';
 import { isFileEngine } from '../../shared/protocol/index.ts';
@@ -71,9 +71,9 @@ export function dataDir(): string {
 /** What a store with no workspaces yet gets, so the feature can be ignored. */
 const DEFAULT_WORKSPACE_NAME = 'Default';
 const DEFAULT_WORKSPACE_ICON: WorkspaceIconId = 'stack';
-/** The neutral swatch: what a workspace wears until the user picks otherwise, and
+/** The neutral swatch: what a connection wears until the user picks otherwise, and
  *  what a row written before the colour column existed migrates to. */
-const DEFAULT_WORKSPACE_COLOR: WorkspaceColorId = 'slate';
+const DEFAULT_CONNECTION_COLOR: ConnectionColorId = 'slate';
 
 interface Row {
   id: string;
@@ -98,13 +98,13 @@ interface Row {
   aws_profile: string | null;
   aws_region: string | null;
   password: Uint8Array | null;
+  color: string;
 }
 
 interface WorkspaceRow {
   id: string;
   name: string;
   icon: string;
-  color: string;
 }
 
 let db: Database | null = null;
@@ -137,11 +137,10 @@ function ensureDefaultWorkspace(database: Database): void {
   const existing = database.query('SELECT id FROM workspaces LIMIT 1').get() as { id: string } | null;
   if (existing) return;
 
-  database.run('INSERT INTO workspaces (id, name, icon, color) VALUES (?, ?, ?, ?)', [
+  database.run('INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)', [
     randomUUID(),
     DEFAULT_WORKSPACE_NAME,
     DEFAULT_WORKSPACE_ICON,
-    DEFAULT_WORKSPACE_COLOR,
   ]);
 }
 
@@ -202,6 +201,7 @@ const toSaved = (row: Row): SavedConnection => ({
     ...(row.aws_profile ? { iam: { profile: row.aws_profile, region: row.aws_region ?? '' } } : {}),
   },
   environment: row.environment as Environment,
+  color: row.color as ConnectionColorId,
   readOnly: row.read_only !== 0,
   // An IAM row stores no password, so this is false for it -- but the UI must not
   // read that as "prompt for one": there is nothing to prompt for. `config.iam`
@@ -227,9 +227,6 @@ const toWorkspace = (row: WorkspaceRow): Workspace => ({
   id: row.id,
   name: row.name,
   icon: row.icon as WorkspaceIconId,
-  // NOT NULL DEFAULT covers a migrated row, but the coalesce keeps a hand-edited
-  // NULL from reaching the UI as a colourless workspace.
-  color: (row.color as WorkspaceColorId) || DEFAULT_WORKSPACE_COLOR,
 });
 
 export function listWorkspaces(): Workspace[] {
@@ -241,11 +238,9 @@ export interface WorkspaceInput {
   id?: string;
   name: string;
   icon: WorkspaceIconId;
-  /** Optional for hand/JSON callers and migrated rows; defaulted to the neutral swatch. */
-  color?: WorkspaceColorId;
 }
 
-export function saveWorkspace({ id, name, icon, color }: WorkspaceInput): Workspace {
+export function saveWorkspace({ id, name, icon }: WorkspaceInput): Workspace {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('A workspace needs a name.');
 
@@ -265,12 +260,11 @@ export function saveWorkspace({ id, name, icon, color }: WorkspaceInput): Worksp
     id: id ?? randomUUID(),
     name: trimmed,
     icon,
-    color: color ?? DEFAULT_WORKSPACE_COLOR,
   };
   open().run(
-    `INSERT INTO workspaces (id, name, icon, color) VALUES (?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET name = excluded.name, icon = excluded.icon, color = excluded.color`,
-    [row.id, row.name, row.icon, row.color]
+    `INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET name = excluded.name, icon = excluded.icon`,
+    [row.id, row.name, row.icon]
   );
 
   return toWorkspace(row);
@@ -320,6 +314,8 @@ export interface SaveInput {
   environment: Environment;
   readOnly: boolean;
   password: PasswordUpdate;
+  /** Optional for hand/JSON callers; defaulted to the neutral swatch. */
+  color?: ConnectionColorId;
 }
 
 export async function saveConnection({
@@ -330,6 +326,7 @@ export async function saveConnection({
   environment,
   readOnly,
   password,
+  color,
 }: SaveInput): Promise<SavedConnection> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('A saved connection needs a name.');
@@ -369,18 +366,20 @@ export async function saveConnection({
     // sends for it. Kept as one call rather than a special case, since the result
     // is the same null either way.
     password: config.iam ? null : await nextPassword(password, existing),
+    color: color ?? DEFAULT_CONNECTION_COLOR,
   };
 
   open().run(
     `INSERT INTO saved_connections
-       (id, workspace_id, name, engine, host, port, username, default_database, environment, ssl, read_only, aws_profile, aws_region, password)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, workspace_id, name, engine, host, port, username, default_database, environment, ssl, read_only, aws_profile, aws_region, password, color)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        workspace_id = excluded.workspace_id, name = excluded.name, engine = excluded.engine,
        host = excluded.host, port = excluded.port, username = excluded.username,
        default_database = excluded.default_database, environment = excluded.environment,
        ssl = excluded.ssl, read_only = excluded.read_only,
-       aws_profile = excluded.aws_profile, aws_region = excluded.aws_region, password = excluded.password`,
+       aws_profile = excluded.aws_profile, aws_region = excluded.aws_region, password = excluded.password,
+       color = excluded.color`,
     [
       row.id,
       row.workspace_id,
@@ -396,6 +395,7 @@ export async function saveConnection({
       row.aws_profile,
       row.aws_region,
       row.password,
+      row.color,
     ]
   );
 
@@ -410,11 +410,12 @@ export function deleteSaved(id: string): void {
  * The saved server plus the password to reach it, decrypting the stored one
  * unless the caller supplied its own (which a connection storing none requires).
  *
- * `name`, `environment`, `workspaceId` and `readOnly` come along because the row
- * is what knows them. `name` and `environment` label the session and
- * `workspaceId` groups it on the rail; `readOnly` the extension acts on. They are
- * kept beside the config rather than folded into it: a `ServerConfig` is what it
- * takes to reach a server, and none of these helps you reach anything.
+ * `name`, `environment`, `workspaceId`, `color` and `readOnly` come along because
+ * the row is what knows them. `name` and `environment` label the session,
+ * `workspaceId` groups it on the rail, `color` tints its chip; `readOnly` the
+ * extension acts on. They are kept beside the config rather than folded into it:
+ * a `ServerConfig` is what it takes to reach a server, and none of these helps
+ * you reach anything.
  */
 export async function resolveSaved(
   id: string,
@@ -425,12 +426,13 @@ export async function resolveSaved(
   name: string;
   environment: Environment;
   workspaceId: string;
+  color: ConnectionColorId;
   readOnly: boolean;
 }> {
   const row = findRow(id);
   if (!row) throw new Error('That connection no longer exists.');
 
-  const { config, name, environment, workspaceId, readOnly } = toSaved(row);
+  const { config, name, environment, workspaceId, color, readOnly } = toSaved(row);
 
   // Two kinds of connection have no password to resolve, and for both the empty
   // string stands in for a field the drivers never read on this path:
@@ -444,13 +446,13 @@ export async function resolveSaved(
   // which is the same misreading the UI makes if it prompts for one. That is
   // exactly why `isFileEngine` is in the protocol and not written out twice.
   if (config.iam || isFileEngine(config.type)) {
-    return { config, password: '', name, environment, workspaceId, readOnly };
+    return { config, password: '', name, environment, workspaceId, color, readOnly };
   }
 
   const password = supplied ?? (row.password ? await decrypt(row.password) : null);
   if (password === null) throw new Error(`"${row.name}" does not store a password; one is needed to connect.`);
 
-  return { config, password, name, environment, workspaceId, readOnly };
+  return { config, password, name, environment, workspaceId, color, readOnly };
 }
 
 /* -- User settings. The same file, and about nobody's server. ------------ */

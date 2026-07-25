@@ -73,19 +73,23 @@ its own `--syntax-*` tokens rather than borrowing the semantic ones, because a
 string is not a success and a number is not a warning: retuning `--green` for a
 callout must never repaint the SQL. They land on the same Radix steps today.
 
-`--ws-*` is the same move for the same reason, and it is the one hue in the chrome
-that is neither `--accent` nor semantic. A workspace's colour is its *identity*, not
-a status — it means "this project", which is exactly what the rail groups its open
-connections by. Nine swatches on the Radix dark scale, `--ws-slate` the neutral
-default; unlike a ramp their order carries no meaning, they are just a palette to
-tell one project from another. The id-to-hue map lives in `workspaceColors.ts`
-(the sanctioned data-lookup, like the workspace icon), and only the rail and the
-workspace pickers read them.
+`--conn-*` is the same move for the same reason, and it is the one hue in the
+chrome that is neither `--accent` nor semantic. A saved connection's colour is
+its *identity*, not a status — it means "this one", which is exactly what the
+rail and the saved-connection list tell one connection apart with. Nine
+swatches on the Radix dark scale, `--conn-slate` the neutral default; unlike a
+ramp their order carries no meaning, they are just a palette to tell one
+connection from another. The id-to-hue map lives in `connectionColors.ts` (the
+sanctioned data-lookup, like the workspace icon), and it is read by the
+connection form's colour picker, the rail, and the saved-connection list's
+colour strip. A workspace carries no colour of its own — that identity moved
+here outright rather than being merely overridable — see `docs/decisions.md`.
 
-The retired `--env-*` ramp was this same idea for the *environment*, back when the
-rail was coloured by which deployment a connection reached. The environment is a
-word now — an abbreviation on the rail chip, the full label in the status bar —
-because the rail's colour became the workspace's; see `decisions.md`.
+The retired `--env-*` ramp was this same idea for the *environment*, back when
+the rail was coloured by which deployment a connection reached. The
+environment is a word now — an abbreviation on the rail chip, the full label
+in the status bar — because the rail's colour became the connection's own; see
+`decisions.md`.
 
 The titlebar's close button going `--red` on hover is not an exception to this:
 red is this system's destructive hue and closing is the destructive action. It is
@@ -163,11 +167,12 @@ it, and nothing else in the app has that excuse.
 | tab strip | Inline in TabStrip. `TAB_H` (32px). A tab is a row holding a `<button data-testid="tab-pick">` plus `<button data-testid="tab-close">`, because a `<button>` cannot contain a `<button>`. Divided by 1px rules, never by a surface. Active tab tracked via `aria-selected`. |
 | sidebar header | Inline in Sidebar. `TAB_H` (32px), 1px bottom rule, 6px side padding. Holds the database `<Select variant="bare" searchable>` and a ghost `<Button>` for the collapse toggle — both boxless at rest, so the strip reads as the tree's title rather than as a toolbar of controls. |
 | sidebar filter | Inline in Sidebar, a second `TAB_H` strip directly beneath the header with its own 1px bottom rule, holding one `<Input variant="bare">`. Boxless at rest like the picker above it, so the two strips read as one continuous head rather than as a title with a form stuck under it; its placeholder is what says it can be typed into. |
-| connection rail | Inline in ConnectionRail. A full-width horizontal bar (`RAIL_H`, which *is* `TAB_H`) across the top of the shell, above the sidebar and the tabs, with a 1px bottom rule like every other bar. Open connections are grouped by workspace, and a group is one row: the workspace's name and glyph, then its chips beside them — there is no room to stack a heading over the chips at this height, and groups are told apart by the 1px rule between them. The workspace colour is resolved from `workspaceColor()` (a hex from `tokens.ts`) and spent directly in inline styles. Every hue is a *blend toward `--bg`*, at the four ratios named at the top of the file: the heading at 0.6, a chip's border at 0.3, its wash at 0.07, and the active chip's fill at 0.72. Those numbers are the whole of the rail's volume — it sits above the editor and the results, and full-strength tint there pulls the eye off both. |
+| connection rail | Inline in ConnectionRail. A full-width horizontal bar (`RAIL_H`, which *is* `TAB_H`) across the top of the shell, above the sidebar and the tabs, with a 1px bottom rule like every other bar. Open connections are grouped by workspace, and a group is one row: the workspace's name and glyph in plain `--text-muted`, then its chips beside them — there is no room to stack a heading over the chips at this height, and groups are told apart by the 1px rule between them. **The heading itself carries no hue** — a workspace has none of its own, only its connections do, so there is nothing to paint it with; see `docs/decisions.md`. Each chip resolves its own tint from `connectionColor(c.color)` (a hex from `tokens.ts`) and spends it directly in inline styles. Every chip hue is a *blend toward `--bg`*, at the three ratios named at the top of the file: a chip's border at 0.3, its wash at 0.07, and the active chip's fill at 0.72. Those numbers are the whole of the rail's volume — it sits above the editor and the results, and full-strength tint there pulls the eye off both. |
 | icon | Inline: `flex: none, width: ICON (16), height: ICON (16)` on a glyph from `icons.ts`. Colour is inherited from the surrounding text. Never a `size` or `color` prop. |
 | workspace bar | Inline in SavedConnectionList. The outlined row naming the workspace you are in, and the way back to the picker. One control, because one place names a thing. |
 | icon picker | Inline in WorkspaceForm. Real `<input type="radio">` per glyph, hidden, with the mark as its face. Same rule as checkbox and select: a single choice from a fixed set is what a radio group *is*. `:focus-visible` is handled by the `:has()` rule in `residual.css`. |
-| colour picker | Inline in WorkspaceForm. The icon picker's exact shape for the workspace's colour: a hidden radio per swatch, its face a `<span>` filled with the hex from `workspaceColors.ts` (which resolves via `tokens.ts`). No hue is written in the component — it names the token. |
+| colour picker | Inline in ConnectionForm's "Colour" field. The icon picker's exact shape, spent on a connection's own colour rather than a workspace's — a workspace carries none: a hidden radio per swatch, its face a `<span>` filled with the hex from `connectionColors.ts` (which resolves via `tokens.ts`). No hue is written in the component — it names the token. `flexWrap: 'nowrap'` and a tightened `GAP_XS` between tiles, rather than the icon picker's `GAP_SM`, is what keeps all nine swatches on the connect screen's fixed 420px card without wrapping — see `docs/decisions.md`. |
+| colour strip | Inline in SavedConnectionList, `data-testid="saved-color"`. A 3px `alignSelf: 'stretch'` bar at the left edge of each row, filled from `connectionColor(c.color)` — the same fact the rail's chip spends, read one screen earlier, before the connection is ever opened. |
 | status bar | Inline in StatusBar. `STATUSBAR_H` (26px), a 1px top rule like every other bar, one background. Grayscale: it carries the read-only lock (a closed vs open lock, shape not hue) and the active connection's environment as a plain word. |
 | resize handle | `<ResizeHandle orientation="vertical" \| "horizontal" onDrag={}>` from `components/ResizeHandle.tsx`. Draws the same 1px `--border` rule the divider would have anyway; the drag target is widened with an invisible absolutely-positioned overlay rather than a thicker visible bar, so it stays a rule at rest — the same "keep the actions in flow" move the hover-reveal rows make, applied to a hit target instead of a control. Reports a raw pixel delta; the caller owns the state, the clamping and which track it feeds. |
 

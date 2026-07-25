@@ -1,7 +1,7 @@
 import { createSlice, isAnyOf, type PayloadAction } from '@reduxjs/toolkit';
 import { useCallback } from 'react';
 
-import type { ConnectProgress, ConnectionConfig, Environment, ServerConfig, SqlDialect } from '../../../shared/protocol/index.ts';
+import type { ConnectionColorId, ConnectProgress, ConnectionConfig, Environment, ServerConfig, SqlDialect } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { isFileBased } from '../common/db/engines.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
@@ -57,11 +57,17 @@ export interface OpenConnection {
   name: string;
   /**
    * Which workspace this connection belongs to, so the rail can group it under
-   * that workspace and tint it with the workspace's colour. Every open connection
-   * has one -- connecting goes through a workspace-scoped form -- which is what
-   * lets the rail group by it without an "ungrouped" case.
+   * that workspace. Every open connection has one -- connecting goes through a
+   * workspace-scoped form -- which is what lets the rail group by it without an
+   * "ungrouped" case.
    */
   workspaceId: string;
+  /**
+   * This connection's own chip colour. Every connection has one -- a workspace
+   * carries none of its own to fall back to -- carried onto the open session
+   * the same way `environment` is.
+   */
+  color: ConnectionColorId;
   /**
    * Which deployment this reaches. It used to be the rail's colour; now the rail
    * is coloured by the workspace and this shows as a text tag on the chip and in
@@ -153,6 +159,7 @@ export const connect = createAppThunk(
       name: string;
       environment: Environment;
       workspaceId: string;
+      color: ConnectionColorId;
       readOnly: boolean;
       /** The row `submitNew` just saved, before ever reaching this thunk. */
       savedConnectionId: string;
@@ -173,6 +180,7 @@ export const connect = createAppThunk(
         defaultSchema: res.defaultSchema,
         name: arg.name,
         workspaceId: arg.workspaceId,
+        color: arg.color,
         environment: arg.environment,
         readOnly: arg.readOnly,
       };
@@ -207,6 +215,7 @@ export const connectSaved = createAppThunk(
         defaultSchema: res.defaultSchema,
         name: res.name,
         workspaceId: res.workspaceId,
+        color: res.color,
         environment: res.environment,
         readOnly: res.readOnly,
         // Parsed here rather than in the reducer, so `tabsSlice` receives a shape
@@ -349,7 +358,7 @@ const sessionSlice = createSlice({
         state.error = null;
       })
       .addMatcher(sessionOpened, (state, action) => {
-        const { connectionId, savedConnectionId, config, dialect, defaultSchema, name, workspaceId, environment, readOnly } =
+        const { connectionId, savedConnectionId, config, dialect, defaultSchema, name, workspaceId, color, environment, readOnly } =
           action.payload;
         state.connecting = false;
         state.connectingPhase = null;
@@ -361,6 +370,7 @@ const sessionSlice = createSlice({
           defaultSchema,
           name,
           workspaceId,
+          color,
           environment,
           readOnly,
         };
@@ -440,9 +450,10 @@ export function useSession() {
         name: string,
         environment: Environment,
         workspaceId: string,
+        color: ConnectionColorId,
         readOnly: boolean,
         savedConnectionId: string
-      ) => dispatch(connect({ config, name, environment, workspaceId, readOnly, savedConnectionId })),
+      ) => dispatch(connect({ config, name, environment, workspaceId, color, readOnly, savedConnectionId })),
       [dispatch]
     ),
     connectSaved: useCallback(

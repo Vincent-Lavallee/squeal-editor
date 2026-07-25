@@ -15,6 +15,7 @@
 
 export type {
   AwsIamAuth,
+  ConnectionColorId,
   ConnectionConfig,
   EngineType,
   Environment,
@@ -23,7 +24,6 @@ export type {
   ServerConfig,
   SqlDialect,
   Workspace,
-  WorkspaceColorId,
   WorkspaceIconId,
 } from './config.ts';
 

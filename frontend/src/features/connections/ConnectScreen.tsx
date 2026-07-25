@@ -64,13 +64,13 @@ export default function ConnectScreen({ onCancel }: Props) {
 
   async function submitNew(workspaceId: string, values: FormValues): Promise<void> {
     let row: SavedConnection;
-    try { row = await saved.save({ workspaceId, name: values.name, config: values.config, environment: values.environment, readOnly: values.readOnly, password: passwordUpdate(values, 'new') }); }
+    try { row = await saved.save({ workspaceId, name: values.name, config: values.config, environment: values.environment, readOnly: values.readOnly, password: passwordUpdate(values, 'new'), color: values.color }); }
     catch { return; }
-    void session.connect({ ...values.config, password: values.password }, values.name, values.environment, workspaceId, values.readOnly, row.id);
+    void session.connect({ ...values.config, password: values.password }, values.name, values.environment, workspaceId, values.color, values.readOnly, row.id);
   }
 
   async function submitEdit(connection: SavedConnection, values: FormValues): Promise<void> {
-    try { await saved.save({ id: connection.id, workspaceId: connection.workspaceId, name: values.name, config: values.config, environment: values.environment, readOnly: values.readOnly, password: passwordUpdate(values, 'edit') }); go({ view: 'list', workspaceId: connection.workspaceId }); }
+    try { await saved.save({ id: connection.id, workspaceId: connection.workspaceId, name: values.name, config: values.config, environment: values.environment, readOnly: values.readOnly, password: passwordUpdate(values, 'edit'), color: values.color }); go({ view: 'list', workspaceId: connection.workspaceId }); }
     catch { /* stays on form */ }
   }
 

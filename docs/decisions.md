@@ -2829,3 +2829,85 @@ this migration is rewriting away from, and it must keep saying so even after
 `ENVIRONMENTS` no longer lists it — reaching for a constant would rewrite the
 migration's own history the day someone tries to delete the last trace of the
 old name.
+
+---
+
+## Colour moved off the workspace and onto the connection, outright
+
+**Why.** The rail's colour was the workspace's, so every connection in a
+project looked the same — but people work with *connections*, not workspaces:
+the one they mean to be on right now is a specific server, not a specific
+project. The first cut kept the workspace's colour as a fallback a connection
+could override; the workspace's own colour was cut entirely instead; only a
+connection has one now, and `Workspace` carries no `color` field at all.
+
+**Overridable-with-a-fallback was rejected once it was built, not before.**
+It worked — a connection wore its own swatch or inherited the workspace's —
+but it meant two colours doing one job, a "Match workspace" tile that had to
+be visually unlike a tenth swatch, and a nullable column whose `NULL` meant
+something other than "unset." Cutting the workspace's colour outright removes
+all three at once: one identity, one picker, one required column. The same
+lesson `--env-*`'s retirement already taught — a fact that turned out to
+belong to one place stops needing a second place to also hold it.
+
+**Every connection has a colour; there is no "no colour" state left to
+represent.** `saved_connections.color` is `TEXT NOT NULL DEFAULT 'slate'`,
+the same shape as the workspace's own column was, not the nullable
+"inherit" column the first cut gave connections. The picker is the ordinary
+nine-swatch grid `WorkspaceForm`'s used to be, with no leading tile: slate is
+what a new connection starts on, exactly as it was what an uncoloured
+workspace used to fall back to.
+
+**The workspace's `color` column is dropped, not merely unread.** It had
+already shipped (`workspace-colour`, an earlier release), so retiring it is a
+second, append-only migration — `ALTER TABLE workspaces DROP COLUMN color` —
+never an edit to the one that added it. SQLite has supported `DROP COLUMN`
+since 3.35, well inside Bun's bundled version, so this is a plain drop rather
+than the table-rebuild `workspaces` needed the one time an actual constraint
+had to change.
+
+**The rail's heading stays plain text — a fact the earlier "muted tint"
+design got right by accident.** That entry tinted the heading on the argument
+that a chip's border and wash were derived from the same colour as the
+heading above it, so painting the heading was "free." The chips were already
+capable of disagreeing with each other by the time that was written — a
+connection could already override its workspace — which means the heading
+was already asserting a single colour for a row that could hold several. Now
+that a workspace has no colour of its own to assert, there is nothing left to
+paint the heading with, and the accidental fix becomes the honest state: the
+heading names *whose* group this is, the chips say what colour each
+connection actually is.
+
+**Renamed to match: `WorkspaceColorId` → `ConnectionColorId`,
+`workspaceColors.ts` → `connectionColors.ts`, `--ws-*` → `--conn-*`.** A type
+and a lookup named for the entity that no longer owns the concept is exactly
+the naming lie this codebase's own conventions forbid elsewhere — the same
+reason `--blue` was renamed to `--accent` when the accent hue changed. The
+palette itself (the nine hexes) is untouched; only what it is named after
+moved.
+
+**The colour picker is guaranteed one row, not merely usually one.** The
+connect screen's card is a fixed 420px, so nine 34px swatches at the
+`WorkspaceForm` gap (`GAP_SM`, 8px) total 370px against 372px of content
+width — two pixels of slack, and the tenth "Match workspace" tile the first
+cut added was what pushed it over into a wrap. Removing that tile alone would
+have left the fit at that same two-pixel margin; the gap was tightened to
+`GAP_XS` (4px) instead, landing at 338px, so the row does not wrap the day a
+tenth swatch or a slightly wider font metric is added. `flexWrap: 'nowrap'`
+is set explicitly alongside it, so a future regression fails as a clipped row
+rather than silently wrapping again.
+
+**A colour strip in the saved-connection list, so a connection's colour is
+visible before it is ever opened.** The rail only shows what is already
+open; the list a workspace's connections are picked from had nothing at all
+marking one from another beyond its name. A 3px bar at the left edge of each
+row, filled from the same `connectionColor()` the rail spends, answers "which
+one is this" at the point the user is actually choosing.
+
+**Verified against a real connection, not a computed pixel.** Two saved
+connections in one workspace, opened against the fixture Postgres server: one
+given an explicit swatch, the other left on the default. The rail shows the
+first wearing its own hue and the second wearing the neutral default, side by
+side under one plain-text heading; the saved list shows both strips before
+either is opened; the workspace form shows no colour control at all — all
+four read off the running app's own screenshots.

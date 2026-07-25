@@ -5,6 +5,7 @@ import { engineLabel, isFileBased } from '../../common/db/engines.ts';
 import { ENVIRONMENTS } from '../../common/db/environments.ts';
 import { BackIcon } from '../../common/icons/icons.ts';
 import { serverLabel } from '../../store/sessionSlice.ts';
+import { connectionColor } from '../../common/icons/connectionColors.ts';
 import { workspaceGlyph } from '../../common/icons/workspaceIcons.ts';
 import Badge from '../../common/components/Badge.tsx';
 import Button from '../../common/components/Button.tsx';
@@ -75,6 +76,7 @@ export default function SavedConnectionList({ workspace, connections, connecting
                     key={c.id}
                     onMouseEnter={() => setHoveredId(c.id)}
                     onMouseLeave={() => setHoveredId(null)}>
+                    <span aria-hidden="true" data-testid="saved-color" style={{ alignSelf: 'stretch', flex: 'none', width: 3, background: connectionColor(c.color) }} />
                     <button data-testid="saved-pick" style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: 3, minWidth: 0, padding: `${t.GAP_SM}px 10px`, border: 'none', background: 'none', color: t.TEXT, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}
                       onClick={() => onPick(c)} disabled={busy} title={`${c.name} — ${serverLabel(c.config)}`}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, minWidth: 0 }}>

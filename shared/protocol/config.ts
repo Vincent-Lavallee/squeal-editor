@@ -162,16 +162,16 @@ export type WorkspaceIconId =
   | 'leaf';
 
 /**
- * A workspace's colour, as an id rather than a hex.
+ * A saved connection's colour, as an id rather than a hex.
  *
  * Same rule as `WorkspaceIconId` above and `SqlDialect` one step over: the
  * extension carries a value it does not read, and the UI resolves the id to a
  * swatch. The hex lives in `tokens.css`, the one place a colour is written; this
- * is only the name of the swatch chosen. A fixed palette, picked beside the icon,
- * with `slate` the neutral default so a workspace made before this -- or edited
- * by hand -- is never colourless.
+ * is only the name of the swatch chosen. A fixed palette, picked in the connect
+ * form, with `slate` the neutral default so a connection made before this -- or
+ * edited by hand -- is never colourless.
  */
-export type WorkspaceColorId =
+export type ConnectionColorId =
   | 'slate'
   | 'blue'
   | 'cyan'
@@ -190,15 +190,15 @@ export type WorkspaceColorId =
  * The only rule it enforces is the one that follows from grouping at all -- a
  * connection's name has to be unique within its workspace, not across the app.
  *
- * The `icon` and `colour` are how the rail tells one workspace's group from
- * another once its connections are open; both are ids the UI resolves to a
- * drawing and a swatch.
+ * `icon` is how the rail tells one workspace's group from another once its
+ * connections are open, resolved by the UI to a drawing. A workspace carries no
+ * colour of its own -- that identity lives on each connection instead, see
+ * `SavedConnection.color` -- so the group heading is plain text.
  */
 export interface Workspace {
   id: string;
   name: string;
   icon: WorkspaceIconId;
-  color: WorkspaceColorId;
 }
 
 /**
@@ -213,6 +213,13 @@ export interface SavedConnection {
   name: string;
   config: ServerConfig;
   environment: Environment;
+  /**
+   * This connection's own swatch, the same way a workspace's `icon` is its own
+   * mark. Every connection has one -- the form always sends a choice, defaulting
+   * to `slate` for one nobody has picked a colour for yet -- because a workspace
+   * carries no colour to fall back to. The rail reads this and only this.
+   */
+  color: ConnectionColorId;
   /**
    * Open this connection read-only, letting the server refuse writes.
    *

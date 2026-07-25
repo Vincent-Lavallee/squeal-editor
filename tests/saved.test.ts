@@ -504,6 +504,37 @@ describe('across a restart', () => {
   });
 });
 
+describe('connection colour', () => {
+  test('defaults to the neutral swatch unless chosen, and survives a round trip when chosen', async () => {
+    const uncoloured = await save({ name: 'colour-default', config: PG_SERVER, password: { mode: 'none' } });
+    expect(uncoloured.color).toBe('slate');
+
+    const chosen = await save({ name: 'colour-set', config: PG_SERVER, color: 'purple', password: { mode: 'none' } });
+    expect(chosen.color).toBe('purple');
+
+    // Read back through the list rather than the save's own answer, exactly as
+    // `ssl` and `readOnly` are -- `toSaved` is what turns the column into this.
+    expect((await list()).find((c) => c.name === 'colour-default')!.color).toBe('slate');
+    expect((await list()).find((c) => c.name === 'colour-set')!.color).toBe('purple');
+
+    await h.ok('db.saved.delete', { id: uncoloured.id });
+    await h.ok('db.saved.delete', { id: chosen.id });
+  });
+
+  test('editing replaces the colour, and omitting it resets to the neutral default', async () => {
+    const made = await save({ name: 'colour-replace', config: PG_SERVER, color: 'green', password: { mode: 'none' } });
+    expect(made.color).toBe('green');
+
+    // The whole row is resent on every save, like every other field here -- a
+    // hand/JSON caller omitting `color` gets the same neutral default a brand
+    // new connection does, the same way an omitted `readOnly` would read false.
+    const reset = await save({ id: made.id, name: 'colour-replace', config: PG_SERVER, password: { mode: 'keep' } });
+    expect(reset.color).toBe('slate');
+
+    await h.ok('db.saved.delete', { id: made.id });
+  });
+});
+
 describe('settings', () => {
   const settings = async (): Promise<Record<string, string>> =>
     ((await h.ok('settings.list', {})) as { settings: Record<string, string> }).settings;
@@ -727,24 +758,18 @@ describe('workspaces', () => {
     if (!res.ok) expect(res.error).toMatch(/already exists/i);
   });
 
-  test('the name, icon and colour survive a round trip, and an edit is in place', async () => {
-    const made = await saveWorkspace({ name: 'Acme', icon: 'rocket', color: 'cyan' });
+  test('the name and icon survive a round trip, and an edit is in place', async () => {
+    const made = await saveWorkspace({ name: 'Acme', icon: 'rocket' });
     expect(made.icon).toBe('rocket');
-    expect(made.color).toBe('cyan');
+    // A workspace carries no colour of its own -- that identity lives on each
+    // connection instead. See `docs/decisions.md`.
+    expect(made).not.toHaveProperty('color');
 
-    const edited = await saveWorkspace({ id: made.id, name: 'Acme Corp', icon: 'flask', color: 'orange' });
+    const edited = await saveWorkspace({ id: made.id, name: 'Acme Corp', icon: 'flask' });
     expect(edited.id).toBe(made.id);
     expect(edited.name).toBe('Acme Corp');
     expect(edited.icon).toBe('flask');
-    expect(edited.color).toBe('orange');
     expect((await workspaces()).filter((w) => w.id === made.id)).toHaveLength(1);
-  });
-
-  test('a workspace saved without a colour gets the neutral default', async () => {
-    // The UI always sends one, but a hand/JSON caller may not -- and a colourless
-    // workspace must never reach the rail. The store defaults it, as `slate`.
-    const made = await saveWorkspace({ name: 'Colourless', icon: 'cube' });
-    expect(made.color).toBe('slate');
   });
 
   test('a connection name only has to be unique within its workspace', async () => {
@@ -862,6 +887,10 @@ const stamps = (): Stamp[] => {
 
 /** What each migration would have to undo, for the rewind below. Newest first. */
 const UNDO: Record<string, string[]> = {
+  // The inverse of a DROP: put the column this migration removed back, with the
+  // same default the ADD COLUMN it undoes gave it.
+  'drop-workspace-colour': ["ALTER TABLE workspaces ADD COLUMN color TEXT NOT NULL DEFAULT 'slate'"],
+  'connection-colour': ['ALTER TABLE saved_connections DROP COLUMN color'],
   // A data rewrite, not a column addition -- environment has always been a bare
   // TEXT, so there is no column for a rewind to drop.
   'environment-qa': [],
@@ -1150,39 +1179,51 @@ describe('migrating a store written before read-only connections', () => {
 });
 
 /**
- * The workspace colour arrived the same way SSL and read-only did, but on the
- * `workspaces` table: a plain ADD COLUMN onto a store that already has workspaces.
- * Downgraded from the live file so the migration meets a real row.
+ * A workspace's colour was retired: the identity moved to each connection
+ * instead (see `connection colour` above and `docs/decisions.md`). Downgraded
+ * from the live file, so the migration meets a real column holding a real
+ * stored value rather than an empty one.
  */
-describe('migrating a store written before workspace colours', () => {
-  test('every workspace comes back the neutral default, and is still usable', async () => {
-    const made = await saveWorkspace({ name: 'Pre-colour', icon: 'globe', color: 'purple' });
-    expect(made.color).toBe('purple');
+describe('migrating a store written before the workspace colour column was dropped', () => {
+  test('every workspace loses its stored colour, and stays usable', async () => {
+    const made = await saveWorkspace({ name: 'Pre-drop', icon: 'globe' });
     await h.stop();
 
-    // Back to version 5, the last one before workspaces had a colour, leaving
-    // the rows as they were.
-    const { workspaces: columns } = rewindTo('connection-aws-iam');
-    expect(columns).not.toContain('color');
+    // Back to right after `workspace-colour` ran -- the column this migration
+    // removes, put back by its own UNDO so the drop meets a real one rather
+    // than a no-op.
+    const { workspaces: columns } = rewindTo('connection-colour');
+    expect(columns).toContain('color');
+
+    const db = new Database(DB_FILE);
+    db.run('UPDATE workspaces SET color = ? WHERE id = ?', ['purple', made.id]);
+    db.close();
 
     h = await startHarness(ENV);
 
-    const migrated = (await workspaces()).find((w) => w.name === 'Pre-colour')!;
-    // Slate, not the stored purple: a workspace that predates the column never had
-    // a colour, and the neutral default is the guess that costs least -- what the
-    // ADD COLUMN backfills. A workspace is never colourless when it reaches the UI.
-    expect(migrated.color).toBe('slate');
-    // Still writable through the normal path, colour and all.
-    const edited = await saveWorkspace({ id: migrated.id, name: 'Pre-colour', icon: 'globe', color: 'green' });
-    expect(edited.color).toBe('green');
+    const migrated = (await workspaces()).find((w) => w.id === made.id)!;
+    // Not merely unread -- gone. A workspace answers with no `color` at all now.
+    expect(migrated).not.toHaveProperty('color');
+
+    const after = new Database(DB_FILE);
+    const shape = (after.query('PRAGMA table_info(workspaces)').all() as { name: string }[]).map((c) => c.name);
+    after.close();
+    expect(shape).not.toContain('color');
+
+    // Still writable through the normal path.
+    const edited = await saveWorkspace({ id: migrated.id, name: 'Pre-drop', icon: 'flask' });
+    expect(edited.icon).toBe('flask');
   });
 });
 
 /**
  * `staging` renamed to `qa`. Unlike every migration above, the column is
  * unchanged -- environment has always been a bare TEXT -- so there is no
- * schema to rewind: the row is edited directly to look like a store the old
- * app wrote, and only the migration's own stamp needs undoing.
+ * schema of its own to rewind: only the stamp needs undoing. `rewindTo` is
+ * still the right tool rather than a bare `DELETE FROM schema_migrations`,
+ * because anything appended to the list *after* this migration -- connection
+ * colour, today -- needs its own column dropped too, or the ADD COLUMN it
+ * reruns on restart hits one already there.
  */
 describe('migrating a store written before the environment rename', () => {
   test('a connection saved as staging comes back as qa', async () => {
@@ -1193,15 +1234,55 @@ describe('migrating a store written before the environment rename', () => {
     const conn = await save({ workspaceId: ws, name: 'pre-qa-conn', config: PG_SERVER, password: { mode: 'none' } });
     await h.stop();
 
+    rewindTo('connection-sessions');
+
     const db = new Database(DB_FILE);
     db.run("UPDATE saved_connections SET environment = 'staging' WHERE id = ?", [conn.id]);
-    db.run('DELETE FROM schema_migrations WHERE version > ?', [versionOf('connection-sessions')]);
     db.close();
 
     h = await startHarness(ENV);
 
     const migrated = (await list()).find((c) => c.name === 'pre-qa-conn')!;
     expect(migrated.environment).toBe('qa');
+  });
+});
+
+/**
+ * A connection's own colour arrived the same way SSL and read-only did: a
+ * plain ADD COLUMN onto a store that already has `saved_connections`.
+ * Downgraded from the live file, so a real row with a real password blob
+ * meets the migration.
+ */
+describe('migrating a store written before connection colours', () => {
+  test('every connection comes back the neutral default, and can still be given its own', async () => {
+    const ws = (await workspaces())[0]!.id;
+    const made = await save({ workspaceId: ws, name: 'pre-colour-conn', config: PG_SERVER, password: { mode: 'none' } });
+    expect(made.color).toBe('slate');
+    await h.stop();
+
+    // Back to the last version before this column existed, leaving the row as
+    // the current version wrote it.
+    const { connections } = rewindTo('environment-qa');
+    expect(connections).not.toContain('color');
+
+    h = await startHarness(ENV);
+
+    const migrated = (await list()).find((c) => c.name === 'pre-colour-conn')!;
+    // Slate, same as a connection saved with the column already there: the
+    // NOT NULL DEFAULT the ADD COLUMN backfills is the same neutral guess a
+    // brand-new row gets, so a migrated connection is never a special case.
+    expect(migrated.color).toBe('slate');
+
+    // Still writable through the normal path, colour and all.
+    const edited = await save({
+      id: migrated.id,
+      workspaceId: ws,
+      name: 'pre-colour-conn',
+      config: PG_SERVER,
+      color: 'cyan',
+      password: { mode: 'keep' },
+    });
+    expect(edited.color).toBe('cyan');
   });
 });
 

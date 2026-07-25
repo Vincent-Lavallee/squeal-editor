@@ -21,12 +21,6 @@ Things that already work, but not well enough.
   by hand — right-click the selector to copy it to the clipboard, with a brief
   hint that the name was copied.
 
-- **Per-connection color** — Connections have no color of their own, so every
-  connection in a workspace looks identical in the rail — and people work with
-  connections, not workspaces. Give each saved connection its own color, defaulting
-  to its workspace's color but overridable in the connection form. The rail chips
-  use the connection color; the workspace heading stays in the regular text color.
-
 - **Edit results from manual SQL** — Results are only editable when browsing a
   table opened from the tree, because the system needs a table to write back to
   and key columns to target. Typing `SELECT * FROM some_table` by hand gives the
@@ -64,7 +58,7 @@ Things that are wrong.
 - **Unbounded table listing** — `listTables` fetches every table in the database
   with no limit, so a database with thousands of tables is slow to query,
   renders an unusable tree, and chokes autocomplete. Cap the result at a fixed
-  limit (e.g., 500) with a note in the tree that more exist — the filter bar
+  limit (e.g., 250) with a note in the tree that more exist — the filter bar
   still searches the full set on the server side. Autocomplete respects the
   same cap.
 
