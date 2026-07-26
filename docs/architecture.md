@@ -210,10 +210,13 @@ Releases are automated in `.github/workflows/release.yml`, two jobs:
 - **build** runs only on the run where that release was created, *in the same
   workflow* — a Release cut by the default `GITHUB_TOKEN` does not trigger a
   separate `on: release` workflow. On Windows, macOS and Linux (`fail-fast:
-  false`) it compiles the extension for that OS, slims and packages. Windows and
-  Linux attach a `dist/squeal-editor` zip; Windows also builds an Inno Setup
-  installer (`installer/squeal-editor.iss`) and attaches that Setup.exe beside
-  it. macOS attaches a `.dmg` instead of a zip and has no zip.
+  false`) it compiles the extension for that OS, slims and packages. Windows
+  builds an Inno Setup installer (`installer/squeal-editor.iss`) and attaches
+  that as its only download — no portable zip beside it, see
+  `docs/decisions.md`. macOS attaches a `.dmg` instead of a zip. Linux builds
+  and packages the same as the other two, for verification, but ships nothing
+  to the release — a raw zip with no desktop integration was worse than no
+  download at all; see `docs/decisions.md` and the Linux AppImage backlog item.
   Windows is verified to launch and connect; mac/Linux still ship unverified —
   they have never been launched — a known, accepted state, not a claim they work.
 
@@ -260,7 +263,7 @@ and a later signature on one of them invalidates the outer seal.
 The `.dmg` is **arm64 only**, and ad-hoc signed. See `docs/decisions.md` for both.
 
 Each Windows release also carries what the in-app updater needs to trust it: a
-detached ed25519 signature over the installer (`…Setup.exe.sig`) and a
+detached ed25519 signature over the installer (`squeal-editor-vX.Y.Z.exe.sig`) and a
 `SHA256SUMS`, signed in CI by `scripts/sign-release.ts` with a key held only as
 the `UPDATE_SIGNING_KEY` secret. The app checks for a newer release on launch and,
 if the user agrees, downloads the installer, verifies the checksum then the

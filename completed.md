@@ -21,6 +21,8 @@ the date they were finished.
   queries — parse the table name, fetch the key columns, and make the grid
   editable exactly as if the table had been opened from the explorer.
 
+- **2026-07-26** — **Modify window release** — Can you remove the standalone exe and make the setup as the main windows exe without the setup in the file name. Not sure if the installer relies on the other exe tho.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

@@ -65,9 +65,8 @@ describe('verifyEd25519', () => {
 
 describe('selectAssets', () => {
   const windowsAssets = [
-    { name: 'squeal-editor-windows-v0.1.4.zip', browser_download_url: 'https://x/zip' },
-    { name: 'squeal-editor-setup-v0.1.4.exe', browser_download_url: 'https://x/exe' },
-    { name: 'squeal-editor-setup-v0.1.4.exe.sig', browser_download_url: 'https://x/sig' },
+    { name: 'squeal-editor-v0.1.4.exe', browser_download_url: 'https://x/exe' },
+    { name: 'squeal-editor-v0.1.4.exe.sig', browser_download_url: 'https://x/sig' },
     { name: 'SHA256SUMS', browser_download_url: 'https://x/sums' },
   ];
 
@@ -79,7 +78,7 @@ describe('selectAssets', () => {
   });
 
   test('a release missing the signing assets resolves to undefined, so no update is offered', () => {
-    const bare = [windowsAssets[0], windowsAssets[1]]; // zip + installer only
+    const bare = [windowsAssets[0]]; // installer only
     const { installer, signature, checksums } = selectAssets(bare, 'win32');
     expect(installer).toBeDefined();
     expect(signature).toBeUndefined();
@@ -113,12 +112,12 @@ describe('selectAssets', () => {
 
 describe('parseChecksum', () => {
   const sums = [
-    'deadbeef'.repeat(8) + '  squeal-editor-setup-v0.1.4.exe',
+    'deadbeef'.repeat(8) + '  squeal-editor-v0.1.4.exe',
     'a'.repeat(64) + '  something-else.zip',
   ].join('\n');
 
   test('finds the digest for the named file, lowercased', () => {
-    expect(parseChecksum(sums, 'squeal-editor-setup-v0.1.4.exe')).toBe('deadbeef'.repeat(8));
+    expect(parseChecksum(sums, 'squeal-editor-v0.1.4.exe')).toBe('deadbeef'.repeat(8));
   });
 
   test('returns null for a file not listed', () => {

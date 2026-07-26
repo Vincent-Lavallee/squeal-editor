@@ -3190,3 +3190,55 @@ SQL it promised never to rewrite, and a filter bar implies a `WHERE` this app
 can re-author — neither is true of a hand-typed statement. `Save` on this
 path re-runs the original SQL rather than re-browsing, for the same reason:
 there is no page to read back, only the statement that produced this one.
+
+---
+
+## The Windows release drops the portable zip; the installer is its only download
+
+**Why.** Two Windows assets on the release page meant a choice with no good
+default: the zip runs without installing but never self-updates, the installer
+does both and is free either way. The zip earned its keep for exactly as long
+as it was the *only* verified way to run the app on Windows; once the
+installer was verified too, the zip was one more download to explain for no
+capability it alone provided. Dropped, along with the `Zip the bundle
+(Windows)` CI step that made it.
+
+**Why the installer could just absorb the role: it never depended on the
+zip.** `installer/squeal-editor.iss`'s `[Files]` section reads straight out of
+`dist\squeal-editor`, the same `neu build` output the zip step archived — the
+two were siblings in the same job, not a pipeline where one fed the other.
+Removing the zip step changes nothing the installer step reads.
+
+**Why the output file also lost "setup" from its name.**
+`squeal-editor-setup-vX.Y.Z.exe` carried "setup" to distinguish it from the
+portable zip sitting beside it on the release page. With the zip gone there is
+only one Windows file, and the word describing what made it different from
+the other option is now describing nothing — so it is renamed to
+`squeal-editor-vX.Y.Z.exe`. That rename reaches everywhere the old name was
+load-bearing, not just cosmetic: the updater's `INSTALLER_PATTERNS.win32`
+regex, `sign-release.ts`'s two output filenames (`.sig` and the `SHA256SUMS`
+line), and the asset names `docs/architecture.md` and the README's download
+table both quote.
+
+---
+
+## The Linux release ships nothing, for now — CI still builds it
+
+The zip was the only thing CI ever produced for Linux, and it was a bare `neu
+build` output with no desktop integration: no launcher entry, no icon, nothing
+a Linux user would recognize as an installable app — the same complaint the
+Linux AppImage backlog item names. Attaching that zip to every release gave
+Linux a download link that looked like support and delivered a worse first run
+than no download at all.
+
+**Why not drop the Linux leg entirely instead.** The matrix still builds and
+packages Linux on every release (`fail-fast: false` keeps its failure from
+withholding Windows or macOS) — that is the only signal this project has that
+`neu build` still works there at all, unverified as the launch itself remains.
+Losing the build would lose the one check standing between "unverified" and
+"unknown". Only the zip step and its release upload are gone; compiling,
+slimming and `neu build` are untouched.
+
+**This is explicitly temporary.** The AppImage backlog item is the real fix —
+desktop integration, not just an archive — and when it lands Linux gets a
+release asset again, this time one worth shipping.

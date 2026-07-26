@@ -1,8 +1,11 @@
 ; Inno Setup script for the Windows installer.
 ;
-; Wraps the `neu build` output (dist/squeal-editor) into a Setup.exe: per-user
-; install, Start Menu + optional desktop shortcut, an uninstaller. The version
-; is passed in by CI from the release tag — `iscc /DAppVersion=X.Y.Z`.
+; Wraps the `neu build` output (dist/squeal-editor) into an installer: per-user
+; install, Start Menu + optional desktop shortcut, an uninstaller. It's the
+; only Windows download the release carries — see docs/decisions.md for why
+; the portable zip that used to sit beside it is gone — so the output name
+; deliberately carries no "setup" of its own, just the app name and version.
+; The version is passed in by CI from the release tag — `iscc /DAppVersion=X.Y.Z`.
 ;
 ; Only the Windows binary, the resources bundle, and the compiled extension are
 ; shipped; the mac/Linux binaries neu also emits into the same folder are
@@ -27,7 +30,7 @@ UninstallDisplayIcon={app}\{#AppExe}
 ; root — resolve both the sources and the output there, whatever ISCC's CWD is.
 SourceDir={#SourcePath}\..
 OutputDir=installer
-OutputBaseFilename=squeal-editor-setup-v{#AppVersion}
+OutputBaseFilename=squeal-editor-v{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

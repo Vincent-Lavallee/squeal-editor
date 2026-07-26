@@ -12,9 +12,9 @@ Download the latest release for your OS from the
 
 | OS      | Download                                                                             |
 | ------- | ------------------------------------------------------------------------------------ |
-| Windows | `squeal-editor-setup-*.exe` installer, or the portable `squeal-editor-windows-*.zip` |
+| Windows | `squeal-editor-*.exe` installer                                                      |
 | macOS   | `squeal-editor-macos-*.dmg`                                                          |
-| Linux   | `squeal-editor-linux-*.zip`                                                          |
+| Linux   | not shipped yet — build from source                                                  |
 
 Windows builds check for updates on launch and can update themselves; other
 platforms don't yet.

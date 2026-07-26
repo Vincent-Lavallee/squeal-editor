@@ -97,17 +97,10 @@ jobs:
       - name: Package the app
         run: bunx neu build
 
-      # Not Compress-Archive: it throws "Could not find a part of the path" on the
-      # deep Monaco/extension paths in the bundle (Windows MAX_PATH). bsdtar ships
-      # on the runner, handles long paths, and matches the Unix step's shape —
-      # archiving the squeal-editor folder, not its bare contents.
-      - name: Zip the bundle (Windows)
-        if: runner.os == 'Windows'
-        run: tar -a -c -f "squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip" -C dist squeal-editor
-
-      - name: Zip the bundle (Linux)
-        if: runner.os == 'Linux'
-        run: cd dist && zip -r "../squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip" squeal-editor
+      # Linux still builds and packages here for verification (see the
+      # fail-fast comment above), but ships nothing to the release for now: a
+      # raw zip with no desktop integration is a worse first run than no
+      # download at all. Revisit once the AppImage backlog item lands.
 
       # macOS ships a .dmg instead of a zip: the raw neu output is a bare
       # executable and a resources folder, which is not something macOS knows how
@@ -118,11 +111,12 @@ jobs:
           version="${{ needs.release-please.outputs.tag_name }}"
           bash scripts/package-macos.sh "${version#v}"
 
-      # A Setup.exe beside the portable zip: the installer is the path the
-      # auto-updater will lean on, the zip stays for anyone who wants it loose.
-      # Inno Setup usually ships on the runner image; install it if not, so the
-      # build never depends on that. The version comes off the release tag with
-      # its leading `v` stripped, which Inno wants numeric.
+      # The installer is the only Windows download: it's the path the
+      # auto-updater leans on, and a second, unsigned way to run the app is one
+      # more support question for zero benefit. Inno Setup usually ships on the
+      # runner image; install it if not, so the build never depends on that. The
+      # version comes off the release tag with its leading `v` stripped, which
+      # Inno wants numeric.
       - name: Build the Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
@@ -131,12 +125,6 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
           $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
           & $iscc "/DAppVersion=$version" installer\squeal-editor.iss
-
-      - name: Attach to the release
-        if: runner.os != 'macOS'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ needs.release-please.outputs.tag_name }}" "squeal-editor-${{ matrix.name }}-${{ needs.release-please.outputs.tag_name }}.zip" --clobber
 
       - name: Attach the macOS disk image to the release
         if: runner.os == 'macOS'
@@ -152,7 +140,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
-          gh release upload "${{ needs.release-please.outputs.tag_name }}" "installer\squeal-editor-setup-v$version.exe" --clobber
+          gh release upload "${{ needs.release-please.outputs.tag_name }}" "installer\squeal-editor-v$version.exe" --clobber
 
       # The in-app updater will not apply a build it cannot prove is genuine, so
       # the release must carry the proof: a detached ed25519 signature over the
@@ -164,7 +152,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
-          bun run scripts/sign-release.ts "installer\squeal-editor-setup-v$version.exe"
+          bun run scripts/sign-release.ts "installer\squeal-editor-v$version.exe"
 
       - name: Attach the update assets to the release
         if: runner.os == 'Windows' && env.UPDATE_SIGNING_KEY != ''
@@ -172,7 +160,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
-          gh release upload "${{ needs.release-please.outputs.tag_name }}" "installer\squeal-editor-setup-v$version.exe.sig" "SHA256SUMS" --clobber
+          gh release upload "${{ needs.release-please.outputs.tag_name }}" "installer\squeal-editor-v$version.exe.sig" "SHA256SUMS" --clobber
 
       # macOS has no separate installer: the updater downloads and verifies the
       # same .dmg already attached above, so it's what gets signed here. The

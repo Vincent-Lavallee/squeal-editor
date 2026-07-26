@@ -24,8 +24,8 @@ import { checkForUpdate, downloadUpdate } from '../extensions/db/updater.ts';
 const isWindows = process.platform === 'win32';
 const isMac = process.platform === 'darwin';
 
-const INSTALLER = Buffer.from('pretend Setup.exe payload, a few bytes');
-const INSTALLER_NAME = 'squeal-editor-setup-v9.9.9.exe';
+const INSTALLER = Buffer.from('pretend installer payload, a few bytes');
+const INSTALLER_NAME = 'squeal-editor-v9.9.9.exe';
 const goodDigest = createHash('sha256').update(INSTALLER).digest('hex');
 
 const DMG = Buffer.from('pretend .dmg payload, a few bytes');

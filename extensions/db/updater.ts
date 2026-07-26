@@ -51,7 +51,7 @@ function latestReleaseUrl(): string {
  * upload and clobber it.
  */
 const INSTALLER_PATTERNS: Partial<Record<NodeJS.Platform, RegExp>> = {
-  win32: /^squeal-editor-setup-v.*\.exe$/,
+  win32: /^squeal-editor-v.*\.exe$/,
   darwin: /^squeal-editor-macos-arm64-v.*\.dmg$/,
 };
 const CHECKSUMS_NAMES: Partial<Record<NodeJS.Platform, string>> = {

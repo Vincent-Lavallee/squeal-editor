@@ -938,7 +938,7 @@ reaching GitHub, streaming to disk, verifying, launching a process — so it liv
 here, the same reason connections and the frame paint do. Windows-only for now;
 `update.check` reports `supported: false` everywhere else and returns before it
 reaches the network. That guard is load-bearing, not a formality: the assets it
-would find are `squeal-editor-setup-v*.exe` and `applyUpdate` hands its download
+would find are `squeal-editor-v*.exe` and `applyUpdate` hands its download
 to `cmd /c start`, so a macOS build that got past it would verify a Windows
 installer's signature and then try to run it. The UI reads `supported` and says
 so — a platform with no update path is a third answer, not a failed check.

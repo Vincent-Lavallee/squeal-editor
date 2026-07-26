@@ -24,8 +24,6 @@ Things that already work, but not well enough.
   shape "Copy row" already produces, so the clipboard format stays consistent
   across the whole grid.
 
-- **Modify window release** — Can you remove the standalone exe and make the setup as the main windows exe without the setup in the file name. Not sure if the installer relies on the other exe tho.
-
 ## Bugs
 
 Things that are wrong.
@@ -151,12 +149,13 @@ Things that do not exist yet.
   arrangement is not remembered — it lays out fresh each time the diagram is
   opened.
 
-- **Linux AppImage release** — Linux builds ship as raw zips with no desktop
-  integration — no icon in the launcher, no .desktop entry, nothing. Wrap the
-  Neutralino binary output in an AppImage with a .desktop file and the app icon,
-  so Linux users get the same download-and-run experience as the other platforms.
-  AppImage only for now; deb and other formats can follow once the format is
-  proven to work.
+- **Linux AppImage release** — Linux ships no release download at all right now
+  — the raw zip it used to carry had no desktop integration (no icon in the
+  launcher, no .desktop entry, nothing), which was worse than nothing, so it
+  was dropped. Wrap the Neutralino binary output in an AppImage with a
+  .desktop file and the app icon, so Linux users get the same download-and-run
+  experience as the other platforms. AppImage only for now; deb and other
+  formats can follow once the format is proven to work.
 
 ## Tech debts
 
