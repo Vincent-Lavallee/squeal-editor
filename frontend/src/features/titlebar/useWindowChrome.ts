@@ -138,8 +138,22 @@ export function useWindowChrome() {
     await sync();
   }, [sync]);
 
+  /*
+   * app.exit() can go unanswered rather than reject: found on a machine where
+   * the install directory was read-only to the unelevated process, its native
+   * shutdown path either hung or access-violated, and the window never closed
+   * -- silently, because there was nothing here to notice. The race gives it
+   * a real deadline and killProcess() as the fallback, and logs so the next
+   * one of these is visible in neutralinojs.log instead of just "won't close".
+   */
   const close = useCallback((): void => {
-    void Neutralino.app.exit();
+    const exited = Neutralino.app.exit().catch(() => undefined);
+    const timedOut = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 2000));
+    void Promise.race([exited, timedOut]).then((result) => {
+      if (result !== 'timeout') return;
+      void Neutralino.debug.log('app.exit() did not complete within 2s; forcing killProcess()', 'ERROR').catch(() => undefined);
+      void Neutralino.app.killProcess();
+    });
   }, []);
 
   /*

@@ -22,6 +22,11 @@ AppId={{7B2F9E14-3C6A-4D2E-9F1B-5A0C8D3E4F21}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=Vincent Lavallee
+; Without this, Inno Setup's default (admin) makes {autopf} resolve to the
+; real Program Files regardless, which is read-only to the unelevated process
+; that runs on every launch — see docs/decisions.md, "The installer needs
+; PrivilegesRequired=lowest, and close needs a deadline".
+PrivilegesRequired=lowest
 DefaultDirName={autopf}\Squeal Editor
 DefaultGroupName=Squeal Editor
 DisableProgramGroupPage=yes

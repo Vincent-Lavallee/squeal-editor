@@ -3242,3 +3242,41 @@ slimming and `neu build` are untouched.
 **This is explicitly temporary.** The AppImage backlog item is the real fix —
 desktop integration, not just an archive — and when it lands Linux gets a
 release asset again, this time one worth shipping.
+
+---
+
+## The installer needs `PrivilegesRequired=lowest`, and `close` needs a deadline
+
+**Found on a real machine, not in review.** The close button silently did
+nothing. UI Automation invoking it directly proved the click landed and the
+handler ran — `Neutralino.app.exit()` itself was the thing not completing.
+Windows Event Viewer had the rest: `squeal-editor-win_x64.exe` had access-
+violated (`0xc0000005`) during an earlier close attempt, and the install
+directory's ACL gave the unelevated process `ReadAndExecute` only. Relaunching
+the identical `.exe` elevated made the same click close the window
+immediately — confirming the native shutdown path needs to write something
+next to the binary (the log, at minimum — `writeToLogFile` is on) and does not
+fail gracefully when it can't.
+
+**The installer already intended to avoid this.** `installer/squeal-editor.iss`
+says "per-user install" and uses `{autopf}`, which only resolves to a
+user-writable `%LocalAppData%\Programs` when Setup itself is running
+unelevated. Inno Setup's default `PrivilegesRequired` is `admin`, which was
+never overridden — so Setup always ran elevated, `{autopf}` always resolved to
+the real, restrictive Program Files, and the comment described a mode the
+config never actually put into effect. `PrivilegesRequired=lowest` is the fix:
+one line, and it is the only thing standing between the stated intent and what
+the script did.
+
+**Why `close` also got a deadline, not just the installer fix.** The installer
+change stops this specific cause, but the handler had no way to notice *any*
+failure of `Neutralino.app.exit()` — `void`-ing the call was indistinguishable
+from success. `useWindowChrome.ts`'s `close` now races `exit()` against a 2s
+timeout and calls `Neutralino.app.killProcess()` if it loses, logging through
+`Neutralino.debug.log` so a future instance of this is a line in
+`neutralinojs.log` rather than a silent report of "won't close."
+
+**Why 2s and not a `.catch`.** The observed failure mode was the promise never
+settling at all, not rejecting — the native side went silent partway through
+its own shutdown. A `.catch` only fires on rejection; only a race against a
+clock catches "never answers."

@@ -40,6 +40,12 @@ declare namespace Neutralino {
 
   namespace app {
     function exit(code?: number): Promise<void>;
+    /** Forceful fallback for when exit()'s native shutdown path hangs. */
+    function killProcess(): Promise<void>;
+  }
+
+  namespace debug {
+    function log(message: string, type?: 'INFO' | 'WARNING' | 'ERROR'): Promise<void>;
   }
 
   namespace clipboard {

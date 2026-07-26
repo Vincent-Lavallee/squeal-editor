@@ -23,7 +23,7 @@ reading the others first, except `architecture.md`, which is the map.
 | redrawing the app icon | `design-system.md` + `architecture.md` |
 | adding tests, or verifying a change | `testing.md` |
 | wondering *why* something is the way it is, before changing it | `decisions.md` |
-| packaging, distribution, or the Neutralino config | `architecture.md` |
+| packaging, distribution, or the Neutralino config | `architecture.md` + `decisions.md` |
 | the auto-updater, release signing, or update assets | `extension.md` + `decisions.md` |
 
 ## The docs
