@@ -634,10 +634,11 @@ encrypted, with AES-256-GCM. The 32-byte key lives in the **OS keychain** via
 `Bun.secrets`, generated on first use.
 
 Every connection belongs to a **workspace** and carries an **environment**. Two
-tables: `workspaces` (id, name, icon, colour) and `saved_connections`, which
-references it `ON DELETE CASCADE`. The workspace's `colour` is an id the extension
-carries and never reads — the UI resolves it to a swatch — exactly like `icon`;
-it is what the rail tints a workspace's group with once its connections are open.
+tables: `workspaces` (id, name, icon) and `saved_connections`, which references
+it `ON DELETE CASCADE`. `icon` is an id the extension carries and never reads —
+the UI resolves it to a drawing. The colour that used to live on the workspace
+now lives on each connection instead (`saved_connections.color`) — see
+*Every connection has a colour; a workspace has none* in `docs/frontend.md`.
 
 The rules that hold the grouping together:
 
@@ -659,6 +660,33 @@ The rules that hold the grouping together:
   is set on every `open()`. Miss it and the `REFERENCES` clause is decoration.
 - **The workspace is checked before the insert**, so saving into one that has
   gone says so instead of surfacing `FOREIGN KEY constraint failed`.
+
+### Environments
+
+`environments` (id, name, position) is the picklist `ConnectionForm`'s
+"Environment" select offers and `SavedConnectionList` groups by, managed from
+the File menu's screen — `listEnvironments`/`addEnvironment`/`deleteEnvironment`,
+add and remove only, no rename. It seeds the same four names the app always
+shipped (`local`, `dev`, `qa`, `production`), and `ensureDefaultEnvironments`
+is the same safety net `ensureDefaultWorkspace` is for a table some other path
+left empty.
+
+**It carries no relationship to `saved_connections.environment` at all** — that
+column stays the bare TEXT it always was, holding the name directly rather than
+this table's `id`. That is deliberate, not an oversight: the point of "removed
+from the list" is that a name stops being *offered*, never that it stops having
+been true of a connection already using it, and a foreign key would make the
+second the price of the first. `deleteEnvironment` therefore never touches
+`saved_connections` — there is nothing there naming this table for it to orphan.
+
+**The last environment cannot be deleted**, the same guard and the same reason
+as the last workspace: the connect form needs at least one to offer a new
+connection. `position` is append-only — a new environment gets
+`MAX(position) + 1` and nothing here ever reorders one, since there is no
+feature that asks to.
+
+See `docs/decisions.md` for why display shows exactly what is stored (no
+capitalising, no abbreviating) and why that cost the rail's old two-letter tag.
 
 ### User settings
 
@@ -758,6 +786,8 @@ migrations/
   1784584732-settings.ts                the key/value table user preferences live in
   1784629337-stars.ts                   starred tables, keyed by saved connection
   1784997641-connection-sessions.ts     the opaque per-connection session snapshot
+  1785067675-environments.ts            the environment picklist, seeded with the four
+                                        names `saved_connections.environment` already held
 ```
 
 A file is `<epoch>-what-it-does.ts` and **that epoch is its `version`** — the

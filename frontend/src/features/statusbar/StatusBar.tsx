@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { environmentLabel } from '../../common/db/environments.ts';
 import { engineLabel } from '../../common/db/engines.ts';
 import { ReadOnlyIcon, WritableIcon } from '../../common/icons/icons.ts';
 import { useAppSelector } from '../../store/hooks.ts';
@@ -46,7 +45,7 @@ export default function StatusBar() {
         Disconnect
       </button>
       <span data-testid="statusbar-env" style={{ display: 'flex', alignItems: 'center', height: '100%', padding: `0 ${t.GAP}px`, borderLeft: `1px solid ${t.BORDER}`, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE }}
-        title="The environment this connection is in">{environmentLabel(environment)}</span>
+        title="The environment this connection is in">{environment}</span>
       {queryRunning && (
         <span style={{ display: 'flex', alignItems: 'center', height: '100%', padding: `0 ${t.GAP}px`, borderLeft: `1px solid ${t.BORDER}`, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE }}>
           Query running for {queryElapsed}s…

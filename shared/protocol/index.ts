@@ -19,6 +19,7 @@ export type {
   ConnectionConfig,
   EngineType,
   Environment,
+  EnvironmentDef,
   PasswordUpdate,
   SavedConnection,
   ServerConfig,

@@ -3051,3 +3051,59 @@ never parses the blob (see "Session restore moved the editor's text into a
 slice", above), so this needed no migration — a session saved by the old UI
 simply parses with an absent `database`, which falls back to the connection's
 first database the same way a brand-new session does.
+
+---
+
+## Environments became a user-managed list, and lost their capitalising along the way
+
+**Why.** `Environment` was a fixed union (`'local' | 'dev' | 'qa' |
+'production'`), so a team whose pipeline is named differently was stuck
+retyping the app's own names onto their servers. The fix is the same shape as
+workspaces: a small managed list in the store, add and remove from a screen,
+reached from the File menu rather than from inside the connect screen — it
+is app-wide reference data, not a step in connecting.
+
+**A connection stores the name as text, not a foreign key to the list.**
+This is the load-bearing choice, not a simplification: the whole point of
+"removed from the list" is that a name stops being *offered* to a new
+connection, never that it stops having been true of one already using it.
+A foreign key would force a choice on delete — cascade (silently retitles or
+strands existing connections) or refuse (you can never remove a name a
+departed project still uses) — that a bare `TEXT` column sidesteps entirely,
+exactly as it already did before this feature existed. `deleteEnvironment`
+therefore only ever touches the `environments` table; `saved_connections` is
+not consulted and cannot be.
+
+**`SavedConnectionList` groups the managed list's names first, in its
+`position` order, then anything left over — one heading per distinct value a
+connection carries that the list no longer offers — sorted alphabetically
+after.** Rejected: hiding a connection whose environment fell off the list.
+Nothing else in this app hides a row because a label went stale (see "Errors
+render where the action was taken"), and a connection is not less real for
+having outlived the name it was filed under.
+
+**Display shows exactly what is stored, and the old Title Case and the rail's
+two-letter abbreviation (`Dev.`, `Prod.`) both went with it.** Those existed
+because the four names were a closed set a lookup table could spell nicely.
+Arbitrary user text has no such table to consult — `environmentLabel`/
+`environmentAbbrev` could only ever answer for the four they were written for,
+and inventing a capitalisation or truncation rule for text nobody asked to be
+reformatted is the same lie as a shifted `Date`: a value that looks handled
+when it has actually been guessed at. The shipped defaults (`local`, `dev`,
+`qa`, `production`) therefore render lowercase now, same as anything a user
+types in. Cosmetic cost, accepted knowingly, in exchange for one property that
+matters more: what the rail, the status bar and the connect screen show is
+never something this app made up on a connection's behalf.
+
+**The last environment cannot be deleted.** Same guard, same reason, as the
+last workspace: `ConnectionForm`'s select needs at least one entry to offer a
+brand-new connection, and the migration seeds the four so a fresh store is
+never one short of that floor.
+
+**`readOnlyDefault` (production defaults to read-only) still checks a literal
+`'production'`** rather than reading the managed list. It has exactly one
+name to match against — its own shipped default — because there is no
+principled way to ask a user-managed list "which of these is the dangerous
+one." A renamed or custom production-like environment simply does not trigger
+the default; that is the cost of naming freedom stated plainly rather than
+hidden behind a heuristic that would guess wrong at least as often as right.

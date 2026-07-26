@@ -887,6 +887,7 @@ const stamps = (): Stamp[] => {
 
 /** What each migration would have to undo, for the rewind below. Newest first. */
 const UNDO: Record<string, string[]> = {
+  environments: ['DROP TABLE environments'],
   // The inverse of a DROP: put the column this migration removed back, with the
   // same default the ADD COLUMN it undoes gave it.
   'drop-workspace-colour': ["ALTER TABLE workspaces ADD COLUMN color TEXT NOT NULL DEFAULT 'slate'"],
@@ -1031,6 +1032,7 @@ describe('migrating a store written before workspaces', () => {
       db.run('DROP TABLE settings');
       db.run('DROP TABLE stars');
       db.run('DROP TABLE connection_sessions');
+      db.run('DROP TABLE environments');
       db.run('DROP TABLE schema_migrations');
     })();
     const legacyNames = (db.query('SELECT name FROM saved_connections').all() as { name: string }[]).map((r) => r.name);

@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { ThinkingOrb } from 'thinking-orbs';
 
-import type { SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
+import type { EnvironmentDef, SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
 import { engineLabel, isFileBased } from '../../common/db/engines.ts';
-import { ENVIRONMENTS } from '../../common/db/environments.ts';
 import { BackIcon } from '../../common/icons/icons.ts';
 import { serverLabel } from '../../store/sessionSlice.ts';
 import { connectionColor } from '../../common/icons/connectionColors.ts';
@@ -35,6 +34,7 @@ const savedRow: React.CSSProperties = { display: 'flex', alignItems: 'center', g
 interface Props {
   workspace: Workspace;
   connections: SavedConnection[];
+  environments: EnvironmentDef[];
   connectingId: string | null;
   connectingPhase: string | null;
   busy: boolean;
@@ -45,12 +45,35 @@ interface Props {
   onBack: () => void;
 }
 
-export default function SavedConnectionList({ workspace, connections, connectingId, connectingPhase, busy, onPick, onEdit, onDelete, onNew, onBack }: Props) {
+interface Group { label: string; connections: SavedConnection[]; }
+
+/**
+ * The managed list gives the known headings their order; anything left over --
+ * a connection whose environment was later removed from that list -- still
+ * gets a heading of its own rather than vanishing, because "removed from the
+ * list" only ever meant "no longer offered", never "no longer true of a
+ * connection already using it". Leftovers sort alphabetically after the known
+ * ones, since there is no position to read for a name nothing manages any more.
+ */
+function groupByEnvironment(connections: SavedConnection[], environments: EnvironmentDef[]): Group[] {
+  const known = environments
+    .map((env) => ({ label: env.name, connections: connections.filter((c) => c.environment === env.name) }))
+    .filter((g) => g.connections.length > 0);
+
+  const knownNames = new Set(environments.map((env) => env.name));
+  const leftoverNames = [...new Set(connections.map((c) => c.environment).filter((name) => !knownNames.has(name)))]
+    .sort((a, b) => a.localeCompare(b));
+  const leftover = leftoverNames.map((name) => ({ label: name, connections: connections.filter((c) => c.environment === name) }));
+
+  return [...known, ...leftover];
+}
+
+export default function SavedConnectionList({ workspace, connections, environments, connectingId, connectingPhase, busy, onPick, onEdit, onDelete, onNew, onBack }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const WorkspaceGlyph = workspaceGlyph(workspace.icon);
 
-  const groups = ENVIRONMENTS.map((env) => ({ ...env, connections: connections.filter((c) => c.environment === env.value) })).filter((g) => g.connections.length > 0);
+  const groups = groupByEnvironment(connections, environments);
 
   return (
     <>
@@ -64,7 +87,7 @@ export default function SavedConnectionList({ workspace, connections, connecting
         <Note kind="muted">No connections in this workspace yet.</Note>
       ) : (
         groups.map((group) => (
-          <div data-testid="ws-group" key={group.value}>
+          <div data-testid="ws-group" key={group.label}>
             <div data-testid="ws-group-label" style={labelRow}>{group.label}</div>
 
             <ul style={saved}>

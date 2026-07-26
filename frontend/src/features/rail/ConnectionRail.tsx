@@ -1,5 +1,4 @@
 import type { Workspace } from '../../../../shared/protocol/index.ts';
-import { environmentAbbrev, environmentLabel } from '../../common/db/environments.ts';
 import { useAppSelector } from '../../store/hooks.ts';
 import { serverLabel, useSession, type OpenConnection } from '../../store/sessionSlice.ts';
 import { selectWorkspaces } from '../../store/workspacesSlice.ts';
@@ -72,10 +71,10 @@ export default function ConnectionRail({ onAdd }: Props) {
                         style={{ display: 'inline-flex', alignItems: 'baseline', gap: t.GAP_XS, padding: `4px ${t.GAP_SM}px`, borderRadius: t.RADIUS_PILL, border: `1px solid ${active ? activeFill : chipBorder}`, background: active ? activeFill : wash, color: active ? t.BG : t.TEXT_MUTED, font: 'inherit', lineHeight: 1, whiteSpace: 'nowrap', cursor: 'pointer' }}
                         aria-current={active ? 'true' : undefined}
                         onClick={() => activate(c.connectionId)}
-                        title={`${c.name} — ${environmentLabel(c.environment)} — ${serverLabel(c.config)}`}>
+                        title={`${c.name} — ${c.environment} — ${serverLabel(c.config)}`}>
                         <span data-testid="rail-name" style={{ fontSize: t.TEXT_LABEL, fontWeight: 500 }}>{c.name}</span>
-                        <span data-testid="rail-env" style={{ fontSize: t.TEXT_MICRO, color: active ? blendOver(t.BG, activeFill, 0.65) : t.TEXT_FAINT }} aria-hidden="true">{environmentAbbrev(c.environment)}</span>
-                        <SrOnly>{c.name}, {name}, {environmentLabel(c.environment)}, {serverLabel(c.config)}</SrOnly>
+                        <span data-testid="rail-env" style={{ fontSize: t.TEXT_MICRO, color: active ? blendOver(t.BG, activeFill, 0.65) : t.TEXT_FAINT }} aria-hidden="true">{c.environment}</span>
+                        <SrOnly>{c.name}, {name}, {c.environment}, {serverLabel(c.config)}</SrOnly>
                       </button>
                     </li>
                   );

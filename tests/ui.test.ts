@@ -99,7 +99,7 @@ const selectDatabase = (name: string) => `${REACT_SETTERS}
 
 /** The rail, top to bottom: one chip per open connection, named. */
 const railNames = `[...document.querySelectorAll('[data-testid="rail-name"]')].map(e => e.textContent)`;
-/** The environment is a text tag now, not a colour: read the abbreviation. */
+/** The environment is a text tag now, not a colour: read it back verbatim -- the store's own text, not a lookup off it. */
 const railEnvs = `[...document.querySelectorAll('[data-testid="rail-env"]')].map(e => e.textContent)`;
 const activeRail = `
   [...document.querySelectorAll('[data-testid="rail-item"]')]
@@ -1859,11 +1859,41 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await app.evaluate(openMenu('File'));
       await Bun.sleep(200);
-      expect(await app.evaluate<string[]>(openMenuItems)).toEqual(['Exit']);
+      expect(await app.evaluate<string[]>(openMenuItems)).toEqual(['Environments…', 'Exit']);
 
       await app.evaluate(pressEscape);
       await Bun.sleep(200);
       expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="menu-item"]').length`)).toBe(0);
+    });
+
+    test('Environments manages the picklist the connect form offers', async () => {
+      await app.evaluate(openMenu('File'));
+      await Bun.sleep(200);
+      await app.evaluate(clickMenuItem('Environments…'));
+      await Bun.sleep(300);
+
+      const envNames = `[...document.querySelectorAll('[data-testid="env-name"]')].map(e => e.textContent)`;
+      expect(await app.evaluate<string[]>(envNames)).toEqual(['local', 'dev', 'qa', 'production']);
+
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('[data-testid="modal"] input'), 'staging'); true;`);
+      await app.evaluate(`[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === '+ Add').click(); true;`);
+      await Bun.sleep(500);
+      expect(await app.evaluate<string[]>(envNames)).toEqual(['local', 'dev', 'qa', 'production', 'staging']);
+
+      // Removed here and gone from the picklist -- but not retroactive, which
+      // `saveConnection`'s own test already covers on the store side. This is
+      // only the screen: add and remove, immediately reflected.
+      const stagingRow = `[...document.querySelectorAll('[data-testid="env-row"]')]
+        .find(e => e.querySelector('[data-testid="env-name"]').textContent === 'staging')`;
+      await app.evaluate(`${stagingRow}.querySelector('button').click(); true;`); // Delete
+      await Bun.sleep(200);
+      await app.evaluate(`${stagingRow}.querySelector('button').click(); true;`); // Yes
+      await Bun.sleep(500);
+      expect(await app.evaluate<string[]>(envNames)).toEqual(['local', 'dev', 'qa', 'production']);
+
+      await app.evaluate(`[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === 'Close').click(); true;`);
+      await Bun.sleep(200);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="modal"]').length`)).toBe(0);
     });
 
     test('the About menu opens, and Version shows the running version', async () => {
@@ -2060,14 +2090,14 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     test('connections sit under their environment, and empty ones are absent', async () => {
-      expect(await app.evaluate<string[]>(groupLabels)).toEqual(['Local']);
+      expect(await app.evaluate<string[]>(groupLabels)).toEqual(['local']);
 
       await connect(PG, 'ws-prod', 'production');
       await disconnect();
       await Bun.sleep(400);
 
-      // Local before Production, and no headings for the two nobody used.
-      expect(await app.evaluate<string[]>(groupLabels)).toEqual(['Local', 'Production']);
+      // local before production, and no headings for the two nobody used.
+      expect(await app.evaluate<string[]>(groupLabels)).toEqual(['local', 'production']);
       expect(await app.evaluate<string[]>(names)).toEqual(['ws-local', 'ws-prod']);
     });
 
@@ -2157,9 +2187,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     test('each chip carries its environment as a text tag', async () => {
-      // The abbreviation, not a colour: the rail's colour is the workspace's now,
-      // and the environment reads as a word (and again in the status bar).
-      expect(await app.evaluate<string[]>(railEnvs)).toEqual(['Dev.', 'Prod.']);
+      // Not a colour: the rail's colour is the workspace's now, and the
+      // environment reads as the stored word itself -- no abbreviation table to
+      // consult, since the list of environments is user-managed now (and it reads
+      // again in the status bar, in full there too).
+      expect(await app.evaluate<string[]>(railEnvs)).toEqual(['dev', 'production']);
     });
 
     test('opening the second lands you on it, and the titlebar and status bar follow', async () => {
@@ -2167,10 +2199,10 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // The rail says which; the titlebar says what. Neither repeats the other.
       expect(await app.evaluate<string>(`document.querySelector('[data-testid="titlebar-title"]').textContent`))
         .toBe(`${MYSQL.user}@${MYSQL.host}:${MYSQL.port}`);
-      // The status bar names the active connection's environment in full -- the
-      // rail's tag abbreviates it, this spells it out.
+      // The status bar names the active connection's environment too -- the same
+      // stored text the rail's chip already carries, not a second rendering of it.
       expect(await app.evaluate<string>(`document.querySelector('[data-testid="statusbar-env"]').textContent`))
-        .toBe('Production');
+        .toBe('production');
     });
 
     test('each connection keeps its own tabs, numbered from its own Query 1', async () => {

@@ -23,6 +23,7 @@ import type {
   ConnectionColorId,
   EngineType,
   Environment,
+  EnvironmentDef,
   PasswordUpdate,
   SavedConnection,
   ServerConfig,
@@ -71,6 +72,8 @@ export function dataDir(): string {
 /** What a store with no workspaces yet gets, so the feature can be ignored. */
 const DEFAULT_WORKSPACE_NAME = 'Default';
 const DEFAULT_WORKSPACE_ICON: WorkspaceIconId = 'stack';
+/** What a store with no environments yet gets -- the same four the app always shipped. */
+const DEFAULT_ENVIRONMENTS = ['local', 'dev', 'qa', 'production'];
 /** The neutral swatch: what a connection wears until the user picks otherwise, and
  *  what a row written before the colour column existed migrates to. */
 const DEFAULT_CONNECTION_COLOR: ConnectionColorId = 'slate';
@@ -107,6 +110,12 @@ interface WorkspaceRow {
   icon: string;
 }
 
+interface EnvironmentRow {
+  id: string;
+  name: string;
+  position: number;
+}
+
 let db: Database | null = null;
 
 function open(): Database {
@@ -125,6 +134,7 @@ function open(): Database {
   // migration: the migration that introduced workspaces made the first one, but
   // "there is always at least one" has to hold on every launch, not once.
   ensureDefaultWorkspace(db);
+  ensureDefaultEnvironments(db);
   return db;
 }
 
@@ -142,6 +152,21 @@ function ensureDefaultWorkspace(database: Database): void {
     DEFAULT_WORKSPACE_NAME,
     DEFAULT_WORKSPACE_ICON,
   ]);
+}
+
+/**
+ * There is always at least one environment, the same invariant and the same
+ * reason as the default workspace above: the connect form needs one to offer
+ * a brand-new connection. The migration already seeds these four on a fresh
+ * store; this is the safety net for a store some other path left empty.
+ */
+function ensureDefaultEnvironments(database: Database): void {
+  const existing = database.query('SELECT id FROM environments LIMIT 1').get() as { id: string } | null;
+  if (existing) return;
+
+  DEFAULT_ENVIRONMENTS.forEach((name, position) => {
+    database.run('INSERT INTO environments (id, name, position) VALUES (?, ?, ?)', [randomUUID(), name, position]);
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -289,6 +314,57 @@ export function deleteWorkspace(id: string): void {
     database.run('DELETE FROM saved_connections WHERE workspace_id = ?', [id]);
     database.run('DELETE FROM workspaces WHERE id = ?', [id]);
   })();
+}
+
+/* ------------------------------------------------------------------ *
+ * Environments -- the picklist a connection's `environment` is chosen from.
+ * See `EnvironmentDef` for why this carries no relationship to that column.
+ * ------------------------------------------------------------------ */
+
+const toEnvironment = (row: EnvironmentRow): EnvironmentDef => ({
+  id: row.id,
+  name: row.name,
+  position: row.position,
+});
+
+export function listEnvironments(): EnvironmentDef[] {
+  const rows = open().query('SELECT * FROM environments ORDER BY position ASC').all() as EnvironmentRow[];
+  return rows.map(toEnvironment);
+}
+
+export function addEnvironment(name: string): EnvironmentDef {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('An environment needs a name.');
+
+  // Checked here rather than left to the UNIQUE constraint, the same reason
+  // `saveWorkspace` checks its own: a raw SQLite error names a column, not
+  // something the user can act on.
+  const clash = open().query('SELECT id FROM environments WHERE name = ? COLLATE NOCASE').get(trimmed) as
+    | { id: string }
+    | null;
+  if (clash) throw new Error(`An environment named "${trimmed}" already exists.`);
+
+  const { next } = open().query('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM environments').get() as {
+    next: number;
+  };
+
+  const row: EnvironmentRow = { id: randomUUID(), name: trimmed, position: next };
+  open().run('INSERT INTO environments (id, name, position) VALUES (?, ?, ?)', [row.id, row.name, row.position]);
+  return toEnvironment(row);
+}
+
+/**
+ * Removes an environment from the picklist. Connections already carrying its
+ * name are untouched -- there is no foreign key from `saved_connections` to
+ * this table, so nothing here can orphan or cascade into one.
+ */
+export function deleteEnvironment(id: string): void {
+  const database = open();
+
+  const remaining = database.query('SELECT COUNT(*) AS n FROM environments').get() as { n: number };
+  if (remaining.n <= 1) throw new Error('The last environment cannot be deleted.');
+
+  database.run('DELETE FROM environments WHERE id = ?', [id]);
 }
 
 /**

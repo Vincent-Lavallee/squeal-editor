@@ -1,8 +1,7 @@
 import { useState } from 'react';
 
-import type { ConnectionColorId, EngineType, Environment, SavedConnection, ServerConfig } from '../../../../shared/protocol/index.ts';
+import type { ConnectionColorId, EngineType, Environment, EnvironmentDef, SavedConnection, ServerConfig } from '../../../../shared/protocol/index.ts';
 import { ENGINES, engineByType, isFileBased } from '../../common/db/engines.ts';
-import { DEFAULT_ENVIRONMENT, ENVIRONMENTS } from '../../common/db/environments.ts';
 import { CONNECTION_COLORS, DEFAULT_CONNECTION_COLOR } from '../../common/icons/connectionColors.ts';
 import Button from '../../common/components/Button.tsx';
 import Input from '../../common/components/Input.tsx';
@@ -25,6 +24,7 @@ export interface FormValues {
 interface Props {
   mode: 'new' | 'edit';
   initial?: SavedConnection;
+  environments: EnvironmentDef[];
   onSubmit: (values: FormValues) => void;
   onCancel?: () => void;
   busy: boolean;
@@ -51,6 +51,10 @@ interface FormState {
   color: ConnectionColorId;
 }
 
+// Matches the shipped default environment's own name, which is the only name
+// this can know without a policy of what a team calls its production tier. A
+// renamed or custom "prod-like" environment simply does not get the default --
+// the cost of naming freedom, not a bug.
 const readOnlyDefault = (environment: Environment): boolean => environment === 'production';
 
 const checkboxStyle = { flex: 'none', width: 13, height: 13, margin: 0, accentColor: t.ACCENT, cursor: 'pointer' };
@@ -59,11 +63,11 @@ const checkboxHintStyle = { marginLeft: 13 + t.GAP_SM, marginTop: 2, color: t.TE
 const hiddenRadio: React.CSSProperties = { position: 'absolute', opacity: 0, pointerEvents: 'none' };
 const pickBase: React.CSSProperties = { display: 'grid', placeItems: 'center', width: 34, height: 34, border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, cursor: 'pointer' };
 
-function initialState(initial?: SavedConnection): FormState {
+function initialState(initial: SavedConnection | undefined, defaultEnvironment: string): FormState {
   if (!initial) {
     return {
       name: '', type: 'postgres', host: 'localhost', port: '', user: '', password: '', database: '',
-      environment: DEFAULT_ENVIRONMENT, ssl: false, readOnly: readOnlyDefault(DEFAULT_ENVIRONMENT),
+      environment: defaultEnvironment, ssl: false, readOnly: readOnlyDefault(defaultEnvironment),
       savePassword: true, passwordTouched: false, authMethod: 'password', awsProfile: '', awsRegion: '',
       color: DEFAULT_CONNECTION_COLOR,
     };
@@ -79,8 +83,8 @@ function initialState(initial?: SavedConnection): FormState {
   };
 }
 
-export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy }: Props) {
-  const [form, setForm] = useState<FormState>(() => initialState(initial));
+export default function ConnectionForm({ mode, initial, environments, onSubmit, onCancel, busy }: Props) {
+  const [form, setForm] = useState<FormState>(() => initialState(initial, environments[0]?.name ?? ''));
   const engine = engineByType(form.type);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]): void {
@@ -154,7 +158,7 @@ export default function ConnectionForm({ mode, initial, onSubmit, onCancel, busy
 
       <Field label="Environment" htmlFor="environment">
         <Select id="environment" value={form.environment}
-          options={ENVIRONMENTS.map((env) => ({ value: env.value, label: env.label }))}
+          options={environments.map((env) => ({ value: env.name, label: env.name }))}
           onSelect={(value) => {
             const env = value as Environment;
             setForm((prev) => ({ ...prev, environment: env, readOnly: readOnlyDefault(env) }));

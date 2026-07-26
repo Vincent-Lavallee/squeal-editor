@@ -10,6 +10,7 @@ import type {
   ConnectionColorId,
   ConnectionConfig,
   Environment,
+  EnvironmentDef,
   PasswordUpdate,
   SavedConnection,
   ServerConfig,
@@ -343,6 +344,38 @@ export interface Commands {
    * with none has nowhere to save one and no way back.
    */
   'db.workspaces.delete': {
+    req: { id: string };
+    res: { ok: true };
+  };
+
+  /* -- Environments. The same store, and the picklist connections tag with. -- */
+
+  /**
+   * The managed list of environment names, in display order -- what
+   * `ConnectionForm`'s "Environment" select offers and what `SavedConnectionList`
+   * groups by. Not the environments actually in use: a connection stores its
+   * environment as plain text (see `Environment`), so a name removed from here
+   * can still sit on existing connections, unreachable through this list alone.
+   */
+  'db.environments.list': {
+    req: Record<string, never>;
+    res: { environments: EnvironmentDef[] };
+  };
+  /** Appends a new environment at the end of the list. No rename: the list is add/remove only. */
+  'db.environments.add': {
+    req: { name: string };
+    res: { environment: EnvironmentDef };
+  };
+  /**
+   * Removes an environment from the list. Connections already carrying its name
+   * are untouched -- there is no foreign key to cascade, because the point of
+   * "removed from the list" is that it stops being offered, not that it stops
+   * having been true of a connection.
+   *
+   * The last environment is refused, the same guard as the last workspace: the
+   * connect form needs at least one to offer a new connection.
+   */
+  'db.environments.remove': {
     req: { id: string };
     res: { ok: true };
   };

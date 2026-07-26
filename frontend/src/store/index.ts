@@ -1,5 +1,6 @@
 import { configureStore } from '@reduxjs/toolkit';
 
+import { environmentsReducer } from './environmentsSlice.ts';
 import { explorerReducer } from './explorerSlice.ts';
 import { resultsReducer } from './resultsSlice.ts';
 import { savedReducer } from './savedSlice.ts';
@@ -32,6 +33,7 @@ export const store = configureStore({
   reducer: {
     session: sessionReducer,
     workspaces: workspacesReducer,
+    environments: environmentsReducer,
     saved: savedReducer,
     explorer: explorerReducer,
     results: resultsReducer,

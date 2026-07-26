@@ -7,6 +7,13 @@ the date they were finished.
 
 - **2026-07-26** — **JSON cell editor** — Auto-detect JSON/JSONB columns by type. Clicking a JSON cell opens a drawer with syntax highlighting, pretty-print, and validation — not a popover.
 
+- **2026-07-26** — **Configurable environments** — The four environments are hardcoded, so every
+  team is stuck with local/dev/qa/production even when their pipeline uses
+  different names. Add a screen under the File menu to add and remove
+  environments — the four defaults ship with the app and can be removed.
+  Existing connections keep their environment even if it is later removed from
+  the list. Stored in the extension's SQLite store, like workspaces.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

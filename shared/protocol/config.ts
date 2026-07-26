@@ -134,12 +134,34 @@ export interface ConnectionConfig extends ServerConfig {
 /**
  * Which deployment of a project a connection reaches.
  *
- * A fixed set for now, deliberately: the point is grouping a workspace's
- * connections under headings that mean the same thing in every workspace, and
- * a free-text field gives you `prod`, `Prod` and `production` as three groups.
- * Any number of connections may share one -- these are labels, not slots.
+ * Free text, matched exactly and never normalised -- same rule as everywhere
+ * else a stored value is shown back rather than reinterpreted. The point is
+ * still grouping a workspace's connections under headings that mean the same
+ * thing in every workspace, so the set a team actually uses is user-managed
+ * (see `EnvironmentDef`) rather than typed fresh per connection, which is what
+ * would give you `prod`, `Prod` and `production` as three groups. Any number of
+ * connections may share one -- these are labels, not slots.
  */
-export type Environment = 'local' | 'dev' | 'qa' | 'production';
+export type Environment = string;
+
+/**
+ * One entry in the user-managed list of environment names, the picklist
+ * `ConnectionForm`'s "Environment" select offers and `SavedConnectionList`
+ * groups by.
+ *
+ * It carries no relationship to `SavedConnection.environment` beyond that --
+ * a connection stores the name as plain text, not this row's `id`, so removing
+ * an entry here cannot orphan a foreign key or force a rewrite of connections
+ * already using it. That is deliberate: the whole point of "removed from the
+ * list" is that it stops being offered to *new* connections without touching
+ * connections that already picked it. `position` is display order, the reason
+ * this is a list and not a set -- append-only, since nothing here reorders it.
+ */
+export interface EnvironmentDef {
+  id: string;
+  name: string;
+  position: number;
+}
 
 /**
  * A workspace's mark, as an id rather than a glyph.

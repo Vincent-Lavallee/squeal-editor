@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import type { PasswordUpdate, SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
+import { useEnvironments } from '../../store/environmentsSlice.ts';
 import { cancelConnect, useSession } from '../../store/sessionSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import Callout from '../../common/components/Callout.tsx';
@@ -31,12 +32,13 @@ interface Props { onCancel?: () => void; }
 export default function ConnectScreen({ onCancel }: Props) {
   const saved = useSavedConnections();
   const workspaces = useWorkspaces();
+  const environments = useEnvironments();
   const session = useSession();
 
   const [screen, setScreen] = useState<Screen | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
 
-  const loading = saved.loading || workspaces.loading;
+  const loading = saved.loading || workspaces.loading || environments.loading;
   const only = workspaces.workspaces.length === 1 ? workspaces.workspaces[0] : undefined;
 
   const view: Screen =
@@ -80,7 +82,7 @@ export default function ConnectScreen({ onCancel }: Props) {
   }
 
   const busy = session.connecting || saved.saving || workspaces.saving;
-  const error = session.error ?? saved.error ?? workspaces.error;
+  const error = session.error ?? saved.error ?? workspaces.error ?? environments.error;
   const workspaceById = (id: string): Workspace | undefined => workspaces.workspaces.find((w) => w.id === id);
 
   const resolved: Screen =
@@ -108,13 +110,13 @@ export default function ConnectScreen({ onCancel }: Props) {
       case 'password':
         return <PasswordPrompt connection={resolved.connection} connecting={session.connecting} onSubmit={(password) => void session.connectSaved(resolved.connection.id, password)} onCancel={() => go({ view: 'list', workspaceId: resolved.connection.workspaceId })} />;
       case 'edit':
-        return <ConnectionForm mode="edit" initial={resolved.connection} busy={busy} onSubmit={(values) => void submitEdit(resolved.connection, values)} onCancel={() => go({ view: 'list', workspaceId: resolved.connection.workspaceId })} />;
+        return <ConnectionForm mode="edit" initial={resolved.connection} environments={environments.environments} busy={busy} onSubmit={(values) => void submitEdit(resolved.connection, values)} onCancel={() => go({ view: 'list', workspaceId: resolved.connection.workspaceId })} />;
       case 'new': {
         const populated = saved.connections.some((c) => c.workspaceId === resolved.workspaceId);
-        return <ConnectionForm mode="new" busy={busy} onSubmit={(values) => void submitNew(resolved.workspaceId, values)} onCancel={populated ? () => go({ view: 'list', workspaceId: resolved.workspaceId }) : () => go({ view: 'workspaces' })} />;
+        return <ConnectionForm mode="new" environments={environments.environments} busy={busy} onSubmit={(values) => void submitNew(resolved.workspaceId, values)} onCancel={populated ? () => go({ view: 'list', workspaceId: resolved.workspaceId }) : () => go({ view: 'workspaces' })} />;
       }
       case 'list':
-        return <SavedConnectionList workspace={workspaceById(resolved.workspaceId)!} connections={saved.connections.filter((c) => c.workspaceId === resolved.workspaceId)} connectingId={session.connecting ? connectingId : null} connectingPhase={session.connectingPhase} busy={busy} onPick={pick} onEdit={(connection) => go({ view: 'edit', connection })} onDelete={(id) => { go({ view: 'list', workspaceId: resolved.workspaceId }); saved.remove(id); }} onNew={() => go({ view: 'new', workspaceId: resolved.workspaceId })} onBack={() => go({ view: 'workspaces' })} />;
+        return <SavedConnectionList workspace={workspaceById(resolved.workspaceId)!} connections={saved.connections.filter((c) => c.workspaceId === resolved.workspaceId)} environments={environments.environments} connectingId={session.connecting ? connectingId : null} connectingPhase={session.connectingPhase} busy={busy} onPick={pick} onEdit={(connection) => go({ view: 'edit', connection })} onDelete={(id) => { go({ view: 'list', workspaceId: resolved.workspaceId }); saved.remove(id); }} onNew={() => go({ view: 'new', workspaceId: resolved.workspaceId })} onBack={() => go({ view: 'workspaces' })} />;
     }
   }
 

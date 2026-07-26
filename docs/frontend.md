@@ -14,7 +14,7 @@ src/Shell.tsx           the composition root; wires the features together
 src/common/             shared infrastructure, no components
   bridge/bridge.ts      typed request/response over the extension channel
   icons/                icon bindings, workspace glyphs, the connection colour palette
-  db/                   the UI's engine table and environment list
+  db/                   the UI's engine table
 src/store/              every slice; bridge-crossed state and the keys it is held under
   index.ts              configureStore + RootState/AppDispatch
   hooks.ts              useAppDispatch / useAppSelector
@@ -22,6 +22,7 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
   sessionSlice.ts       every open connection, and which is in front + useSession()
   tabsSlice.ts          what is open, and what each one is pointed at + useTabs()
   workspacesSlice.ts    the workspace list
+  environmentsSlice.ts  the environment picklist + useEnvironments()
   savedSlice.ts         the stored connection list
   explorerSlice.ts      the catalog: databases, their tables, their columns
   resultsSlice.ts       the result grid, keyed by tab
@@ -31,7 +32,7 @@ src/features/
   connections/          ConnectScreen, ConnectionForm, SavedConnectionList,
                         WorkspacePicker, WorkspaceForm, PasswordPrompt,
                         useSavedConnections, useWorkspaces
-  titlebar/             Titlebar, Menu, AboutDialog, useAbout, useWindowChrome
+  titlebar/             Titlebar, Menu, AboutDialog, EnvironmentsDialog, useAbout, useWindowChrome
   rail/                 ConnectionRail: the open connections, and the way between
   tabs/                 TabStrip: the strip, its menu, and its drag
   explorer/             Sidebar, DropTableConfirm, useExplorer
@@ -80,6 +81,7 @@ that lives apart from its values is two sources for one fact.
 | the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Apply |
 | saved connections | `saved` slice | crossed |
 | workspaces | `workspaces` slice | crossed |
+| environments (the picklist, not any connection's own) | `environments` slice | crossed |
 | the release check, download `progress`, banner `dismissed` | `updater` slice | crossed |
 | every stored preference, and whether the launch read has landed | `settings` slice | crossed |
 | `adding` (the connect screen, with connections open) | `App` local state | never left |
@@ -516,10 +518,25 @@ Three things fall out of that, and each is invisible until it bites:
   once before the switch rather than in each case, so there is one answer to "the
   workspace is gone" instead of two that could differ.
 
-Environments are a *grouping*, not a step: a workspace's connections render under
-`Local / Dev / QA / Production` headings, in that order, and an environment
-nobody used has no heading. Any number of connections may share one — they are
-labels, not slots.
+Environments are a *grouping*, not a step: a workspace's connections render
+under a heading per environment, in the managed list's order, and an
+environment nobody used has no heading. Any number of connections may share
+one — they are labels, not slots.
+
+**The list is user-managed, not the fixed four it used to be.** `environmentsSlice`
+(colocated `useEnvironments`, the same pattern `useSession`/`useTabs` use) is a
+view of the extension's `environments` table — add and remove only, reached from
+the File menu's `EnvironmentsDialog`, not from inside the connect screen at all.
+`ConnectionForm`'s select and `SavedConnectionList`'s grouping both take it as a
+prop rather than importing a static list, so neither can drift from what the
+dialog shows. **A connection stores the name as plain text, not this row's id**
+— removing an environment from the list cannot touch a connection already
+carrying it, which is the whole point of "removed" meaning "no longer offered"
+and nothing more. `SavedConnectionList` groups known names by the list's order
+and anything left over — a connection whose environment was later delisted —
+under its own heading afterward, sorted alphabetically, rather than dropping it
+from view; see `docs/decisions.md` for why display shows exactly what is stored,
+with no capitalising or abbreviating layered back on top of arbitrary text.
 
 **A connection's name is required** — the form disables *Connect* until one is
 typed, and `submitNew` saves the row before it connects. There is no unnamed,

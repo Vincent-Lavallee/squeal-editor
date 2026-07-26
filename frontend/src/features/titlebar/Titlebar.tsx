@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useSession } from '../../store/sessionSlice.ts';
 import * as t from '../../common/tokens';
 import AboutDialog from './AboutDialog.tsx';
+import EnvironmentsDialog from './EnvironmentsDialog.tsx';
 import Menu from './Menu.tsx';
 import { useAbout } from './useAbout.ts';
 import { useWindowChrome } from './useWindowChrome.ts';
@@ -14,8 +15,10 @@ export default function Titlebar({ onCheckForUpdates }: Props) {
   const { version, openDataDir } = useAbout();
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
   const [showingAbout, setShowingAbout] = useState(false);
+  const [showingEnvironments, setShowingEnvironments] = useState(false);
 
   const fileItems = [
+    { label: 'Environments…', onSelect: () => setShowingEnvironments(true) },
     { label: 'Exit', onSelect: close },
   ];
 
@@ -37,6 +40,7 @@ export default function Titlebar({ onCheckForUpdates }: Props) {
       <Menu label="File" items={fileItems} />
       <Menu label="About" items={aboutItems} />
       {showingAbout && <AboutDialog version={version} onClose={() => setShowingAbout(false)} />}
+      {showingEnvironments && <EnvironmentsDialog onClose={() => setShowingEnvironments(false)} />}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 0, height: '100%' }} {...dragProps}>
         <span data-testid="titlebar-title" style={{ overflow: 'hidden', color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {connected ? <span style={{ fontFamily: t.MONO }}>{serverLabel}</span> : 'Squeal Editor'}

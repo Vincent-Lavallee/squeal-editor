@@ -60,12 +60,6 @@ Things that are wrong.
 
 Things that do not exist yet.
 
-- **Configurable environments** — The four environments are hardcoded, so every
-  team is stuck with local/dev/qa/production even when their pipeline uses
-  different names. Add a screen under the File menu to add and remove
-  environments — the four defaults ship with the app and can be removed.
-  Existing connections keep their environment even if it is later removed from
-  the list. Stored in the extension's SQLite store, like workspaces.
 - **Export and import connections** — Moving connections to another machine means
   retyping every one of them. Export all workspaces and their connections from the
   File menu to a file chosen by a native save dialog, and import one back, merging

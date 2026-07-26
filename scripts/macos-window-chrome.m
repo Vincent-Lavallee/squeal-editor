@@ -77,6 +77,7 @@ static void restyle(NSWindow *window) {
 }
 
 - (void)exit:(id)sender { [SquealMenuHandler dispatchEvent:@"exit"]; }
+- (void)environments:(id)sender { [SquealMenuHandler dispatchEvent:@"environments"]; }
 - (void)checkForUpdates:(id)sender { [SquealMenuHandler dispatchEvent:@"checkForUpdates"]; }
 - (void)about:(id)sender { [SquealMenuHandler dispatchEvent:@"about"]; }
 - (void)openDataDir:(id)sender { [SquealMenuHandler dispatchEvent:@"openDataDir"]; }
@@ -103,6 +104,10 @@ static void installMenuBar(void) {
   [mainMenu addItem:fileMenuItem];
   NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
   fileMenuItem.submenu = fileMenu;
+  NSMenuItem *environmentsItem = [[NSMenuItem alloc] initWithTitle:@"Environments…" action:@selector(environments:) keyEquivalent:@""];
+  environmentsItem.target = handler;
+  [fileMenu addItem:environmentsItem];
+
   NSMenuItem *exitItem = [[NSMenuItem alloc] initWithTitle:@"Exit" action:@selector(exit:) keyEquivalent:@""];
   exitItem.target = handler;
   [fileMenu addItem:exitItem];

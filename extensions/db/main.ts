@@ -29,10 +29,13 @@ import { applyUpdate, checkForUpdate, downloadUpdate } from './updater.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';
 import { log } from './log.ts';
 import {
+  addEnvironment,
   dataDir,
+  deleteEnvironment,
   deleteSaved,
   deleteWorkspace,
   getSession,
+  listEnvironments,
   listSaved,
   listSettings,
   listStars,
@@ -237,6 +240,21 @@ const COMMANDS: Handlers = {
 
   async 'db.workspaces.delete'({ id }) {
     deleteWorkspace(id);
+    return { ok: true };
+  },
+
+  /* -- Environments (store.ts owns the picklist; connections stay text) - */
+
+  async 'db.environments.list'() {
+    return { environments: listEnvironments() };
+  },
+
+  async 'db.environments.add'({ name }) {
+    return { environment: addEnvironment(name) };
+  },
+
+  async 'db.environments.remove'({ id }) {
+    deleteEnvironment(id);
     return { ok: true };
   },
 

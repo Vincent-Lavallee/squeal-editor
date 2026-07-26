@@ -59,6 +59,7 @@ import { migration as connectionSessions } from './1784997641-connection-session
 import { migration as environmentQa } from './1784997700-environment-qa.ts';
 import { migration as connectionColour } from './1784997750-connection-colour.ts';
 import { migration as dropWorkspaceColour } from './1784997850-drop-workspace-colour.ts';
+import { migration as environments } from './1785067675-environments.ts';
 
 /** Oldest first. Append only. */
 export const MIGRATIONS: Migration[] = [
@@ -74,6 +75,7 @@ export const MIGRATIONS: Migration[] = [
   environmentQa,
   connectionColour,
   dropWorkspaceColour,
+  environments,
 ];
 
 /*

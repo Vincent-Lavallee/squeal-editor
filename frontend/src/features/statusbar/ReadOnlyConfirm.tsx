@@ -1,7 +1,6 @@
 import { useState } from 'react';
 
 import type { Environment } from '../../../../shared/protocol/index.ts';
-import { environmentLabel } from '../../common/db/environments.ts';
 import Button from '../../common/components/Button.tsx';
 import Input from '../../common/components/Input.tsx';
 import Modal from '../../common/components/Modal.tsx';
@@ -18,8 +17,7 @@ interface Props {
 
 export default function ReadOnlyConfirm({ environment, name, onConfirm, onCancel }: Props) {
   const [typed, setTyped] = useState('');
-  const expected = environmentLabel(environment);
-  const matches = typed.trim().toLowerCase() === expected.toLowerCase();
+  const matches = typed.trim().toLowerCase() === environment.toLowerCase();
 
   return (
     <Modal onClose={onCancel}>
@@ -34,8 +32,8 @@ export default function ReadOnlyConfirm({ environment, name, onConfirm, onCancel
           Make {name || 'this connection'} writable?
         </h2>
         <p style={{ margin: `0 0 ${t.GAP_LG}px`, color: t.TEXT_MUTED, fontSize: t.TEXT_BODY, lineHeight: 1.5 }}>
-          It will stop refusing writes. Type <Mono>{expected}</Mono> to confirm you mean
-          to write to a <Mono>{expected}</Mono> database.
+          It will stop refusing writes. Type <Mono>{environment}</Mono> to confirm you mean
+          to write to a <Mono>{environment}</Mono> database.
         </p>
 
         <Field label="" htmlFor="confirm-env">
@@ -44,7 +42,7 @@ export default function ReadOnlyConfirm({ environment, name, onConfirm, onCancel
             id="confirm-env"
             value={typed}
             autoFocus
-            placeholder={expected}
+            placeholder={environment}
             onChange={(e) => setTyped(e.target.value)}
           />
         </Field>
