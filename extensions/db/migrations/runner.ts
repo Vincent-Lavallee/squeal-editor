@@ -4,6 +4,7 @@
 
 import type { Database } from 'bun:sqlite';
 
+import { log } from '../log.ts';
 import { MIGRATIONS } from './index.ts';
 import { tableExists, type Migration } from './migration.ts';
 
@@ -53,7 +54,11 @@ export function runMigrations(db: Database): void {
     );
   `);
 
-  if (adopting) for (const migration of adopt(db)) record(db, migration, 'adopted');
+  if (adopting) {
+    const adopted = adopt(db);
+    for (const migration of adopted) record(db, migration, 'adopted');
+    if (adopted.length > 0) log.info(`adopted ${adopted.length} pre-existing migration(s) into a fresh store`);
+  }
 
   const current = (db.query('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number | null }).v ?? 0;
 
@@ -66,6 +71,7 @@ export function runMigrations(db: Database): void {
       migration.up(db);
       record(db, migration, 'applied');
     })();
+    log.info(`ran migration ${migration.version}-${migration.name}`);
   }
 }
 

@@ -492,3 +492,19 @@ This is a record, not a plan. Nothing here is waiting on anything.
   DOM-measured `offsetWidth < scrollWidth`, not a screenshot read by eye — a
   scaled or zoomed capture turned out to shift font hinting enough to
   disagree with the real, native-scale layout.
+
+- **2026-07-26** — **Extension diagnostics are discarded** — When the extension shuts itself down
+  it writes why, and nothing is listening: it is spawned through a shell, so in an
+  installed app that line has no destination. The one symptom this costs is the
+  one that matters — the app going dead or unresponsive is the case where the
+  message exists and cannot be read. Give it somewhere to land in the app data
+  directory, which the About menu already opens.
+
+- **2026-07-26** — **Extension logging** — Nothing the extension does leaves a record. A failed
+  command comes back over the bridge and renders where it was asked for, but
+  everything that is not a failed command — the connection dropping, a migration
+  running, a query that was slow rather than wrong — happens silently, so there is
+  nothing to read back after the fact. Add levelled, timestamped logging with a
+  destination on disk and a bound on how large it may grow. Nothing a database
+  returned may appear in it: a log holding query results is a copy of the data
+  outside the encryption the store exists to provide.

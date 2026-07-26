@@ -86,7 +86,7 @@ export default function SavedConnectionList({ workspace, connections, connecting
                       </span>
                       {connectingId === c.id ? (
                         <span data-testid="saved-server" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, color: t.TEXT_MUTED, fontFamily: t.MONO, fontSize: t.TEXT_BADGE }}>
-                          <ThinkingOrb state="shaping" size={20} theme="dark" aria-label={connectPhaseLabel(connectingPhase)} />
+                          <ThinkingOrb state="shaping" speed={1.33} size={20} theme="dark" aria-label={connectPhaseLabel(connectingPhase)} />
                           {connectPhaseLabel(connectingPhase)}
                         </span>
                       ) : (

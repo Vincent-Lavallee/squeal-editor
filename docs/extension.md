@@ -27,6 +27,7 @@ not an objection.
 | `store.ts` | workspaces and saved connections: the SQLite file, the rows, and the password encryption |
 | `migrations/` | the store's schema, one file per change, plus the runner that brings a file up to it |
 | `chrome.ts` | the window frame's colour and the maximise clamp, over `bun:ffi`. Windows-only, best-effort |
+| `log.ts` | levelled, timestamped logging to a bounded file on disk |
 | `updater.ts` | the user-initiated updater: the release check, the verified download, and launching the installer. Windows-only |
 | `updateKey.ts` | the committed ed25519 public key the download's signature is checked against |
 
@@ -721,14 +722,16 @@ business in the schema here, and adding a tab kind is not a change to this file.
 stars. Only the UI encodes and decodes it (`SessionSnapshot`); see
 `docs/frontend.md` and `docs/decisions.md`.
 
-`dataDir()` is exported for one caller: `app.dataDir`, which the About menu's
-*Open app data* asks for and then hands to `Neutralino.os.open`. The webview opens
-the folder perfectly well — the only thing it lacks is the path, and the path is a
-per-platform rule that belongs beside the database it names. This is the mirror of
-`window.matchFrame` rather than another instance of it: there the extension makes a
-call the webview cannot, here it only answers *where*. An extension that shelled
-out to a file manager itself would be a second answer to a question the webview
-already has an API for.
+`dataDir()` is exported for two callers: `app.dataDir`, which the About menu's
+*Open app data* asks for and then hands to `Neutralino.os.open`, and `log.ts`,
+which writes its file into the same folder — so the folder the About menu already
+opens is also where the log lands, with nothing new for a user to be told about.
+The webview opens the folder perfectly well — the only thing it lacks is the path,
+and the path is a per-platform rule that belongs beside the database it names.
+This is the mirror of `window.matchFrame` rather than another instance of it:
+there the extension makes a call the webview cannot, here it only answers
+*where*. An extension that shelled out to a file manager itself would be a second
+answer to a question the webview already has an API for.
 
 ### The schema, and the migrations that *are* it (`migrations/`)
 
@@ -937,6 +940,26 @@ The pure helpers (`compareVersions`, `verifyEd25519`, `selectAssets`,
 database, so they run without the fixtures. The one that matters most flips a byte
 and requires the signature to fail, the same shape as the store's
 ciphertext-bit-flip test.
+
+## Logging (`log.ts`)
+
+Most of what the extension does never comes back over the bridge — a dropped
+connection, a migration running, a query that was slow rather than wrong — so
+`log.ts` gives it a destination: `info`/`warn`/`error`, each line timestamped, written
+to `squeal-ext.log` in `dataDir()` (see *Workspaces and saved connections* above)
+and mirrored to stderr for a `bun start` dev run. The file is rotated to `.old`
+(one generation) once it passes 5MB, so it cannot grow without bound.
+
+**Nothing a database returned may reach it — not a query, not a row, not a
+filter value.** The store's encryption exists to keep that data off disk in the
+clear; a log holding it would be a second, unencrypted copy sitting beside it.
+`db.query`/`db.browse` log only that a query was slow and how slow
+(`connectionId`, `database`/`table`, `durationMs`) — never the SQL or the result.
+A command's own failure already renders in the UI (the bridge carries the
+error back), so handlers do not log on failure; logging is for what has no
+other way to surface — connect/disconnect, migrations, the heartbeat giving up,
+socket errors, and uncaught exceptions, which is also where the extension's own
+shutdown reason now lands instead of a stderr line nothing was reading.
 
 ## Lifecycle
 

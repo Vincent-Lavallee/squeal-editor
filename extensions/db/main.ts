@@ -27,6 +27,7 @@ import {
 import { fitMaximizedToWorkArea, matchWindowFrame } from './chrome.ts';
 import { applyUpdate, checkForUpdate, downloadUpdate } from './updater.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';
+import { log } from './log.ts';
 import {
   dataDir,
   deleteSaved,
@@ -51,6 +52,9 @@ import {
 // app instead of trusting the socket.
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const HEARTBEAT_TIMEOUT_MS = 30_000;
+
+/** Above this, a query is worth a line in the log -- never the query itself. */
+const SLOW_QUERY_MS = 2_000;
 
 const connections = new Map<string, ConnectionHandle>();
 
@@ -78,6 +82,7 @@ async function closeConnection(connectionId: string): Promise<void> {
   if (!conn) return;
   connections.delete(connectionId);
   await conn.close();
+  log.info(`disconnected ${connectionId}`);
 }
 
 /* ------------------------------------------------------------------ *
@@ -96,6 +101,7 @@ async function establish(
 
   const connectionId = randomUUID();
   connections.set(connectionId, conn);
+  log.info(`connected ${connectionId} (${conn.dialect}${readOnly ? ', read-only' : ''})`);
   return { connectionId, databases, dialect: conn.dialect, defaultSchema: conn.defaultSchema };
 }
 
@@ -120,14 +126,18 @@ const COMMANDS: Handlers = {
     const conn = getConnection(connectionId);
     const startedAt = Date.now();
     const outcome = await conn.query(database, sql);
-    return { ...outcome, durationMs: Date.now() - startedAt } as QueryResult;
+    const durationMs = Date.now() - startedAt;
+    if (durationMs > SLOW_QUERY_MS) log.warn(`slow query on ${connectionId} (${database ?? 'default'}): ${durationMs}ms`);
+    return { ...outcome, durationMs } as QueryResult;
   },
 
   async 'db.browse'({ connectionId, database, table, schema, offset, filter }) {
     const conn = getConnection(connectionId);
     const startedAt = Date.now();
     const { columns, rows, ...page } = await conn.browse(database, { table, schema }, offset, filter);
-    return { result: { columns, rows, durationMs: Date.now() - startedAt }, ...page };
+    const durationMs = Date.now() - startedAt;
+    if (durationMs > SLOW_QUERY_MS) log.warn(`slow browse on ${connectionId} (${database}.${table}): ${durationMs}ms`);
+    return { result: { columns, rows, durationMs }, ...page };
   },
 
   async 'db.ddl'({ connectionId, database, table, schema, kind }) {
@@ -289,7 +299,7 @@ function send(event: string, data: unknown): void {
       data: { event, data },
     }),
     (err) => {
-      if (err) process.stderr.write(`[squeal-db] send error: ${err.message}\n`);
+      if (err) log.error(`send error: ${err.message}`);
     }
   );
 }
@@ -332,7 +342,7 @@ function startHeartbeat(): void {
   lastSeenAlive = Date.now();
   heartbeat = setInterval(() => {
     if (Date.now() - lastSeenAlive > HEARTBEAT_TIMEOUT_MS) {
-      process.stderr.write('[squeal-db] app stopped responding; shutting down\n');
+      log.warn('app stopped responding; shutting down');
       void shutdown(0);
       return;
     }
@@ -348,17 +358,23 @@ function start(init: ExtensionInit): void {
     `&connectToken=${encodeURIComponent(init.nlConnectToken)}`;
 
   ws = new WebSocket(url);
-  ws.on('open', startHeartbeat);
+  ws.on('open', () => {
+    log.info('connected to app');
+    startHeartbeat();
+  });
   ws.on('pong', () => {
     lastSeenAlive = Date.now();
   });
   ws.on('message', handleMessage);
   ws.on('error', (err) => {
-    process.stderr.write(`[squeal-db] socket error: ${err.message}\n`);
+    log.error(`socket error: ${err.message}`);
     void shutdown(1);
   });
   // Belt and braces: exit on a clean close too, without waiting for the heartbeat.
-  ws.on('close', () => void shutdown(0));
+  ws.on('close', () => {
+    log.info('app closed the connection; shutting down');
+    void shutdown(0);
+  });
 }
 
 // Neutralino writes the connection details to stdin as a single JSON line.
@@ -374,18 +390,24 @@ process.stdin.on('data', (chunk: Buffer) => {
   }
 });
 
-process.on('SIGINT', () => void shutdown(0));
-process.on('SIGTERM', () => void shutdown(0));
+process.on('SIGINT', () => {
+  log.info('received SIGINT; shutting down');
+  void shutdown(0);
+});
+process.on('SIGTERM', () => {
+  log.info('received SIGTERM; shutting down');
+  void shutdown(0);
+});
 
 // Unhandled errors that reach the process would otherwise kill the extension
 // without closing database connections. Log and shut down so the connections
 // are released before the process exits.
 process.on('uncaughtException', (err) => {
-  process.stderr.write(`[squeal-db] uncaught exception: ${err.message}\n`);
+  log.error(`uncaught exception: ${err.message}`);
   void shutdown(1);
 });
 process.on('unhandledRejection', (reason) => {
   const message = reason instanceof Error ? reason.message : String(reason);
-  process.stderr.write(`[squeal-db] unhandled rejection: ${message}\n`);
+  log.error(`unhandled rejection: ${message}`);
   void shutdown(1);
 });
