@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.10.0...v0.10.1) (2026-07-26)
+
+
+### Bug Fixes
+
+* Closing as non-admin on windows ([3106ed3](https://github.com/Vincent-Lavallee/squeal-editor/commit/3106ed345d3d3f434816f507f2ee0a0dc08e727c))
+
 ## [0.10.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.9.0...v0.10.0) (2026-07-26)
 
 
