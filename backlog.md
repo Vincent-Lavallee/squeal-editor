@@ -148,16 +148,6 @@ Things that do not exist yet.
   feature split exists to prevent, and whatever key it takes has to be rebound
   inside the editor too — the way running already is — or Monaco eats it first.
 
-- **Trigger and function definitions in the tree** — Checking what a trigger or
-  function actually does means leaving the app for another tool, because the
-  tree only knows tables and views. Nest each table's triggers under it, since a
-  trigger always belongs to exactly one table, and add a top-level Functions
-  node listing functions and stored procedures together, since neither is
-  scoped to a table. Selecting any of them opens its definition the same way
-  "Open definition" does for a table today. Functions and procedures only
-  apply where the engine has them — Postgres and MySQL, not SQLite; triggers
-  apply to all three.
-
 - **Relationship diagram** — Understanding how tables relate means reading DDL
   or reaching for another tool, because nothing in the app shows foreign keys
   at all — the tree only marks primary keys. Add a diagram, opened from a new
