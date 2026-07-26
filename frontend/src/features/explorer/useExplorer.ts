@@ -3,7 +3,7 @@ import { useCallback, useEffect } from 'react';
 import type { ColumnInfo, FunctionInfo, TriggerInfo } from '../../../../shared/protocol/index.ts';
 import { relationName, type Relation } from '../../common/db/relation.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
-import { selectDefaultDatabase, useTabs } from '../../store/tabsSlice.ts';
+import { selectDatabase } from '../../store/tabsSlice.ts';
 import { selectActiveConnection } from '../../store/sessionSlice.ts';
 import {
   dropTable as dropTableThunk,
@@ -38,22 +38,18 @@ export function useExplorer() {
   // The schema this engine treats as implied, so the tree can leave it off a
   // name. It is the extension's answer, not a fact the UI knows about Postgres.
   const defaultSchema = useAppSelector((s) => selectActiveConnection(s)?.defaultSchema);
-  const { activeTab } = useTabs();
-  // With nothing open there is no tab to name a database, but there is still a
-  // connection -- and `defaultDatabase` is exactly the fact one carries for
-  // this reason (`tabOpened` already falls back to it when minting a tab with
-  // nothing else to go on). Reading it here is what lets the tree answer, and
-  // the picker stay usable, before a first tab exists rather than only after.
-  const defaultDatabase = useAppSelector(selectDefaultDatabase);
-  const database = activeTab?.database ?? defaultDatabase;
+  // The connection's database, one value regardless of which tab (if any) is
+  // in front -- there is still a connection with nothing open, and this is
+  // what lets the tree answer, and the picker stay usable, before a first tab
+  // exists at all.
+  const database = useAppSelector(selectDatabase);
 
   /*
-   * The tree lists the active tab's database, and that changes for reasons other
-   * than a click on the dropdown -- switching tabs is one, closing a tab is
-   * another, and moving the rail to another connection is a third. So the fetch
-   * keys on the fact rather than on the gesture: hooking the click handler is how
-   * the tree would come up blank the moment you moved to a tab you had not
-   * clicked your way into.
+   * The tree lists the connection's database, and that changes for reasons
+   * other than a click on the dropdown -- moving the rail to another
+   * connection is one, a session opening is another. So the fetch keys on the
+   * fact rather than on the gesture: hooking the click handler would miss
+   * those.
    *
    * `loadTables` carries the cache in its `condition`, so a database already
    * fetched never reaches the bridge and this costs nothing on every switch.

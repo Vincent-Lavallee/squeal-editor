@@ -2999,3 +2999,55 @@ name, not by screen position, because a write shifts a row's place in
 Postgres's unordered natural scan (see *Browsing a table* in
 `extension.md`) and an earlier pass of this same check briefly read as a
 bug for exactly that reason before the row was re-identified by name.
+
+---
+
+## The database moved off the tab and onto the connection
+
+**Why.** "Tabs are in the store, and the bridge test does not decide it
+alone" (above) put a `database` on every tab deliberately, so that switching
+database to check one thing could never drag every other tab along with it.
+Built and shipped, that isolation read as the opposite of a feature: the
+sidebar picker and the tree jumped to a different database every time you
+switched tabs, because each tab was quietly remembering its own. A user
+reported it as confusing before ever being told it was intentional — the
+isolation cost more surprise than it was saving.
+
+**What changed.** `Tab` no longer carries a `database` field at all.
+`tabsSlice.database` is one value per connection (`Record<connectionId,
+string | null>`, the promotion of what used to be the empty-state-only
+`defaultDatabase`), set by the picker and read by `runQuery`, `browseTable`
+and `saveEdits` off the connection rather than off the tab. `useExplorer`'s
+`database` is that value alone, with no `activeTab?.database` to fall back
+from — which also deletes the empty-state special case `changeDatabase` used
+to need: `setDatabase` works identically whether or not a tab is open,
+because there was never anything tab-shaped in the fact to begin with.
+
+**The tradeoff, accepted with eyes open.** The database can now change
+underneath a tab that never touched the picker: switching it re-browses the
+*active* grid tab immediately (so what's on screen never lies about what
+it's showing), but a **background** tab's next query or browse — run only
+when you get back to it — targets whatever the connection is on by then, not
+whatever it was on when that tab was opened. This is exactly the drag the
+original design forbade. It's kept because the alternative — the picker
+correctly, confusingly, showing a different database per tab — was worse in
+practice, and because the failure mode is mild: a stale grid tab that
+re-browses into a missing table surfaces a normal "no such table" error in
+its own grid, not silent wrong data, and a stale editor tab's `SELECT` just
+fails or runs somewhere the user can immediately see and correct.
+
+**Rejected: keep the per-tab database, and give the picker a separate
+connection-level "what to show while browsing" value that tab switches don't
+touch.** This was the second data point that made the reversal read as
+correct rather than as caving to one complaint: it is two sources for one
+fact — a tab's own database and the connection's displayed one — with no
+principled answer for which one a freshly typed query should run against.
+That is the same "slices reaching into each other" shape the original tabs
+design spent real effort avoiding, worn as a compromise instead of resolved.
+
+**`SessionSnapshot.tabs[].database` and `.defaultDatabase` are gone from the
+persisted shape too**, replaced by one top-level `database`. The extension
+never parses the blob (see "Session restore moved the editor's text into a
+slice", above), so this needed no migration — a session saved by the old UI
+simply parses with an absent `database`, which falls back to the connection's
+first database the same way a brand-new session does.

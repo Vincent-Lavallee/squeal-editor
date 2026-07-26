@@ -56,18 +56,19 @@ declare global {
 
 export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
   const { dialect } = useSession();
-  const { tabs, activeTab } = useTabs();
+  const { tabs, activeTab, database } = useTabs();
   const { sqlByTab, setSql, peekSql } = useEditor();
 
   const activeTabId = activeTab?.id ?? null;
   const isEditorTab = activeTab?.kind === 'editor';
   const sql = activeTabId ? (sqlByTab[activeTabId] ?? '') : '';
 
-  // Completion follows the active tab: its text says which tables are in play,
-  // and its database is which catalog they are in. A grid tab has neither and
-  // needs no popup, but the pane is only hidden there, never unmounted, so this
-  // is called unconditionally -- the empty text simply puts nothing in scope.
-  useSqlCompletion(sql, activeTab?.database ?? null);
+  // Completion follows the active tab's text for which tables are in play, and
+  // the connection's current database for which catalog they are in. A grid
+  // tab has no text and needs no popup, but the pane is only hidden there,
+  // never unmounted, so this is called unconditionally -- the empty text
+  // simply puts nothing in scope.
+  useSqlCompletion(sql, database);
 
   // Format Document, over the whole document, in the session's dialect. This is
   // what backs the toolbar button, Shift+Alt+F and the context-menu entry --

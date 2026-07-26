@@ -609,13 +609,14 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     /*
      * The empty state has to have a way out of it, and `+` is the only one.
      *
-     * There is no active tab to inherit a database from, so the tab opens on the
-     * session's default -- and this asserts the *user-visible* consequences of
-     * that (an enabled picker, a listed tree) rather than the state behind them.
-     * Driving the picker's state directly would sail straight past a disabled
-     * one -- the old native-select setter fired a synthetic `change` no real
-     * click could produce, so a test that used it passed while the app stranded
-     * you here. `pickOption` clicks, which a disabled trigger ignores.
+     * The database is the connection's, so it is already there to open the new
+     * tab on even with nothing open yet -- and this asserts the *user-visible*
+     * consequences of that (an enabled picker, a listed tree) rather than the
+     * state behind them. Driving the picker's state directly would sail
+     * straight past a disabled one -- the old native-select setter fired a
+     * synthetic `change` no real click could produce, so a test that used it
+     * passed while the app stranded you here. `pickOption` clicks, which a
+     * disabled trigger ignores.
      */
     test('a new tab from the empty state lands on a database', async () => {
       await app.evaluate(newTab);
@@ -1261,12 +1262,12 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     /*
-     * The database binds to a tab, not to the connection: this is the assertion
-     * the whole `tabsSlice` shape exists for. Moving one tab must leave the
-     * other where it was -- switching database to check one thing cannot drag
-     * every other tab along with it.
+     * The database belongs to the connection, not to any one tab: this is the
+     * assertion the whole `tabsSlice` shape exists for now. Picking one from
+     * any tab moves the picker for every tab -- switching tabs must not make
+     * it jump back to whatever it happened to read before.
      */
-    test('the database picker moves the active tab and no other', async () => {
+    test('the database picker is shared across every tab', async () => {
       await app.evaluate(newTab);
       await Bun.sleep(400);
       const second = await app.evaluate<string>(activeTabLabel);
@@ -1275,24 +1276,29 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(1200);
       expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('postgres');
 
-      // Back to the first tab: it never moved, so the picker still reads `shop`
-      // and the tree is still showing shop's tables.
+      // Back to the first tab: the picker still reads `postgres`, the database
+      // just picked from the other tab -- it did not stay behind on `shop`.
       await app.evaluate(clickTab('Query 3'));
       await Bun.sleep(1200);
-      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('shop');
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('postgres');
+
+      await app.evaluate(closeTab(second));
+      await Bun.sleep(300);
+      // Back to `shop`, where the rest of the block expects to be.
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1200);
       const tables = await app.evaluate<string[]>(
         `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`
       );
       expect(tables).toContain('users');
-
-      await app.evaluate(closeTab(second));
-      await Bun.sleep(300);
     });
 
     /*
-     * A grid tab is "this table, wherever I am pointed", so moving it re-browses
-     * the same name in the new database -- and when it does not live there, the
-     * error lands in this tab's own grid, which is where the action was taken.
+     * A grid tab always shows "this table, in the connection's current
+     * database" -- so when the picker moves while one is in front, it
+     * re-browses under the newly picked database, and when the table does not
+     * live there, the error lands in this tab's own grid, which is where the
+     * action was taken.
      */
     test('moving a grid tab to a database without that table errors in that tab', async () => {
       await app.evaluate(clickTable('users'));

@@ -85,31 +85,34 @@ const blank = (): ResultsState => ({ result: null, browse: null, error: null, ru
 /**
  * Reads its target off the state rather than taking it as an argument. That is
  * safe here in a way it was not when this was `useState`: dispatch is
- * synchronous, so a caller that points a tab at a database and then runs is
- * guaranteed to query the database it just picked, with no stale render in
- * between.
+ * synchronous, so a caller that points the connection at a database and then
+ * runs is guaranteed to query the database it just picked, with no stale
+ * render in between.
  *
  * **The target is the tab, and the whole of it.** The connection is read off the
  * tab rather than off the session, and that is not tidiness: the session's
  * active connection is whatever the rail points at *now*, so reading it here is
  * exactly how a tab opened on dev would run against prod the moment the rail
- * moved. The tab knows which server it belongs to; nothing else does.
+ * moved. The tab knows which server it belongs to; nothing else does. The
+ * database, in turn, is the connection's -- one value shared by every tab of
+ * it, not the tab's own. See `docs/decisions.md`.
  */
 export const runQuery = createAppThunk(
   'results/runQuery',
   async (arg: { tabId: string; sql: string }, { getState, rejectWithValue }) => {
     // The target is still read, never passed: the arg names *which tab*, and the
-    // tab is what holds the connection and the database. A `database` argument
-    // stays forbidden, and a `connectionId` one is forbidden for the same reason.
+    // tab is what holds the connection. A `database` argument stays forbidden,
+    // and a `connectionId` one is forbidden for the same reason.
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
     if (!tab) return rejectWithValue('That tab is gone.');
+    const database = getState().tabs.database[tab.connectionId];
 
     const controller = new AbortController();
     queryControllers.set(arg.tabId, controller);
     try {
       return await call('db.query', {
         connectionId: tab.connectionId,
-        database: tab.database ?? undefined,
+        database: database ?? undefined,
         sql: arg.sql.trim(),
       }, 60_000, controller.signal);
     } catch (err) {
@@ -122,9 +125,9 @@ export const runQuery = createAppThunk(
 );
 
 /**
- * Fetch one page of a table. Reads the database off the tab for the same reason
- * `runQuery` does -- a caller that points a tab at a database and then browses is
- * guaranteed to hit the one it just picked.
+ * Fetch one page of a table. Reads the database off the connection for the
+ * same reason `runQuery` does -- a caller that points the connection at a
+ * database and then browses is guaranteed to hit the one it just picked.
  *
  * `offset` is an argument rather than something this reads off `browse`, so the
  * one thunk serves the first page and every step after it; the hook computes the
@@ -137,10 +140,10 @@ export const runQuery = createAppThunk(
  * page's filter could only ever re-fetch the page already on screen.
  *
  * Known and deliberate: the database is captured here, at call time. Page 2 in
- * flight while the tab is switched to another database is last-arrival-wins
+ * flight while the picker moves to another database is last-arrival-wins
  * rather than last-intent-wins. Guarding it means dropping a `fulfilled` whose
- * `database` no longer matches the tab's; the race predates tabs and is not
- * worth the second source of truth until someone actually hits it.
+ * `database` no longer matches the connection's; the race predates this shape
+ * and is not worth the second source of truth until someone actually hits it.
  */
 export const browseTable = createAppThunk(
   'results/browseTable',
@@ -150,7 +153,8 @@ export const browseTable = createAppThunk(
   ) => {
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
     if (!tab) return rejectWithValue('That tab is gone.');
-    if (!tab.database) return rejectWithValue('Select a database first.');
+    const database = getState().tabs.database[tab.connectionId];
+    if (!database) return rejectWithValue('Select a database first.');
 
     const controller = new AbortController();
     queryControllers.set(arg.tabId, controller);
@@ -159,7 +163,7 @@ export const browseTable = createAppThunk(
         // The tab's, not the session's -- see `runQuery`. Paging a grid on a
         // connection you are no longer looking at must still page that one.
         connectionId: tab.connectionId,
-        database: tab.database,
+        database,
         table: arg.table,
         // Off the tab, not the arg: the schema is what the tab was opened on and
         // it never changes, so passing it alongside the name would be a second
@@ -172,7 +176,7 @@ export const browseTable = createAppThunk(
       // The filter is echoed into the payload rather than read back off
       // `meta.arg` in the reducer, so what the page *was fetched with* and what
       // came back are one fact arriving together.
-      return { database: tab.database, table: arg.table, filter: arg.filter ?? null, page };
+      return { database, table: arg.table, filter: arg.filter ?? null, page };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
     } finally {
@@ -184,8 +188,8 @@ export const browseTable = createAppThunk(
 /**
  * Write the staged edits and deletes of a browsed table back, in one batch.
  *
- * Reads the connection and database off the tab, like `runQuery` and
- * `browseTable` -- the target is the tab, never passed. The `edits`/`deletes`
+ * Reads the connection off the tab and the database off the connection, like
+ * `runQuery` and `browseTable` -- the target is the tab, never passed. The `edits`/`deletes`
  * *are* passed, though: they are staged in the results feature context (they
  * have not crossed the bridge until now), so they arrive as arguments the way
  * `runQuery`'s `sql` does, not read off a slice.
@@ -203,12 +207,13 @@ export const saveEdits = createAppThunk(
   ) => {
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
     if (!tab) return rejectWithValue('That tab is gone.');
-    if (!tab.database) return rejectWithValue('Select a database first.');
+    const database = getState().tabs.database[tab.connectionId];
+    if (!database) return rejectWithValue('Select a database first.');
 
     try {
       const res = await call('db.write', {
         connectionId: tab.connectionId,
-        database: tab.database,
+        database,
         table: arg.table,
         schema: tab.schema,
         edits: arg.edits,

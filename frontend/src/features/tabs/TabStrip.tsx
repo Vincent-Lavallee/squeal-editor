@@ -23,7 +23,7 @@ interface Props {
 }
 
 export default function TabStrip({ onDuplicateTab }: Props) {
-  const { tabs: tabList, activeTabId, activeTab, activateTab, closeTab, closeOtherTabs, closeTabsToTheRight, closeAllTabs, moveTab, openEditorTab, renameTab } = useTabs();
+  const { tabs: tabList, activeTabId, activateTab, closeTab, closeOtherTabs, closeTabsToTheRight, closeAllTabs, moveTab, openEditorTab, renameTab } = useTabs();
   const [hoveredTabId, setHoveredTabId] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -120,7 +120,7 @@ export default function TabStrip({ onDuplicateTab }: Props) {
               />
             ) : (
               <button data-testid="tab-pick" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 1, minWidth: 0, height: t.TAB_H, padding: `0 ${t.GAP_XS}px 0 10px`, border: 'none', background: 'none', color: 'inherit', font: 'inherit', fontSize: t.TEXT_BADGE, cursor: 'pointer' }}
-                role="tab" aria-selected={active} onClick={() => activateTab(tab.id)} title={tab.database ? `${tab.title} — ${tab.database}` : tab.title}>
+                role="tab" aria-selected={active} onClick={() => activateTab(tab.id)} title={tab.title}>
                 <Icon style={{ ...iconSvg, color: active ? 'inherit' : t.TEXT_MUTED }} aria-hidden="true" />
                 <span data-testid="tab-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   onDoubleClick={(e) => { e.stopPropagation(); setRenaming({ id: tab.id, draft: tab.title }); }}>{tab.title}</span>
@@ -134,7 +134,7 @@ export default function TabStrip({ onDuplicateTab }: Props) {
         );
       })}
       <button data-testid="tab-new" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', width: t.TAB_H, border: 'none', borderLeft: `1px solid ${t.BORDER}`, background: 'none', color: t.TEXT_MUTED, cursor: 'pointer' }}
-        onClick={() => openEditorTab(activeTab?.database)} aria-label="New query tab">
+        onClick={() => openEditorTab()} aria-label="New query tab">
         <NewTabIcon style={iconSvg} aria-hidden="true" />
       </button>
 

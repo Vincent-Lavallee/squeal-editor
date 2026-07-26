@@ -12,12 +12,12 @@ import type { TableFilter } from '../../../shared/protocol/index.ts';
  * Runtime ids are left out: they are minted fresh every session, so a restore
  * mints new ones and keys `sqlByTab`/`activeTabId` by those. Editor text rides on
  * `sql`, a grid tab's filter on `filter`; `activeIndex` names which tab was in
- * front by position, since the ids will not survive.
+ * front by position, since the ids will not survive. `database` is the
+ * connection's, not any one tab's -- see `docs/decisions.md`.
  */
 export interface SessionSnapshot {
   tabs: Array<{
     kind: 'editor' | 'grid';
-    database: string | null;
     table?: string;
     schema?: string;
     title: string;
@@ -26,7 +26,7 @@ export interface SessionSnapshot {
   }>;
   activeIndex: number | null;
   nextQueryNo: number;
-  defaultDatabase: string | null;
+  database: string | null;
 }
 
 /**

@@ -71,8 +71,9 @@ that lives apart from its values is two sources for one fact.
 |---|---|---|
 | open connections: id, `savedConnectionId`, config, `dialect`, `name`, `workspaceId`, `color`, `environment`, `readOnly` | `session` slice | crossed |
 | `order`, `activeConnectionId` | `session` slice | never left, but see above |
-| a tab's `connectionId`, `database`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
-| `tabs`, `activeTabId`, `kind`, `title`, `defaultDatabase`, a grid tab's `filter` seed | `tabs` slice | never left, but see above |
+| a tab's `connectionId`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
+| `database`, per connection | `tabs` slice | crossed |
+| `tabs`, `activeTabId`, `kind`, `title`, a grid tab's `filter` seed | `tabs` slice | never left, but see above |
 | `databases`, `tables`, `columns`, `stars` | `explorer` slice | crossed |
 | `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), per tab | `results` slice | crossed |
 | staged cell edits + row deletes, per tab (+ `saving`, `saveError`) | `results` context | never left, until Save |
@@ -142,11 +143,12 @@ time — shape restored from the extension's store, contents refetched. Launch s
 lands on the connections list; nothing auto-connects.
 
 **The shape is a `SessionSnapshot`** (`store/sessionSnapshot.ts`) — the tabs
-(kind, database, table/schema, title, editor `sql`, grid `filter`), which one was
-active by position, `nextQueryNo` and `defaultDatabase`. It leaves out runtime tab
-ids, which are minted fresh every session. It lives in its own file, not in a
-slice, because both slices touch it and importing a runtime value between them
-would close a cycle — `tabsSlice` already imports `sessionSlice` for its matchers.
+(kind, table/schema, title, editor `sql`, grid `filter`), which one was active by
+position, `nextQueryNo` and `database`, the connection's own rather than any
+tab's. It leaves out runtime tab ids, which are minted fresh every session. It
+lives in its own file, not in a slice, because both slices touch it and
+importing a runtime value between them would close a cycle — `tabsSlice`
+already imports `sessionSlice` for its matchers.
 
 **Restore rides the connect, not a separate call.** `db.saved.connect` carries the
 stored blob back as a `session` string; `connectSaved` parses it and puts a
@@ -212,9 +214,9 @@ state. That is what lets the UI suite drive a reorder with three plain
 `MouseEvent`s, which carry no `dataTransfer` at all.
 
 **Duplicate is wired in `Shell`, because a tab's text is not in the tab.** The
-copy is a new tab of the same kind and database; a grid tab re-browses its table
-and an editor tab is seeded from `peekSql`, at birth, the same inbound-write seam
-a definition tab uses. It spans tabs, the editor and the results, so it is the
+copy is a new tab of the same kind; a grid tab re-browses its table and an
+editor tab is seeded from `peekSql`, at birth, the same inbound-write seam a
+definition tab uses. It spans tabs, the editor and the results, so it is the
 composition root's and arrives at the strip as `onDuplicateTab` — a feature never
 imports a sibling. The copy takes the next `Query N` rather than the original's
 name, the same answer the tree gives when a table is opened twice: two tabs, and
@@ -244,25 +246,34 @@ typed so far, the way typing over a selected word does. `useEffect(..., [renamin
 runs once when rename mode is entered for a given tab and not again while its
 draft changes, which is the fix.
 
-## Picking a database with nothing open
+## The database is the connection's, not any one tab's
 
-The tree and the database picker used to go dark the moment the last tab
-closed: both read `activeTab?.database`, and an empty state has no active tab.
-`useExplorer`'s `database` now falls back to `selectDefaultDatabase` — the same
-field `tabOpened` already falls back to when minting a tab with nothing else to
-go on — so there is still an answer with no tab open at all, not only once one
-exists to ask. The picker's own disabled check dropped its `hasTab` half
-alongside it; `databases.length === 0` is the only reason left to grey it out.
+`tabsSlice.database` is one value per connection — `Record<connectionId, string
+| null>` — set by the sidebar picker and read by every tab of that connection
+alike. A tab used to carry its own `database`, set when it opened and changed
+only while it was the one in front; that gave every tab isolation from a
+database picked to check something else, but it read, in practice, as the
+picker and the tree jumping to a different database every time you switched
+tabs. Being connection-scoped is what makes that stop, and it is also what
+answers the picker and the tree before any tab exists to ask on their behalf —
+`useExplorer`'s `database` is `selectDatabase` alone, no per-tab override to
+fall back from, and the picker's own disabled check has only one reason left to
+grey it out: `databases.length === 0`.
 
-**Picking a database from the empty state writes the connection's default,
-not a tab's.** `Shell`'s `changeDatabase` already had two things to do
-depending on whether a tab was active; this is the third branch, not a new
-handler — no active tab means there is nothing for `databaseChanged` to target,
-so it dispatches `defaultDatabaseChanged` instead, and the picker, the tree and
-the next tab opened from `+` all read the same fact afterward. Clicking a table
-row needed nothing new: `openGridTab` already reads the connection off state
-rather than off a caller-supplied tab, so it mints one whether or not one
-existed a moment ago.
+**Picking a database is one action regardless of whether a tab is open.**
+`Shell`'s `changeDatabase` always calls `setDatabase`, then re-browses the
+active tab if it is a grid one — there is no longer an empty-state branch,
+because `databaseChanged({ connectionId, database })` never needed a tab to
+target. Clicking a table row needed nothing new either: `openGridTab` already
+reads the connection off state rather than off a caller-supplied tab, so it
+mints one whether or not one existed a moment ago.
+
+**The tradeoff, accepted on purpose:** switching the database can now change
+what another open tab's *next* query or browse targets, since there is only
+one database to read at call time. A grid tab whose table does not exist under
+the newly picked database is not protected from that — it re-browses and
+surfaces the failure as its own error, the same as any other missing-table
+browse. See `docs/decisions.md`.
 
 ## The editable grid
 
@@ -723,10 +734,11 @@ a connect handler, of which there are already two.
 
 ### Thunks read their target; callers do not pass it
 
-`runQuery` reads **the connection and the database off the tab it names**.
-Dispatch is synchronous, so pointing a tab at a database and then running is
-guaranteed to query the one just picked, with no stale render in between — this
-is also how `Shell` reads back the id of a grid tab the reducer just minted
+`runQuery` reads **the connection off the tab it names, and the database off
+that connection** (`tabs.database[tab.connectionId]`). Dispatch is synchronous,
+so pointing the connection at a database and then running is guaranteed to
+query the one just picked, with no stale render in between — this is also how
+`Shell` reads back the id of a grid tab the reducer just minted
 (`useTabs().openGridTab`) in order to browse into it. Do not add a `database`
 parameter back, and do not add a `connectionId` one; there is nothing to guard
 against, and two sources for one fact is how they disagree.
@@ -1044,14 +1056,14 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
 - Ctrl/⌘+Enter runs, from anywhere in the window (a `window` keydown listener),
   matching every other SQL tool. On a grid tab it does nothing: there is no query
   there to run.
-- **A tab binds to a connection for life, and to a database by the picker.** The
-  connection is fixed at open time and nothing changes it: moving the rail
-  switches which tabs you are *looking at*, never what any of them points at. The
-  picker moves the active tab's database alone.
-  Switching database to check one thing must never drag every other tab with it.
-  A grid tab is "this table, wherever I am pointed", so moving it re-browses the
-  same name in the new database — and says so in that tab's own grid when the
-  table does not live there.
+- **A tab binds to a connection for life; the database is the connection's, not
+  any one tab's.** The connection is fixed at open time and nothing changes it:
+  moving the rail switches which tabs you are *looking at*, never what any of
+  them points at. The picker moves the database every tab of that connection
+  reads — see "The database is the connection's, not any one tab's" above. A
+  grid tab is "this table, in the connection's current database", so it
+  re-browses when the picker moves while it is in front, and says so in its
+  own grid when the table does not live there.
 - **Clicking a table always opens a new tab**, deliberately not deduped: opening
   one table twice is how you compare it before and after a write.
 - **A tree row is a chevron plus a name, not one button.** The chevron reveals
@@ -1157,11 +1169,11 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   drop itself is guarded by `DropTableConfirm`, the app's second typed-confirmation
   modal after `ReadOnlyConfirm`, and its failure renders in that modal — a drop the
   server refuses is news about the action just taken there.
-- **A tab always opens on a database**, inherited from the active tab or falling
-  back to the session's `defaultDatabase`. The empty state is the case that needs
-  the fallback and the one that has no tab to inherit from — a tab pointed at
-  nothing has an empty tree and nothing to run, and if the picker is disabled
-  too, the only way out of the app's own empty state is to reconnect.
+- **The tree and the picker always have a database to show**, the connection's
+  own (`tabs.database`) rather than anything read off a tab — so the empty
+  state, with no tab open at all, is not a special case: a connection pointed
+  at nothing has an empty tree and nothing to run, and if the picker is
+  disabled too, the only way out of the app's own empty state is to reconnect.
 - **Triggers nest under their table; functions fold into their schema's own
   heading rather than earning one of their own.** A trigger belongs to exactly
   one table, so it renders inside that table's expanded row, lazily fetched the

@@ -112,10 +112,10 @@ export function useResults() {
   const navigateForeignKey = useCallback(
     (column: string, value: CellValue) => {
       const fk = browse?.columnInfo.find((c) => c.name === column)?.foreignKey;
-      if (!fk || value === null || !activeTab?.database) return;
+      if (!fk || value === null) return;
 
       const relation = { table: fk.table, schema: fk.schema };
-      const tabId = openGridTab(activeTab.database, relation, relationLabel(relation, defaultSchema));
+      const tabId = openGridTab(relation, relationLabel(relation, defaultSchema));
       if (!tabId) return;
 
       void dispatch(
@@ -127,7 +127,7 @@ export function useResults() {
         })
       );
     },
-    [browse, activeTab, openGridTab, defaultSchema, dispatch]
+    [browse, openGridTab, defaultSchema, dispatch]
   );
 
   // Staging is a no-op unless the page is editable; the component still calls

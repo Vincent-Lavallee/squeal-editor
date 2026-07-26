@@ -34,7 +34,7 @@ export default function Shell({ onAddConnection }: Props) {
 }
 
 function ShellLayout({ onAddConnection }: Props) {
-  const { tabs, activeTab, openGridTab, openEditorTab, selectDatabase, setDefaultDatabase } = useTabs();
+  const { tabs, activeTab, openGridTab, openEditorTab, setDatabase } = useTabs();
   const { run, running, browseIn } = useResults();
   const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema } = useExplorer();
   const { setSql, peekSql } = useEditor();
@@ -85,9 +85,9 @@ function ShellLayout({ onAddConnection }: Props) {
     }
   }, [activeTab, activeNeedsBrowse, browseIn]);
 
-  const openTable = useCallback((database: string, table: TableInfo) => {
+  const openTable = useCallback((table: TableInfo) => {
     const relation = relationOf(table);
-    const tabId = openGridTab(database, relation, relationLabel(relation, defaultSchema));
+    const tabId = openGridTab(relation, relationLabel(relation, defaultSchema));
     if (tabId) browseIn(tabId, relation.table, 0);
   }, [openGridTab, browseIn, defaultSchema]);
 
@@ -97,7 +97,7 @@ function ShellLayout({ onAddConnection }: Props) {
     let text: string;
     try { text = await fetchDdl(database, relation, table.kind); }
     catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
-    const tabId = openEditorTab(database, name);
+    const tabId = openEditorTab(name);
     if (tabId) setSql(tabId, text);
   }, [fetchDdl, openEditorTab, setSql, defaultSchema]);
 
@@ -106,7 +106,7 @@ function ShellLayout({ onAddConnection }: Props) {
     let text: string;
     try { text = await fetchTriggerDdl(database, table, name, schema); }
     catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
-    const tabId = openEditorTab(database, name);
+    const tabId = openEditorTab(name);
     if (tabId) setSql(tabId, text);
   }, [fetchTriggerDdl, openEditorTab, setSql]);
 
@@ -115,15 +115,15 @@ function ShellLayout({ onAddConnection }: Props) {
     let text: string;
     try { text = await fetchFunctionDdl(database, name, func.kind, func.schema); }
     catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
-    const tabId = openEditorTab(database, name);
+    const tabId = openEditorTab(name);
     if (tabId) setSql(tabId, text);
   }, [fetchFunctionDdl, openEditorTab, setSql]);
 
   /*
-   * A copy of a tab is a new tab of the same kind on the same database, plus
-   * whatever the original was holding: a grid tab re-browses its table, an editor
-   * tab is seeded with its text. Both of those already have a way in -- this
-   * spans tabs, the editor and the results, so it is wired here and passed down.
+   * A copy of a tab is a new tab of the same kind, plus whatever the original
+   * was holding: a grid tab re-browses its table, an editor tab is seeded with
+   * its text. Both of those already have a way in -- this spans tabs, the
+   * editor and the results, so it is wired here and passed down.
    *
    * The copy takes the next `Query N` rather than the original's name, which is
    * the same answer the tree gives when a table is opened twice: two tabs, and
@@ -133,27 +133,26 @@ function ShellLayout({ onAddConnection }: Props) {
     const tab = tabs.find((candidate) => candidate.id === tabId);
     if (!tab) return;
 
-    if (tab.kind === 'grid' && tab.table && tab.database) {
-      const id = openGridTab(tab.database, { table: tab.table, schema: tab.schema }, tab.title);
+    if (tab.kind === 'grid' && tab.table) {
+      const id = openGridTab({ table: tab.table, schema: tab.schema }, tab.title);
       if (id) browseIn(id, tab.table, 0);
       return;
     }
-    const id = openEditorTab(tab.database);
+    const id = openEditorTab();
     // Seeded at birth, the way a definition tab is: the model reads `peekSql`
     // when it is created, so writing the text now is not a write into a live
     // editor. Text still only flows out.
     if (id) setSql(id, peekSql(tabId) ?? '');
   }, [tabs, openGridTab, openEditorTab, browseIn, setSql, peekSql]);
 
-  // With no active tab -- the empty state -- there is nothing for the picker to
-  // point at, so it moves the connection's default instead: the same fact a
-  // fresh tab already falls back to, and what lets the tree answer for a
-  // database before any tab exists to ask on its behalf.
+  // The picker moved. It re-browses the active grid tab so what is on screen
+  // follows the database that is now selected -- if the table it was showing
+  // is not there, that surfaces as this tab's own error, not as the picker
+  // being talked out of the move.
   const changeDatabase = useCallback((database: string) => {
-    if (!activeTab) { setDefaultDatabase(database); return; }
-    selectDatabase(activeTab.id, database);
-    if (activeTab.kind === 'grid' && activeTab.table) browseIn(activeTab.id, activeTab.table, 0);
-  }, [activeTab, selectDatabase, setDefaultDatabase, browseIn]);
+    setDatabase(database);
+    if (activeTab?.kind === 'grid' && activeTab.table) browseIn(activeTab.id, activeTab.table, 0);
+  }, [activeTab, setDatabase, browseIn]);
 
   const showEditor = activeTab?.kind === 'editor';
 

@@ -29,12 +29,6 @@ export interface Tab {
    */
   connectionId: string;
   kind: 'editor' | 'grid';
-  /**
-   * A tab binds to a database, not merely to the connection. This is the whole
-   * point of the feature: switching database to check one thing must not drag
-   * every other tab along with it.
-   */
-  database: string | null;
   /** Which table a `grid` tab is browsing. Absent on an `editor` tab. */
   table?: string;
   /**
@@ -78,16 +72,19 @@ interface TabsState {
    */
   activeTabId: Record<string, string | null>;
   /**
-   * What a tab opens on when the caller has nothing better to offer, per
-   * connection.
+   * The database each connection is "on", one value shared by every tab of it
+   * and changed only through the picker.
    *
-   * Kept rather than derived, because the case that needs it is the one where
-   * there is nothing to derive it from: close every tab and the empty state has
-   * no active tab whose database a new one could inherit. Without this, the new
-   * tab points at nothing, the picker has nothing to show, and the only way out
-   * of the app's own empty state is to reconnect.
+   * Kept here rather than on a tab, and rather than derived from one: a tab
+   * used to carry its own database, on the theory that switching it to check
+   * one thing should not drag every other tab along. In practice that read as
+   * the picker and the tree jumping between databases as you switched tabs,
+   * which cost more confusion than the isolation was worth. See
+   * `docs/decisions.md`. Being connection-scoped rather than tab-scoped is
+   * also what answers the picker before any tab exists at all: close every
+   * tab and there is still a connection, and still a value here for it.
    */
-  defaultDatabase: Record<string, string | null>;
+  database: Record<string, string | null>;
   /** Per connection: a second server's first query is Query 1, not Query 4. */
   nextQueryNo: Record<string, number>;
   /**
@@ -107,7 +104,7 @@ interface TabsState {
 const initialState: TabsState = {
   tabs: [],
   activeTabId: {},
-  defaultDatabase: {},
+  database: {},
   nextQueryNo: {},
   sqlByTab: {},
   nextId: 1,
@@ -142,7 +139,6 @@ const tabsSlice = createSlice({
       action: PayloadAction<{
         connectionId: string;
         kind: Tab['kind'];
-        database?: string | null;
         table?: string;
         schema?: string;
         /**
@@ -154,10 +150,6 @@ const tabsSlice = createSlice({
       }>
     ) {
       const { connectionId, kind, table, schema, title } = action.payload;
-      // A tab opens on the database the caller named, and on this connection's
-      // default when it named none -- which is the empty state's case, and the
-      // one that strands you if the answer is null.
-      const database = action.payload.database ?? state.defaultDatabase[connectionId] ?? null;
 
       if (kind === 'grid') {
         // The caller's label when it has one -- it knows which schema goes
@@ -166,17 +158,17 @@ const tabsSlice = createSlice({
         // so two schemas holding a `users` each must not open two tabs nothing
         // tells apart.
         const name = table === undefined ? 'Table' : relationName({ table, schema });
-        mint(state, { connectionId, kind, database, table, schema, title: title ?? name });
+        mint(state, { connectionId, kind, table, schema, title: title ?? name });
         return;
       }
       // A named editor tab keeps its name and leaves the query counter alone; an
       // unnamed one is the next Query N.
       if (title) {
-        mint(state, { connectionId, kind, database, title });
+        mint(state, { connectionId, kind, title });
         return;
       }
       const no = state.nextQueryNo[connectionId] ?? 1;
-      mint(state, { connectionId, kind, database, title: `Query ${no}` });
+      mint(state, { connectionId, kind, title: `Query ${no}` });
       state.nextQueryNo[connectionId] = no + 1;
     },
 
@@ -262,21 +254,12 @@ const tabsSlice = createSlice({
       if (tab) state.activeTabId[tab.connectionId] = tab.id;
     },
 
-    databaseChanged(state, action: PayloadAction<{ tabId: string; database: string }>) {
-      const tab = state.tabs.find((t) => t.id === action.payload.tabId);
-      if (tab) tab.database = action.payload.database;
-    },
-
     /**
-     * The picker moved with no tab to point -- the empty state, where there is
-     * nothing for `databaseChanged` to target. Writes the same field a fresh tab
-     * already falls back to (`tabOpened` reads `defaultDatabase[connectionId]`
-     * when its caller names none), so picking a database from the empty state
-     * and then clicking `+` lands the new tab on it rather than on whatever the
-     * session opened on.
+     * The picker moved. One action for every case -- with a tab open or
+     * without -- because the database is the connection's, not any one tab's.
      */
-    defaultDatabaseChanged(state, action: PayloadAction<{ connectionId: string; database: string }>) {
-      state.defaultDatabase[action.payload.connectionId] = action.payload.database;
+    databaseChanged(state, action: PayloadAction<{ connectionId: string; database: string }>) {
+      state.database[action.payload.connectionId] = action.payload.database;
     },
 
     /**
@@ -318,7 +301,7 @@ const tabsSlice = createSlice({
         }
         state.tabs = state.tabs.filter((t) => t.connectionId !== connectionId);
         delete state.activeTabId[connectionId];
-        delete state.defaultDatabase[connectionId];
+        delete state.database[connectionId];
         delete state.nextQueryNo[connectionId];
         // `nextId` deliberately survives, and now for two reasons. A query still
         // in flight from a closed connection must not land its result on
@@ -338,12 +321,11 @@ const tabsSlice = createSlice({
         // `activeTabId` are keyed by the ones minted here, and `activeIndex`
         // names the front tab by position.
         if (session && session.tabs.length > 0) {
-          state.defaultDatabase[connectionId] = session.defaultDatabase ?? fallbackDatabase;
+          state.database[connectionId] = session.database ?? fallbackDatabase;
           const ids = session.tabs.map((tab) =>
             mint(state, {
               connectionId,
               kind: tab.kind,
-              database: tab.database,
               table: tab.table,
               schema: tab.schema,
               filter: tab.filter ?? undefined,
@@ -365,14 +347,14 @@ const tabsSlice = createSlice({
         // Nothing to restore: one blank query tab on something sensible, so the
         // editor is usable immediately.
         state.nextQueryNo[connectionId] = 1;
-        state.defaultDatabase[connectionId] = fallbackDatabase;
-        mint(state, { connectionId, kind: 'editor', database: fallbackDatabase, title: 'Query 1' });
+        state.database[connectionId] = fallbackDatabase;
+        mint(state, { connectionId, kind: 'editor', title: 'Query 1' });
         state.nextQueryNo[connectionId] = 2;
       });
   },
 });
 
-export const { tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, defaultDatabaseChanged, sqlChanged, tabRenamed } =
+export const { tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged, tabRenamed } =
   tabsSlice.actions;
 export const tabsReducer = tabsSlice.reducer;
 
@@ -390,15 +372,10 @@ export const selectActiveTab = (s: RootState): Tab | null => {
   return s.tabs.tabs.find((t) => t.id === id) ?? null;
 };
 
-/**
- * What the active connection opens a tab on when nothing else says -- the same
- * field `tabOpened` itself falls back to. The explorer reads this behind
- * `activeTab?.database` so the tree has an answer with no tab open at all, not
- * only once one exists to ask.
- */
-export const selectDefaultDatabase = (s: RootState): string | null => {
+/** The active connection's database -- one value, whether or not a tab is open to ask on its behalf. */
+export const selectDatabase = (s: RootState): string | null => {
   const connectionId = s.session.activeConnectionId;
-  return connectionId ? (s.tabs.defaultDatabase[connectionId] ?? null) : null;
+  return connectionId ? (s.tabs.database[connectionId] ?? null) : null;
 };
 
 export function useTabs() {
@@ -407,6 +384,7 @@ export function useTabs() {
   const tabs = useAppSelector(selectTabs);
   const activeTab = useAppSelector(selectActiveTab);
   const activeTabId = activeTab?.id ?? null;
+  const database = useAppSelector(selectDatabase);
 
   /*
    * The connection is read here rather than taken from the component, which is
@@ -416,10 +394,10 @@ export function useTabs() {
    * the only way `tabsSlice` can learn which connection a tab belongs to.
    */
   const openGridTab = useCallback(
-    (database: string, { table, schema }: Relation, title?: string): string | null => {
+    ({ table, schema }: Relation, title?: string): string | null => {
       const id = store.getState().session.activeConnectionId;
       if (!id) return null;
-      dispatch(tabOpened({ connectionId: id, kind: 'grid', database, table, schema, title }));
+      dispatch(tabOpened({ connectionId: id, kind: 'grid', table, schema, title }));
       return store.getState().tabs.activeTabId[id]!;
     },
     [dispatch, store]
@@ -429,6 +407,8 @@ export function useTabs() {
     tabs,
     activeTabId,
     activeTab,
+    /** The active connection's database -- one value, shared by every tab of it. */
+    database,
     /**
      * Returns the id the reducer minted, because the caller has to browse into
      * the tab it just opened and only the reducer knows the id.
@@ -440,16 +420,15 @@ export function useTabs() {
      */
     openGridTab,
     /**
-     * On the database given, or this connection's default when there is no tab to
-     * inherit from. Returns the minted id -- the same reason `openGridTab` does:
-     * opening a definition tab means seeding its editor text right after, and only
-     * the reducer knows the id. `title` names a tab opened *for* something.
+     * Returns the minted id -- the same reason `openGridTab` does: opening a
+     * definition tab means seeding its editor text right after, and only the
+     * reducer knows the id. `title` names a tab opened *for* something.
      */
     openEditorTab: useCallback(
-      (database?: string | null, title?: string): string | null => {
+      (title?: string): string | null => {
         const id = store.getState().session.activeConnectionId;
         if (!id) return null;
-        dispatch(tabOpened({ connectionId: id, kind: 'editor', database, title }));
+        dispatch(tabOpened({ connectionId: id, kind: 'editor', title }));
         return store.getState().tabs.activeTabId[id]!;
       },
       [dispatch, store]
@@ -484,19 +463,16 @@ export function useTabs() {
     ),
     activateTab: useCallback((id: string) => dispatch(tabActivated({ id })), [dispatch]),
     renameTab: useCallback((id: string, title: string) => dispatch(tabRenamed({ id, title })), [dispatch]),
-    selectDatabase: useCallback(
-      (tabId: string, database: string) => dispatch(databaseChanged({ tabId, database })),
-      [dispatch]
-    ),
     /**
-     * The picker moved with no tab open to point at -- reads the connection off
-     * state the way `openGridTab` does, since there is nothing for a caller in
-     * the empty state to hand it.
+     * The picker moved. Reads the connection off state the way `openGridTab`
+     * does, since there is nothing for a caller to hand it -- and now that the
+     * database is the connection's, not a tab's, that is true whether or not a
+     * tab happens to be open.
      */
-    setDefaultDatabase: useCallback(
+    setDatabase: useCallback(
       (database: string) => {
         const id = store.getState().session.activeConnectionId;
-        if (id) dispatch(defaultDatabaseChanged({ connectionId: id, database }));
+        if (id) dispatch(databaseChanged({ connectionId: id, database }));
       },
       [dispatch, store]
     ),

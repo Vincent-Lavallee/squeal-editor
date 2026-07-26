@@ -661,10 +661,10 @@ describe('saved sessions', () => {
   // The store keeps the snapshot verbatim and never parses it -- the UI owns the
   // shape -- so the tests treat it as the opaque string it is.
   const SNAPSHOT = JSON.stringify({
-    tabs: [{ kind: 'editor', database: FIXTURE_DB, title: 'Query 1', sql: 'select 1' }],
+    tabs: [{ kind: 'editor', title: 'Query 1', sql: 'select 1' }],
     activeIndex: 0,
     nextQueryNo: 2,
-    defaultDatabase: FIXTURE_DB,
+    database: FIXTURE_DB,
   });
 
   // Connecting is how the session comes back, so this actually opens PG. These
@@ -695,7 +695,7 @@ describe('saved sessions', () => {
   test('saving again replaces the snapshot rather than failing on the primary key', async () => {
     const saved = await save({ name: 'session-replace', config: PG_SERVER, password: { mode: 'none' } });
     await h.ok('db.session.save', { savedConnectionId: saved.id, session: SNAPSHOT });
-    const next = JSON.stringify({ tabs: [], activeIndex: null, nextQueryNo: 1, defaultDatabase: null });
+    const next = JSON.stringify({ tabs: [], activeIndex: null, nextQueryNo: 1, database: null });
     await h.ok('db.session.save', { savedConnectionId: saved.id, session: next });
     expect(await sessionOf(saved.id)).toBe(next);
     await h.ok('db.saved.delete', { id: saved.id });
