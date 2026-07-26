@@ -47,6 +47,13 @@ export interface ConnectionHandle {
   listDatabases(): Promise<string[]>;
   listTables(database: string): Promise<TableInfo[]>;
   listColumns(database: string, relation: Relation): Promise<ColumnInfo[]>;
+  /**
+   * A table's row identity alone -- the same `Driver.rowKey` call `browse` and
+   * `write` already make, asked for without paging or writing anything. Backs
+   * `db.tableKey`, which lets a hand-typed query be checked against a table's
+   * key without the extension re-authoring the statement the user ran.
+   */
+  rowKey(database: string, relation: Relation): Promise<string[] | null>;
   query(database: string | undefined, sql: string): Promise<QueryOutcome>;
   /**
    * One page of a table, optionally narrowed by `filter`. A builder filter's
@@ -165,6 +172,10 @@ function build<C>(
 
     async listColumns(database, relation) {
       return driver.listColumns(await getClient(database), database, relation);
+    },
+
+    async rowKey(database, relation) {
+      return driver.rowKey(await getClient(database), database, relation);
     },
 
     async query(database, sql) {

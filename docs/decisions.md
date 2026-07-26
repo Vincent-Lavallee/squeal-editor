@@ -3107,3 +3107,86 @@ principled way to ask a user-managed list "which of these is the dangerous
 one." A renamed or custom production-like environment simply does not trigger
 the default; that is the cost of naming freedom stated plainly rather than
 hidden behind a heuristic that would guess wrong at least as often as right.
+
+---
+
+## A hand-typed query is editable when its own result carries the key, not when it is shaped `SELECT *`
+
+**Why.** Editing was offered only for a table opened from the tree, because
+that path alone gave the grid a row identity. The first design considered
+here detected a narrow shape — `SELECT * FROM table`, nothing else — and fed
+it to `browseTable` so it would page and edit exactly like the tree's own
+open. **Rejected**, on the user's own correction mid-build: it made every
+column list, `WHERE`, `ORDER BY` or `LIMIT` the difference between an
+editable grid and a read-only one, for a reason that has nothing to do with
+whether the row can actually be identified. The question that matters is
+narrower and more useful: *does this result already carry the table's key
+columns?* `SELECT id, name FROM users WHERE active` answers yes; `SELECT
+name FROM users` answers no — and only the second should have to explain
+itself.
+
+**The shape is `db.query`, run exactly as typed, plus a side lookup.**
+`runQuery` (`resultsSlice.ts`) scans the SQL for one named table
+(`detectSingleTable`, `common/db/`) and, only then, asks the extension for
+that table's row identity alone (`db.tableKey`, backed by `Driver.rowKey` —
+the same call `db.browse`/`db.write` already make, never a second way to
+compute it). This is deliberately not a repaging: `db.query` still runs the
+statement byte-for-byte, so a `WHERE`, a `LIMIT`, an `ORDER BY` all reach the
+server unchanged. `db.browse`'s own rule — "the UI may not author SQL, and
+the extension never rewrites the user's" — holds exactly as before; this adds
+a read of the catalog beside it, not a rewrite of the query.
+
+**`detectSingleTable` is stricter than `editor/sqlScope.ts`, on purpose.**
+The completion scanner is right to be loose — a table it misses just costs an
+absent suggestion. Here a wrong answer costs a write landing on a table the
+query never really touched, so every check fails toward "not simple": a
+`WITH`, any `JOIN`, more than one `FROM` (a subquery, a CTE, a UNION), or an
+old-style comma join all say no rather than guess. A `schema.table` form is
+only accepted when the connection's dialect actually has schemas (Postgres);
+MySQL's database *is* its schema, so a `other.table` there names a second
+database this app has no way to check the key columns of, and guessing would
+mean silently trusting the wrong catalog entry.
+
+**A real key that was simply not selected gets its own message, not silent
+refusal.** `useResults` checks the fetched key columns against
+`result.columns`: present, and the grid behaves exactly as a browsed table
+does; a real key that exists but was left out of the `SELECT` list says so
+("Select `id` to make this result editable.") rather than leaving the user to
+guess why Save never appears. A table with no key at all still gets the
+existing "no primary or unique key" message — that fact does not change
+depending on how the table was reached.
+
+**That message shows only on an actual edit attempt, not unprompted —
+changed after the first cut shipped it in the results bar alongside
+`readOnlyReason`.** The two read the same at a glance but are not the same
+kind of fact: a keyless table or a read-only connection is true regardless of
+what anyone does, so stating it up front is simply informative. "You didn't
+select the key" is true only of a query that was never meant to be edited in
+the first place — most `SELECT` statements are read for a reason that has
+nothing to do with editing — and greeting every one of them with a warning
+about an id column nobody asked to change reads as the app scolding a report.
+`missingKeyHint` is exported separately from `readOnlyReason` for exactly
+this split, and `ResultsTable.startEdit` is the one place that turns it into
+something shown: a double-click on a non-editable cell displays it for a few
+seconds, the same shape a toast takes, then lets it go. Nothing else may
+trigger it — the hint answers a question only a real attempt asked.
+
+**The lookup rides inside the same thunk invocation as the query, never a
+second dispatched action.** `browseTable` elsewhere accepts a documented
+last-arrival-wins race — a slow page landing after the picker moved on is
+merely a wrong render, corrected by the next fetch. A stale answer here would
+be worse: it would let an old table's key columns gate a *write* issued
+against whatever the grid now shows. Folding the `db.tableKey` call into
+`runQuery` and returning both in one `fulfilled` payload makes that
+unreachable by construction — an older run's answer can only ever apply
+together with that same run's result, never mixed with a newer one.
+
+**Paging and the filter bar are deliberately not extended to this path.**
+Both are gated on the tab being a `grid` tab (`gridTable` in `useResults`,
+`FilterBar`'s own early return); a hand query stays an `editor` tab, so
+neither shows. This is not an oversight to fix later: paging a query the user
+wrote by hand would mean the extension silently adding a `LIMIT/OFFSET` to
+SQL it promised never to rewrite, and a filter bar implies a `WHERE` this app
+can re-author — neither is true of a hand-typed statement. `Save` on this
+path re-runs the original SQL rather than re-browsing, for the same reason:
+there is no page to read back, only the statement that produced this one.

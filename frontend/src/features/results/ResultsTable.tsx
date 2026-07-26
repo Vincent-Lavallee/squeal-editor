@@ -40,7 +40,7 @@ const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
 
 export default function ResultsTable() {
-  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey } = useResults();
+  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey } = useResults();
   const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -50,8 +50,17 @@ export default function ResultsTable() {
   const [jsonEditing, setJsonEditing] = useState<Cell | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  // Set only by a blocked edit attempt (`startEdit` below), never by
+  // `missingKeyHint` changing on its own -- an unattempted edit says nothing.
+  const [editBlockedHint, setEditBlockedHint] = useState<string | null>(null);
+  const editBlockedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { setSelected(new Set()); setSelectedCell(null); setEditing(null); setJsonEditing(null); setMenu(null); anchor.current = null; }, [result]);
+  useEffect(() => {
+    setSelected(new Set()); setSelectedCell(null); setEditing(null); setJsonEditing(null); setMenu(null); anchor.current = null;
+    setEditBlockedHint(null);
+  }, [result]);
+
+  useEffect(() => () => { if (editBlockedTimeout.current) clearTimeout(editBlockedTimeout.current); }, []);
 
   useEffect(() => {
     if (!running || !startedAt) { setElapsed(0); return; }
@@ -148,7 +157,19 @@ export default function ResultsTable() {
   const applyNull = (row: number, col: number) => { if (isKeyCol(col)) return; if (original(row, col) === null) clearCell(row, col); else setCell(row, col, null); };
 
   const startEdit = (r: number, c: number) => {
-    if (!editable || isDeleted(r)) return;
+    if (isDeleted(r)) return;
+    if (!editable) {
+      // Only a real attempt earns the hint -- `missingKeyHint` has been true
+      // since the query ran, and showing it unprompted would read as the app
+      // scolding a result nobody meant to edit. Shown for a few seconds, the
+      // same shape a toast would take, rather than left to sit in the bar.
+      if (missingKeyHint) {
+        setEditBlockedHint(missingKeyHint);
+        if (editBlockedTimeout.current) clearTimeout(editBlockedTimeout.current);
+        editBlockedTimeout.current = setTimeout(() => setEditBlockedHint(null), 4000);
+      }
+      return;
+    }
     if (isJsonCol(c)) setJsonEditing({ row: r, col: c });
     else setEditing({ row: r, col: c });
   };
@@ -218,7 +239,13 @@ export default function ResultsTable() {
             which table this is, and one place names a thing. */}
         <span>
           {browse ? `rows ${firstRow}–${browse.offset + count}` : `${count} row${count === 1 ? '' : 's'}`} · {result.durationMs} ms
-          {readOnlyReason && <span data-testid="results-ro" style={{ color: t.TEXT_FAINT }}> · {readOnlyReason}</span>}
+          {/* `readOnlyReason` is a standing fact about the connection or the
+              table, shown unprompted; `editBlockedHint` is the opposite -- it
+              exists only because a double-click just asked, and it goes away
+              on its own, see `startEdit`. The two never apply at once. */}
+          {(readOnlyReason || editBlockedHint) && (
+            <span data-testid="results-ro" style={{ color: t.TEXT_FAINT }}> · {readOnlyReason ?? editBlockedHint}</span>
+          )}
         </span>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, marginLeft: 'auto' }}>

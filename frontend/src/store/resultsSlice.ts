@@ -2,6 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 
 import type { ColumnInfo, QueryResult, RowDelete, RowEdit, TableFilter } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
+import { detectSingleTable } from '../common/db/detectSingleTable.ts';
 import { disconnect } from './sessionSlice.ts';
 import { tabsClosed } from './tabsSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
@@ -48,9 +49,39 @@ interface BrowseState {
   filter: TableFilter | null;
 }
 
+/**
+ * A hand-typed query's row identity, when `runQuery` could place it: its SQL
+ * scanned as reading exactly one named table (`detectSingleTable`), which
+ * answered with a real key or `null` for one with none.
+ *
+ * Separate from `BrowseState` on purpose, not a variant of it -- `browse`
+ * means "the extension wrote this SQL and it pages", and a hand query never
+ * gets either of those (see `db.query` above). `editable`/`readOnlyReason` in
+ * `useResults` additionally have to check the key is actually present among
+ * `result.columns`: unlike a browsed page (always `SELECT *`), a hand query
+ * may have left it out, which is the one case this app can name for the user
+ * rather than silently refusing.
+ */
+interface EditTarget {
+  table: string;
+  schema?: string;
+  keyColumns: string[] | null;
+}
+
 export interface ResultsState {
   result: QueryResult | null;
   browse: BrowseState | null;
+  editTarget: EditTarget | null;
+  /**
+   * Bumped every time `runQuery` is dispatched for this tab, whatever the
+   * outcome. `useResults` folds it into the staging page key for a query-edited
+   * grid (`table@query@runSeq`), which has no offset or filter of its own to
+   * tell two runs apart the way a browsed page's key does -- rows are
+   * positional and the server's order is not guaranteed stable between runs
+   * (see `db.browse`'s own "no ORDER BY" rule), so re-running the identical SQL
+   * must still discard whatever was staged against the last answer.
+   */
+  runSeq: number;
   error: string | null;
   running: boolean;
   /** `Date.now()` when the query was dispatched, so the UI can show elapsed time. */
@@ -80,7 +111,8 @@ type ResultsByTab = Record<string, ResultsState>;
 
 const initialState: ResultsByTab = {};
 
-const blank = (): ResultsState => ({ result: null, browse: null, error: null, running: false, startedAt: null, columns: [] });
+const blank = (): ResultsState =>
+  ({ result: null, browse: null, editTarget: null, runSeq: 0, error: null, running: false, startedAt: null, columns: [] });
 
 /**
  * Reads its target off the state rather than taking it as an argument. That is
@@ -106,15 +138,43 @@ export const runQuery = createAppThunk(
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
     if (!tab) return rejectWithValue('That tab is gone.');
     const database = getState().tabs.database[tab.connectionId];
+    const sql = arg.sql.trim();
 
     const controller = new AbortController();
     queryControllers.set(arg.tabId, controller);
     try {
-      return await call('db.query', {
+      const result = await call('db.query', {
         connectionId: tab.connectionId,
         database: database ?? undefined,
-        sql: arg.sql.trim(),
+        sql,
       }, 60_000, controller.signal);
+
+      // A hand-typed query is editable exactly when its own SELECT named one
+      // table and that table's row identity happens to be among the columns it
+      // asked for -- see `detectSingleTable`. Fetched here, inside the same
+      // thunk invocation as the query itself, rather than as a follow-up
+      // dispatch: `result` and `editTarget` land in one `fulfilled` payload, so
+      // a slow catalog answer can never apply itself under a query that has
+      // since been re-run -- the usual last-arrival-wins race `browseTable`
+      // accepts elsewhere would otherwise let a stale table's key columns gate
+      // a save issued against whatever the grid now shows.
+      let editTarget: EditTarget | null = null;
+      if (database) {
+        const schemaCapable = getState().session.connections[tab.connectionId]?.defaultSchema !== undefined;
+        const relation = detectSingleTable(sql, schemaCapable);
+        if (relation) {
+          try {
+            const { keyColumns } = await call('db.tableKey', { connectionId: tab.connectionId, database, ...relation });
+            editTarget = { ...relation, keyColumns };
+          } catch {
+            // The name the scan found is not one the catalog knows -- a CTE, a
+            // view under a misread name -- so this stays not editable, the
+            // same as any query the scan cannot place at all.
+          }
+        }
+      }
+
+      return { result, editTarget };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
     } finally {
@@ -202,7 +262,7 @@ export const browseTable = createAppThunk(
 export const saveEdits = createAppThunk(
   'results/saveEdits',
   async (
-    arg: { tabId: string; table: string; edits: RowEdit[]; deletes: RowDelete[] },
+    arg: { tabId: string; table: string; schema?: string; edits: RowEdit[]; deletes: RowDelete[] },
     { getState, rejectWithValue }
   ) => {
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
@@ -215,7 +275,11 @@ export const saveEdits = createAppThunk(
         connectionId: tab.connectionId,
         database,
         table: arg.table,
-        schema: tab.schema,
+        // Off the tab by default, the same rule `browseTable` follows for a
+        // grid tab's own schema -- but a hand query's detected table can name
+        // one the tab (an editor tab) never carries, so the caller may
+        // override it. See `EditTarget.schema`.
+        schema: arg.schema ?? tab.schema,
         edits: arg.edits,
         deletes: arg.deletes,
       });
@@ -261,6 +325,10 @@ const resultsSlice = createSlice({
         s.running = true;
         s.startedAt = Date.now();
         s.error = null;
+        // Bumped on every attempt, not just a successful one: a page key built
+        // from it must stop matching the moment a new run starts, whether or
+        // not this one ever reaches `fulfilled`.
+        s.runSeq += 1;
       })
       .addCase(runQuery.fulfilled, (state, action) => {
         const s = state[action.meta.arg.tabId];
@@ -270,9 +338,10 @@ const resultsSlice = createSlice({
         if (!s) return;
         s.running = false;
         s.startedAt = null;
-        s.result = action.payload;
+        s.result = action.payload.result;
         // The grid now holds SQL the user wrote, which has no page N to step to.
         s.browse = null;
+        s.editTarget = action.payload.editTarget;
       })
       .addCase(runQuery.rejected, (state, action) => {
         const s = state[action.meta.arg.tabId];
@@ -281,6 +350,7 @@ const resultsSlice = createSlice({
         s.startedAt = null;
         s.result = null;
         s.browse = null;
+        s.editTarget = null;
         s.error = action.payload ?? 'The query failed.';
       })
       .addCase(browseTable.pending, (state, action) => {
@@ -306,6 +376,9 @@ const resultsSlice = createSlice({
           columnInfo: page.columnInfo,
           filter,
         };
+        // A browsed page has its own row identity (`browse.keyColumns` above);
+        // a hand query's detected one does not apply to it.
+        s.editTarget = null;
         // Held apart from the page, so a later failure does not take it -- see
         // `ResultsState.columns`. Only a successful page may replace it.
         if (page.columnInfo.length > 0) s.columns = page.columnInfo;

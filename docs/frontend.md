@@ -280,12 +280,46 @@ browse. See `docs/decisions.md`.
 ## The editable grid
 
 A browsed grid can be edited: change a cell, delete a row, copy selected rows as
-TSV, and one **Save** issues the batch. It is offered only in browse mode and only
-when the extension gave the page a row identity (`browse.keyColumns`) *and* the
+TSV, and one **Save** issues the batch. It is offered in browse mode when the
+extension gave the page a row identity (`browse.keyColumns`) *and* the
 connection is not read-only — otherwise the grid stays read-only and the results
 bar says why. `useResults` computes `editable`/`readOnlyReason` and is the whole
 surface; `ResultsTable` and its context menu touch neither `dispatch` nor the
 context directly, the same feature-hook rule as everywhere else.
+
+**A hand-typed query is the second way in, gated on a different question.**
+Browsing already knows its table; a query in `EditorPane` does not, so
+`useResults.run` (via `runQuery` in `resultsSlice.ts`) scans the SQL for the
+one table its `FROM` names (`detectSingleTable`, `common/db/`) and asks the
+extension for that table's row identity alone (`db.tableKey`) — no paging, no
+rewriting the statement, which still runs exactly as typed through `db.query`.
+The table's key existing is not enough on its own: `queryEditable` in
+`useResults` additionally checks that every key column the extension named is
+actually present in `result.columns`, since a hand query, unlike a browsed
+page, may not have selected it. Three outcomes, two different renders: the
+key is there and the grid behaves exactly as a browsed table would; the table
+has no key at all, same message as a keyless browsed table, shown unprompted
+in the results bar (`readOnlyReason`) because it is a standing fact about the
+table. The third — a real key that exists but was simply not selected — is
+not: `missingKeyHint` carries that message separately and `readOnlyReason`
+never includes it, because it is true only of *this* query and stating it
+unprompted would read as the app scolding a result nobody meant to edit (an
+aggregate, a report). `ResultsTable.startEdit` shows it only when a
+double-click actually asks — a few seconds in the same slot `readOnlyReason`
+would use, cleared by a timeout or by the next result. See `docs/decisions.md`
+for why this replaced an earlier, narrower design that only recognised
+`SELECT * FROM table` verbatim, and why the `db.tableKey` fetch rides inside
+the same `runQuery` dispatch rather than a follow-up one.
+
+**Neither paging nor the filter bar follow onto this path.** Both stay gated
+on the tab being a `grid` tab (`gridTable`, `FilterBar`'s own early return),
+so a hand query's grid never grows a pager or a `WHERE` builder — extending
+either would mean the extension silently rewriting a statement it promised
+to run as written. `Save` here re-runs the original SQL instead of
+re-browsing a page, since there is no page to read back — `useResults` reads
+the tab's current text off `tabs.sqlByTab` for exactly that. Copy-as-SQL and
+FK navigation stay gated on `browse !== null` too, unchanged: they need a
+`columnInfo` this path never fetches.
 
 **A cell can be selected instead of a row, and the two are mutually exclusive** —
 selecting one clears the other, both directions, so Ctrl+C keeps meaning "copy

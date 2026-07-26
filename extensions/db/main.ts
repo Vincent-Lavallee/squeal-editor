@@ -125,6 +125,10 @@ const COMMANDS: Handlers = {
     return { columns: await getConnection(connectionId).listColumns(database, { table, schema }) };
   },
 
+  async 'db.tableKey'({ connectionId, database, table, schema }) {
+    return { keyColumns: await getConnection(connectionId).rowKey(database, { table, schema }) };
+  },
+
   async 'db.query'({ connectionId, database, sql }) {
     const conn = getConnection(connectionId);
     const startedAt = Date.now();

@@ -15,13 +15,6 @@ Things that already work, but not well enough.
 
 - **Red delete button** — The delete button in the connection list should be red to signal a destructive action.
 
-- **Edit results from manual SQL** — Results are only editable when browsing a
-  table opened from the tree, because the system needs a table to write back to
-  and key columns to target. Typing `SELECT * FROM some_table` by hand gives the
-  same result with none of the editing. Detect simple single-table `SELECT *`
-  queries — parse the table name, fetch the key columns, and make the grid
-  editable exactly as if the table had been opened from the explorer.
-
 - **Multi-cell selection** — Copying more than one value at a time means
   either a whole row via the gutter or a single cell — there is no way to
   select a rectangle of cells. Unify `selectedCell` into the same range

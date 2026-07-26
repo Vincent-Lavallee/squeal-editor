@@ -427,8 +427,9 @@ takes `SHOW CREATE TRIGGER`/`FUNCTION`/`PROCEDURE` verbatim, the same as
 `db.write` applies a browsed grid's staged edits and deletes. It exists for the
 same reason `db.browse` does: writing back means authoring `UPDATE`/`DELETE` SQL,
 quoted per engine, and only this side may — the UI names a table and hands over
-values, never SQL. It is offered *only* in browse mode, because `db.query` runs
-the user's statement as written and the extension will not rewrite it.
+values, never SQL. `db.query` itself is never rewritten to make this possible —
+a hand-typed query still runs exactly as given — but its *result* may still be
+writable: see *A hand-typed query's row identity* below.
 
 **Row identity is the extension's to decide, not the UI's.** `Driver.rowKey`
 answers a table's identifying columns — the primary key, else a unique index over
@@ -441,6 +442,21 @@ over it targets both). It is per-engine like every catalog query: MySQL reads
 `db.write` refuses such a table outright — it recomputes the key itself and does
 not trust one from the UI, so a keyless table cannot be written even if a caller
 supplies column names.
+
+### A hand-typed query's row identity
+
+`db.tableKey` answers the same `Driver.rowKey` call alone, without paging or
+writing anything — `{ keyColumns: string[] | null }` for a named table. It
+exists because `db.query` carries no table name for a row identity to ride
+along with the way `db.browse`'s page does: the UI scans a hand-typed query
+for the one table its `FROM` names and asks this separately, once, to learn
+whether the query's own result happens to carry that table's key. A name the
+scan cannot place in the catalog (a CTE, a misread alias) answers `null` the
+same as any other keyless table — never a throw, for `db.columns`'s reason:
+the caller is reading a query as it stands, and a name that is not a real
+table is the normal case here, not an exceptional one. See `docs/frontend.md`
+and `docs/decisions.md` for the UI-side detection and why it is stricter than
+the editor's completion scanner.
 
 Four things are load-bearing:
 

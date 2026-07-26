@@ -648,6 +648,25 @@ describe.each([
       expect((await browse('active_users')).keyColumns).toBeNull();
     });
 
+    test('db.tableKey answers the same identity without paging or writing', async () => {
+      // Backs a hand-typed query's editability: the UI asks this once it has
+      // scanned the query for the one table its FROM names, since db.query
+      // carries no table name for the identity to ride along with the way
+      // db.browse's page does.
+      const tableKey = async (table: string): Promise<string[] | null> =>
+        ((await h.ok('db.tableKey', { connectionId, database: fixtureDb, table })) as { keyColumns: string[] | null })
+          .keyColumns;
+
+      expect(await tableKey('users')).toEqual(['id']);
+      expect(await tableKey('tags')).toEqual(['label']);
+      expect(await tableKey('logs')).toBeNull();
+      // A name the catalog has never heard of answers null rather than
+      // throwing -- the same "not found is the normal case" rule db.columns
+      // already follows, and what lets a hand-typed query's misdetected table
+      // name stay silently unwritable instead of failing the query it rode in on.
+      expect(await tableKey('does_not_exist')).toBeNull();
+    });
+
     test('browse carries the columns and their types for the grid header', async () => {
       // The header shows a column's type; it comes back with the page in ordinal
       // order, each carrying the engine's own rendering of the type.

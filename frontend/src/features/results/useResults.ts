@@ -28,8 +28,12 @@ import { EMPTY_PENDING, useResultsView, type FilterDraft } from './ResultsContex
  * The editable surface is layered on top: the staged edits live in
  * `ResultsContext` (they have not crossed the bridge), and this hook joins them
  * to the browsed page so components touch neither `dispatch` nor the context
- * directly. Editing is offered only when the extension gave the page a row
- * identity *and* the connection is not read-only.
+ * directly. Editing is offered when the extension gave the page a row identity
+ * *and* the connection is not read-only -- either because it was browsed from
+ * the tree, or because a hand-typed query named exactly one table and its own
+ * result happens to carry that table's key columns (`editTarget`, set by
+ * `runQuery` in `resultsSlice.ts`). `readOnlyReason` is what tells the second
+ * case apart from the first when the key is real but simply was not selected.
  */
 export function useResults() {
   const dispatch = useAppDispatch();
@@ -51,29 +55,69 @@ export function useResults() {
    * edit away instead of a re-open.
    */
   const gridTable = activeTab?.kind === 'grid' ? (activeTab.table ?? null) : null;
-  const { result, browse, error, running, startedAt, columns } = useAppSelector(
+  const { result, browse, editTarget, runSeq, error, running, startedAt, columns } = useAppSelector(
     (s) => (activeTabId ? s.results[activeTabId] : undefined) ?? EMPTY
   );
 
-  // The page these staged indices are valid for. Null off browse mode, where
-  // there is nothing to edit and no offset to key by. The filter is part of the
-  // key because it changes *which rows* those indices name -- see `Pending`.
-  const page = browse ? `${browse.table}@${browse.offset}@${filterKey(browse.filter)}` : null;
+  /*
+   * A hand-typed query's row identity is a *candidate*, not a fact the way a
+   * browsed page's is: `editTarget.keyColumns` is what the table has, but the
+   * query the user actually wrote may not have selected it. `queryKeyMissing`
+   * is that check, made against the columns the query really answered with --
+   * only when it passes does the query behave like a browsed page for editing.
+   */
+  const queryKeyColumns = editTarget?.keyColumns ?? null;
+  const queryKeyMissing = queryKeyColumns !== null && !queryKeyColumns.every((name) => (result?.columns ?? []).includes(name));
+  const queryEditable = editTarget !== null && queryKeyColumns !== null && !queryKeyMissing;
+
+  // The one row identity in force, whichever source it came from: a browsed
+  // page always has all of its table's columns (it is `SELECT *`), a hand
+  // query only counts once its own result is checked to actually carry it.
+  const keyColumns = browse !== null ? browse.keyColumns : queryEditable ? queryKeyColumns : null;
+  const editTable = browse?.table ?? (queryEditable ? editTarget!.table : null);
+  const editSchema = browse ? undefined : (queryEditable ? editTarget!.schema : undefined);
+
+  // The page these staged indices are valid for. Null when there is nothing to
+  // edit. A browsed page keys by table/offset/filter; a hand query has none of
+  // those, so it keys by `runSeq` instead -- see `ResultsState.runSeq` for why
+  // re-running the identical SQL still has to count as a different page.
+  const page = browse
+    ? `${browse.table}@${browse.offset}@${filterKey(browse.filter)}`
+    : queryEditable
+      ? `${editTable}@query@${runSeq}`
+      : null;
   const pending = activeTabId && page ? view.pendingFor(activeTabId, page) : EMPTY_PENDING;
 
-  // A table with no primary or unique key has no row to target, and a read-only
-  // connection has the server refusing the write -- both leave the grid readable
-  // and say why. Read-only wins the message: it is the one the user can act on.
-  const keyColumns = browse?.keyColumns ?? null;
-  const editable = browse !== null && keyColumns !== null && !readOnly;
-  const readOnlyReason =
-    browse === null
-      ? null
-      : readOnly
-        ? 'This connection is read-only — unlock it in the status bar to edit.'
-        : keyColumns === null
+  // A table with no primary or unique key has no row to target, and a
+  // read-only connection has the server refusing the write regardless -- both
+  // are permanent facts about the connection or the table, true whether or not
+  // anyone has tried to edit yet, so both sit in the results bar unprompted.
+  // Read-only wins the message: it is the one reason the user can act on
+  // without changing what they asked for.
+  const hasEditCandidate = browse !== null || editTarget !== null;
+  const editable = keyColumns !== null && !readOnly;
+  const readOnlyReason = !hasEditCandidate
+    ? null
+    : readOnly
+      ? 'This connection is read-only — unlock it in the status bar to edit.'
+      : browse !== null
+        ? (browse.keyColumns === null ? 'This table has no primary or unique key, so it can’t be edited.' : null)
+        : queryKeyColumns === null
           ? 'This table has no primary or unique key, so it can’t be edited.'
           : null;
+
+  /**
+   * A real key that simply was not selected is a different kind of fact: it is
+   * true only of *this* query, and naming it unprompted reads as the app
+   * scolding a result that was never meant to be edited (an aggregate, a
+   * report). `ResultsTable` shows this only when a cell edit is actually
+   * attempted -- see `startEdit` there -- rather than folding it into
+   * `readOnlyReason` above, which the results bar renders unconditionally.
+   */
+  const missingKeyHint =
+    !readOnly && browse === null && queryKeyColumns !== null && queryKeyMissing
+      ? `Select ${queryKeyColumns.join(', ')} to make this result editable.`
+      : null;
 
   const run = useCallback(
     (sql: string) => {
@@ -211,13 +255,21 @@ export function useResults() {
     .filter((r) => !deletedSet.has(r) && Object.keys(pending.edits[r] ?? {}).length > 0);
   const dirtyCount = editedRows.length + deletedRows.length;
 
+  // A hand query has no page to step back to after Save -- only the statement
+  // to run again, the same way a browsed page re-reads itself. `tabs.sqlByTab`
+  // is app-level state, the same slice `selectActiveTab` above already reaches
+  // into, not a reach into the editor feature.
+  const sql = useAppSelector((s) => (activeTabId ? s.tabs.sqlByTab[activeTabId] : undefined));
+
   const save = useCallback(async () => {
-    if (!activeTabId || !browse || !page || !keyColumns || !result) return;
+    if (!activeTabId || !editTable || !page || !keyColumns || !result) return;
     if (dirtyCount === 0) return;
 
-    // The key's values come from the row as it was *browsed*, not from the edited
-    // cells: editing a key column changes what the row becomes, never which row
-    // the WHERE targets. Column names map to their position in this page's `SELECT *`.
+    // The key's values come from the row as it was *fetched*, not from the
+    // edited cells: editing a key column changes what the row becomes, never
+    // which row the WHERE targets. Column names map to their position in
+    // this page's own result -- a hand query's may not be `SELECT *`, but
+    // `queryEditable` already guarantees every key column is in it somewhere.
     const keyIndex = keyColumns.map((name) => result.columns.indexOf(name));
     const keyOf = (rowCells: CellValue[]): Record<string, CellValue> => {
       const k: Record<string, CellValue> = {};
@@ -234,22 +286,28 @@ export function useResults() {
 
     view.setSaving(activeTabId, true);
     view.setSaveError(activeTabId, null);
-    const action = await dispatch(saveEdits({ tabId: activeTabId, table: browse.table, edits, deletes }));
+    const action = await dispatch(saveEdits({ tabId: activeTabId, table: editTable, schema: editSchema, edits, deletes }));
     view.setSaving(activeTabId, false);
 
     if (saveEdits.fulfilled.match(action)) {
-      // The DB is the truth now: drop the staging and re-read the same page so the
-      // grid shows what actually landed (defaults filled in, triggers fired).
+      // The DB is the truth now: drop the staging and re-fetch so the grid
+      // shows what actually landed (defaults filled in, triggers fired).
       view.discard(activeTabId);
-      // Re-read the *same* page, filter included -- re-browsing unfiltered here
-      // would silently widen the grid the user is looking at after a save.
-      dispatch(browseTable({ tabId: activeTabId, table: browse.table, offset: browse.offset, filter: browse.filter }));
+      if (browse) {
+        // Re-read the *same* page, filter included -- re-browsing unfiltered
+        // here would silently widen the grid the user is looking at after a save.
+        dispatch(browseTable({ tabId: activeTabId, table: browse.table, offset: browse.offset, filter: browse.filter }));
+      } else if (sql !== undefined) {
+        // There is no page to re-read; re-running is the only "same view" a
+        // hand query has, the same reason it is what Save re-does for one.
+        dispatch(runQuery({ tabId: activeTabId, sql }));
+      }
     } else {
       // Beside the save bar, not in `error`: a failed save must leave the grid and
       // the edits the user is still holding on screen, not blank them.
       view.setSaveError(activeTabId, (action.payload as string | undefined) ?? 'Could not save the changes.');
     }
-  }, [activeTabId, browse, page, keyColumns, result, dirtyCount, editedRows, deletedRows, pending, view, dispatch]);
+  }, [activeTabId, browse, editTable, editSchema, page, keyColumns, result, dirtyCount, editedRows, deletedRows, pending, view, dispatch, sql]);
 
   /** Copy rows as tab-separated text -- a webview clipboard write, crossing nothing. */
   const copyRows = useCallback(
@@ -296,6 +354,9 @@ export function useResults() {
     // Editing surface. `pending` is what the grid reads its dirty state from.
     editable,
     readOnlyReason,
+    // Surfaced only on an actual edit attempt -- see `ResultsTable.startEdit` --
+    // never rendered unprompted the way `readOnlyReason` is.
+    missingKeyHint,
     keyColumns,
     // The browsed table's columns (types + primary-key flags) for the header;
     // empty for a query result, where there is no single table to describe. Null
@@ -474,4 +535,13 @@ function filterKey(filter: TableFilter | null): string {
  * reference, so returning a fresh object here would re-render on every action
  * the store ever sees.
  */
-const EMPTY = Object.freeze({ result: null, browse: null, error: null, running: false, startedAt: null, columns: [] });
+const EMPTY = Object.freeze({
+  result: null,
+  browse: null,
+  editTarget: null,
+  runSeq: 0,
+  error: null,
+  running: false,
+  startedAt: null,
+  columns: [],
+});

@@ -79,6 +79,23 @@ export interface Commands {
     res: QueryResult;
   };
   /**
+   * A table's row identity alone -- the same computation `db.browse` and
+   * `db.write` already make (`Driver.rowKey`), asked for on its own so a
+   * hand-typed query can be checked against it without the extension paging or
+   * re-authoring the statement the user actually ran.
+   *
+   * `db.query` runs the user's SQL as written; it does not carry a table name
+   * for this to ride along with the way `db.browse`'s page does, so the UI asks
+   * separately once it has scanned the query for the one table its `FROM`
+   * names. `null` means the table has no primary or unique key, the same
+   * meaning `TablePage.keyColumns` already carries -- there is one answer to
+   * "what identifies a row here", computed one way, whichever caller asks.
+   */
+  'db.tableKey': {
+    req: { connectionId: string; database: string; table: string; schema?: string };
+    res: { keyColumns: string[] | null };
+  };
+  /**
    * One page of a table, in the server's natural order. `offset` is the first
    * row wanted; the extension writes the SQL and reports the page size back.
    *

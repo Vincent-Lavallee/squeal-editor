@@ -14,6 +14,13 @@ the date they were finished.
   Existing connections keep their environment even if it is later removed from
   the list. Stored in the extension's SQLite store, like workspaces.
 
+- **2026-07-26** — **Edit results from manual SQL** — Results are only editable when browsing a
+  table opened from the tree, because the system needs a table to write back to
+  and key columns to target. Typing `SELECT * FROM some_table` by hand gives the
+  same result with none of the editing. Detect simple single-table `SELECT *`
+  queries — parse the table name, fetch the key columns, and make the grid
+  editable exactly as if the table had been opened from the explorer.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---
@@ -471,36 +478,21 @@ This is a record, not a plan. Nothing here is waiting on anything.
   hint that the name was copied.
 
 - **2026-07-25** — **Trigger and function definitions in the tree** — Checking what a trigger or
-  function actually does means leaving the app for another tool, because the tree
-  only knows tables and views. Nested each table's triggers under it (since a
-  trigger always belongs to exactly one table), and functions/procedures fold
-  into their schema's own heading where the engine has one (Postgres) — a schema
-  holding functions but no tables still gets a heading — falling back to a flat
-  "Functions" section only where nothing schema-groups them (MySQL, whose
-  database is its schema, or the tree's flat mode). Triggers and functions
-  each get their own context menu (Copy name, Open definition). Selecting a
-  trigger or function opens its definition the same way "Open definition"
-  does for a table.
-  Functions and procedures only apply where the engine has them — Postgres and
-  MySQL, not SQLite; triggers apply to all three. MySQL's function DDL needs
-  `kind` carried from the tree rather than guessed — `SHOW CREATE FUNCTION` on a
-  name that is actually a procedure throws outright, with nothing to fall back
-  from. Added real test triggers and functions/procedures to all three test
-  databases, verified against the live Docker containers. Also tightened the
-  row height of a table's expanded columns (`ROW_H_TIGHT`), separate from every
-  other tree row.
+  function actually does means leaving the app for another tool, because the
+  tree only knows tables and views. Nest each table's triggers under it, since a
+  trigger always belongs to exactly one table, and add a top-level Functions
+  node listing functions and stored procedures together, since neither is
+  scoped to a table. Selecting any of them opens its definition the same way
+  "Open definition" does for a table today. Functions and procedures only
+  apply where the engine has them — Postgres and MySQL, not SQLite; triggers
+  apply to all three.
 
 - **2026-07-25** — **Column name never truncates before the type does** — A narrow sidebar
   clipped a column's name and its type together, in proportion, so the more
   important half (the name) lost characters exactly when the less important
-  half (the type) did. Gave the type a `999`-to-`1` flex-shrink ratio against
-  the name, so it absorbs essentially all the negative space and is driven to
-  fully invisible before the name loses a pixel — truncating the name is now
-  a genuine last resort, only reached once the type is already gone and the
-  sidebar is still too narrow. Verified against the running app with
-  DOM-measured `offsetWidth < scrollWidth`, not a screenshot read by eye — a
-  scaled or zoomed capture turned out to shift font hinting enough to
-  disagree with the real, native-scale layout.
+  half (the type) did. The name now stays fully visible until the type has
+  already given up all the room it can; only then does the name itself start
+  to truncate.
 
 - **2026-07-26** — **Extension diagnostics are discarded** — When the extension shuts itself down
   it writes why, and nothing is listening: it is spawned through a shell, so in an
