@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.10.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.9.0...v0.10.0) (2026-07-26)
+
+
+### Features
+
+* Added log file ([d94e50e](https://github.com/Vincent-Lavallee/squeal-editor/commit/d94e50e300f0b96d21988c82ad41f39ce57d5809))
+* Context menu on triggers, matching functions ([65ce61a](https://github.com/Vincent-Lavallee/squeal-editor/commit/65ce61a6816f305daa9cddaf6ad9c91fe25e4562))
+* Custom connection environment ([00722bd](https://github.com/Vincent-Lavallee/squeal-editor/commit/00722bd9715bc937c241aa2563009caf73d12d10))
+* Edit result set from query ([ba58cc7](https://github.com/Vincent-Lavallee/squeal-editor/commit/ba58cc798915adf6e0b86b12595feda5d39a9fcc))
+* Json editor ([ac5a177](https://github.com/Vincent-Lavallee/squeal-editor/commit/ac5a17711c39aa28cda20e1be2fd62911bd8333f))
+* Moved color from workspace to connections ([1df8d17](https://github.com/Vincent-Lavallee/squeal-editor/commit/1df8d177279af92f9389332ba1f2983098aac024))
+* Trigger and function definitions in the tree ([1b7db6d](https://github.com/Vincent-Lavallee/squeal-editor/commit/1b7db6d543da6010671c8419ab4630c709d7927c))
+
+
+### Bug Fixes
+
+* Column name truncates only as a last resort, after the type ([7b3788a](https://github.com/Vincent-Lavallee/squeal-editor/commit/7b3788a4a816a2919103335146eece89f12503a3))
+* Database dropdown + Added loading states ([dc35fc4](https://github.com/Vincent-Lavallee/squeal-editor/commit/dc35fc4eef9f88a1333ac5383028d1b4aafcb915))
+* Remove database changing on tab click ([5a15f2b](https://github.com/Vincent-Lavallee/squeal-editor/commit/5a15f2b01e3b54b251482ffefc00556c34bdd5dd))
+* Removed windows non setup installer and linux zip build ([6902740](https://github.com/Vincent-Lavallee/squeal-editor/commit/6902740ec8baea4f5f7fa8749871b1421c4ba6b6))
+* Trigger/function definitions in test data, schema grouping, tighter columns ([68f6270](https://github.com/Vincent-Lavallee/squeal-editor/commit/68f6270d30bfc538439b72120356fcd1559a2636))
+
 ## [0.9.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.8.1...v0.9.0) (2026-07-25)
 
 
