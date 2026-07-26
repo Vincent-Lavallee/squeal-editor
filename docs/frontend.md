@@ -1170,9 +1170,13 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
 
   Selecting either opens its definition in a new editor tab, same as a table's
   "Open definition" — `showTriggerDefinition`/`showFunctionDefinition` in
-  `Shell`, the same shape as `showDefinition` beside them. A function's context
-  menu (`Copy name`, `Open definition`) is a fixed two items, not `menuItems`'
-  four: there is no star and no drop for something that is not a relation.
+  `Shell`, the same shape as `showDefinition` beside them. Both also carry a
+  context menu (`Copy name`, `Open definition`) — a fixed two items, not
+  `menuItems`'s four: there is no star and no drop for something that is not a
+  relation. A trigger's fires from `<Triggers>`, a separate component, so it
+  takes `onContextMenu` as a prop and calls back up to `Sidebar`'s `menu`
+  state rather than reaching for it directly; a function's is set inline
+  since `renderFunctionRow` is a closure inside `Sidebar` already.
 - **Starring a table lifts it into a "Starred" group at the top, out of the list
   below rather than repeated in it.** Starred and unstarred are computed once
   from the same sorted, filtered list (`pinned`/`unpinned` in `Sidebar`), so both

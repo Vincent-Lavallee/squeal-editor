@@ -41,6 +41,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<
     | { kind: 'table'; table: TableInfo; x: number; y: number }
+    | { kind: 'trigger'; trigger: TriggerInfo; table: string; schema?: string; x: number; y: number }
     | { kind: 'function'; func: FunctionInfo; x: number; y: number }
     | null
   >(null);
@@ -94,6 +95,11 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
   const functionMenuItems = (func: FunctionInfo, db: string): MenuItem[] => [
     { label: 'Copy name', onSelect: () => copyName(func.name) },
     { label: 'Open definition', onSelect: () => onShowFunctionDefinition(db, func) },
+  ];
+
+  const triggerMenuItems = (trigger: TriggerInfo, table: string, schema: string | undefined, db: string): MenuItem[] => [
+    { label: 'Copy name', onSelect: () => copyName(trigger.name) },
+    { label: 'Open definition', onSelect: () => onShowTriggerDefinition(db, table, trigger, schema) },
   ];
 
   // Keyed by the qualified name, because two schemas may each hold a `users` and
@@ -242,7 +248,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
           </button>
         </div>
         {open && <Columns columns={columnsFor(db, relationOf(table))} indented={indented} />}
-        {open && <Triggers triggers={triggersFor(db, table.name)} table={table.name} schema={table.schema} indented={indented} onLoadTriggers={() => loadTableTriggers(db, table.name, table.schema)} onShowDefinition={(trigger) => onShowTriggerDefinition(db, table.name, trigger, table.schema)} />}
+        {open && <Triggers triggers={triggersFor(db, table.name)} table={table.name} schema={table.schema} indented={indented} onLoadTriggers={() => loadTableTriggers(db, table.name, table.schema)} onShowDefinition={(trigger) => onShowTriggerDefinition(db, table.name, trigger, table.schema)} onContextMenu={(trigger, x, y) => setMenu({ kind: 'trigger', trigger, table: table.name, schema: table.schema, x, y })} />}
       </div>
     );
   };
@@ -412,6 +418,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
       </nav>
 
       {menu && database && menu.kind === 'table' && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.table, database)} onClose={() => setMenu(null)} />}
+      {menu && database && menu.kind === 'trigger' && <ContextMenu x={menu.x} y={menu.y} items={triggerMenuItems(menu.trigger, menu.table, menu.schema, database)} onClose={() => setMenu(null)} />}
       {menu && database && menu.kind === 'function' && <ContextMenu x={menu.x} y={menu.y} items={functionMenuItems(menu.func, database)} onClose={() => setMenu(null)} />}
       {dropping && database && <DropTableConfirm table={dropping} onConfirm={async () => { await dropTable(database, relationOf(dropping), dropping.kind); setDropping(null); }} onCancel={() => setDropping(null)} />}
     </aside>
@@ -447,7 +454,7 @@ function Columns({ columns, indented }: { columns: ReturnType<ReturnType<typeof 
   );
 }
 
-function Triggers({ triggers, table, schema: _schema, indented, onLoadTriggers, onShowDefinition }: { triggers: ReturnType<ReturnType<typeof useExplorer>['triggersFor']>; table: string; schema?: string; indented: boolean; onLoadTriggers: () => void; onShowDefinition: (trigger: TriggerInfo) => void }) {
+function Triggers({ triggers, table, schema: _schema, indented, onLoadTriggers, onShowDefinition, onContextMenu }: { triggers: ReturnType<ReturnType<typeof useExplorer>['triggersFor']>; table: string; schema?: string; indented: boolean; onLoadTriggers: () => void; onShowDefinition: (trigger: TriggerInfo) => void; onContextMenu: (trigger: TriggerInfo, x: number, y: number) => void }) {
   const pad = indented ? 42 : 30;
 
   // Load triggers when first rendered if not already loaded
@@ -463,7 +470,8 @@ function Triggers({ triggers, table, schema: _schema, indented, onLoadTriggers, 
   return (
     <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
       {triggers.map((trigger) => (
-        <li key={trigger.name} data-testid="tree-trigger" style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_DENSE, padding: `0 6px 0 ${pad}px` }}>
+        <li key={trigger.name} data-testid="tree-trigger" style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_DENSE, padding: `0 6px 0 ${pad}px` }}
+          onContextMenu={(e) => { e.preventDefault(); onContextMenu(trigger, e.clientX, e.clientY); }}>
           <button style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, height: '100%', padding: 0, border: 'none', background: 'none', color: t.TEXT, font: 'inherit', fontSize: t.TEXT_BADGE, textAlign: 'left', cursor: 'pointer' }}
             onClick={() => onShowDefinition(trigger)} title={`${trigger.name} — click to view definition`}>
             <TriggerIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />

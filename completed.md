@@ -468,9 +468,10 @@ This is a record, not a plan. Nothing here is waiting on anything.
   into their schema's own heading where the engine has one (Postgres) — a schema
   holding functions but no tables still gets a heading — falling back to a flat
   "Functions" section only where nothing schema-groups them (MySQL, whose
-  database is its schema, or the tree's flat mode). Functions get their own
-  context menu (Copy name, Open definition). Selecting a trigger or function
-  opens its definition the same way "Open definition" does for a table.
+  database is its schema, or the tree's flat mode). Triggers and functions
+  each get their own context menu (Copy name, Open definition). Selecting a
+  trigger or function opens its definition the same way "Open definition"
+  does for a table.
   Functions and procedures only apply where the engine has them — Postgres and
   MySQL, not SQLite; triggers apply to all three. MySQL's function DDL needs
   `kind` carried from the tree rather than guessed — `SHOW CREATE FUNCTION` on a
