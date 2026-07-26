@@ -58,7 +58,8 @@ These are load-bearing. Each one cost real debugging; see `docs/decisions.md`.
 5. **Verify against a real database.** Every bug found so far was invisible to a
    mock. `bun test` is not optional before claiming something works.
 
-   ## Rules
+## Rules
 
-   Never, ever add yourself as a co-author.
-   Avoid comments if possible. Code should be self describing (eg Name variables appropriately. Extract if conditions into variables for easier understanding.). So avoid JSDOC at all cost and make the core more self readable
+- Never, ever add yourself as a co-author.
+- Avoid comments if possible. Code should be self describing (eg Name variables appropriately. Extract if conditions into variables for easier understanding.). So avoid JSDOC at all cost and make the core more self readable
+- Never commit by yourself unless asked to
