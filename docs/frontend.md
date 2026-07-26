@@ -289,6 +289,23 @@ selected cell is not a selected row, so nothing stages a delete from it.
 Rectangular ranges (drag, shift-click, a tab-separated shape) are a deliberately
 separate, unbuilt feature — row copy already covers grabbing data in bulk.
 
+**A JSON/JSONB column edits in a drawer, not the inline text box.** `isJsonType`
+in `ResultsTable.tsx` matches a column's `columnInfo.dataType` case-insensitively
+against `json`/`jsonb` — the engine's own string, the same one the header prints,
+never normalised (see *Listing a table's columns* in `extension.md`) — so
+double-clicking such a cell opens `JsonCellDrawer` (`<Drawer>`, the side-panel
+sibling of `<Modal>`) instead of `startEdit`'s usual inline `<CellEditor>`. The
+drawer owns its own Monaco instance — syntax highlighting, `Format` (pretty-print,
+Monaco's own `editor.action.formatDocument`) and validation (a synchronous
+`JSON.parse`, gating *Save*) — independent of the tab editor's singleton; see
+`docs/decisions.md` for why a second Monaco instance is the right call here and
+what wiring it needed. `commit`/`setNull` are split into `applyEdit`/`applyNull`
+(the write) and a thin wrapper that also closes whichever editor is open
+(`editing` or `jsonEditing`), so the drawer's Save/Set NULL stage the same way
+the inline editor's do — through `setCell`/`clearCell` below — without touching
+state the drawer never entered. SQLite has no JSON type, so this path never
+triggers there.
+
 **The staged edits are a context, not a slice** — the bridge test again. They have
 not crossed until Save (only the `db.write` arguments do), and they are keyed by
 tab, so `ResultsContext` prunes them by diffing the tab list in an effect, never

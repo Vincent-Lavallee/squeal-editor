@@ -2944,3 +2944,58 @@ someone's OS theme does.
 **`size` is `20`, the package's tuned "inline-text" preset, not `64`.** The
 two sizes are separate hand-tuned designs, not one scaled by CSS — asking for
 an in-between size was never on the table.
+
+---
+
+## The JSON cell drawer is a second Monaco instance, not a hand-rolled highlighter
+
+**Why.** A JSON/JSONB cell's drawer needs syntax highlighting, pretty-print and
+validation. Monaco is already the app's one dependency for exactly this shape
+of problem (`features/editor`), and it ships a JSON language service — a
+Monarch-free, hand-written tokenizer for highlighting plus a worker-backed
+formatter and validator — that a bespoke regex highlighter and a hand-rolled
+pretty-printer would only reimplement worse. `JsonCellDrawer.tsx` creates and
+disposes its own `monaco.editor.create()`, independent of the tab editor's
+singleton: it is not a second violation of "one editor, one model per tab" (see
+*The editor* in `frontend.md`), because that rule is about the SQL tab editor
+specifically holding one model per tab, not a ban on Monaco appearing twice in
+the app. This editor's whole lifetime is the drawer being open.
+
+**The JSON worker had to be wired, not skipped.** Importing `monaco-editor` at
+all registers JSON's full language service unconditionally (validation,
+formatting, completion) — there is no opt-out short of not creating a `json`
+model. Before this feature, `MonacoEnvironment.getWorker` in
+`features/editor/monaco.ts` always handed back the base editor worker,
+because every model in the app was SQL, which needs no worker (its Monarch
+grammar runs on the main thread). A `json` model asks for a worker keyed by
+the label `'json'`, and handing it the base one silently fails every
+validation and format-document RPC it makes — not a crash, but a `Format`
+button that no-ops and diagnostics that never arrive. `getWorker` now branches
+on the label and imports `json.worker` the same way `editor.worker` is
+already bundled (`?worker`, so Vite ships it locally rather than Monaco
+resolving one from a CDN — the same reasoning as the base worker).
+
+**Validity is tracked with a plain `JSON.parse` in a `try`/`catch`, not by
+reading Monaco's own diagnostics.** The worker's markers are what light up
+the red squiggly in the editor, which is a nice-to-have this wiring earns for
+free, but they arrive asynchronously and are the wrong thing to gate *Save*
+on: a synchronous parse on every keystroke is what decides whether the button
+is enabled, so the gate never lags the worker by even one debounce cycle.
+
+**Pretty-print is Monaco's own `editor.action.formatDocument`, run through
+`getAction(...).run()` — the same call the SQL toolbar's `Format` button
+already makes, not a second bespoke transform** (contrast `features/editor`'s
+`format.ts`, a hand-written pure function, which exists *because* SQL has no
+language service to delegate to). JSON does, so writing a second formatter
+here would be the two-tables-that-disagree outcome this codebase keeps
+calling out elsewhere.
+
+**Verified against the real Postgres fixture** (`users.meta`, jsonb): the
+drawer opens showing the server's own value, `Format` re-indents it, typing
+invalid JSON disables *Save* and shows the parser's own error text, and a
+full edit → drawer *Save* (stages) → grid *Save* (writes) → re-browse round
+trip landed the new value under the row's actual primary key — confirmed by
+name, not by screen position, because a write shifts a row's place in
+Postgres's unordered natural scan (see *Browsing a table* in
+`extension.md`) and an earlier pass of this same check briefly read as a
+bug for exactly that reason before the row was re-identified by name.

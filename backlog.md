@@ -116,8 +116,6 @@ Things that do not exist yet.
   not to do — a shifted date and a rounded BIGINT are far worse than an
   untranslated column header.
 
-- **JSON cell editor** — Auto-detect JSON/JSONB columns by type. Clicking a JSON cell opens a drawer with syntax highlighting, pretty-print, and validation — not a popover.
-
 - **Recent connections** — Show the last 3 connections you actually connected to at the bottom of the connections screen, most recent first. Clicking one connects immediately with the saved credentials.
 
 - **Create a SQLite database** — Connecting to an existing `.db` file works, but

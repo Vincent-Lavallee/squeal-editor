@@ -5,6 +5,8 @@ the date they were finished.
 
 - **2026-07-23** — **Skeleton loading states** — Replace every "Loading…" text placeholder (table tree, query results, connection list) with pulsing skeleton rectangles shaped like the content that will load into each area.
 
+- **2026-07-26** — **JSON cell editor** — Auto-detect JSON/JSONB columns by type. Clicking a JSON cell opens a drawer with syntax highlighting, pretty-print, and validation — not a popover.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

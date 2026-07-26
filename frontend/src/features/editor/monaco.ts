@@ -12,17 +12,23 @@
 
 import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 
 /*
  * Monaco loads its worker itself, and left alone it resolves one from a CDN.
  * A desktop app that blocks on a CDN is a bug -- the same reason the font is
  * not fetched -- so Vite bundles the worker and Monaco is handed the local one.
  *
- * The base worker is the only one needed. It ships JSON/CSS/HTML/TS workers
- * too, but those are spawned per *model language*, and every model here is SQL,
- * highlighted by a Monarch grammar that runs on the main thread.
+ * The base worker covers every SQL model, highlighted by a Monarch grammar
+ * that runs on the main thread. JSON is the one model language here with its
+ * own worker: importing `monaco-editor` registers JSON's language service
+ * (validation, formatting) unconditionally, and it asks for a worker by label
+ * the moment a `json` model is created -- the JSON cell drawer's. Handing it
+ * the base worker instead would answer every one of its RPCs "unknown method".
  */
-self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
+self.MonacoEnvironment = {
+  getWorker: (_moduleId, label) => (label === 'json' ? new JsonWorker() : new EditorWorker()),
+};
 
 export const THEME = 'squeal';
 

@@ -10,9 +10,20 @@ import { cancelQuery } from '../../store/resultsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import FilterBar from './FilterBar.tsx';
+import JsonCellDrawer from './JsonCellDrawer.tsx';
 import Note from '../../common/components/Note.tsx';
 import Skeleton from '../../common/components/Skeleton.tsx';
 import * as t from '../../common/tokens';
+
+/** MySQL's `COLUMN_TYPE` and Postgres' `format_type` both answer bare `json`/`jsonb`
+ *  for the type -- see `docs/extension.md`, *Listing a table's columns* -- so a
+ *  case-insensitive match on the engine's own string is enough and needs no
+ *  per-engine case. SQLite has no JSON type, so this never fires there. */
+const isJsonType = (dataType: string | undefined): boolean => {
+  if (!dataType) return false;
+  const lower = dataType.toLowerCase();
+  return lower === 'json' || lower === 'jsonb';
+};
 
 const iconSvg = { flex: 'none', width: 16, height: 16 };
 
@@ -36,10 +47,11 @@ export default function ResultsTable() {
   const anchor = useRef<number | null>(null);
   const [selectedCell, setSelectedCell] = useState<Cell | null>(null);
   const [editing, setEditing] = useState<Cell | null>(null);
+  const [jsonEditing, setJsonEditing] = useState<Cell | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
-  useEffect(() => { setSelected(new Set()); setSelectedCell(null); setEditing(null); setMenu(null); anchor.current = null; }, [result]);
+  useEffect(() => { setSelected(new Set()); setSelectedCell(null); setEditing(null); setJsonEditing(null); setMenu(null); anchor.current = null; }, [result]);
 
   useEffect(() => {
     if (!running || !startedAt) { setElapsed(0); return; }
@@ -120,14 +132,28 @@ export default function ResultsTable() {
   const keyCols = new Set(keyColumns ?? []);
   const isKeyCol = (c: number): boolean => keyCols.has(result.columns[c] ?? '');
 
+  // Auto-detected by type, not by name or content: a JSON/JSONB column edits
+  // in the drawer below regardless of what a value happens to look like.
+  const isJsonCol = (c: number): boolean => isJsonType(typeOf(result.columns[c] ?? ''));
+
   const original = (r: number, c: number): CellValue => result.rows[r]?.[c] ?? null;
   const isDeleted = (r: number): boolean => pending.deletes[r] === true;
   const stagedCell = (r: number, c: number): CellValue | undefined => pending.edits[r]?.[c];
   const effective = (r: number, c: number): CellValue => { const s = stagedCell(r, c); return s !== undefined ? s : original(r, c); };
 
-  const startEdit = (r: number, c: number) => { if (!editable || isDeleted(r)) return; setEditing({ row: r, col: c }); };
-  const commit = (row: number, col: number, draft: string) => { const orig = original(row, col); if (orig !== null && draft === String(orig)) clearCell(row, col); else setCell(row, col, draft); setEditing(null); };
-  const setNull = (row: number, col: number) => { if (isKeyCol(col)) return; if (original(row, col) === null) clearCell(row, col); else setCell(row, col, null); setEditing(null); };
+  // Split from the state that closes whichever editor is open, so the JSON
+  // drawer's Save/Set NULL can apply the same write without touching `editing`
+  // -- the inline `<CellEditor>`'s state, which the drawer never enters.
+  const applyEdit = (row: number, col: number, draft: string) => { const orig = original(row, col); if (orig !== null && draft === String(orig)) clearCell(row, col); else setCell(row, col, draft); };
+  const applyNull = (row: number, col: number) => { if (isKeyCol(col)) return; if (original(row, col) === null) clearCell(row, col); else setCell(row, col, null); };
+
+  const startEdit = (r: number, c: number) => {
+    if (!editable || isDeleted(r)) return;
+    if (isJsonCol(c)) setJsonEditing({ row: r, col: c });
+    else setEditing({ row: r, col: c });
+  };
+  const commit = (row: number, col: number, draft: string) => { applyEdit(row, col, draft); setEditing(null); };
+  const setNull = (row: number, col: number) => { applyNull(row, col); setEditing(null); };
 
   const selectRow = (r: number, e: React.MouseEvent) => {
     setSelectedCell(null);
@@ -290,6 +316,18 @@ export default function ResultsTable() {
       </div>
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
+
+      {jsonEditing && (
+        <JsonCellDrawer
+          column={result.columns[jsonEditing.col] ?? ''}
+          dataType={typeOf(result.columns[jsonEditing.col] ?? '')}
+          initial={effective(jsonEditing.row, jsonEditing.col)}
+          canNull={!isKeyCol(jsonEditing.col)}
+          onCommit={(draft) => { applyEdit(jsonEditing.row, jsonEditing.col, draft); setJsonEditing(null); }}
+          onNull={() => { applyNull(jsonEditing.row, jsonEditing.col); setJsonEditing(null); }}
+          onCancel={() => setJsonEditing(null)}
+        />
+      )}
     </>
   );
 }
