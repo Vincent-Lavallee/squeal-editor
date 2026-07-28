@@ -518,3 +518,13 @@ This is a record, not a plan. Nothing here is waiting on anything.
   destination on disk and a bound on how large it may grow. Nothing a database
   returned may appear in it: a log holding query results is a copy of the data
   outside the encryption the store exists to provide.
+
+- **2026-07-28** — **Sort by clicking a column header** — Sorting a result grid means
+  hand-writing an ORDER BY, whether the grid came from browsing a table or
+  from a query typed in the editor. Clicking a column header wraps the
+  underlying query as a subquery and re-runs it with an ORDER BY on that
+  column, so it works regardless of what the query already does (its own
+  ORDER BY, a CTE, a union). One column at a time — clicking a different
+  header replaces the sort rather than adding to it. Clicking the same header
+  again cycles asc → desc → unsorted, the last click returning to the
+  original query's own order.

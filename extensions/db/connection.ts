@@ -4,11 +4,12 @@ import type {
   ConnectionConfig,
   RowDelete,
   RowEdit,
+  SortOrder,
   SqlDialect,
   TableFilter,
   TableInfo,
 } from '../../shared/protocol/index.ts';
-import { buildWhere, withDriver, type Driver, type QueryOutcome, type Relation } from './drivers.ts';
+import { buildWhere, orderByClause, withDriver, type Driver, type QueryOutcome, type Relation } from './drivers.ts';
 import { rdsAuthToken } from './iam.ts';
 
 /**
@@ -68,12 +69,18 @@ export interface ConnectionHandle {
    * key without the extension re-authoring the statement the user ran.
    */
   rowKey(database: string, relation: Relation): Promise<string[] | null>;
-  query(database: string | undefined, sql: string): Promise<QueryOutcome>;
   /**
-   * One page of a table, optionally narrowed by `filter`. A builder filter's
-   * values are bound as parameters; a raw one is the user's own `WHERE` text.
+   * The user's statement, run as written -- unless `sort` is given, which is the
+   * one thing that wraps it. See the implementation for why that wrap is allowed
+   * where paging and filtering a query's result are not.
    */
-  browse(database: string, relation: Relation, offset: number, filter?: TableFilter): Promise<TableRows>;
+  query(database: string | undefined, sql: string, sort?: SortOrder): Promise<QueryOutcome>;
+  /**
+   * One page of a table, optionally narrowed by `filter` and ordered by `sort`.
+   * A builder filter's values are bound as parameters; a raw one is the user's
+   * own `WHERE` text. The sort orders the table before the page is cut from it.
+   */
+  browse(database: string, relation: Relation, offset: number, filter?: TableFilter, sort?: SortOrder): Promise<TableRows>;
   /** A relation's `CREATE` statement, for the context menu's "open definition". */
   tableDdl(database: string, relation: Relation, kind: 'table' | 'view'): Promise<string>;
   /** Triggers for a specific table. */
@@ -255,8 +262,31 @@ function build<C>(
       return useClient(database, (client) => driver.rowKey(client, database, relation));
     },
 
-    async query(database, sql) {
-      return useClient(database, (client) => driver.query(client, sql));
+    /**
+     * The user's statement, byte for byte -- with one exception, and only one.
+     *
+     * Given a `sort`, the statement is wrapped and ordered instead:
+     * `SELECT * FROM (<sql>) squeal_sorted ORDER BY <col> <dir>`. Everywhere else
+     * this app refuses to rewrite what the user typed, and the refusal still
+     * stands for paging and for filtering, because both of those change *which*
+     * rows come back and a grid showing a subset of what was asked for is an
+     * editor lying about what it ran. A sort changes none: the statement runs
+     * whole, inside the wrap, and the same rows arrive in a different order.
+     * That is the whole of why this one is allowed. See `docs/decisions.md`.
+     *
+     * Written here rather than in a driver because every engine spells it the
+     * same, the `LIMIT/OFFSET` rule exactly -- an engine that does not makes this
+     * a `Driver` method rather than an `if`. The alias is not optional: MySQL and
+     * Postgres both refuse an unaliased derived table.
+     */
+    async query(database, sql, sort) {
+      const order = orderByClause(sort, (name) => driver.quoteIdent(name));
+      // The trailing semicolon has to go before the statement can sit inside a
+      // parenthesis -- it terminates the wrap rather than the subquery, and the
+      // result is a syntax error on every engine. Stripped only when wrapping:
+      // an unsorted statement is passed through untouched, semicolon included.
+      const statement = order ? `SELECT * FROM (${sql.trim().replace(/;+\s*$/, '')}) squeal_sorted${order}` : sql;
+      return useClient(database, (client) => driver.query(client, statement));
     },
 
     /**
@@ -270,11 +300,18 @@ function build<C>(
      * is not per-engine between these two; an engine that spells paging its own
      * way (SQL Server's OFFSET/FETCH) makes this a driver method.
      *
-     * No ORDER BY: the tree browses what the server hands back, and a table with
-     * no meaningful order has no correct one to impose. The cost is that natural
-     * order is not a guaranteed-stable order -- rows written between two page
-     * fetches can shift a row across the boundary. Ordering by a key we picked
-     * would trade that for a sort of the whole table on every page.
+     * No ORDER BY unless one was *asked for*: the tree browses what the server
+     * hands back, and a table with no meaningful order has no correct one to
+     * impose. The cost is that natural order is not a guaranteed-stable order --
+     * rows written between two page fetches can shift a row across the boundary.
+     * Ordering by a key we picked would trade that for a sort of the whole table
+     * on every page, which is why one is never picked here; a `sort` the user
+     * clicked a header for is a different thing, and it pays that cost knowingly.
+     *
+     * It goes before `LIMIT`, so the whole table is ordered and the page is cut
+     * from that -- page 2 of a sorted table is the second page of that order.
+     * Sorting the hundred rows after they arrive would order each page within
+     * itself and leave the pages themselves in natural order.
      *
      * A `filter` narrows the page, and it is authored here for the same reason
      * the paging is: a `WHERE` needs the engine's quoting and placeholders, and
@@ -282,7 +319,7 @@ function build<C>(
      * what it meant -- the probe row is fetched under the same `WHERE`, so it
      * answers "is there another *matching* row" rather than being inferred.
      */
-    async browse(database, relation, offset, filter) {
+    async browse(database, relation, offset, filter, sort) {
       // `offset` is user-supplied JSON on its way into a string of SQL, and no
       // placeholder can carry a LIMIT clause on both engines. Forcing it to a
       // non-negative integer is what makes the interpolation below safe; the
@@ -299,6 +336,12 @@ function build<C>(
       );
       const where = clause ? ` WHERE ${clause}` : '';
 
+      // Built here for the filter's reason and guarded a different way: a sort
+      // has no value to bind, so the column is quoted and the direction is
+      // checked against a closed set rather than parameterised. Empty when
+      // nothing was asked for, which is the natural-order page above.
+      const order = orderByClause(sort, (name) => driver.quoteIdent(name));
+
       // Ask for one row past the page, so "is there more" is answered by whether
       // it came back rather than inferred from the page being full. The row
       // identity and the column catalog are fetched on the same call, so the grid
@@ -308,7 +351,7 @@ function build<C>(
       return useClient(database, async (client) => {
         const outcome = await driver.query(
           client,
-          `SELECT * FROM ${driver.qualify(relation)}${where} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`,
+          `SELECT * FROM ${driver.qualify(relation)}${where}${order} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`,
           params
         );
         const keyColumns = await driver.rowKey(client, database, relation);

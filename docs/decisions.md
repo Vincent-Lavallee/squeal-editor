@@ -3374,3 +3374,92 @@ notices.
 well under the ~350s an AWS network load balancer gives an idle connection — the
 standard mitigation, and it makes the drop rarer. Everything above still exists,
 because "rarer" is not "never" and the failure mode was catastrophic.
+
+---
+
+## Sorting wraps the user's query, which is the one rewrite this app allows
+
+**Why this needs an entry.** Three earlier decisions in this file refuse to
+rewrite a statement the user typed: paging arbitrary results, filtering them, and
+write-back all landed on "the editor must not run something other than what is on
+screen". Sorting a query's result needs exactly that rewrite —
+`SELECT * FROM (<their sql>) squeal_sorted ORDER BY <col> <dir>` — so the refusal
+is either wrong or this feature is. It is neither: the refusal was never about
+wrapping, it was about **changing which rows come back**, and that is the line
+being drawn properly now rather than moved.
+
+**The distinction that carries it: a sort changes no rows.** Paging shows a
+hundred of them and hides the rest. A filter shows the ones that matched. Both
+make the grid a claim about a subset of what was asked for, which is why a count
+beside them could not be honestly labelled and why both are still refused. A
+wrapped `ORDER BY` returns the *same multiset* — the statement runs whole, inside
+the parenthesis, and every row it produced comes back. There is nothing hidden to
+be wrong about, which is the whole of the licence. There is a test that says so
+directly (*sorting a query changes the order and never the rows*), and it is the
+test that would fail first if this ever crept toward paging.
+
+**It is also the user's own gesture, not the app being clever.** The rejected
+rewrites were all things the app would have done on its behalf to make a control
+work. A click on a header is a request, the arrow says which column and which way,
+and a third click puts it back. The editor's text is never touched — it still
+holds the statement as typed, and the wrap exists only for the length of one call.
+
+**Rejected: sorting the rows already in the grid.** Tempting, because a query's
+result has no paging, so every row is in memory and a comparator would need no
+round trip at all. It is the same mistake as rendering a value through `Date` or
+`Number`, pointed at the order instead of the value: a BIGINT arrives as a string
+(`'9'` sorts after `'10'`), a timestamp arrives as the engine's own text, and text
+collation is the server's rather than JavaScript's. The app would be reordering
+rows by rules the database does not use and then showing the result as if the
+database had produced it. Ordering is the server's answer for the same reason the
+value is. The cost is a round trip per click, knowingly paid.
+
+**Rejected: appending `ORDER BY` instead of wrapping.** Cheaper-looking, and
+wrong for statements that are common rather than exotic: a query that already ends
+in an `ORDER BY` becomes a syntax error, and a `UNION` takes the appended clause
+as belonging to its last branch. Wrapping is the only form that works regardless
+of what the statement does, which is what the backlog item asked for and what the
+CTE/union case makes non-negotiable. The trailing semicolon has to be stripped for
+the same reason — it would terminate the wrapper.
+
+**Rejected: sorting by more than one column.** The gesture is a click, and a
+second click has to mean something. Making it *add* a column needs a modifier
+nobody discovers and a chip row to show what accumulated; making it replace is
+what a header click means everywhere else. Clicking the same header cycles
+asc → desc → off, and the third state is the one that matters: an unsorted browse
+and an unsorted query are both real orders — the server's natural one, and
+whatever the statement itself asked for — so "no sort" has to be reachable and has
+to mean *the app adds nothing*, not *the app imposes ascending*.
+
+**A browsed grid does not use the wrap, and that is not an inconsistency.** The
+extension already authors the page SQL there, so the `ORDER BY` goes into it,
+before the `LIMIT` — the whole table is ordered and the page is cut from that.
+Wrapping the page instead would sort a hundred rows within themselves and leave
+the pages in natural order, which looks correct on page one and is wrong from page
+two. This is also why paging, applying a filter and the re-read after Save all
+carry the sort: each is a fresh page, and a page cut under a different order than
+the one on screen shows rows repeating across the boundary.
+
+**The sort is in the staging page key.** `table@offset@filter@sort`, for the
+reason the filter joined it: an edit is staged against a *row index*, and row 3 of
+a table ordered by name is not row 3 of the same table in natural order. Leave it
+out and re-sorting carries staged cells onto whatever landed in those positions —
+a write to rows the user never saw, which is the exact failure the row-identity
+design exists to prevent. A hand-typed query needs no such term because sorting
+one re-runs it, and `runSeq` has already moved.
+
+**The sort is not in the session snapshot, and the filter still is.** They look
+alike and are not. A restored grid tab re-browses, so its filter has to ride along
+or the tab comes back showing a *different set of rows* than it was left holding.
+A sort changes no rows, so a restored tab without it shows the same table it
+always did, in the server's order — the same thing every tab shows before anyone
+clicks. Persisting it would also have to answer what a restored *editor* tab's
+sort means, which is nothing until the query is run again.
+
+**SQLite will not fail an unorderable sort, and the contract test says so.** A
+double-quoted name it cannot resolve to a column becomes a **string literal**
+rather than an error — the engine's oldest wart — so `ORDER BY "no_such_column"`
+orders by a constant and is inert, where MySQL and Postgres both reject the
+statement. Unreachable from the UI, which only ever sorts by a header it drew, so
+the test asserts what is true on all three (the connection is still standing)
+rather than asserting which engine it is talking to.

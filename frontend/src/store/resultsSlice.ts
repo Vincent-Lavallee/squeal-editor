@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-import type { ColumnInfo, QueryResult, RowDelete, RowEdit, TableFilter } from '../../../shared/protocol/index.ts';
+import type { ColumnInfo, QueryResult, RowDelete, RowEdit, SortOrder, TableFilter } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { detectSingleTable } from '../common/db/detectSingleTable.ts';
 import { disconnect } from './sessionSlice.ts';
@@ -82,6 +82,18 @@ export interface ResultsState {
    * must still discard whatever was staged against the last answer.
    */
   runSeq: number;
+  /**
+   * The column the result on screen was ordered by, or null for the order the
+   * statement itself produced.
+   *
+   * Held here rather than inside `browse`, unlike `filter`, because both kinds
+   * of result can carry one: a browsed page sorts in its own page SQL and a
+   * hand-typed query is wrapped and ordered (see `db.query`). It is what the
+   * grid draws its header arrow from and what the next fetch of either kind
+   * carries forward, so a page step or a filter change does not silently drop
+   * the order the user is looking at.
+   */
+  sort: SortOrder | null;
   error: string | null;
   running: boolean;
   /** `Date.now()` when the query was dispatched, so the UI can show elapsed time. */
@@ -112,7 +124,7 @@ type ResultsByTab = Record<string, ResultsState>;
 const initialState: ResultsByTab = {};
 
 const blank = (): ResultsState =>
-  ({ result: null, browse: null, editTarget: null, runSeq: 0, error: null, running: false, startedAt: null, columns: [] });
+  ({ result: null, browse: null, editTarget: null, runSeq: 0, sort: null, error: null, running: false, startedAt: null, columns: [] });
 
 /**
  * Reads its target off the state rather than taking it as an argument. That is
@@ -131,7 +143,7 @@ const blank = (): ResultsState =>
  */
 export const runQuery = createAppThunk(
   'results/runQuery',
-  async (arg: { tabId: string; sql: string }, { getState, rejectWithValue }) => {
+  async (arg: { tabId: string; sql: string; sort?: SortOrder | null }, { getState, rejectWithValue }) => {
     // The target is still read, never passed: the arg names *which tab*, and the
     // tab is what holds the connection. A `database` argument stays forbidden,
     // and a `connectionId` one is forbidden for the same reason.
@@ -147,6 +159,10 @@ export const runQuery = createAppThunk(
         connectionId: tab.connectionId,
         database: database ?? undefined,
         sql,
+        // The statement still goes over as typed; this is the one thing that
+        // makes the extension wrap it, and it is the user's own click on a
+        // header that puts it here. See `db.query` in the protocol.
+        sort: arg.sort ?? undefined,
       }, 60_000, controller.signal);
 
       // A hand-typed query is editable exactly when its own SELECT named one
@@ -174,7 +190,11 @@ export const runQuery = createAppThunk(
         }
       }
 
-      return { result, editTarget };
+      // The sort is echoed into the payload rather than read back off `meta.arg`
+      // in the reducer, so what the result *was fetched with* and what came back
+      // are one fact arriving together -- the same shape `browseTable` uses for
+      // its filter.
+      return { result, editTarget, sort: arg.sort ?? null };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
     } finally {
@@ -208,7 +228,7 @@ export const runQuery = createAppThunk(
 export const browseTable = createAppThunk(
   'results/browseTable',
   async (
-    arg: { tabId: string; table: string; offset: number; filter?: TableFilter | null },
+    arg: { tabId: string; table: string; offset: number; filter?: TableFilter | null; sort?: SortOrder | null },
     { getState, rejectWithValue }
   ) => {
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
@@ -232,11 +252,14 @@ export const browseTable = createAppThunk(
         schema: tab.schema,
         offset: arg.offset,
         filter: arg.filter ?? undefined,
+        // Part of the page SQL, not a re-ordering of the page: the table is
+        // ordered and *then* cut, so page 2 is the second page of this order.
+        sort: arg.sort ?? undefined,
       }, 60_000, controller.signal);
-      // The filter is echoed into the payload rather than read back off
-      // `meta.arg` in the reducer, so what the page *was fetched with* and what
-      // came back are one fact arriving together.
-      return { database, table: arg.table, filter: arg.filter ?? null, page };
+      // The filter and the sort are echoed into the payload rather than read
+      // back off `meta.arg` in the reducer, so what the page *was fetched with*
+      // and what came back are one fact arriving together.
+      return { database, table: arg.table, filter: arg.filter ?? null, sort: arg.sort ?? null, page };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
     } finally {
@@ -342,6 +365,7 @@ const resultsSlice = createSlice({
         // The grid now holds SQL the user wrote, which has no page N to step to.
         s.browse = null;
         s.editTarget = action.payload.editTarget;
+        s.sort = action.payload.sort;
       })
       .addCase(runQuery.rejected, (state, action) => {
         const s = state[action.meta.arg.tabId];
@@ -351,6 +375,10 @@ const resultsSlice = createSlice({
         s.result = null;
         s.browse = null;
         s.editTarget = null;
+        // The grid the arrow described is gone, so the arrow goes with it. A
+        // sort the server refused must not stay on screen claiming to be in
+        // force, and the next click on that header starts from ascending again.
+        s.sort = null;
         s.error = action.payload ?? 'The query failed.';
       })
       .addCase(browseTable.pending, (state, action) => {
@@ -362,7 +390,7 @@ const resultsSlice = createSlice({
       .addCase(browseTable.fulfilled, (state, action) => {
         const s = state[action.meta.arg.tabId];
         if (!s) return;
-        const { database, table, filter, page } = action.payload;
+        const { database, table, filter, sort, page } = action.payload;
         s.running = false;
         s.startedAt = null;
         s.result = page.result;
@@ -376,6 +404,7 @@ const resultsSlice = createSlice({
           columnInfo: page.columnInfo,
           filter,
         };
+        s.sort = sort;
         // A browsed page has its own row identity (`browse.keyColumns` above);
         // a hand query's detected one does not apply to it.
         s.editTarget = null;
@@ -391,8 +420,10 @@ const resultsSlice = createSlice({
         s.result = null;
         // A failed page leaves nothing to page from, so the pager goes with it.
         // `columns` deliberately stays: the filter bar survives the failure and
-        // needs them to offer the correction.
+        // needs them to offer the correction. The sort does not -- it describes
+        // a grid that is no longer on screen, the same reason `runQuery` drops it.
         s.browse = null;
+        s.sort = null;
         s.error = action.payload ?? 'Could not read the table.';
       });
     // There is deliberately no `sessionOpened` case. It used to reset this,

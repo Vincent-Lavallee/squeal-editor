@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ThinkingOrb } from 'thinking-orbs';
 
 import type { CellValue } from '../../../../shared/protocol/index.ts';
-import { CopyIcon, ForeignKeyIcon, NextPageIcon, PrevPageIcon } from '../../common/icons/icons.ts';
+import { CopyIcon, ForeignKeyIcon, NextPageIcon, PrevPageIcon, SortAscIcon, SortDescIcon } from '../../common/icons/icons.ts';
 import { useAppSelector } from '../../store/hooks.ts';
 import { selectActiveTab } from '../../store/tabsSlice.ts';
 import { useResults } from './useResults.ts';
@@ -27,6 +27,30 @@ const isJsonType = (dataType: string | undefined): boolean => {
 
 const iconSvg = { flex: 'none', width: 16, height: 16 };
 
+/**
+ * The sort mark in a header: the arrow in force, or the faint hover hint.
+ *
+ * One shape for both so the two occupy the *same* slot — the hint is hidden
+ * rather than unrendered (see `residual.css`), so a header keeps its width
+ * whether it is sorted, hovered or neither, and clicking one never shifts the
+ * columns beside it.
+ */
+const sortMark = (color: string): React.CSSProperties =>
+  ({ flex: 'none', width: 14, height: 14, display: 'inline-block', verticalAlign: 'text-bottom', marginLeft: t.GAP_XS, color });
+
+/**
+ * What a click on this header will do, named rather than left to be discovered.
+ *
+ * It says the *next* state, not the current one -- the arrow already shows where
+ * the column stands, so a tooltip repeating it would be the second place saying
+ * one thing. "Remove sort" is the third step being spelled out, since a cycle
+ * whose last click undoes it is the part nobody guesses from two arrows.
+ */
+const sortTitle = (column: string, sortedBy: 'asc' | 'desc' | null): string =>
+  sortedBy === null ? `Sort by ${column}`
+    : sortedBy === 'asc' ? `Sort by ${column}, descending`
+      : 'Remove sort';
+
 interface Cell { row: number; col: number; }
 // `col` is null when the menu was opened from the row gutter rather than a
 // cell -- there is no column to target, so column-specific items (Set NULL)
@@ -40,7 +64,7 @@ const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
 
 export default function ResultsTable() {
-  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey } = useResults();
+  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey, sort, toggleSort, canSort } = useResults();
   const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -286,12 +310,40 @@ export default function ResultsTable() {
           <thead>
             <tr>
               <th className="gutter" style={gutterHeadStyle} />
-              {result.columns.map((col, i) => (
-                <th key={i} style={thStyle}>
-                  <span data-testid="grid-col-name">{col}</span>
-                  {typeOf(col) && <span style={{ marginLeft: t.GAP_SM, fontWeight: 400, color: t.TEXT_FAINT }}>{typeOf(col)}</span>}
-                </th>
-              ))}
+              {result.columns.map((col, i) => {
+                const sortable = canSort(col);
+                const sortedBy = sort?.column === col ? sort.direction : null;
+                const SortIcon = sortedBy === 'desc' ? SortDescIcon : SortAscIcon;
+                return (
+                  <th key={i} data-testid="grid-col" data-sort={sortedBy ?? undefined}
+                    className={sortable ? 'grid__th--sortable' : undefined}
+                    style={{ ...thStyle, ...(sortable ? { cursor: 'pointer', userSelect: 'none' } : {}) }}
+                    // The whole header is the target rather than a button inside
+                    // it: the name and the type are one label for one column, so
+                    // a click anywhere along it means the same thing. The grid's
+                    // cells and its row gutter are already click targets without
+                    // a button each, and a button here would have to re-state the
+                    // sticky positioning and the borders the cell already carries.
+                    onClick={sortable ? () => toggleSort(col) : undefined}
+                    title={sortable ? sortTitle(col, sortedBy) : undefined}>
+                    <span data-testid="grid-col-name">{col}</span>
+                    {typeOf(col) && <span style={{ marginLeft: t.GAP_SM, fontWeight: 400, color: t.TEXT_FAINT }}>{typeOf(col)}</span>}
+                    {/* The sorted column draws its arrow in accent, always. Any
+                        other sortable one draws a faint ascending chevron that
+                        `residual.css` reveals on hover -- it previews what the
+                        click will do rather than merely announcing that sorting
+                        exists, which is why it is the ascending glyph and not a
+                        neutral one. The hovered column is the only one showing
+                        it, so this is not the arrow-on-every-header the design
+                        avoids; it is the hover cue, drawn. */}
+                    {sortedBy ? (
+                      <SortIcon data-testid="grid-sort-arrow" style={sortMark(t.ACCENT)} aria-hidden="true" />
+                    ) : sortable ? (
+                      <SortAscIcon className="grid__sort-hint" data-testid="grid-sort-hint" style={sortMark(t.TEXT_FAINT)} aria-hidden="true" />
+                    ) : null}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>

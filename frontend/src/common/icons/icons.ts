@@ -6,6 +6,7 @@ import {
   RiArrowDownSLine,
   RiArrowRightDoubleLine,
   RiArrowRightSLine,
+  RiArrowUpSLine,
   RiBroadcastLine,
   RiBarChart2Line,
   RiBox3Line,
@@ -102,6 +103,15 @@ export const StarIcon = RiStarSFill;
  */
 export const PrevPageIcon = RiArrowLeftSLine;
 export const NextPageIcon = RiArrowRightSLine;
+
+/*
+ * Which way a sorted grid column is ordered. A binding each for paging's reason,
+ * and they are the same two chevrons the tree and the select already spend --
+ * ascending points up because the smallest value is at the top, which is the
+ * direction the column reads in rather than a convention to memorise.
+ */
+export const SortAscIcon = RiArrowUpSLine;
+export const SortDescIcon = RiArrowDownSLine;
 
 /**
  * Collapsing the sidebar hides the explorer — double chevrons, the « » language

@@ -146,19 +146,19 @@ const COMMANDS: Handlers = {
     return { keyColumns: await getConnection(connectionId).rowKey(database, { table, schema }) };
   },
 
-  async 'db.query'({ connectionId, database, sql }) {
+  async 'db.query'({ connectionId, database, sql, sort }) {
     const conn = getConnection(connectionId);
     const startedAt = Date.now();
-    const outcome = await conn.query(database, sql);
+    const outcome = await conn.query(database, sql, sort);
     const durationMs = Date.now() - startedAt;
     if (durationMs > SLOW_QUERY_MS) log.warn(`slow query on ${connectionId} (${database ?? 'default'}): ${durationMs}ms`);
     return { ...outcome, durationMs } as QueryResult;
   },
 
-  async 'db.browse'({ connectionId, database, table, schema, offset, filter }) {
+  async 'db.browse'({ connectionId, database, table, schema, offset, filter, sort }) {
     const conn = getConnection(connectionId);
     const startedAt = Date.now();
-    const { columns, rows, ...page } = await conn.browse(database, { table, schema }, offset, filter);
+    const { columns, rows, ...page } = await conn.browse(database, { table, schema }, offset, filter, sort);
     const durationMs = Date.now() - startedAt;
     if (durationMs > SLOW_QUERY_MS) log.warn(`slow browse on ${connectionId} (${database}.${table}): ${durationMs}ms`);
     return { result: { columns, rows, durationMs }, ...page };

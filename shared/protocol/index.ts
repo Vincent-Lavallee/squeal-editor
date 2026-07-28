@@ -42,6 +42,7 @@ export type {
   QueryResult,
   RowDelete,
   RowEdit,
+  SortOrder,
   StarredTable,
   TableFilter,
   TableInfo,

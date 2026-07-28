@@ -6,6 +6,7 @@ import type {
   FilterOperator,
   RowDelete,
   RowEdit,
+  SortOrder,
   SqlDialect,
   TableFilter,
 } from '../../../../shared/protocol/index.ts';
@@ -55,7 +56,7 @@ export function useResults() {
    * edit away instead of a re-open.
    */
   const gridTable = activeTab?.kind === 'grid' ? (activeTab.table ?? null) : null;
-  const { result, browse, editTarget, runSeq, error, running, startedAt, columns } = useAppSelector(
+  const { result, browse, editTarget, runSeq, sort, error, running, startedAt, columns } = useAppSelector(
     (s) => (activeTabId ? s.results[activeTabId] : undefined) ?? EMPTY
   );
 
@@ -78,11 +79,19 @@ export function useResults() {
   const editSchema = browse ? undefined : (queryEditable ? editTarget!.schema : undefined);
 
   // The page these staged indices are valid for. Null when there is nothing to
-  // edit. A browsed page keys by table/offset/filter; a hand query has none of
-  // those, so it keys by `runSeq` instead -- see `ResultsState.runSeq` for why
+  // edit. A browsed page keys by table/offset/filter/sort; a hand query has none
+  // of those, so it keys by `runSeq` instead -- see `ResultsState.runSeq` for why
   // re-running the identical SQL still has to count as a different page.
+  //
+  // The sort is in the key for the filter's reason exactly: an edit is staged
+  // against a *row index*, and row 3 of a table ordered by name is not row 3 of
+  // the same table in natural order. Leave it out and re-sorting would carry the
+  // staged cells onto whichever rows landed in those positions -- a write to
+  // rows the user never saw, which is the failure the row-identity design exists
+  // to prevent. A hand query needs no such term: sorting one re-runs it, and
+  // `runSeq` has already moved by the time the new rows arrive.
   const page = browse
-    ? `${browse.table}@${browse.offset}@${filterKey(browse.filter)}`
+    ? `${browse.table}@${browse.offset}@${filterKey(browse.filter)}@${sortKey(sort)}`
     : queryEditable
       ? `${editTable}@query@${runSeq}`
       : null;
@@ -121,10 +130,30 @@ export function useResults() {
 
   const run = useCallback(
     (sql: string) => {
+      // No sort: running is the user asking for this statement, and whatever
+      // order the last result was put in was about the last result.
       if (activeTabId) void dispatch(runQuery({ tabId: activeTabId, sql }));
     },
     [dispatch, activeTabId]
   );
+
+  /**
+   * Whether a header may be sorted by at all.
+   *
+   * A column has to be nameable in an `ORDER BY` for that, and two of them are
+   * not. A blank name has nothing to write; a name the result answers under
+   * *twice* -- `SELECT id, id FROM users` -- is ambiguous, and both engines
+   * reject the ordered wrap rather than picking one. Refusing the click is the
+   * better half of that: the alternative is a server error about a statement the
+   * user did not type, arriving from a header that looked ordinary.
+   *
+   * A browsed page is `SELECT *` over a real table, so neither case can arise
+   * there; this only ever bites a hand-typed query.
+   */
+  const duplicateColumns = new Set(
+    (result?.columns ?? []).filter((name, i, all) => all.indexOf(name) !== i)
+  );
+  const canSort = (column: string): boolean => column.length > 0 && !duplicateColumns.has(column);
 
   /**
    * Browsing names its tab: opening a table browses into the tab just minted for
@@ -235,15 +264,18 @@ export function useResults() {
    */
   const applyFilter = useCallback(() => {
     if (!activeTabId || !gridTable) return;
-    void dispatch(browseTable({ tabId: activeTabId, table: gridTable, offset: 0, filter: runnableFilter }));
-  }, [dispatch, activeTabId, gridTable, runnableFilter]);
+    // Carries the sort for the reason it carries the filter everywhere else:
+    // narrowing the rows says nothing about the order they are wanted in, and
+    // dropping it here would silently unsort the grid on Apply.
+    void dispatch(browseTable({ tabId: activeTabId, table: gridTable, offset: 0, filter: runnableFilter, sort }));
+  }, [dispatch, activeTabId, gridTable, runnableFilter, sort]);
 
-  /** Drop the filter and re-browse the whole table, draft and all. */
+  /** Drop the filter and re-browse the whole table, draft and all -- still sorted. */
   const clearFilter = useCallback(() => {
     if (!activeTabId || !gridTable) return;
     view.clearFilterDraft(activeTabId);
-    void dispatch(browseTable({ tabId: activeTabId, table: gridTable, offset: 0, filter: null }));
-  }, [dispatch, activeTabId, gridTable, view]);
+    void dispatch(browseTable({ tabId: activeTabId, table: gridTable, offset: 0, filter: null, sort }));
+  }, [dispatch, activeTabId, gridTable, view, sort]);
 
 
   // Which rows carry a real change, and which are staged for deletion. A row
@@ -260,6 +292,42 @@ export function useResults() {
   // is app-level state, the same slice `selectActiveTab` above already reaches
   // into, not a reach into the editor feature.
   const sql = useAppSelector((s) => (activeTabId ? s.tabs.sqlByTab[activeTabId] : undefined));
+
+  /**
+   * Sort by a column, or step the sort it already has.
+   *
+   * One column at a time: a click on a different header replaces the sort rather
+   * than adding to it, and clicking the same one cycles asc -> desc -> unsorted.
+   * The last step returns the *original* order -- the table's natural one, or
+   * whatever the statement's own `ORDER BY` produced -- because "no sort" here
+   * means the app adds nothing, not that it imposes an order of its own.
+   *
+   * Which of the two paths runs is the same boundary drawn everywhere else, and
+   * for once both sides are open. A grid tab re-browses: the order goes into the
+   * page SQL the extension already authors. An editor tab re-runs its statement
+   * with a sort the extension wraps around it -- the one rewrite this app makes,
+   * and the reason it is allowed is that the row set is unchanged. Both go
+   * through the server rather than reordering the rows already in hand: a BIGINT
+   * arrives as a string and a timestamp as the engine's own text, so comparing
+   * them up here would sort `9` after `10` and order dates by their spelling.
+   * That is *Value handling* pointed at the order rather than the value.
+   *
+   * Always from offset 0, for `applyFilter`'s reason: a new order makes row 250 a
+   * different row, so holding the old offset lands somewhere that meant something
+   * only under the order just replaced.
+   */
+  const toggleSort = useCallback(
+    (column: string) => {
+      if (!activeTabId) return;
+      const next = nextSort(sort, column);
+      if (gridTable) {
+        void dispatch(browseTable({ tabId: activeTabId, table: gridTable, offset: 0, filter: appliedFilter, sort: next }));
+      } else if (sql !== undefined) {
+        void dispatch(runQuery({ tabId: activeTabId, sql, sort: next }));
+      }
+    },
+    [dispatch, activeTabId, gridTable, appliedFilter, sort, sql]
+  );
 
   const save = useCallback(async () => {
     if (!activeTabId || !editTable || !page || !keyColumns || !result) return;
@@ -294,20 +362,23 @@ export function useResults() {
       // shows what actually landed (defaults filled in, triggers fired).
       view.discard(activeTabId);
       if (browse) {
-        // Re-read the *same* page, filter included -- re-browsing unfiltered
-        // here would silently widen the grid the user is looking at after a save.
-        dispatch(browseTable({ tabId: activeTabId, table: browse.table, offset: browse.offset, filter: browse.filter }));
+        // Re-read the *same* page, filter and sort included -- re-browsing
+        // without either would silently widen or reshuffle the grid the user is
+        // looking at after a save. The sort matters more than it looks: the
+        // staging is keyed by row index, so a page that came back in a different
+        // order would leave every remaining index pointing at the wrong row.
+        dispatch(browseTable({ tabId: activeTabId, table: browse.table, offset: browse.offset, filter: browse.filter, sort }));
       } else if (sql !== undefined) {
         // There is no page to re-read; re-running is the only "same view" a
         // hand query has, the same reason it is what Save re-does for one.
-        dispatch(runQuery({ tabId: activeTabId, sql }));
+        dispatch(runQuery({ tabId: activeTabId, sql, sort }));
       }
     } else {
       // Beside the save bar, not in `error`: a failed save must leave the grid and
       // the edits the user is still holding on screen, not blank them.
       view.setSaveError(activeTabId, (action.payload as string | undefined) ?? 'Could not save the changes.');
     }
-  }, [activeTabId, browse, editTable, editSchema, page, keyColumns, result, dirtyCount, editedRows, deletedRows, pending, view, dispatch, sql]);
+  }, [activeTabId, browse, editTable, editSchema, page, keyColumns, result, dirtyCount, editedRows, deletedRows, pending, view, dispatch, sql, sort]);
 
   /** Copy rows as tab-separated text -- a webview clipboard write, crossing nothing. */
   const copyRows = useCallback(
@@ -389,8 +460,11 @@ export function useResults() {
     saveError: (activeTabId && view.saveError[activeTabId]) || null,
     // Stepping by the page size the extension reported, rather than by a 100 of
     // our own, is what keeps the page size written in exactly one place.
-    // Paging carries the filter: page 2 of a filtered table is page 2 *of the
-    // matches*, and stepping unfiltered would page a different set of rows.
+    // Paging carries the filter *and* the sort: page 2 of a filtered table is
+    // page 2 of the matches, and page 2 of a sorted one is the second page of
+    // that order. Drop either and the next page is cut from a different set or a
+    // different order than the one on screen -- with the sort that shows as rows
+    // repeating across a boundary, since the two pages were ordered differently.
     next: useCallback(() => {
       if (activeTabId && browse?.hasMore) {
         dispatch(
@@ -399,10 +473,11 @@ export function useResults() {
             table: browse.table,
             offset: browse.offset + browse.pageSize,
             filter: browse.filter,
+            sort,
           })
         );
       }
-    }, [dispatch, activeTabId, browse]),
+    }, [dispatch, activeTabId, browse, sort]),
     prev: useCallback(() => {
       if (activeTabId && browse && browse.offset > 0) {
         dispatch(
@@ -411,10 +486,18 @@ export function useResults() {
             table: browse.table,
             offset: Math.max(0, browse.offset - browse.pageSize),
             filter: browse.filter,
+            sort,
           })
         );
       }
-    }, [dispatch, activeTabId, browse]),
+    }, [dispatch, activeTabId, browse, sort]),
+
+    // The sort surface. `sort` is what the result on screen was fetched with,
+    // which is what the header draws its arrow from; `canSort` is which headers
+    // may offer one at all.
+    sort,
+    toggleSort,
+    canSort,
 
     // The filter surface -- see the block where these are built.
     gridTable,
@@ -528,6 +611,30 @@ function filterKey(filter: TableFilter | null): string {
   return filter === null ? '' : JSON.stringify(filter);
 }
 
+/** The same idea as `filterKey`, for the term the staging page key takes. */
+function sortKey(sort: SortOrder | null): string {
+  return sort === null ? '' : `${sort.column}:${sort.direction}`;
+}
+
+/**
+ * The sort a click on `column` produces, given the one in force.
+ *
+ * Three states rather than two, and `null` is the third: a column cycles
+ * ascending, descending, then *off*, which puts the result back into the order
+ * it had before anyone clicked. A two-state toggle has no way back to that — an
+ * unsorted browse and an unsorted query are both real orders (the server's, and
+ * whatever the statement itself asked for), not the absence of one.
+ *
+ * A different column always starts fresh at ascending rather than inheriting the
+ * direction the last one was on: the direction is a fact about the column being
+ * sorted, and carrying it across reads as the app remembering something the user
+ * did not say about this column.
+ */
+function nextSort(current: SortOrder | null, column: string): SortOrder | null {
+  if (current === null || current.column !== column) return { column, direction: 'asc' };
+  return current.direction === 'asc' ? { column, direction: 'desc' } : null;
+}
+
 /**
  * A tab that has never run anything has no entry, and this is what it reads as.
  *
@@ -540,6 +647,7 @@ const EMPTY = Object.freeze({
   browse: null,
   editTarget: null,
   runSeq: 0,
+  sort: null,
   error: null,
   running: false,
   startedAt: null,

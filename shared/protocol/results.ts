@@ -194,6 +194,24 @@ export type TableFilter =
   | { kind: 'raw'; where: string };
 
 /**
+ * The one column a result is ordered by, and which way.
+ *
+ * One column rather than a list: the gesture that sets it is a click on a header,
+ * and a second click has to mean *this* column now — a growing sort list needs a
+ * modifier nobody discovers and a chip row to show what it accumulated. Clicking
+ * a different header replaces this outright.
+ *
+ * `column` is a name out of `QueryResult.columns` — the header the user clicked,
+ * which is the name the result actually answers under. The extension quotes it
+ * per engine and never interpolates it bare; `direction` is a closed set for the
+ * reason `FilterOperator` is one, since it reaches the SQL as text.
+ */
+export interface SortOrder {
+  column: string;
+  direction: 'asc' | 'desc';
+}
+
+/**
  * One row's edit, staged in the grid and issued on Save.
  *
  * `key` is the row's identifying values *as they were browsed* -- the columns in

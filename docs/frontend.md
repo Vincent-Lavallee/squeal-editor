@@ -461,6 +461,66 @@ not need to be: an untouched draft derives itself from `browse.filter`
 ran the moment the freshly opened tab reads it back — one `browseTable` carrying
 the filter is the whole of the wiring, the same as `applyFilter` beside it.
 
+## Sorting by a column header
+
+Clicking a grid header sorts the result by that column. It works on **both** kinds
+of grid, which is the one place the browse/query boundary this feature draws
+everywhere else is deliberately open — see `docs/decisions.md` for why the rewrite
+that costs is allowed here and refused for paging and filtering.
+
+**One column, three states.** `toggleSort` (in `useResults`) cycles
+asc → desc → unsorted, and clicking a different header replaces the sort rather
+than adding to it. The third state matters: an unsorted browse and an unsorted
+query are both real orders — the server's natural one, and whatever the statement
+itself asked for — so "no sort" has to be reachable and has to mean *the app adds
+nothing*. A different column always starts at ascending rather than inheriting the
+last one's direction, which would be the app remembering something the user never
+said about this column.
+
+**Which path runs is the tab's kind, and both go to the server.** A grid tab
+re-browses, so the order goes into the page SQL the extension already authors; an
+editor tab re-runs its statement with a sort the extension wraps around it.
+Neither reorders the rows already in hand, and that is not laziness: a BIGINT
+arrives as a string and a timestamp as the engine's own text, so a comparator up
+here would sort `9` after `10` and order dates by their spelling. It is *Never
+render a value through `Date` or `Number`* pointed at the order instead of the
+value — the app would be reordering by rules the database does not use and then
+showing it as the database's answer.
+
+**`sort` lives on `ResultsState`, not inside `browse`.** Unlike `filter`, both
+kinds of result can carry one, so it sits beside `browse` rather than in it. It is
+cleared on a rejected run or page for the reason `browse` is: it describes a grid
+that is no longer on screen, and an arrow claiming a sort is in force over an
+error message is a lie the next click would inherit.
+
+Four things are load-bearing, and each is the filter's own lesson arriving again:
+
+- **Everything that re-fetches carries the sort** — paging, Apply, Clear filter,
+  and the re-read after a successful Save. Miss one and that fetch is cut from a
+  different order than the one on screen, which shows up as rows repeating across
+  a page boundary rather than as anything that looks like a bug in sorting.
+- **The sort is part of the staging page key** (`table@offset@filter@sort`). Row 3
+  of a table ordered by name is not row 3 of it in natural order, so without this
+  a re-sort would carry staged edits onto whatever rows landed in those positions
+  — a write to rows the user never saw, the exact failure row identity exists to
+  prevent. A hand query needs no such term: sorting one re-runs it, and `runSeq`
+  has already moved.
+- **Sorting always browses from offset 0**, the same reason applying a filter
+  does: a new order makes row 250 a different row, so holding the old offset lands
+  somewhere that meant something only under the order just replaced.
+- **`canSort` refuses a blank or duplicated column name.** Both are unnameable in
+  an `ORDER BY` — a name the result answers under twice (`SELECT id, id`) is
+  ambiguous and both server engines reject the wrap. Refusing the click beats a
+  server error about a statement the user did not type. Neither case can arise on
+  a browsed page, which is `SELECT *` over a real table; this only bites a hand
+  query.
+
+**The sort is not in the session snapshot, though the filter is.** A restored grid
+tab re-browses, so its filter has to ride along or the tab comes back holding a
+different set of rows than it was left with. A sort changes no rows, so a restored
+tab without one shows the same table it always did — and a restored editor tab's
+sort would mean nothing until its query is run again.
+
 ## Filtering a browsed grid
 
 `FilterBar` sits above the results bar on a **grid tab only**. It is either the
@@ -1156,6 +1216,23 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   previous one. A table that fits on a single page shows none, because two dead
   buttons announce paging about the one case that has none. A query's result
   never shows one at all: the extension will not rewrite your SQL to page it.
+  (It *will* rewrite it to sort it, and only to sort it — the difference is that
+  a sort returns the same rows and a page returns a hundred of them. See
+  "Sorting by a column header" above.)
+- **A header's sort mark is the arrow in force, or a faint hint on hover.** The
+  sorted column draws its direction in `--accent`, always. Every other sortable
+  column carries an ascending chevron that is hidden until the cursor is on it —
+  so it is the *hovered* column saying what a click would do, never an icon on
+  every header saying something about none of them. It is the ascending glyph
+  rather than a neutral one because that is what the next click actually
+  produces. A header that cannot be sorted draws nothing and is left inert rather
+  than styled as disabled — nothing offered is nothing to explain, and a greyed
+  column reads as a broken one.
+
+  **The hint is hidden, not unrendered** (`visibility`, never `display`), and the
+  sorted arrow occupies the same slot. So a header keeps its width whether it is
+  sorted, hovered or neither: pointing at a column does not widen it, and sorting
+  one does not shift the columns beside it.
 - **Browsed rows are numbered from the page's offset**, not from 1. A gutter
   counting 1…100 on every page gives two different rows the same name.
 - Ctrl/⌘+Enter runs, from anywhere in the window (a `window` keydown listener),

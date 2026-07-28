@@ -12,6 +12,7 @@ import type {
   ForeignKeyRef,
   RowDelete,
   RowEdit,
+  SortOrder,
   SqlDialect,
   TableFilter,
 } from '../../shared/protocol/index.ts';
@@ -582,6 +583,35 @@ export function buildWhere(
   // the caller appends next; the conjunction joins the whole set, and mixed
   // logic is the raw clause's job rather than something guessed at here.
   return { clause: parts.map((part) => `(${part})`).join(` ${filter.conjunction} `), params };
+}
+
+/** The directions a sort may take, as a runtime guard over user JSON. */
+const SORT_DIRECTIONS = new Set<SortOrder['direction']>(['asc', 'desc']);
+
+/**
+ * Turns a sort into the `ORDER BY` a result comes back under.
+ *
+ * Shared between the engines for `buildWhere`'s reason, and quoting is its one
+ * callback rather than two because there is no value here to bind: a sort is a
+ * column and a direction, and both reach the SQL as text. So both are guarded
+ * rather than parameterised -- the column through the driver's own `quoteIdent`
+ * (which escapes the quote character, so a name carrying one cannot end the
+ * identifier), the direction against the closed set above, checked at runtime
+ * because it arrives as user JSON and the type is not the guard.
+ *
+ * The column is a name the *result* answered under, not one read off a catalog:
+ * a browsed page and a wrapped query both order by the header the user clicked,
+ * which is the only name that is true of both.
+ */
+export function orderByClause(
+  sort: SortOrder | undefined,
+  quoteIdent: (name: string) => string
+): string {
+  if (!sort || !sort.column) return '';
+  if (!SORT_DIRECTIONS.has(sort.direction)) {
+    throw new Error(`Unsupported sort direction: ${String(sort.direction)}`);
+  }
+  return ` ORDER BY ${quoteIdent(sort.column)} ${sort.direction === 'desc' ? 'DESC' : 'ASC'}`;
 }
 
 /**

@@ -205,6 +205,20 @@ const pagerBtn = (label: 'Prev' | 'Next') => `
 
 /** How many rows the grid is showing -- what a filter changes. */
 const rowCount = `document.querySelectorAll('.grid tbody tr').length`;
+/** Click a column header by name -- the whole header is the sort target. */
+const clickHeader = (name: string) => `
+  [...document.querySelectorAll('.grid thead th')]
+    .find(e => e.querySelector('[data-testid="grid-col-name"]')?.textContent === ${JSON.stringify(name)})
+    .click(); true;`;
+/**
+ * Which column the grid says it is sorted by, and which way -- read off the
+ * header's own `data-sort` rather than off the arrow's glyph, which is an icon
+ * with no text to assert on.
+ */
+const sortState = `(() => {
+  const th = [...document.querySelectorAll('.grid thead th')].find(e => e.dataset.sort);
+  return th ? th.querySelector('[data-testid="grid-col-name"]').textContent + ':' + th.dataset.sort : null;
+})()`;
 /** A data cell (past the row-number gutter) at row r, column c of the grid. */
 const gridCell = (r: number, c: number) =>
   `document.querySelectorAll('.grid tbody tr')[${r}].querySelectorAll('td:not(.gutter)')[${c}]`;
@@ -702,6 +716,118 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await app.evaluate(closeTab('events'));
       await Bun.sleep(300);
+    });
+
+    test('clicking a header cycles the sort, and the last click gives the order back', async () => {
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(2000);
+
+      // Nothing is sorted until asked, so no header claims to be.
+      expect(await app.evaluate<string | null>(sortState)).toBeNull();
+      const names = `[...document.querySelectorAll('.grid tbody tr')].map(r => r.querySelectorAll('td:not(.gutter)')[1].textContent)`;
+      const natural = await app.evaluate<string[]>(names);
+
+      // Every sortable header holds a hint arrow, hidden until hovered. `:hover`
+      // is not drivable through a dispatched event, so what is pinned here is the
+      // half that is: it is rendered, and it is hidden at rest. The CSS that
+      // reveals it lives in `residual.css` beside the row-hover rule.
+      const hintFor = (col: string) => `(() => {
+        const th = [...document.querySelectorAll('.grid thead th')]
+          .find(e => e.querySelector('[data-testid="grid-col-name"]')?.textContent === ${JSON.stringify(col)});
+        const hint = th.querySelector('[data-testid="grid-sort-hint"]');
+        return hint ? getComputedStyle(hint).visibility : null;
+      })()`;
+      expect(await app.evaluate<string | null>(hintFor('name'))).toBe('hidden');
+
+      await app.evaluate(clickHeader('name'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string | null>(sortState)).toBe('name:asc');
+      expect(await app.evaluate<string[]>(names)).toEqual(['Ada', 'Grace']);
+
+      // The sorted column trades the hint for the real arrow, in the same slot.
+      expect(await app.evaluate<string | null>(hintFor('name'))).toBeNull();
+      expect(await app.evaluate<boolean>(
+        `!!document.querySelector('.grid thead th[data-sort] [data-testid="grid-sort-arrow"]')`
+      )).toBe(true);
+
+      // Second click on the same header reverses it rather than adding to it.
+      await app.evaluate(clickHeader('name'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string | null>(sortState)).toBe('name:desc');
+      expect(await app.evaluate<string[]>(names)).toEqual(['Grace', 'Ada']);
+
+      // Third click removes the sort outright -- back to the order the server
+      // handed back before any of this, not to ascending again.
+      await app.evaluate(clickHeader('name'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string | null>(sortState)).toBeNull();
+      expect(await app.evaluate<string[]>(names)).toEqual(natural);
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+    });
+
+    test('a sort orders the whole table and the pager keeps it', async () => {
+      await app.evaluate(clickTable('events'));
+      await Bun.sleep(2000);
+
+      // Deliberately no assertion about the *unsorted* first row: natural order
+      // is the server's, and the fixture's own `UPDATE` on `e1` moves that row to
+      // the end of the Postgres heap. That it is not 1..150 is exactly why the
+      // pager test beside this one asserts counts rather than ids.
+      const firstId = `${gridCell(0, 0)}.textContent`;
+
+      await app.evaluate(clickHeader('id'));
+      await Bun.sleep(1500);
+      await app.evaluate(clickHeader('id'));
+      await Bun.sleep(1500);
+
+      // Descending puts the *table's* last row on page one, which is the whole
+      // difference between ordering the table and reordering the page: sorting
+      // the hundred rows already here could never produce 150.
+      expect(await app.evaluate<string | null>(sortState)).toBe('id:desc');
+      expect(await app.evaluate<string>(firstId)).toBe('150');
+      expect(await app.evaluate<string>(barText)).toContain('rows 1–100');
+
+      // And the step carries it: page two continues the order rather than
+      // being cut from the natural one, which would repeat rows across it.
+      await app.evaluate(`${pagerBtn('Next')}.click(); true;`);
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string>(firstId)).toBe('50');
+      expect(await app.evaluate<string | null>(sortState)).toBe('id:desc');
+
+      await app.evaluate(closeTab('events'));
+      await Bun.sleep(300);
+    });
+
+    test('a hand-typed query sorts too, wrapped rather than rewritten', async () => {
+      // The editor tab is the path with no page SQL of its own: the statement
+      // runs whole inside a wrap, so the same rows come back reordered and the
+      // text in the editor is untouched by the click. Its own `ORDER BY` is
+      // what the wrap has to override -- which is also why it is here rather
+      // than being appended to.
+      const sql = 'SELECT id, name FROM users ORDER BY id';
+      await app.evaluate(setEditorText(sql));
+      await Bun.sleep(400);
+      await app.evaluate(
+        `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(2000);
+
+      const names = `[...document.querySelectorAll('.grid tbody tr')].map(r => r.querySelectorAll('td:not(.gutter)')[1].textContent)`;
+      expect(await app.evaluate<string[]>(names)).toEqual(['Ada', 'Grace']);
+
+      await app.evaluate(clickHeader('name'));
+      await Bun.sleep(1500);
+      await app.evaluate(clickHeader('name'));
+      await Bun.sleep(1500);
+
+      expect(await app.evaluate<string | null>(sortState)).toBe('name:desc');
+      expect(await app.evaluate<string[]>(names)).toEqual(['Grace', 'Ada']);
+      // Same rows, only reordered -- the licence for wrapping at all.
+      expect(await app.evaluate<number>(rowCount)).toBe(2);
+      // The editor still holds exactly what was typed; the wrap never reaches it.
+      expect(await app.evaluate<string>(`window.squealEditor.getValue()`)).toBe(sql);
     });
 
     test('a filter narrows the grid, and clearing it restores the table', async () => {

@@ -65,7 +65,7 @@ one is needed to connect"* — a refusal from the one layer that had not been to
 It sits beside `AwsIamAuth` for the same reason: `hasPassword: false` has more
 than one cause, and every reader has to agree on which causes mean "ask".
 
-Four things about it are load-bearing, and each is the kind that looks arbitrary:
+Five things about it are load-bearing, and each is the kind that looks arbitrary:
 
 - **`listDatabases` reports the path, not `main`.** `connection.ts` keys one
   client per database *name* and opens a new one for any name it has not seen, so
@@ -83,6 +83,14 @@ Four things about it are load-bearing, and each is the kind that looks arbitrary
   catalog would make `pickRowKey` reject it and leave the grid read-only for
   almost every SQLite table there is. `runWrites` aborting any op that matches
   more than one row is the backstop if a key turns out not to be unique.
+- **A double-quoted name it cannot resolve becomes a string literal**, not an
+  error. So `ORDER BY "no_such_column"` orders by a constant and quietly does
+  nothing, where MySQL and Postgres both reject the statement. Nothing in the app
+  can reach it — the grid only ever sorts by a header it drew — but it is why the
+  sort contract test asserts that the connection survives rather than asserting
+  the statement failed: pinning `ok: false` there would be pinning which engine
+  the test is talking to. Worth knowing before trusting a quoted identifier here
+  to fail loudly.
 - **`bun:sqlite` deduplicates `columnNames`.** `SELECT 1 AS x, 2 AS x` answers
   two values under **one** header name, which shifts every column after the
   duplicate under the wrong one — the *Rows as arrays* failure moved into the
@@ -176,9 +184,12 @@ Four rules, each load-bearing:
   rows and drops the extra one before returning. A full page is not evidence of
   a next one — that guess is the bug this replaced — and `COUNT(*)` is a full
   scan to learn what one spare row already says.
-- **No `ORDER BY`.** Rows come back in the server's natural order, which is not
-  a stable order: a write between two page fetches can shift a row across the
-  boundary. Accepted deliberately; the alternative sorts the whole table per page.
+- **No `ORDER BY` unless one was asked for.** Rows come back in the server's
+  natural order, which is not a stable order: a write between two page fetches
+  can shift a row across the boundary. Accepted deliberately; the extension never
+  *picks* an order, because a table with no meaningful one has no correct one to
+  impose and ordering by a key we chose would sort the whole table per page. A
+  `sort` the user clicked a header for is the other case — see below.
 - **The offset is coerced before it is interpolated.** It arrives as user JSON
   and no placeholder can carry a `LIMIT` on both engines, so it is forced to a
   non-negative integer. This is the one place SQL is built by interpolation. Keep
@@ -230,6 +241,59 @@ Four rules:
 
 `LIMIT`/`OFFSET` remains the one interpolation, and it sits after the `WHERE`, so
 the filter's placeholders number from 1 with nothing to collide with.
+
+### Ordering a page: `sort`
+
+`db.browse` also takes an optional `SortOrder` — one column and a direction —
+which becomes an `ORDER BY` **between the `WHERE` and the `LIMIT`**. That
+position is the whole of it: the table is ordered and the page is cut from the
+result, so page 2 of a sorted table is the second page *of that order*. Ordering
+the hundred rows after they arrive would sort each page within itself and leave
+the pages themselves in natural order — correct-looking on page one, wrong from
+page two.
+
+`orderByClause` in `drivers.ts` is the assembler, beside `buildWhere` and the
+same shape, with one difference: it takes `quoteIdent` alone and no
+`placeholder`, because a sort has **no value to bind**. Both halves reach the SQL
+as text, so both are guarded rather than parameterised — the column through the
+driver's own `quoteIdent` (which escapes the quote character, so a name carrying
+one cannot end the identifier), and the direction against a closed set checked at
+runtime, since it arrives as user JSON and the type is not the guard. Quoting is
+unconditional, so a mixed-case column like `eventType` works without a
+"needs it or doesn't" judgment — the same lesson the filter bar already paid for.
+
+The column is a name the **result** answers under, never one read off a catalog.
+That is what lets one `SortOrder` serve both a browsed page and a wrapped query:
+the header the user clicked is the only name true of both.
+
+## Sorting a query: the one statement this side rewrites
+
+`db.query` takes the same optional `sort`, and given one it runs
+`SELECT * FROM (<sql>) squeal_sorted ORDER BY <column> <direction>` instead of
+the statement alone. **This is the only place the extension rewrites SQL the user
+wrote**, and it is deliberate rather than a hole: paging and filtering a query's
+result are still refused, because both change *which* rows come back and a grid
+showing a subset of what was asked for is an editor lying about what it ran. A
+sort changes none — the statement runs whole, inside the parenthesis, and the
+same rows arrive in a different order. That is the entire licence; see
+`docs/decisions.md`.
+
+Three things about it are load-bearing:
+
+- **It wraps rather than appends.** A statement already ending in an `ORDER BY`
+  would become a syntax error, and a `UNION` would take an appended clause as
+  belonging to its last branch. Wrapping is the only form that works regardless
+  of what the statement does — its own ordering, a CTE, a union.
+- **The trailing semicolon is stripped, and only when wrapping.** It would
+  terminate the wrapper rather than the subquery. An unsorted statement is passed
+  through untouched, semicolon included, which is the rule this is the exception
+  to still holding for every call that does not carry a sort.
+- **The alias is not optional.** MySQL and Postgres both refuse an unaliased
+  derived table.
+
+The wrap is written in `connection.ts` beside the page SQL rather than in a
+driver, for the `LIMIT/OFFSET` reason: all three engines spell it identically. An
+engine that does not makes it a `Driver` method, not an `if` here.
 
 ## Listing a table's columns
 

@@ -17,6 +17,7 @@ import type {
   ConnectionConfig,
   FilterCondition,
   QueryResult,
+  SortOrder,
   TableFilter,
   TableInfo,
   TablePage,
@@ -454,6 +455,158 @@ describe.each([
 
   test('reports how long a page took', async () => {
     expect(typeof (await browse('users')).result.durationMs).toBe('number');
+  });
+
+  /* -- Sorting. Two paths, one contract: a browsed page orders inside the page
+        SQL the extension already writes, and a hand-typed query is wrapped and
+        ordered. Both are the server doing the comparing, which is the whole
+        point -- a BIGINT is a string up here and a date is the engine's text. -- */
+
+  const sorted = async (table: string, sort: SortOrder, offset = 0): Promise<TablePage> =>
+    (await h.ok('db.browse', { connectionId, database: fixtureDb, table, offset, sort })) as TablePage;
+
+  const labelsOf = (page: TablePage, column = 'label'): string[] => {
+    const at = page.result.columns.indexOf(column);
+    return page.result.rows.map((r) => String(r[at]));
+  };
+
+  test('a page comes back in the order it was asked for, both ways', async () => {
+    expect(labelsOf(await sorted('tags', { column: 'label', direction: 'asc' }))).toEqual(['blue', 'red']);
+    expect(labelsOf(await sorted('tags', { column: 'label', direction: 'desc' }))).toEqual(['red', 'blue']);
+  });
+
+  test('the sort orders the whole table, then the page is cut from it', async () => {
+    // The distinction that matters, and the one a client-side sort could not
+    // make: `events` is 150 rows over two pages, so ordering by id descending
+    // has to put row 150 on page *one*. Sorting the hundred rows after they
+    // arrive would leave page one holding ids 1-100 in reverse.
+    const page = await sorted('events', { column: 'id', direction: 'desc' });
+    expect(String(page.result.rows[0]![page.result.columns.indexOf('id')])).toBe('150');
+    expect(page.hasMore).toBe(true);
+  });
+
+  test('paging continues the sorted order rather than restarting it', async () => {
+    const first = await sorted('events', { column: 'id', direction: 'desc' });
+    const second = await sorted('events', { column: 'id', direction: 'desc' }, first.pageSize);
+    const idAt = first.result.columns.indexOf('id');
+
+    // Page two picks up exactly where page one stopped. Drop the sort on the
+    // step and this page would be cut from the natural order instead, which
+    // shows up as rows appearing twice across the boundary.
+    expect(String(first.result.rows[first.pageSize - 1]![idAt])).toBe('51');
+    expect(String(second.result.rows[0]![idAt])).toBe('50');
+    expect(second.hasMore).toBe(false);
+  });
+
+  test('a sort and a filter narrow and order the same page', async () => {
+    // They are independent, and both have to survive the other: the filter picks
+    // the rows and the sort picks their order.
+    const page = (await h.ok('db.browse', {
+      connectionId,
+      database: fixtureDb,
+      table: 'tags',
+      offset: 0,
+      filter: where([{ column: 'weight', operator: '>', value: '0' }]),
+      sort: { column: 'label', direction: 'desc' } satisfies SortOrder,
+    })) as TablePage;
+    expect(labelsOf(page)).toEqual(['red', 'blue']);
+  });
+
+  test('a sorted page still carries its row identity', async () => {
+    // Ordering a page does not change what identifies a row in it, so the grid
+    // stays as editable sorted as it is unsorted.
+    const page = await sorted('users', { column: 'name', direction: 'asc' });
+    expect(page.keyColumns).toEqual(['id']);
+  });
+
+  test('a sort direction outside the set is refused, not authored', async () => {
+    // The direction reaches the SQL as text and arrives as user JSON, so the
+    // closed set is checked at runtime -- the same guard the filter's operators
+    // get, and for the same reason the type is not one.
+    const res = await h.dispatch('db.browse', {
+      connectionId,
+      database: fixtureDb,
+      table: 'users',
+      offset: 0,
+      sort: { column: 'name', direction: 'asc; DROP TABLE users' },
+    });
+    expect(res.ok).toBe(false);
+
+    expect((await browse('users')).result.rows).toHaveLength(2);
+  });
+
+  test('a sort column is quoted, so a name that needs it still works', async () => {
+    // `eventType` is mixed-case on purpose: unquoted, Postgres folds it to
+    // `eventtype` and cannot find it -- the bug the filter bar shipped once.
+    // Quoting is unconditional, so there is no "needs it or doesn't" call here.
+    const page = await sorted('users', { column: 'eventType', direction: 'asc' });
+    expect(page.result.rows).toHaveLength(2);
+  });
+
+  const sortedQuery = async (sql: string, sort: SortOrder): Promise<QueryResult> =>
+    (await h.ok('db.query', { connectionId, database: fixtureDb, sql, sort })) as QueryResult;
+
+  test('a sorted query is wrapped, and comes back in that order', async () => {
+    const asc = await sortedQuery('SELECT label, weight FROM tags', { column: 'label', direction: 'asc' });
+    expect(asc.rows.map((r) => String(r[0]))).toEqual(['blue', 'red']);
+
+    const desc = await sortedQuery('SELECT label, weight FROM tags', { column: 'label', direction: 'desc' });
+    expect(desc.rows.map((r) => String(r[0]))).toEqual(['red', 'blue']);
+  });
+
+  test('sorting a query changes the order and never the rows', async () => {
+    // This is the whole licence for wrapping the statement at all: the same rows
+    // arrive, so the grid is not showing a subset of what was asked for. Paging
+    // and filtering a query's result stay refused precisely because they cannot
+    // promise this.
+    const plain = await query('SELECT label FROM tags');
+    const sortedRows = await sortedQuery('SELECT label FROM tags', { column: 'label', direction: 'desc' });
+    expect(sortedRows.rows).toHaveLength(plain.rows.length);
+    expect(new Set(sortedRows.rows.map((r) => String(r[0])))).toEqual(new Set(plain.rows.map((r) => String(r[0]))));
+  });
+
+  test("a sort overrides the statement's own ORDER BY rather than fighting it", async () => {
+    // The wrap puts the user's ordering inside a subquery, where it no longer
+    // decides the order rows are returned in. That is the point of wrapping
+    // instead of appending: appending to a statement that already ends in an
+    // ORDER BY is a syntax error, and one with a CTE or a UNION has nowhere to
+    // append to at all.
+    const res = await sortedQuery('SELECT label FROM tags ORDER BY label ASC', { column: 'label', direction: 'desc' });
+    expect(res.rows.map((r) => String(r[0]))).toEqual(['red', 'blue']);
+  });
+
+  test('a trailing semicolon does not break the wrap', async () => {
+    // It would terminate the wrapping statement rather than the subquery, so it
+    // is stripped -- and only when wrapping; an unsorted statement is untouched.
+    const res = await sortedQuery('SELECT label FROM tags;  ', { column: 'label', direction: 'asc' });
+    expect(res.rows.map((r) => String(r[0]))).toEqual(['blue', 'red']);
+  });
+
+  test('a sort the result cannot answer does not take the connection with it', async () => {
+    // Unreachable from the grid -- the UI only ever sorts by a header it drew --
+    // so this is the hostile-input case, and it is the one place the three
+    // engines genuinely differ. MySQL and Postgres reject the statement. SQLite
+    // does not: a double-quoted name it cannot resolve to a column becomes a
+    // *string literal* rather than an error (see the engine's wart list in
+    // `docs/extension.md`), so ordering by a constant is inert and the rows come
+    // back untouched. Asserting `ok` either way would be asserting which engine
+    // this is. What must hold on all three is what a bad filter must hold: the
+    // connection is still standing afterwards.
+    await h.dispatch('db.query', {
+      connectionId,
+      database: fixtureDb,
+      sql: 'SELECT label FROM tags',
+      sort: { column: 'no_such_column', direction: 'asc' },
+    });
+
+    expect((await query('SELECT label FROM tags')).rows).toHaveLength(2);
+  });
+
+  test('an unsorted query is still run exactly as written', async () => {
+    // The rule the sort is the single exception to. Without one, nothing wraps,
+    // nothing is stripped, and the statement reaches the server as typed.
+    const res = await query('SELECT 1 AS one;');
+    expect(res.rows).toHaveLength(1);
   });
 
   const ddlOf = async (table: string, kind: 'table' | 'view' = 'table', schema?: string): Promise<string> =>

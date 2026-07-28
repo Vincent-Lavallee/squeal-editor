@@ -24,6 +24,7 @@ import type {
   QueryResult,
   RowDelete,
   RowEdit,
+  SortOrder,
   StarredTable,
   TableFilter,
   TableInfo,
@@ -74,8 +75,26 @@ export interface Commands {
     req: { connectionId: string; database: string; table: string; schema?: string };
     res: { columns: ColumnInfo[] };
   };
+  /**
+   * Run the user's statement, exactly as written.
+   *
+   * `sort` is the one thing that changes that, and it is the single exception to
+   * a rule this contract otherwise states everywhere: given one, the extension
+   * runs `SELECT * FROM (<sql>) ORDER BY <column> <direction>` instead. It is
+   * narrow on purpose, and what makes it narrow is that a wrap of this shape
+   * **returns the same rows** -- the statement runs whole, inside, and only the
+   * order it comes back in changes. That is what paging and filtering a query's
+   * result could not promise (both change *which* rows arrive), which is why
+   * those are still refused and this is not.
+   *
+   * It exists rather than being sorted in the webview because ordering is the
+   * server's to decide: a BIGINT arrives as a string and a timestamp as the
+   * engine's own text, so a comparator up there would sort `9` after `10` and
+   * order dates by their spelling. Sorting client-side is *Value handling* with
+   * the sign flipped -- see `docs/decisions.md`.
+   */
   'db.query': {
-    req: { connectionId: string; database?: string; sql: string };
+    req: { connectionId: string; database?: string; sql: string; sort?: SortOrder };
     res: QueryResult;
   };
   /**
@@ -107,9 +126,24 @@ export interface Commands {
    *
    * A builder filter's values are bound as parameters and never interpolated. A
    * raw filter is the user's own `WHERE` text, pasted in as typed.
+   *
+   * `sort` orders the whole table before the page is cut from it, so page 2 of a
+   * sorted table is the second page *of that order* -- it is part of the page
+   * SQL, never a re-ordering of the hundred rows that came back. Unsorted, the
+   * page is still the server's natural order and still not a stable one; a sort
+   * is the only way to make paging repeatable, which is a consequence rather
+   * than the reason it exists.
    */
   'db.browse': {
-    req: { connectionId: string; database: string; table: string; schema?: string; offset: number; filter?: TableFilter };
+    req: {
+      connectionId: string;
+      database: string;
+      table: string;
+      schema?: string;
+      offset: number;
+      filter?: TableFilter;
+      sort?: SortOrder;
+    };
     res: TablePage;
   };
   /**
