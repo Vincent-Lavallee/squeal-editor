@@ -1,7 +1,7 @@
 import { createSlice, isAnyOf, type PayloadAction } from '@reduxjs/toolkit';
 import { useCallback } from 'react';
 
-import type { ConnectionColorId, ConnectProgress, ConnectionConfig, Environment, ServerConfig, SqlDialect } from '../../../shared/protocol/index.ts';
+import type { ConnectionColorId, ConnectionState, ConnectProgress, ConnectionConfig, Environment, ServerConfig, SqlDialect } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { isFileBased } from '../common/db/engines.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
@@ -84,6 +84,17 @@ export interface OpenConnection {
    * did, and the lock in the status bar toggles it per connection.
    */
   readOnly: boolean;
+  /**
+   * Why the server is no longer on the other end, when it is not, in the
+   * driver's own words -- and `null` while the connection is healthy.
+   *
+   * It crossed the bridge: the extension is the only side that can notice a
+   * socket dying, and it broadcasts it rather than answering a request, because
+   * nothing asked. **It is not the connection ending** -- the session stays
+   * open and the extension reopens it on the next command, so this is a fact to
+   * show and not a reason to drop anything keyed by the connection.
+   */
+  lostReason: string | null;
 }
 
 /**
@@ -112,6 +123,8 @@ interface SessionState {
   activeConnectionId: string | null;
   connecting: boolean;
   connectingPhase: string | null;
+  /** When the in-flight connect attempt started, for the elapsed timer beside Cancel. */
+  connectingStartedAt: number | null;
   error: string | null;
 }
 
@@ -121,6 +134,7 @@ const initialState: SessionState = {
   activeConnectionId: null,
   connecting: false,
   connectingPhase: null,
+  connectingStartedAt: null,
   error: null,
 };
 
@@ -129,7 +143,7 @@ const initialState: SessionState = {
  * matchers below reduce them: the difference is only where the password and the
  * environment came from, and by this point neither has a password.
  */
-interface Opened extends OpenConnection {
+interface Opened extends Omit<OpenConnection, 'lostReason'> {
   databases: string[];
   /**
    * The tabs this connection had open last time, for `tabsSlice` to restore --
@@ -328,6 +342,23 @@ const sessionSlice = createSlice({
     connectionProgressReceived(state, action: PayloadAction<ConnectProgress>) {
       state.connectingPhase = action.payload.phase;
     },
+
+    /**
+     * The server dropped an open connection, or the extension got it back.
+     *
+     * Nothing else changes: the connection keeps its place on the rail, its
+     * tabs, its tree and its results. A drop is not a disconnect -- the next
+     * query reopens it -- so reducing this like `disconnect.fulfilled` would
+     * throw away everything the user had open over a blip they did not cause.
+     * A connection already gone finds nothing and no-ops, the same as a
+     * read-only toggle landing late.
+     */
+    connectionStateReceived(state, action: PayloadAction<ConnectionState>) {
+      const { connectionId, state: next, reason } = action.payload;
+      const conn = state.connections[connectionId];
+      if (!conn) return;
+      conn.lostReason = next === 'lost' ? (reason ?? 'The server closed the connection.') : null;
+    },
   },
   extraReducers: (builder) => {
     // Typing a server and picking a saved one differ only in how the extension
@@ -355,6 +386,7 @@ const sessionSlice = createSlice({
       .addMatcher(isAnyOf(connect.pending, connectSaved.pending), (state) => {
         state.connecting = true;
         state.connectingPhase = null;
+        state.connectingStartedAt = Date.now();
         state.error = null;
       })
       .addMatcher(sessionOpened, (state, action) => {
@@ -362,6 +394,7 @@ const sessionSlice = createSlice({
           action.payload;
         state.connecting = false;
         state.connectingPhase = null;
+        state.connectingStartedAt = null;
         state.connections[connectionId] = {
           connectionId,
           savedConnectionId,
@@ -373,6 +406,7 @@ const sessionSlice = createSlice({
           color,
           environment,
           readOnly,
+          lostReason: null,
         };
         state.order.push(connectionId);
         // Opening one puts you on it. Anything else means connecting to a server
@@ -384,12 +418,14 @@ const sessionSlice = createSlice({
       .addMatcher(isAnyOf(connect.rejected, connectSaved.rejected), (state, action) => {
         state.connecting = false;
         state.connectingPhase = null;
+        state.connectingStartedAt = null;
         state.error = action.payload ?? 'Could not connect.';
       });
   },
 });
 
-export const { errorDismissed, connectionActivated, connectionProgressReceived } = sessionSlice.actions;
+export const { errorDismissed, connectionActivated, connectionProgressReceived, connectionStateReceived } =
+  sessionSlice.actions;
 export const sessionReducer = sessionSlice.reducer;
 
 /**
@@ -421,7 +457,7 @@ export const selectConnections = (s: RootState): OpenConnection[] =>
  */
 export function useSession() {
   const dispatch = useAppDispatch();
-  const { connecting, connectingPhase, error, activeConnectionId } = useAppSelector((s) => s.session);
+  const { connecting, connectingPhase, connectingStartedAt, error, activeConnectionId } = useAppSelector((s) => s.session);
   const active = useAppSelector(selectActiveConnection);
   const connections = useAppSelector(selectConnections);
 
@@ -439,8 +475,11 @@ export function useSession() {
     environment: active?.environment ?? null,
     name: active?.name ?? '',
     readOnly: active?.readOnly ?? false,
+    /** Why the connection in front is not reachable, or null while it is. */
+    lostReason: active?.lostReason ?? null,
     connecting,
     connectingPhase,
+    connectingStartedAt,
     error,
     connected: activeConnectionId !== null,
     serverLabel: active ? serverLabel(active.config) : '',

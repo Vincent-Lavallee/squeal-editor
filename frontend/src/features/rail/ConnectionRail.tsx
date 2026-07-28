@@ -71,10 +71,19 @@ export default function ConnectionRail({ onAdd }: Props) {
                         style={{ display: 'inline-flex', alignItems: 'baseline', gap: t.GAP_XS, padding: `4px ${t.GAP_SM}px`, borderRadius: t.RADIUS_PILL, border: `1px solid ${active ? activeFill : chipBorder}`, background: active ? activeFill : wash, color: active ? t.BG : t.TEXT_MUTED, font: 'inherit', lineHeight: 1, whiteSpace: 'nowrap', cursor: 'pointer' }}
                         aria-current={active ? 'true' : undefined}
                         onClick={() => activate(c.connectionId)}
-                        title={`${c.name} — ${c.environment} — ${serverLabel(c.config)}`}>
+                        title={c.lostReason ? `${c.name} — dropped: ${c.lostReason} The next query will reconnect.` : `${c.name} — ${c.environment} — ${serverLabel(c.config)}`}>
+                        {/*
+                          A dot, because the chip already spends its colour on
+                          which connection this is and repainting it would say
+                          "different server" rather than "same server, dropped".
+                        */}
+                        {c.lostReason && (
+                          <span data-testid="rail-lost" aria-hidden="true"
+                            style={{ flex: 'none', width: 6, height: 6, borderRadius: t.RADIUS_PILL, background: t.AMBER }} />
+                        )}
                         <span data-testid="rail-name" style={{ fontSize: t.TEXT_LABEL, fontWeight: 500 }}>{c.name}</span>
                         <span data-testid="rail-env" style={{ fontSize: t.TEXT_MICRO, color: active ? blendOver(t.BG, activeFill, 0.65) : t.TEXT_FAINT }} aria-hidden="true">{c.environment}</span>
-                        <SrOnly>{c.name}, {name}, {c.environment}, {serverLabel(c.config)}</SrOnly>
+                        <SrOnly>{c.name}, {name}, {c.environment}, {serverLabel(c.config)}{c.lostReason ? ', connection dropped' : ''}</SrOnly>
                       </button>
                     </li>
                   );

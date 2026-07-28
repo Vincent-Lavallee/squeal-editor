@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { PasswordUpdate, SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
 import { useEnvironments } from '../../store/environmentsSlice.ts';
@@ -37,6 +37,16 @@ export default function ConnectScreen({ onCancel }: Props) {
 
   const [screen, setScreen] = useState<Screen | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [connectingElapsed, setConnectingElapsed] = useState(0);
+
+  useEffect(() => {
+    const startedAt = session.connectingStartedAt;
+    if (!session.connecting || !startedAt) { setConnectingElapsed(0); return; }
+    const tick = () => setConnectingElapsed((Date.now() - startedAt) / 1000);
+    tick();
+    const id = setInterval(tick, 100);
+    return () => clearInterval(id);
+  }, [session.connecting, session.connectingStartedAt]);
 
   const loading = saved.loading || workspaces.loading || environments.loading;
   const only = workspaces.workspaces.length === 1 ? workspaces.workspaces[0] : undefined;
@@ -135,12 +145,29 @@ export default function ConnectScreen({ onCancel }: Props) {
         {renderScreen()}
 
         {session.connecting && (
-          <Button variant="ghost" style={{ justifyContent: 'center', width: '100%', marginTop: t.GAP_LG }} onClick={() => { cancelConnect(); go(null); }}>
-            Cancel
-          </Button>
+          <>
+            <div style={{ marginTop: t.GAP_LG, textAlign: 'center', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>
+              Connecting for {connectingElapsed.toFixed(1)}s…
+            </div>
+            {/* Cancelling stays on the screen the attempt was started from --
+                `go(null)` would re-derive the view from data and could land on
+                the workspace picker even though nothing about the workspace list
+                changed. */}
+            <Button data-testid="connecting-cancel" variant="ghost" style={{ justifyContent: 'center', width: '100%', marginTop: t.GAP_SM }}
+              onClick={() => { cancelConnect(); session.dismissError(); setConnectingId(null); }}>
+              Cancel
+            </Button>
+          </>
         )}
 
-        {error && <div style={{ marginTop: t.GAP_LG }}><Callout>{error}</Callout></div>}
+        {/* A cancelled attempt is not a failure -- the user asked for this one
+            to stop, so it reads in the same muted voice as "Connecting for…"
+            rather than in the red a real connect error gets. */}
+        {error && (
+          error === 'Cancelled.'
+            ? <div data-testid="connect-cancelled" style={{ marginTop: t.GAP_LG, textAlign: 'center', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>{error}</div>
+            : <div style={{ marginTop: t.GAP_LG }}><Callout>{error}</Callout></div>
+        )}
       </div>
     </div>
   );

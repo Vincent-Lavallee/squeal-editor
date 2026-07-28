@@ -18,11 +18,49 @@ import type {
 // Amazon's published RDS CA bundle, folded into the compiled binary as text.
 import rdsCaBundle from './rds-global-bundle.pem' with { type: 'text' };
 
-const { Client: PgClient, types: pgTypes } = pg;
+const { Client: PgClient, DatabaseError, types: pgTypes } = pg;
 
 // System schemas we hide from the tree, per engine.
 const MYSQL_SYSTEM_DBS = new Set(['information_schema', 'mysql', 'performance_schema', 'sys']);
 const PG_SYSTEM_SCHEMAS = ['pg_catalog', 'information_schema'];
+
+/**
+ * How long an idle socket may stay quiet before it starts proving it is alive.
+ *
+ * Well under the ~350s an AWS network load balancer gives an idle connection
+ * before it drops it without telling either end -- which is the shape of drop
+ * this app cannot otherwise see coming, since a half-open socket looks exactly
+ * like a healthy one until something is written to it.
+ */
+const KEEPALIVE_DELAY_MS = 30_000;
+
+/**
+ * The sentences pg raises in place of an error from the server when the
+ * connection, rather than the statement, is what failed. Written out verbatim
+ * from `pg/lib/client.js` because they carry no code, no severity and no class
+ * of their own to be recognised by -- see `postgresDriver.isConnectionLost`.
+ */
+const PG_CONNECTION_LOST_MESSAGES = new Set([
+  'Connection terminated',
+  'Connection terminated unexpectedly',
+  'Client has encountered a connection error and is not queryable',
+  'Client was closed and is not queryable',
+]);
+
+/** SQLSTATE class 08 -- `connection_exception` and everything under it. */
+const PG_CONNECTION_EXCEPTION_CLASS = '08';
+
+/**
+ * The SQLSTATEs Postgres sends on its way out: an administrator's
+ * `pg_terminate_backend`, a server shutting down, and a server that has not
+ * finished starting. They arrive as an error against whatever statement was
+ * running, but the connection does not survive any of them.
+ */
+const PG_TERMINAL_SQLSTATES = new Set([
+  '57P01', // admin_shutdown -- "terminating connection due to administrator command"
+  '57P02', // crash_shutdown
+  '57P03', // cannot_connect_now
+]);
 
 // Hand back Postgres' own rendering of date/time values instead of letting node-pg
 // build a JS Date from them. A Date has to pick a timezone, and for the types that
@@ -99,6 +137,49 @@ export interface Driver<C> {
   defaultSchema?: string;
   createClient(config: ConnectionConfig, database?: string): Promise<C>;
   closeClient(client: C): Promise<void>;
+  /**
+   * Hear about the server dropping this client, rather than finding out at the
+   * next query.
+   *
+   * **Registering this is not optional and not a nicety.** Both server libraries
+   * are EventEmitters that `emit('error')` when the socket dies with nothing in
+   * flight, and an `error` event with no listener is how Node spells "throw" --
+   * which reaches `main.ts`'s `uncaughtException` handler and takes the whole
+   * extension, every other connection included, down with one dropped socket.
+   *
+   * `handler` fires at most once per client, for a drop or a clean server-side
+   * close alike; the caller cannot tell those apart and does not need to, since
+   * either way the client is finished.
+   */
+  onClientLost(client: C, handler: (reason: string) => void): void;
+  /**
+   * Whether a failed call means the connection itself is finished, as opposed to
+   * the statement being wrong.
+   *
+   * `onClientLost` catches a client dropped while nothing was running, which is
+   * the common case and the dangerous one. It does **not** catch a client dropped
+   * *during* a query: both libraries hand a network failure to the waiting
+   * command rather than to the connection when there is a command to hand it to,
+   * so the query rejects and no event is emitted. Without this, that client stays
+   * cached and dead and every command after it fails the same way for as long as
+   * the app is open -- which is exactly what "it says connected but nothing
+   * works" looks like.
+   *
+   * Answered from the library's own structured signal, never by matching on
+   * message text: a syntax error and a severed socket must not be one category.
+   */
+  isConnectionLost(err: unknown): boolean;
+  /**
+   * Drop the socket without asking the server first, for a client that is not
+   * going to answer.
+   *
+   * `closeClient` is the polite form: it writes a goodbye and waits to be told
+   * the connection is over. On a half-open socket -- the normal shape of an idle
+   * connection reaped by a load balancer -- there is nobody left to answer, and
+   * that wait is a TCP retransmission timeout measured in minutes. This is what
+   * bounds it.
+   */
+  destroyClient(client: C): void;
   listDatabases(client: C): Promise<string[]>;
   listTables(client: C, database: string): Promise<TableMeta[]>;
   /**
@@ -592,11 +673,47 @@ export const mysqlDriver: Driver<MysqlConnection> = {
       // numbers; only those that would lose precision become strings.
       supportBigNumbers: true,
       bigNumberStrings: false,
+      // TCP keepalive, so an idle connection keeps proving it is there. The
+      // thing between this app and an RDS instance -- a load balancer, RDS
+      // Proxy -- reaps a silent connection on its own timer, and a probe every
+      // 30s is what stops a connection that is merely being read from looking
+      // abandoned. It reduces drops; it does not make them impossible, which is
+      // why `onClientLost` exists regardless.
+      enableKeepAlive: true,
+      keepAliveInitialDelay: KEEPALIVE_DELAY_MS,
     });
+  },
+
+  onClientLost(client, handler) {
+    let fired = false;
+    const once = (reason: string) => {
+      if (fired) return;
+      fired = true;
+      handler(reason);
+    };
+    // Both, because they are different endings and either leaves the client
+    // unusable: `error` is the socket failing under us, `end` is the server
+    // saying goodbye first. mysql2 reaches `error` for a fatal network error
+    // only when no command is in flight to hand it to -- exactly the idle case
+    // that would otherwise crash the process.
+    client.on('error', (err: Error) => once(err.message));
+    client.on('end', () => once('The server closed the connection.'));
+  },
+
+  // mysql2 marks every error that ends the connection `fatal`, and marks nothing
+  // else that way -- a syntax error or a constraint violation arrives without it.
+  // That flag is the library answering this exact question, so it is read rather
+  // than re-derived from the error code list it is already computed from.
+  isConnectionLost(err) {
+    return err instanceof Error && (err as Error & { fatal?: boolean }).fatal === true;
   },
 
   async closeClient(client) {
     await client.end();
+  },
+
+  destroyClient(client) {
+    client.destroy();
   },
 
   async listDatabases(client) {
@@ -888,13 +1005,69 @@ export const postgresDriver: Driver<pg.Client> = {
       // False is pg's own spelling of "plaintext"; unlike mysql2 it does not
       // read the presence of the key as a request for TLS.
       ssl: config.ssl ? tlsOptions(config) : false,
+      // The same idle-reaping guard mysql2's `enableKeepAlive` is, in pg's
+      // spelling.
+      keepAlive: true,
+      keepAliveInitialDelayMillis: KEEPALIVE_DELAY_MS,
     });
     await client.connect();
     return client;
   },
 
+  onClientLost(client, handler) {
+    let fired = false;
+    const once = (reason: string) => {
+      if (fired) return;
+      fired = true;
+      handler(reason);
+    };
+    // pg's `_handleErrorEvent` emits `error` on the client for every socket
+    // failure after connect, with or without a listener -- so this listener is
+    // the difference between a dropped connection and a dead extension.
+    client.on('error', (err: Error) => once(err.message));
+    client.on('end', () => once('The server closed the connection.'));
+  },
+
+  /**
+   * pg reports a severed connection three ways, and the first is the one that
+   * looks least like one.
+   *
+   * **A `DatabaseError` is not automatically the statement's fault.** A backend
+   * killed by an administrator, a server shutting down, a failover -- all arrive
+   * as a perfectly ordinary error message from the server, carrying a SQLSTATE
+   * that says the *connection* is over. Reading "came from the server" as "your
+   * SQL was wrong" is what left the client cached and dead here, so the codes
+   * are checked rather than the class. They are checked and not the `severity`
+   * beside them because a SQLSTATE is five fixed characters while the severity
+   * is localised into the server's `lc_messages`.
+   *
+   * The other two are a Node system error, recognised by carrying a `syscall`,
+   * and pg's own substitute sentences for a connection that ended under a query
+   * -- matched literally because pg gives them nothing else to be matched on.
+   *
+   * Everything left over is `false`, which is what keeps a refusal *this* file
+   * wrote -- a keyless table, a missing key column -- from evicting a perfectly
+   * healthy client.
+   */
+  isConnectionLost(err) {
+    if (!(err instanceof Error)) return false;
+    if (err instanceof DatabaseError) {
+      const code = err.code ?? '';
+      return code.startsWith(PG_CONNECTION_EXCEPTION_CLASS) || PG_TERMINAL_SQLSTATES.has(code);
+    }
+    if (typeof (err as Error & { syscall?: unknown }).syscall === 'string') return true;
+    return PG_CONNECTION_LOST_MESSAGES.has(err.message);
+  },
+
   async closeClient(client) {
     await client.end();
+  },
+
+  destroyClient(client) {
+    // pg offers no public "hang up now", so the socket is taken directly. It is
+    // typed (`Client.connection.stream`), not a cast into internals, and it is
+    // the only thing that ends a wait on a server that is no longer listening.
+    client.connection.stream.destroy();
   },
 
   async listDatabases(client) {
@@ -1386,7 +1559,24 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
     return new SqliteDatabase(path, { create: false, readwrite: true, strict: false });
   },
 
+  // A file has no socket, so there is nothing here that can be dropped by a
+  // server, a load balancer or an expiring token. The handler is registered and
+  // never called, which is the truthful answer rather than a missing method.
+  onClientLost() {},
+
+  // For the same reason: every failure here is the statement's, so evicting the
+  // handle would only mean reopening the same file to run the same bad SQL.
+  isConnectionLost() {
+    return false;
+  },
+
   async closeClient(client) {
+    client.close();
+  },
+
+  // Closing a file handle cannot block on a peer, so the forceful form and the
+  // polite one are the same act.
+  destroyClient(client) {
     client.close();
   },
 

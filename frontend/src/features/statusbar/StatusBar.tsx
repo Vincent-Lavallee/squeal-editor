@@ -11,7 +11,7 @@ import ReadOnlyConfirm from './ReadOnlyConfirm.tsx';
 const iconSvg = { flex: 'none', width: 16, height: 16 };
 
 export default function StatusBar() {
-  const { connectionId, config, readOnly, environment, name, setReadOnly, disconnect } = useSession();
+  const { connectionId, config, readOnly, environment, name, lostReason, setReadOnly, disconnect } = useSession();
   const [confirming, setConfirming] = useState(false);
   const [lockHovered, setLockHovered] = useState(false);
   const [discHovered, setDiscHovered] = useState(false);
@@ -49,6 +49,19 @@ export default function StatusBar() {
       {queryRunning && (
         <span style={{ display: 'flex', alignItems: 'center', height: '100%', padding: `0 ${t.GAP}px`, borderLeft: `1px solid ${t.BORDER}`, color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE }}>
           Query running for {queryElapsed}s…
+        </span>
+      )}
+      {/*
+        AMBER rather than RED: nothing has failed and nothing needs doing. The
+        server hung up, the next query opens a new connection by itself, and the
+        only reason to say so at all is that a query which takes an extra beat
+        should not read as a slow database.
+      */}
+      {lostReason && (
+        <span data-testid="statusbar-lost"
+          style={{ display: 'flex', alignItems: 'center', height: '100%', padding: `0 ${t.GAP}px`, borderLeft: `1px solid ${t.BORDER}`, color: t.AMBER, fontSize: t.TEXT_BADGE }}
+          title={`${lostReason} The next query will reconnect.`}>
+          Connection dropped — reconnects on the next query
         </span>
       )}
       <div style={{ flex: 1 }} />

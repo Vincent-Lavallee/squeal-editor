@@ -23,6 +23,13 @@ the date they were finished.
 
 - **2026-07-26** — **Modify window release** — Can you remove the standalone exe and make the setup as the main windows exe without the setup in the file name. Not sure if the installer relies on the other exe tho.
 
+- **2026-07-28** — **A connection the server drops** — A connection ended by the
+  server rather than by the app — an idle timeout, a failover, a load balancer
+  reaping a quiet socket, which is the everyday life of an IAM connection —
+  took the whole extension down with it, every other open connection included.
+  The app went on looking perfectly connected while nothing worked, and
+  disconnecting sat for a full minute before failing.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

@@ -147,6 +147,31 @@ every engine but Postgres, which is the only one with a second schema to hold
 to `/read[\s-]?only/i`, because SQLite says `readonly` as one word. Nothing about
 the contract itself moved — which is the outcome the block exists to force.
 
+### The dropped-connection block, and why it kills real backends
+
+*dropped by the server* is a second `describe.each` over the two **server**
+engines only — SQLite is absent rather than skipped, because a file has no server
+to hang up on it and there is no behaviour there to answer for.
+
+It works by asking a connection for its own backend id (`pg_backend_pid()`,
+`CONNECTION_ID()`) and then killing it from a *second* connection, so the victim
+is idle when it dies. That is the case worth the setup: an idle drop is the one
+both libraries report by emitting `error` on the connection, and an `error` with
+no listener took the whole extension down. The test asserts the *other*
+connection still answers, which is only true if the process survived — see
+`docs/decisions.md`.
+
+Two things it needs from the harness, both added for it. `waitFor(event, match)`
+reads broadcasts that are not replies to any `reqId`, which is how
+`connection.state` arrives; it buffers what it has already seen, so a test that
+subscribes a beat late still finds its event. And `match` exists because a suite
+with more than one connection open sees every connection's broadcasts, so a test
+has to name the one it means.
+
+The third test is a clock: it kills a connection and asserts *Disconnect* returns
+inside 5s. What it is really pinning is that nothing waits on a server that has
+gone — the behaviour it replaced took the bridge's whole 60s timeout.
+
 ## `tests/saved.test.ts`
 
 Saved connections, against the real SQLite file, the real OS keychain and a real

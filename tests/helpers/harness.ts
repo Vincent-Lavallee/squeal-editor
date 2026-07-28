@@ -21,6 +21,15 @@ export interface Harness {
   dispatch<K extends CommandName>(event: K, data: CommandReq<K> | Record<string, unknown>): Promise<DbResponse>;
   /** Dispatch and require success, returning the payload. */
   ok<K extends CommandName>(event: K, data: CommandReq<K> | Record<string, unknown>): Promise<unknown>;
+  /**
+   * Wait for a broadcast that is not a reply to anything -- connection state,
+   * connect progress, download progress.
+   *
+   * `match` is how a test names the one it wants out of a stream that may carry
+   * several: a dropped connection is announced by naming its own connectionId,
+   * and a suite with more than one connection open will see the other's too.
+   */
+  waitFor(event: string, match: (data: never) => boolean, timeoutMs?: number): Promise<unknown>;
   stop(): Promise<void>;
 }
 
@@ -50,13 +59,21 @@ export async function startHarness(env: Record<string, string> = {}): Promise<Ha
 
   let nextReqId = 1;
   const pending = new Map<number, (r: DbResponse) => void>();
+  /** Broadcasts nobody has claimed yet, so a test that subscribes late still sees one. */
+  const seen: Array<{ event: string; data: unknown }> = [];
+  const watchers = new Set<(event: string, data: unknown) => void>();
 
   socket.on('message', (raw) => {
     const msg = JSON.parse(raw.toString());
     // The extension must speak the envelope Neutralino expects.
     if (msg.method !== 'app.broadcast') return;
     if (msg.accessToken !== TOKEN) throw new Error('extension sent a bad access token');
-    if (msg.data?.event !== 'db.response') return;
+
+    if (msg.data?.event !== 'db.response') {
+      seen.push({ event: msg.data?.event, data: msg.data?.data });
+      for (const watcher of watchers) watcher(msg.data?.event, msg.data?.data);
+      return;
+    }
 
     const payload = msg.data.data as DbResponse;
     pending.get(payload.reqId)?.(payload);
@@ -74,8 +91,29 @@ export async function startHarness(env: Record<string, string> = {}): Promise<Ha
     });
   }
 
+  function waitFor(event: string, match: (data: never) => boolean, timeoutMs = 15_000): Promise<unknown> {
+    const already = seen.find((b) => b.event === event && match(b.data as never));
+    if (already) return Promise.resolve(already.data);
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        watchers.delete(watcher);
+        reject(new Error(`no ${event} broadcast within ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      const watcher = (name: string, data: unknown) => {
+        if (name !== event || !match(data as never)) return;
+        clearTimeout(timer);
+        watchers.delete(watcher);
+        resolve(data);
+      };
+      watchers.add(watcher);
+    });
+  }
+
   return {
     dispatch: dispatch as Harness['dispatch'],
+    waitFor,
     async ok(event, data) {
       const res = await dispatch(event as string, data as Record<string, unknown>);
       if (!res.ok) throw new Error(`${event} failed: ${res.error}`);

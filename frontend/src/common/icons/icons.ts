@@ -13,6 +13,7 @@ import {
   RiCheckLine,
   RiCloseLine,
   RiCodeSSlashLine,
+  RiDeleteBinLine,
   RiDownloadCloud2Line,
   RiExternalLinkLine,
   RiEyeLine,
@@ -134,6 +135,10 @@ export const CopiedIcon = RiCheckLine;
 
 /** Re-fetching a list from the server: the database picker and the table tree. */
 export const RefreshIcon = RiRefreshLine;
+
+/** A saved connection or workspace row's delete, armed by a first click and
+ *  committed by a second -- see the row's own `confirmingId`. */
+export const DeleteIcon = RiDeleteBinLine;
 
 /*
  * The read-only lock in the status bar. Two kinds, told apart by shape the way a

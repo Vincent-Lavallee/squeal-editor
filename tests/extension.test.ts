@@ -823,3 +823,98 @@ describe.each([
     });
   });
 });
+
+/*
+ * A connection the *server* ends, which is the one failure this app cannot
+ * prevent and has to survive: an idle timeout, a failover, an administrator's
+ * KILL. It is the everyday shape of an RDS IAM connection, which sits idle
+ * between queries behind a load balancer that reaps quiet sockets on its own
+ * timer.
+ *
+ * SQLite is absent on purpose rather than skipped: a file has no server to hang
+ * up on it, so there is no behaviour here for it to answer for.
+ *
+ * The kill is issued from a *second* connection, so the first one is idle when
+ * it dies. That is the case that used to take the whole extension down with it
+ * -- both libraries emit `error` on a connection with nothing in flight, and an
+ * `error` with no listener is how Node spells `throw`.
+ */
+describe.each([
+  ['postgres', PG, 'SELECT pg_backend_pid()', (id: string) => `SELECT pg_terminate_backend(${id})`],
+  ['mysql', MYSQL, 'SELECT CONNECTION_ID()', (id: string) => `KILL CONNECTION ${id}`],
+] as const)('%s dropped by the server', (label, config, whoAmI, killSql) => {
+  let victim: string;
+  let killer: string;
+
+  beforeAll(async () => {
+    victim = ((await h.ok('db.connect', { config })) as { connectionId: string }).connectionId;
+    killer = ((await h.ok('db.connect', { config })) as { connectionId: string }).connectionId;
+  });
+
+  afterAll(async () => {
+    await h.dispatch('db.disconnect', { connectionId: victim });
+    await h.dispatch('db.disconnect', { connectionId: killer });
+  });
+
+  const backendId = async (): Promise<string> => {
+    const res = (await h.ok('db.query', { connectionId: victim, sql: whoAmI })) as QueryResult;
+    return String(res.rows[0]![0]);
+  };
+
+  test('the extension survives it, says so, and reconnects on the next query', async () => {
+    const id = await backendId();
+    const lost = h.waitFor(
+      'connection.state',
+      (d: { connectionId: string; state: string }) => d.connectionId === victim && d.state === 'lost'
+    );
+
+    await h.ok('db.query', { connectionId: killer, sql: killSql(id) });
+
+    // The drop is announced by naming the connection, rather than being found
+    // later by a query failing -- which is the whole point: the UI is told.
+    const detail = (await lost) as { reason?: string };
+    expect(typeof detail.reason).toBe('string');
+
+    // The extension is still standing and still answering for the *other*
+    // connection, which one crashed process would have taken with it.
+    const untouched = (await h.ok('db.query', { connectionId: killer, sql: 'SELECT 1 AS ok' })) as QueryResult;
+    expect(Number(untouched.rows[0]![0])).toBe(1);
+
+    // And the dropped one reopens on the next command, without reconnecting by
+    // hand. A new backend id is what proves it is a new socket and not the
+    // corpse of the old one answering.
+    const restored = h.waitFor(
+      'connection.state',
+      (d: { connectionId: string; state: string }) => d.connectionId === victim && d.state === 'restored'
+    );
+    const after = await backendId();
+    expect(after).not.toBe(id);
+    await restored;
+  });
+
+  test('a drop landing on a running query does not poison the connection', async () => {
+    // Killed from the victim's own session, so the failure is handed to the
+    // query rather than to the connection -- the path no `error` event reports
+    // and the one that used to leave a dead client cached forever.
+    const failed = await h.dispatch('db.query', { connectionId: victim, sql: killSql(await backendId()) });
+    expect(failed.ok).toBe(false);
+
+    const recovered = (await h.ok('db.query', { connectionId: victim, sql: 'SELECT 1 AS ok' })) as QueryResult;
+    expect(Number(recovered.rows[0]![0])).toBe(1);
+  });
+
+  test('disconnecting a dropped connection returns promptly', async () => {
+    const doomed = ((await h.ok('db.connect', { config })) as { connectionId: string }).connectionId;
+    const id = (
+      (await h.ok('db.query', { connectionId: doomed, sql: whoAmI })) as QueryResult
+    ).rows[0]![0];
+    await h.ok('db.query', { connectionId: killer, sql: killSql(String(id)) });
+
+    // The polite close waits for a goodbye the server will never send. Bounded
+    // at 2s in `connection.ts`, so anything near the old behaviour -- a TCP
+    // retransmission timeout, minutes long -- fails here.
+    const startedAt = Date.now();
+    expect((await h.dispatch('db.disconnect', { connectionId: doomed })).ok).toBe(true);
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+  });
+});

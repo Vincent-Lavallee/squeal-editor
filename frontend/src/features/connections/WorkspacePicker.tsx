@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import type { Workspace } from '../../../../shared/protocol/index.ts';
 import { workspaceGlyph } from '../../common/icons/workspaceIcons.ts';
+import { DeleteIcon } from '../../common/icons/icons.ts';
 import Button from '../../common/components/Button.tsx';
 import * as t from '../../common/tokens';
 
@@ -45,7 +46,7 @@ export default function WorkspacePicker({ workspaces, countFor, busy, onPick, on
             <li data-testid="saved-row" style={{ ...savedRow, ...(i > 0 ? { borderTop: `1px solid ${t.BORDER}` } : {}), ...(hovered ? { background: t.HOVER } : {}) }}
               key={w.id}
               onMouseEnter={() => setHoveredId(w.id)}
-              onMouseLeave={() => setHoveredId(null)}>
+              onMouseLeave={() => { setHoveredId(null); setConfirmingId((id) => (id === w.id ? null : id)); }}>
               <button data-testid="saved-pick" style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: 3, minWidth: 0, padding: `${t.GAP_SM}px 10px`, border: 'none', background: 'none', color: t.TEXT, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}
                 onClick={() => onPick(w)} disabled={busy} title={w.name}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, minWidth: 0 }}>
@@ -56,19 +57,18 @@ export default function WorkspacePicker({ workspaces, countFor, busy, onPick, on
               </button>
 
               <div data-testid="saved-actions" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none' }}>
-                {confirmingId === w.id ? (
-                  <>
-                    <span data-testid="saved-hint" style={{ color: t.TEXT_FAINT, fontFamily: t.FONT, fontSize: t.TEXT_BADGE }}>
-                      {count > 0 ? `Delete with its ${countLabel(count)}?` : 'Delete?'}
-                    </span>
-                    <Button variant="ghost" onClick={() => { onDelete(w.id); setConfirmingId(null); }}>Yes</Button>
-                    <Button variant="ghost" onClick={() => setConfirmingId(null)}>No</Button>
-                  </>
-                ) : (
-                  <>
-                    <Button variant="ghost" onClick={() => onEdit(w)} disabled={busy}>Edit</Button>
-                    {canDelete && <Button variant="ghost" onClick={() => setConfirmingId(w.id)} disabled={busy}>Delete</Button>}
-                  </>
+                <Button variant="ghost" onClick={() => { setConfirmingId(null); onEdit(w); }} disabled={busy}>Edit</Button>
+                {/* Armed by a first click, committed by a second on the same button --
+                    see the same control on a connection row (`SavedConnectionList`).
+                    The cascade is named in the tooltip rather than a second line on
+                    screen, since arming the button already says "about to delete". */}
+                {canDelete && (
+                  <Button data-testid="saved-delete" variant="ghost" disabled={busy}
+                    title={confirmingId === w.id ? `Click again to delete with its ${countLabel(count)}` : 'Delete'}
+                    style={confirmingId === w.id ? { padding: '0 8px', color: t.RED_TEXT, background: t.RED_BG, borderColor: t.RED } : { padding: '0 8px' }}
+                    onClick={() => { if (confirmingId === w.id) { onDelete(w.id); setConfirmingId(null); } else setConfirmingId(w.id); }}>
+                    <DeleteIcon style={iconSvg} />
+                  </Button>
                 )}
               </div>
             </li>

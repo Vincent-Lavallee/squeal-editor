@@ -524,6 +524,70 @@ objects (→ text) are flattened. Anything a driver can return must survive
   turns the two into an identifier — see *A relation is a name and a schema*.
 - **A failed statement must not kill the connection.** Tested.
 
+## When the server hangs up (the other important part)
+
+A connection can end without either side of this app asking: an idle timeout, a
+failover, an administrator's `KILL`, a load balancer reaping a quiet socket. It
+is the everyday shape of an RDS IAM connection, which sits idle between queries
+behind exactly such a balancer. The extension cannot prevent it; what it must do
+is survive it, say so, and come back.
+
+**The listener is the load-bearing part, and it looks like a nicety.** Both
+server libraries are EventEmitters that `emit('error')` when the socket dies with
+nothing in flight, and an `error` event with no listener is how Node spells
+*throw* — which reaches `main.ts`'s `uncaughtException` handler and takes the
+whole extension down, **every other connection with it**. From the UI that reads
+as the app looking perfectly connected while nothing works and every command
+sits until the bridge's 60s timeout. `Driver.onClientLost` is what makes it a
+handled event; `tests/extension.test.ts` kills a real backend from a second
+connection and asserts the other one still answers.
+
+Five rules:
+
+- **A drop is not a disconnect.** The connection stays in the registry with its
+  config, its read-only mode and its id; only the dead client leaves the
+  per-database map. `getClient` then opens a replacement on the next command,
+  which for an IAM connection mints a fresh token — the same per-client minting
+  the client-per-database rule already needed, doing the job it was built for.
+- **The failed call is never retried.** `useClient` re-throws exactly what it
+  caught. The extension cannot know whether a statement reached the server
+  before the socket went, and a helpful retry of an `INSERT` that already
+  committed writes the row twice. Reopening is the *next* command's job, and the
+  next command is one the user asked for.
+- **There are two ways to find out and both are needed.** `onClientLost` catches
+  a client dropped while idle. It does not catch one dropped *during* a query:
+  both libraries hand a network failure to the waiting command rather than to
+  the connection when there is a command to hand it to, so nothing is emitted.
+  `Driver.isConnectionLost` is the second reading, asked of every failure by
+  `useClient`. Miss it and the dead client stays cached and every command after
+  it fails identically for as long as the app is open.
+- **`isConnectionLost` reads structure, never message text.** mysql2 marks every
+  connection-ending error `fatal` and marks nothing else that way. Postgres is
+  the one with a trap in it: a killed backend arrives as an ordinary
+  `DatabaseError` from the server, so "came from the server" cannot mean "your
+  SQL was wrong" — the SQLSTATE is what is read (class `08`, plus `57P01`/`02`/
+  `03`), and the codes rather than the `severity` beside them, because a
+  SQLSTATE is five fixed characters while the severity is localised into the
+  server's `lc_messages`. SQLite answers `false` unconditionally: a file has no
+  socket to lose.
+- **Closing is bounded.** `closeClient` waits for the server to acknowledge the
+  goodbye, and a half-open socket has nobody left to answer — so *Disconnect*
+  used to sit for the bridge's whole 60s and then fail. `connection.ts::close`
+  races each client against `CLOSE_TIMEOUT_MS` and then `destroyClient`s it.
+
+The UI is told by broadcast, not by a reply: `CONNECTION_STATE_EVENT` carries
+`{ connectionId, state: 'lost' | 'restored', reason? }`, which is why the
+connection's id is minted in `establish` **before** `openConnection` rather than
+after — a connection can be dropped from its first idle second, well before an
+id assigned on the way out would exist. The `log.ts` rule applies as usual: a
+drop has no other way to surface, so it is logged; nothing a database returned
+goes with it.
+
+**Prevention, separately:** both drivers enable TCP keepalive with a 30s initial
+delay, well under the ~350s an AWS network load balancer gives an idle
+connection. It makes the drop rarer. It does not make it impossible, which is
+why everything above exists regardless.
+
 ## Connecting eagerly
 
 `openConnection` opens the default client and lists databases immediately, so
@@ -615,7 +679,10 @@ Four things are load-bearing:
   (the client-per-database rule), and that can outlive the token that first
   connected. Minting is a *local* presign over cached credentials, so re-minting
   per client is cheap; the only thing that can reach the network is the SDK
-  refreshing expired SSO credentials, which it caches.
+  refreshing expired SSO credentials, which it caches. This is also what makes
+  an IAM connection *recoverable* after the server drops it — a client reopened
+  minutes or hours later gets a current token, not the expired one that first
+  connected. See *When the server hangs up*.
 - **IAM requires `ssl`, refused in `openConnection`.** An IAM token is a bearer
   secret; plaintext would hand it to anyone on the wire. The UI also forces the
   box on, so this is defence in depth, not the only guard.

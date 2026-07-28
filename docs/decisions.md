@@ -661,10 +661,24 @@ anyone who did not already have two.
 *refusing while non-empty*, which makes deleting a finished project a chore of
 deleting its connections first; and *moving them to the default*, which cannot
 answer what to do when the name already exists there. The cascade takes stored
-passwords with it, so the confirmation says how many rather than just "Delete?".
-The store deletes the rows explicitly inside a transaction rather than leaning on
-`ON DELETE CASCADE` alone — the FK stays for making an orphan unwritable, which
-is a different job.
+passwords with it, so the confirmation names how many rather than just "Delete?"
+— in the armed delete button's tooltip now, see the note below, but the count
+itself is unchanged. The store deletes the rows explicitly inside a transaction
+rather than leaning on `ON DELETE CASCADE` alone — the FK stays for making an
+orphan unwritable, which is a different job.
+
+**A workspace's or connection's delete is a trash icon armed by a click, not a
+Yes/No pair.** The row's actions used to swap `Edit`/`Delete` for a `Delete?`
+label plus `Yes`/`No` on the first click — a second menu for what is really one
+decision landing on one control. It is now a single button: unarmed it reads
+`Delete` and does nothing destructive, a first click arms it (red fill, the
+tooltip says `Click again to delete`, and the workspace row's tooltip folds the
+connection count into the same sentence rather than a second line), and a
+second click on that same button commits. Leaving the row (`onMouseLeave`)
+disarms it, so an armed button is never left behind for a later, unrelated
+click to land on. Rejected: a timeout to auto-disarm, which would either fire
+too early for someone reading the tooltip or too late to mean anything as a
+safety net.
 
 **The last workspace cannot be deleted.** A connection hangs off a workspace, so
 an app with none has nowhere to save one. Refused in the store, and the UI does
@@ -3280,3 +3294,83 @@ timeout and calls `Neutralino.app.killProcess()` if it loses, logging through
 settling at all, not rejecting — the native side went silent partway through
 its own shutdown. A `.catch` only fires on rejection; only a race against a
 clock catches "never answers."
+
+## A dropped connection reopens itself; it does not end the session
+
+A connection the server hangs up on — an idle timeout, a failover, an
+administrator's `KILL`, a load balancer reaping a quiet socket — used to present
+as the app looking perfectly connected while nothing worked, and *Disconnect*
+sitting for a minute before failing. Both halves had the same root and it was
+not the one it looked like.
+
+**The extension was dying, not the connection.** mysql2 and pg are both
+EventEmitters that `emit('error')` when their socket fails with nothing in
+flight, and an `error` event with no listener is Node's spelling of `throw`. That
+reached `main.ts`'s `uncaughtException` handler, which shut the whole extension
+down — **every other connection with it** — over one dropped socket. From the
+UI, which is told nothing when the extension stops existing, that is a session
+that looks open and answers nothing: every command waits out the bridge's 60s
+timeout, *Disconnect* included. That is the entire "it takes ages to disconnect"
+report; the disconnect was never slow, it was waiting on a process that had gone.
+
+The mutation is worth keeping in mind, because the fix is one line per driver
+and reads like housekeeping: deleting the `client.on('error', …)` registration
+turns 178 passing tests into a suite where a killed Postgres backend logs
+`uncaught exception` and every test after it — including every MySQL one — times
+out. That is the failure the user sees, reproduced.
+
+**Rejected: treating a drop as a disconnect.** Tidy, and it is what the session
+slice already knows how to do. It also throws away every tab, every result and
+every expanded tree node the user had open, over an event they did not cause and
+that resolves itself. A connection is a piece of configuration plus a socket;
+only the socket died.
+
+**Rejected: an explicit Reconnect button.** The honest version of "we noticed,
+you fix it". It buys nothing: the extension already opens a client per database
+on demand, so reopening after a drop is an operation it performs several times in
+a normal session anyway, and for IAM it was *already* minting a fresh token per
+client for exactly this reason — a client outliving the ~15-minute token is the
+case that design was written for. A button whose only effect is to do what the
+next query does anyway is a step, not a safeguard.
+
+**Not rejected, and the line that matters: the failed statement is never
+retried.** Reopening happens on the *next* command, never as a second attempt at
+the one that failed. The extension cannot know whether a statement reached the
+server before the socket went, and a retried `INSERT` that had already committed
+writes the row twice. This is the same instinct as *show what the server sent*:
+being helpful about something you cannot verify is worse than surfacing it.
+
+**Why two detections rather than one.** `Driver.onClientLost` catches a client
+dropped while idle — the crash case, and the common one. It cannot catch a
+client dropped *during* a query, because both libraries hand a network failure to
+the waiting command when there is one to hand it to, and emit nothing. That path
+left the dead client cached, so every command after it failed the same way for
+the rest of the session — the other half of "everything looks fine but queries
+don't work". `Driver.isConnectionLost`, asked of every failure, is the second
+reading. Both are needed and neither subsumes the other.
+
+**Postgres is why that predicate reads SQLSTATEs and not error classes.** The
+first cut said "a `DatabaseError` came from the server, so the statement was
+wrong; anything else is the transport". A backend killed by
+`pg_terminate_backend` arrives as a perfectly ordinary `DatabaseError` — the
+connection is over and the server said so politely — so that rule classified the
+one case the feature exists for as a syntax error, and the real database test
+caught it on the first run. It reads class `08` and `57P01`/`02`/`03` now, and
+reads the *code* rather than the `severity` sitting next to it because a SQLSTATE
+is five fixed characters while the severity is localised into the server's
+`lc_messages`. mysql2 needs none of this: it marks every connection-ending error
+`fatal` and marks nothing else that way, which is the library answering the exact
+question being asked.
+
+**Why the close got a deadline, and why 2s.** The same shape as
+`useWindowChrome`'s `close` further up this file, arrived at independently: a
+polite close waits to be told the connection is over, and a half-open socket has
+nobody left to tell it. Only a race against a clock catches "never answers"; a
+`.catch` fires on rejection, which is not what happens. 2s is long enough that a
+healthy server always wins and short enough that a dead one is not a wait anybody
+notices.
+
+**Keepalive is prevention and is not the fix.** Both drivers set a 30s keepalive,
+well under the ~350s an AWS network load balancer gives an idle connection — the
+standard mitigation, and it makes the drop rarer. Everything above still exists,
+because "rarer" is not "never" and the failure mode was catastrophic.

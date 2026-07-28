@@ -2,10 +2,17 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 
-import { CONNECT_PROGRESS_EVENT, UPDATE_PROGRESS_EVENT, type ConnectProgress, type UpdateProgress } from '../../shared/protocol/index.ts';
+import {
+  CONNECT_PROGRESS_EVENT,
+  CONNECTION_STATE_EVENT,
+  UPDATE_PROGRESS_EVENT,
+  type ConnectionState,
+  type ConnectProgress,
+  type UpdateProgress,
+} from '../../shared/protocol/index.ts';
 import App from './App.tsx';
 import { store } from './store/index.ts';
-import { connectionProgressReceived } from './store/sessionSlice.ts';
+import { connectionProgressReceived, connectionStateReceived } from './store/sessionSlice.ts';
 import { loadSettings } from './store/settingsSlice.ts';
 import { progressReceived } from './store/updaterSlice.ts';
 import { initBridge } from './common/bridge/bridge.ts';
@@ -28,6 +35,13 @@ void Neutralino.events.on(UPDATE_PROGRESS_EVENT, (evt: CustomEvent) => {
 // Connection progress is the same fire-and-forget pattern as update progress.
 void Neutralino.events.on(CONNECT_PROGRESS_EVENT, (evt: CustomEvent) => {
   store.dispatch(connectionProgressReceived(evt.detail as ConnectProgress));
+});
+
+// A connection dropping is the one of these three that nobody asked for: it is
+// the server hanging up on a session already open, so it can only ever arrive
+// this way rather than as the reply to a command.
+void Neutralino.events.on(CONNECTION_STATE_EVENT, (evt: CustomEvent) => {
+  store.dispatch(connectionStateReceived(evt.detail as ConnectionState));
 });
 
 const root = document.getElementById('root');

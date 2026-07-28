@@ -70,7 +70,7 @@ that lives apart from its values is two sources for one fact.
 
 | | Where | Why |
 |---|---|---|
-| open connections: id, `savedConnectionId`, config, `dialect`, `name`, `workspaceId`, `color`, `environment`, `readOnly` | `session` slice | crossed |
+| open connections: id, `savedConnectionId`, config, `dialect`, `name`, `workspaceId`, `color`, `environment`, `readOnly`, `lostReason` | `session` slice | crossed |
 | `order`, `activeConnectionId` | `session` slice | never left, but see above |
 | a tab's `connectionId`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
 | `database`, per connection | `tabs` slice | crossed |
@@ -137,6 +137,32 @@ the same shape as `sessionOpened` handing `databases` to the explorer.
 **"Close others" was the third, and it cost nothing.** Both diffing owners took
 it for free, exactly as this section predicted they would; only `resultsSlice`
 needed a line, and only because it still cannot diff.
+
+## A connection the server dropped
+
+`OpenConnection.lostReason` is why the server is no longer on the other end, or
+`null` while it is. It arrives on `CONNECTION_STATE_EVENT`, a broadcast rather
+than a reply — the third of them, beside update progress and connect progress,
+and the only one nobody asked for. `main.tsx` subscribes and dispatches
+`connectionStateReceived`; see `docs/extension.md` for what the extension does
+about it.
+
+**A drop reduces to one field and nothing else.** The connection keeps its place
+on the rail, its tabs, its tree and its results, because the extension reopens it
+on the next command — reducing this the way `disconnect.fulfilled` does would
+throw away everything the user had open over a blip they did not cause. A
+connection already gone finds nothing and no-ops, the same as a read-only toggle
+landing late.
+
+**It shows in two places and both are deliberately quiet.** The status bar says
+`Connection dropped — reconnects on the next query` in `AMBER`, not `RED`:
+nothing has failed and there is nothing to do. The only reason to say it at all
+is that a query taking an extra beat to reopen should not read as a slow
+database. The rail marks the chip with a small amber dot rather than recolouring
+it — the chip already spends its colour on *which* connection this is, and
+repainting it would read as "different server" rather than "same server,
+dropped". There is no Reconnect button, because there is nothing for it to do
+that the next query does not.
 
 ## Session restore
 
@@ -551,6 +577,34 @@ Three things fall out of that, and each is invisible until it bites:
 - **A screen inside a workspace that has gone falls back to the picker**, resolved
   once before the switch rather than in each case, so there is one answer to "the
   workspace is gone" instead of two that could differ.
+- **Cancelling an in-flight connect does not `go(...)`.** Every other exit from a
+  screen navigates somewhere, but a connect attempt can be cancelled from wherever
+  it was started — the saved list, a freshly submitted form, the password prompt —
+  and none of those needs to change screen for the attempt to stop. Routing it
+  through `go(null)` once did, and since `screen` was already `null` at that point
+  (nothing had navigated since the attempt began), `go(null)` re-derived the view
+  from data instead of leaving it alone — landing on the workspace picker whenever
+  more than one workspace existed, even though the list you clicked *Connect* from
+  never changed. The Cancel button now only aborts (`cancelConnect`), clears
+  `connectingId` and dismisses the error; it leaves `screen` untouched.
+
+**A cancelled attempt still lands in `session.error`, and is rendered
+differently on purpose.** `cancelConnect` aborts the in-flight `call()`, which
+rejects with `Error('Cancelled.')` (`bridge.ts`) the same way a real failure
+would, so `connect.rejected`/`connectSaved.rejected` sets `error` to
+`'Cancelled.'` regardless — dismissing it synchronously in the Cancel handler
+loses the race, since the rejection lands a beat later. Rather than chase that
+race, `ConnectScreen` special-cases the string: `error === 'Cancelled.'` prints
+in the same muted voice as "Connecting for…" instead of the red `Callout` a
+genuine connect error gets, because the user asked for this one to stop and it
+is not a failure.
+
+`connectingStartedAt` (`sessionSlice`) is set the moment `connect`/`connectSaved`
+goes `pending` and cleared on `fulfilled`/`rejected`, alongside `connecting` and
+`connectingPhase`. `ConnectScreen` ticks a local elapsed value off it (100ms, the
+same shape as the status bar's query timer) and prints it beside Cancel —
+one place, regardless of which screen started the attempt, rather than a copy of
+the same interval in the form, the password prompt and the saved list each.
 
 Environments are a *grouping*, not a step: a workspace's connections render
 under a heading per environment, in the managed list's order, and an

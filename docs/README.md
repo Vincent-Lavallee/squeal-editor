@@ -16,6 +16,7 @@ reading the others first, except `architecture.md`, which is the map.
 | touching the connect screen, workspaces or environments in the UI | `frontend.md` + `decisions.md` |
 | touching the rail, or anything that must hold for every open connection | `frontend.md` + `decisions.md` |
 | adding a new way to connect (IAM, SSH, …) | `frontend.md` + `decisions.md` |
+| touching what happens when a connection drops, or a driver's client lifecycle | `extension.md` + `decisions.md` |
 | touching React components, state, or the UI's data flow | `frontend.md` |
 | touching the editor, its completion, or what it knows about the schema | `frontend.md` + `extension.md` |
 | touching the titlebar, window controls, dragging, resizing or the frame's colour | `frontend.md` + `decisions.md` |

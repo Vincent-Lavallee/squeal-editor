@@ -15,6 +15,31 @@ Things that already work, but not well enough.
 
 - **Red delete button** — The delete button in the connection list should be red to signal a destructive action.
 
+- **Task Manager process grouping on Windows** — The app's processes (the
+  Neutralino shell and the Bun extension) each show up as their own
+  unrelated-looking top-level row in Task Manager, so a user trying to find
+  or force-quit "Squeal Editor" sees several unnamed-looking entries instead
+  of one. Group them the way Chrome or VS Code do: a single top-level entry
+  named "Squeal Editor" that expands to reveal its child processes.
+
+- **No skeleton on tree refresh** — Refreshing the table tree renders skeleton
+  placeholders over the tree section, the same as a first load with nothing
+  on screen yet, even though the tree already has data to show. Reserve the
+  skeleton for the true first-load case; a refresh of already-loaded data
+  should leave the tree visible and only animate the refresh icon.
+
+- **Order the tree by object type, not purely alphabetically** — Tables, views,
+  and functions are interleaved alphabetically in the tree today. Order by
+  type instead, with no visual section header: all tables first, then all
+  views, then all functions — alphabetical within each group.
+
+- **Retain result grid scroll position per tab** — Switching away from a tab
+  and back resets its result grid's scroll position (both horizontal and
+  vertical) to top-left, for both query tabs and table-browse tabs opened
+  from the tree. Each tab should remember and restore its own scroll position
+  on return — reset only when the tab's query is re-run, since a fresh run's
+  rows may no longer match the old position.
+
 - **Multi-cell selection** — Copying more than one value at a time means
   either a whole row via the gutter or a single cell — there is no way to
   select a rectangle of cells. Unify `selectedCell` into the same range
@@ -46,6 +71,22 @@ Things that are wrong.
   limit (e.g., 250) with a note in the tree that more exist — the filter bar
   still searches the full set on the server side. Autocomplete respects the
   same cap.
+
+- **Update ignores custom install path on Windows** — The Windows installer
+  lets you choose an install location, but a later update reinstalls to the
+  default path instead of the one originally chosen, effectively relocating
+  or duplicating the install. The updater needs to read back and respect
+  wherever the app is actually installed.
+
+- **Unquoted mixed-case identifiers in Postgres autocomplete** — Autocomplete
+  suggests Postgres column and table names as-is, so accepting a suggestion for
+  a mixed-case identifier like `createdAt` inserts it unquoted. Postgres folds
+  unquoted identifiers to lowercase, so the resulting query fails with
+  `column "createdat" does not exist` even though the name came straight from
+  the tree. Quote an identifier on insertion whenever it needs quoting to
+  preserve its case. Postgres-only: MySQL column lookups are case-insensitive
+  regardless of quoting, and SQLite is lenient about ASCII case, so neither
+  reproduces this.
 
 ## Features
 
@@ -148,6 +189,16 @@ Things that do not exist yet.
   tree does; nodes can be dragged to declutter an auto-layout, but the
   arrangement is not remembered — it lays out fresh each time the diagram is
   opened.
+
+- **Sort by clicking a column header** — Sorting a result grid means
+  hand-writing an ORDER BY, whether the grid came from browsing a table or
+  from a query typed in the editor. Clicking a column header wraps the
+  underlying query as a subquery and re-runs it with an ORDER BY on that
+  column, so it works regardless of what the query already does (its own
+  ORDER BY, a CTE, a union). One column at a time — clicking a different
+  header replaces the sort rather than adding to it. Clicking the same header
+  again cycles asc → desc → unsorted, the last click returning to the
+  original query's own order.
 
 - **Linux AppImage release** — Linux ships no release download at all right now
   — the raw zip it used to carry had no desktop integration (no icon in the

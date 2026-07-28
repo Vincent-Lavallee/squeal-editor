@@ -3,7 +3,7 @@ import { ThinkingOrb } from 'thinking-orbs';
 
 import type { EnvironmentDef, SavedConnection, Workspace } from '../../../../shared/protocol/index.ts';
 import { engineLabel, isFileBased } from '../../common/db/engines.ts';
-import { BackIcon } from '../../common/icons/icons.ts';
+import { BackIcon, DeleteIcon } from '../../common/icons/icons.ts';
 import { serverLabel } from '../../store/sessionSlice.ts';
 import { connectionColor } from '../../common/icons/connectionColors.ts';
 import { workspaceGlyph } from '../../common/icons/workspaceIcons.ts';
@@ -99,7 +99,7 @@ export default function SavedConnectionList({ workspace, connections, environmen
                   <li data-testid="saved-row" style={{ ...savedRow, ...(i > 0 ? { borderTop: `1px solid ${t.BORDER}` } : {}), ...(hovered ? { background: t.HOVER } : {}) }}
                     key={c.id}
                     onMouseEnter={() => setHoveredId(c.id)}
-                    onMouseLeave={() => setHoveredId(null)}>
+                    onMouseLeave={() => { setHoveredId(null); setConfirmingId((id) => (id === c.id ? null : id)); }}>
                     <span aria-hidden="true" data-testid="saved-color" style={{ alignSelf: 'stretch', flex: 'none', width: 3, background: connectionColor(c.color) }} />
                     <button data-testid="saved-pick" style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: 3, minWidth: 0, padding: `${t.GAP_SM}px 10px`, border: 'none', background: 'none', color: t.TEXT, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}
                       onClick={() => onPick(c)} disabled={busy} title={`${c.name} — ${serverLabel(c.config)}`}>
@@ -124,18 +124,16 @@ export default function SavedConnectionList({ workspace, connections, environmen
                     </button>
 
                     <div data-testid="saved-actions" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none' }}>
-                      {confirmingId === c.id ? (
-                        <>
-                          <span data-testid="saved-hint" style={{ color: t.TEXT_FAINT, fontFamily: t.FONT, fontSize: t.TEXT_BADGE }}>Delete?</span>
-                          <Button variant="ghost" onClick={() => { onDelete(c.id); setConfirmingId(null); }}>Yes</Button>
-                          <Button variant="ghost" onClick={() => setConfirmingId(null)}>No</Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button variant="ghost" onClick={() => onEdit(c)} disabled={busy}>Edit</Button>
-                          <Button variant="ghost" onClick={() => setConfirmingId(c.id)} disabled={busy}>Delete</Button>
-                        </>
-                      )}
+                      <Button variant="ghost" onClick={() => { setConfirmingId(null); onEdit(c); }} disabled={busy}>Edit</Button>
+                      {/* Armed by a first click, committed by a second on the same
+                          button -- a Yes/No pair is a second menu for one decision,
+                          and this is the one control both steps happen on. */}
+                      <Button data-testid="saved-delete" variant="ghost" disabled={busy}
+                        title={confirmingId === c.id ? 'Click again to delete' : 'Delete'}
+                        style={confirmingId === c.id ? { padding: '0 8px', color: t.RED_TEXT, background: t.RED_BG, borderColor: t.RED } : { padding: '0 8px' }}
+                        onClick={() => { if (confirmingId === c.id) { onDelete(c.id); setConfirmingId(null); } else setConfirmingId(c.id); }}>
+                        <DeleteIcon style={iconSvg} />
+                      </Button>
                     </div>
                   </li>
                 );

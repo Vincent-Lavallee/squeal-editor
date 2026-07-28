@@ -15,6 +15,7 @@ import WebSocket from 'ws';
 
 import {
   CONNECT_PROGRESS_EVENT,
+  CONNECTION_STATE_EVENT,
   DB_RESPONSE_EVENT,
   UPDATE_PROGRESS_EVENT,
   type CommandName,
@@ -99,10 +100,26 @@ async function establish(
   config: ConnectionConfig,
   readOnly: boolean
 ): Promise<{ connectionId: string; databases: string[]; dialect: SqlDialect; defaultSchema?: string }> {
-  const conn = await openConnection(config, readOnly, (phase) => send(CONNECT_PROGRESS_EVENT, { phase }));
+  // Minted before the connection is opened rather than after, because a drop is
+  // reported by naming the connection it happened to -- and a connection can be
+  // dropped from its very first idle second, which is well before an id assigned
+  // on the way out would exist. A failed connect simply never registers it.
+  const connectionId = randomUUID();
+
+  const conn = await openConnection(
+    config,
+    readOnly,
+    (phase) => send(CONNECT_PROGRESS_EVENT, { phase }),
+    (state, reason) => {
+      // The one thing in here with no other way to surface: a drop is not a
+      // command's failure, so nothing carries it back over the bridge on its own.
+      if (state === 'lost') log.warn(`connection lost ${connectionId}: ${reason ?? 'no reason given'}`);
+      else log.info(`connection restored ${connectionId}`);
+      send(CONNECTION_STATE_EVENT, { connectionId, state, reason });
+    }
+  );
   const databases = await conn.listDatabases();
 
-  const connectionId = randomUUID();
   connections.set(connectionId, conn);
   log.info(`connected ${connectionId} (${conn.dialect}${readOnly ? ', read-only' : ''})`);
   return { connectionId, databases, dialect: conn.dialect, defaultSchema: conn.defaultSchema };

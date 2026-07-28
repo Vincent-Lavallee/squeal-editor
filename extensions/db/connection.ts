@@ -18,6 +18,20 @@ import { rdsAuthToken } from './iam.ts';
  */
 export const PAGE_SIZE = 100;
 
+/**
+ * How long a polite close may take before the socket is taken from under it.
+ *
+ * `closeClient` waits for the server to acknowledge the goodbye, and a server
+ * that has already gone never will -- so *Disconnect* would sit there until TCP
+ * gave up, minutes later, on a connection the user has already finished with.
+ * Long enough that a healthy server always wins the race, short enough that a
+ * dead one is not a wait anybody notices.
+ */
+const CLOSE_TIMEOUT_MS = 2_000;
+
+/** What an already-open connection can do without being asked -- see `ConnectionState`. */
+export type ConnectionLifecycle = (state: 'lost' | 'restored', reason?: string) => void;
+
 /** One page of rows, before the transport times it. */
 export interface TableRows {
   columns: string[];
@@ -100,7 +114,8 @@ export interface ConnectionHandle {
 export async function openConnection(
   config: ConnectionConfig,
   readOnly: boolean,
-  onProgress?: (phase: 'iam-token' | 'connecting' | 'verifying') => void
+  onProgress?: (phase: 'iam-token' | 'connecting' | 'verifying') => void,
+  onLifecycle?: ConnectionLifecycle
 ): Promise<ConnectionHandle> {
   // An IAM token is a bearer secret; sending it in the clear would hand it to
   // anyone on the wire. Refused here as well as in the UI, so the extension is
@@ -108,7 +123,7 @@ export async function openConnection(
   if (config.iam && !config.ssl) {
     throw new Error('AWS IAM authentication requires SSL. Enable SSL on this connection.');
   }
-  const handle = withDriver(config.type, (driver) => build(driver, config, readOnly, onProgress));
+  const handle = withDriver(config.type, (driver) => build(driver, config, readOnly, onProgress, onLifecycle));
   // Force the default client open now; throws here if the server rejects us.
   onProgress?.('verifying');
   await handle.listDatabases();
@@ -119,7 +134,8 @@ function build<C>(
   driver: Driver<C>,
   config: ConnectionConfig,
   initialReadOnly: boolean,
-  onProgress?: (phase: 'iam-token' | 'connecting' | 'verifying') => void
+  onProgress?: (phase: 'iam-token' | 'connecting' | 'verifying') => void,
+  onLifecycle?: ConnectionLifecycle
 ): ConnectionHandle {
   /**
    * One client per database. Postgres pins a connection to a single database, so
@@ -134,6 +150,13 @@ function build<C>(
   // Mutable: `setReadOnly` flips it, and every client opened afterwards reads it.
   let readOnly = initialReadOnly;
 
+  /**
+   * Whether the server has dropped a client on us since the last one opened
+   * cleanly. It is the connection's state and not any one client's, because the
+   * UI shows one connection and a drop is almost never confined to one database.
+   */
+  let lost = false;
+
   async function getClient(database?: string): Promise<C> {
     const key = database ?? null;
     const existing = clients.get(key);
@@ -142,16 +165,70 @@ function build<C>(
     // For an IAM connection the "password" is a freshly minted token, good for
     // ~15 minutes -- so it is resolved here, per client opened, not baked into
     // `config` once at connect. A password connection uses its stored secret.
+    // This is also what makes reopening a dropped IAM client work at all: the
+    // token that first connected is long expired by the time one is reaped.
     if (config.iam) onProgress?.('iam-token');
     const resolved = config.iam ? { ...config, password: await rdsAuthToken(config) } : config;
     onProgress?.('connecting');
     const client = await driver.createClient(resolved, database);
+
+    // Registered before the client is cached, so there is no window in which a
+    // client is reachable but its ending would reach the process instead of us.
+    driver.onClientLost(client, (reason) => {
+      // Our own `close()` clears the map before it says goodbye, so a client that
+      // is no longer the one filed under its key is one we are already tearing
+      // down -- not a drop to report. This is why the check is identity and not
+      // merely presence: a replacement may already be in the slot.
+      if (clients.get(key) !== client) return;
+      clients.delete(key);
+      lost = true;
+      onLifecycle?.('lost', reason);
+    });
+
     // Apply before it is cached and handed out, so a read-only connection's new
     // database is read-only from its first query -- not just the ones open when
-    // the toggle happened.
+    // the toggle happened. A reopened client goes through here too, which is what
+    // stops a connection coming back writable after a drop.
     if (readOnly) await driver.setReadOnly(client, true);
     clients.set(key, client);
+
+    if (lost) {
+      lost = false;
+      onLifecycle?.('restored');
+    }
     return client;
+  }
+
+  /**
+   * Run something against a database's client, and make sure a client the server
+   * has finished with does not survive the attempt.
+   *
+   * Every command goes through here rather than calling `getClient` directly,
+   * because the two ways a connection dies need the same answer and only one of
+   * them announces itself. `onClientLost` covers the idle drop; this covers the
+   * drop that lands on a query already running, which both libraries report to
+   * the waiting caller instead of to the connection -- see
+   * `Driver.isConnectionLost`.
+   *
+   * **The failed call is never retried.** It is re-thrown exactly as it arrived,
+   * because the extension cannot know whether the statement reached the server
+   * before the socket went: an `INSERT` that already committed would be run a
+   * second time by a helpful retry. Reopening is left to the *next* command,
+   * which the user asked for.
+   */
+  async function useClient<T>(database: string | undefined, run: (client: C) => Promise<T>): Promise<T> {
+    const key = database ?? null;
+    const client = await getClient(database);
+    try {
+      return await run(client);
+    } catch (err) {
+      if (driver.isConnectionLost(err) && clients.get(key) === client) {
+        clients.delete(key);
+        lost = true;
+        onLifecycle?.('lost', err instanceof Error ? err.message : String(err));
+      }
+      throw err;
+    }
   }
 
   return {
@@ -163,23 +240,23 @@ function build<C>(
     },
 
     async listDatabases() {
-      return driver.listDatabases(await getClient(config.database));
+      return useClient(config.database, (client) => driver.listDatabases(client));
     },
 
     async listTables(database) {
-      return driver.listTables(await getClient(database), database);
+      return useClient(database, (client) => driver.listTables(client, database));
     },
 
     async listColumns(database, relation) {
-      return driver.listColumns(await getClient(database), database, relation);
+      return useClient(database, (client) => driver.listColumns(client, database, relation));
     },
 
     async rowKey(database, relation) {
-      return driver.rowKey(await getClient(database), database, relation);
+      return useClient(database, (client) => driver.rowKey(client, database, relation));
     },
 
     async query(database, sql) {
-      return driver.query(await getClient(database), sql);
+      return useClient(database, (client) => driver.query(client, sql));
     },
 
     /**
@@ -222,75 +299,77 @@ function build<C>(
       );
       const where = clause ? ` WHERE ${clause}` : '';
 
-      const client = await getClient(database);
       // Ask for one row past the page, so "is there more" is answered by whether
       // it came back rather than inferred from the page being full. The row
       // identity and the column catalog are fetched on the same call, so the grid
       // learns whether it may write this table back, which columns target a row,
       // and each column's type -- all sequentially, because one client cannot run
       // two queries at once (pg queues and warns, mysql2 would interleave).
-      const outcome = await driver.query(
-        client,
-        `SELECT * FROM ${driver.qualify(relation)}${where} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`,
-        params
-      );
-      const keyColumns = await driver.rowKey(client, database, relation);
-      const columnInfo = await driver.listColumns(client, database, relation);
+      return useClient(database, async (client) => {
+        const outcome = await driver.query(
+          client,
+          `SELECT * FROM ${driver.qualify(relation)}${where} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`,
+          params
+        );
+        const keyColumns = await driver.rowKey(client, database, relation);
+        const columnInfo = await driver.listColumns(client, database, relation);
 
-      const hasMore = outcome.rows.length > PAGE_SIZE;
-      return {
-        columns: outcome.columns,
-        // Drop the probe row; it belongs to the next page, not this one.
-        rows: hasMore ? outcome.rows.slice(0, PAGE_SIZE) : outcome.rows,
-        offset: from,
-        pageSize: PAGE_SIZE,
-        hasMore,
-        keyColumns,
-        columnInfo,
-      };
+        const hasMore = outcome.rows.length > PAGE_SIZE;
+        return {
+          columns: outcome.columns,
+          // Drop the probe row; it belongs to the next page, not this one.
+          rows: hasMore ? outcome.rows.slice(0, PAGE_SIZE) : outcome.rows,
+          offset: from,
+          pageSize: PAGE_SIZE,
+          hasMore,
+          keyColumns,
+          columnInfo,
+        };
+      });
     },
 
     async tableDdl(database, relation, kind) {
-      return driver.tableDdl(await getClient(database), relation, kind);
+      return useClient(database, (client) => driver.tableDdl(client, relation, kind));
     },
 
     async listTriggers(database, relation) {
-      return driver.listTriggers(await getClient(database), database, relation);
+      return useClient(database, (client) => driver.listTriggers(client, database, relation));
     },
 
     async triggerDdl(database, relation, trigger) {
-      return driver.triggerDdl(await getClient(database), database, relation, trigger);
+      return useClient(database, (client) => driver.triggerDdl(client, database, relation, trigger));
     },
 
     async listFunctions(database) {
-      return driver.listFunctions(await getClient(database), database);
+      return useClient(database, (client) => driver.listFunctions(client, database));
     },
 
     async functionDdl(database, func, kind, schema) {
-      return driver.functionDdl(await getClient(database), database, func, kind, schema);
+      return useClient(database, (client) => driver.functionDdl(client, database, func, kind, schema));
     },
 
     async dropRelation(database, relation, kind) {
-      await driver.dropRelation(await getClient(database), relation, kind);
+      await useClient(database, (client) => driver.dropRelation(client, relation, kind));
     },
 
     async write(database, relation, edits, deletes) {
-      const client = await getClient(database);
-      // The identity is recomputed here rather than trusted from the UI: which
-      // columns legitimately name a row is the server's fact, and a keyless table
-      // has no write to apply. Refused before a transaction is even opened.
-      const keyColumns = await driver.rowKey(client, database, relation);
-      if (!keyColumns) throw new Error(`${relation.table} has no primary or unique key, so it cannot be edited.`);
+      return useClient(database, async (client) => {
+        // The identity is recomputed here rather than trusted from the UI: which
+        // columns legitimately name a row is the server's fact, and a keyless table
+        // has no write to apply. Refused before a transaction is even opened.
+        const keyColumns = await driver.rowKey(client, database, relation);
+        if (!keyColumns) throw new Error(`${relation.table} has no primary or unique key, so it cannot be edited.`);
 
-      // Every op must carry all of the key columns, or its WHERE could not target
-      // a single row -- a stale grid handing back a partial key is a bug up top,
-      // and applying it would risk hitting rows the user never saw.
-      for (const op of [...edits, ...deletes]) {
-        const missing = keyColumns.filter((c) => !(c in op.key));
-        if (missing.length > 0) throw new Error(`A row is missing its key column${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`);
-      }
+        // Every op must carry all of the key columns, or its WHERE could not target
+        // a single row -- a stale grid handing back a partial key is a bug up top,
+        // and applying it would risk hitting rows the user never saw.
+        for (const op of [...edits, ...deletes]) {
+          const missing = keyColumns.filter((c) => !(c in op.key));
+          if (missing.length > 0) throw new Error(`A row is missing its key column${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`);
+        }
 
-      return driver.applyWrites(client, relation, keyColumns, edits, deletes);
+        return driver.applyWrites(client, relation, keyColumns, edits, deletes);
+      });
     },
 
     async setReadOnly(value) {
@@ -300,15 +379,40 @@ function build<C>(
       await Promise.all([...clients.values()].map((client) => driver.setReadOnly(client, value)));
     },
 
+    /**
+     * Tear the connection down without waiting on a server that may be gone.
+     *
+     * The map is cleared first, which is what tells the `onClientLost` handlers
+     * above that these endings are ours and not a drop worth reporting.
+     *
+     * Each client then gets `CLOSE_TIMEOUT_MS` to say goodbye properly and is
+     * hung up on if it does not. Waiting indefinitely is what made *Disconnect*
+     * from a dropped connection sit for a minute and then fail: a half-open
+     * socket has nobody left to answer the goodbye, and neither library gives up
+     * before TCP does.
+     */
     async close() {
       const open = [...clients.values()];
       clients.clear();
       await Promise.all(
         open.map(async (client) => {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const hangUp = new Promise<void>((resolve) => {
+            timer = setTimeout(() => {
+              try {
+                driver.destroyClient(client);
+              } catch {
+                // Nothing left to do for a socket that will not even be dropped.
+              }
+              resolve();
+            }, CLOSE_TIMEOUT_MS);
+          });
           try {
-            await driver.closeClient(client);
+            await Promise.race([driver.closeClient(client), hangUp]);
           } catch {
             // Already-dead sockets are fine to ignore; we're tearing down anyway.
+          } finally {
+            clearTimeout(timer);
           }
         })
       );

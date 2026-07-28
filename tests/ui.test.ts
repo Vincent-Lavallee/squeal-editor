@@ -313,8 +313,9 @@ async function addConnection(
  *
  * Every connection is saved now, so the smoke describes above leave rows behind;
  * a describe that asserts an exact saved list starts by wiping to a clean slate.
- * It reloads to the list, then deletes the first row until none remain (Delete is
- * the second action, Yes the first once it confirms in place).
+ * It reloads to the list, then deletes the first row until none remain -- Delete
+ * is the second action, a trash icon armed by a first click and committed by a
+ * second on that same button.
  */
 async function clearSavedConnections(): Promise<void> {
   await app.reload();
@@ -322,9 +323,9 @@ async function clearSavedConnections(): Promise<void> {
   for (let guard = 0; guard < 20; guard++) {
     const rows = await app.evaluate<number>(`document.querySelectorAll('[data-testid="saved-row"]').length`);
     if (rows === 0) break;
-    await app.evaluate(`document.querySelector('[data-testid="saved-row"]').querySelectorAll('[data-testid="saved-actions"] button')[1].click(); true;`);
+    await app.evaluate(`document.querySelector('[data-testid="saved-row"]').querySelector('[data-testid="saved-delete"]').click(); true;`);
     await Bun.sleep(300);
-    await app.evaluate(`document.querySelector('[data-testid="saved-row"]').querySelectorAll('[data-testid="saved-actions"] button')[0].click(); true;`);
+    await app.evaluate(`document.querySelector('[data-testid="saved-row"]').querySelector('[data-testid="saved-delete"]').click(); true;`);
     await Bun.sleep(600);
   }
 }
@@ -2010,14 +2011,15 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await disconnect();
     });
 
-    test('deleting asks first, then removes it', async () => {
-      // The second action button is Delete; it confirms in place rather than in a dialog.
-      await app.evaluate(`${savedRow('pg-renamed')}.querySelectorAll('[data-testid="saved-actions"] button')[1].click(); true;`);
+    test('deleting arms the trash can, then removes it on a second click', async () => {
+      // Delete is a trash icon that confirms in place rather than in a dialog:
+      // one click arms it, a second on that same button commits.
+      await app.evaluate(`${savedRow('pg-renamed')}.querySelector('[data-testid="saved-delete"]').click(); true;`);
       await Bun.sleep(400);
-      expect(await app.evaluate<string>(`${savedRow('pg-renamed')}.querySelector('[data-testid="saved-hint"]').textContent`))
-        .toBe('Delete?');
+      expect(await app.evaluate<string>(`${savedRow('pg-renamed')}.querySelector('[data-testid="saved-delete"]').title`))
+        .toBe('Click again to delete');
 
-      await app.evaluate(`${savedRow('pg-renamed')}.querySelectorAll('[data-testid="saved-actions"] button')[0].click(); true;`);
+      await app.evaluate(`${savedRow('pg-renamed')}.querySelector('[data-testid="saved-delete"]').click(); true;`);
       await Bun.sleep(800);
       expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="saved-row"]').length`)).toBe(0);
     });
@@ -2127,15 +2129,15 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     test('deleting one says what it will cost, then takes its connections with it', async () => {
-      // The second action is Delete; the first is Edit, as on a connection row.
-      await app.evaluate(`${savedRow('Default')}.querySelectorAll('[data-testid="saved-actions"] button')[1].click(); true;`);
+      // The trash icon is the second action; the first is Edit, as on a connection row.
+      await app.evaluate(`${savedRow('Default')}.querySelector('[data-testid="saved-delete"]').click(); true;`);
       await Bun.sleep(400);
       // The confirmation names the count because the connections go too -- and
-      // their stored passwords with them.
-      expect(await app.evaluate<string>(`${savedRow('Default')}.querySelector('[data-testid="saved-hint"]').textContent`))
-        .toBe('Delete with its 2 connections?');
+      // their stored passwords with them -- in the armed button's tooltip.
+      expect(await app.evaluate<string>(`${savedRow('Default')}.querySelector('[data-testid="saved-delete"]').title`))
+        .toBe('Click again to delete with its 2 connections');
 
-      await app.evaluate(`${savedRow('Default')}.querySelectorAll('[data-testid="saved-actions"] button')[0].click(); true;`);
+      await app.evaluate(`${savedRow('Default')}.querySelector('[data-testid="saved-delete"]').click(); true;`);
       await Bun.sleep(800);
       expect(await app.evaluate<string[]>(names)).toEqual(['Acme']);
 
