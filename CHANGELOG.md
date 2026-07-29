@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.11.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.10.1...v0.11.0) (2026-07-29)
+
+
+### Features
+
+* Improved connection reliability ([c09a013](https://github.com/Vincent-Lavallee/squeal-editor/commit/c09a013ad570390e2100577ddad0ccf8bbdc3ba9))
+* Table head sorting ([125f9f9](https://github.com/Vincent-Lavallee/squeal-editor/commit/125f9f99a0b878be30415a78eae8d3b6de7a91c4))
+
+
+### Bug Fixes
+
+* Remove ability to edit currently opened connection ([24ac194](https://github.com/Vincent-Lavallee/squeal-editor/commit/24ac194c0836e5e97dbb29565796d3c126234138))
+* Skeleton on table for non-initial load ([fce4ff8](https://github.com/Vincent-Lavallee/squeal-editor/commit/fce4ff8ebc63bc8ddcf99702e015077cccfbc1f4))
+* Windows task manager naming ([c1a9869](https://github.com/Vincent-Lavallee/squeal-editor/commit/c1a98690b5dccdb08aab9ac0ba64d2379fc5dc79))
+
 ## [0.10.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.10.0...v0.10.1) (2026-07-26)
 
 
