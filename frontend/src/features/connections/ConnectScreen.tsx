@@ -92,6 +92,7 @@ export default function ConnectScreen({ onCancel }: Props) {
   }
 
   const busy = session.connecting || saved.saving || workspaces.saving;
+  const openIds = new Set(session.connections.map((c) => c.savedConnectionId));
   const error = session.error ?? saved.error ?? workspaces.error ?? environments.error;
   const workspaceById = (id: string): Workspace | undefined => workspaces.workspaces.find((w) => w.id === id);
 
@@ -126,7 +127,7 @@ export default function ConnectScreen({ onCancel }: Props) {
         return <ConnectionForm mode="new" environments={environments.environments} busy={busy} onSubmit={(values) => void submitNew(resolved.workspaceId, values)} onCancel={populated ? () => go({ view: 'list', workspaceId: resolved.workspaceId }) : () => go({ view: 'workspaces' })} />;
       }
       case 'list':
-        return <SavedConnectionList workspace={workspaceById(resolved.workspaceId)!} connections={saved.connections.filter((c) => c.workspaceId === resolved.workspaceId)} environments={environments.environments} connectingId={session.connecting ? connectingId : null} connectingPhase={session.connectingPhase} busy={busy} onPick={pick} onEdit={(connection) => go({ view: 'edit', connection })} onDelete={(id) => { go({ view: 'list', workspaceId: resolved.workspaceId }); saved.remove(id); }} onNew={() => go({ view: 'new', workspaceId: resolved.workspaceId })} onBack={() => go({ view: 'workspaces' })} />;
+        return <SavedConnectionList workspace={workspaceById(resolved.workspaceId)!} connections={saved.connections.filter((c) => c.workspaceId === resolved.workspaceId)} environments={environments.environments} connectingId={session.connecting ? connectingId : null} connectingPhase={session.connectingPhase} openIds={openIds} busy={busy} onPick={pick} onEdit={(connection) => go({ view: 'edit', connection })} onDelete={(id) => { go({ view: 'list', workspaceId: resolved.workspaceId }); saved.remove(id); }} onNew={() => go({ view: 'new', workspaceId: resolved.workspaceId })} onBack={() => go({ view: 'workspaces' })} />;
     }
   }
 
@@ -137,7 +138,7 @@ export default function ConnectScreen({ onCancel }: Props) {
         <p style={{ margin: `4px 0 ${t.GAP_XL}px`, color: t.TEXT_MUTED }}>A stupid simple SQL editor.</p>
 
         {onCancel && (
-          <Button variant="ghost" style={{ justifyContent: 'flex-start', width: '100%', marginBottom: t.GAP_LG }} onClick={onCancel}>
+          <Button data-testid="connect-back" variant="ghost" style={{ justifyContent: 'flex-start', width: '100%', marginBottom: t.GAP_LG }} onClick={onCancel}>
             ← Back to {session.name || session.serverLabel}
           </Button>
         )}

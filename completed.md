@@ -544,3 +544,11 @@ This is a record, not a plan. Nothing here is waiting on anything.
   entry the way Chrome and VS Code have; that half is not achievable — Task
   Manager groups by executable image and this app is deliberately two programs.
   See `docs/decisions.md`.
+
+- **2026-07-29** — **Editing an open connection** — The edit form for a saved
+  connection was reachable even while that connection was open, but saving
+  changes to a live connection had no effect until reconnect — the edit silently
+  diverged from what was running. The row now carries an `Open` badge and its
+  *Edit* is refused, with the reason in the tooltip. Delete stays available: the
+  row going is a claim that is true immediately, which the edit's is not. See
+  `docs/decisions.md`.

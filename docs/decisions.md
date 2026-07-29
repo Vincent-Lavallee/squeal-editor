@@ -3550,3 +3550,43 @@ the part of the complaint that had teeth: the app is now findable. Searching
 "squeal" in Task Manager returns every process it owns, which is what someone
 trying to force-quit it actually needs. Do not reopen this expecting the rows to
 merge.
+
+---
+
+## An open connection's saved row cannot be edited
+
+**The bug it fixes.** The edit form was reachable from the list while the
+connection was open, and saving reached the stored row only — the running
+connection had already read its host, user, password and read-only flag at
+connect time and never reads them again. So the edit landed, the form closed on a
+success, and everything on screen kept behaving the way it did before. Nothing
+failed; the row and the session simply disagreed until the next connect.
+
+**Refused at the list, not warned about in the form.** The form is a dead end
+once its Save cannot mean anything, and offering the trip into it only to say no
+at the bottom is the same shape as a server error about a statement the user did
+not type. The row is where the decision belongs, so the row carries an `Open`
+badge and a disabled *Edit*.
+
+**The badge is the whole reason a disabled button is allowed here.** A control
+that is off with no visible reason is a worse bug than the one being fixed. The
+badge states the fact unprompted; the tooltip names what to do about it. It also
+answers a question the connect screen could not answer before — the rail's "+"
+lands you on a list that says nothing about which of these you are already on.
+
+*Rejected: keeping the row's connection in step with the edit instead*, by
+re-applying the changed fields to the live connection. Host, port and user cannot
+be changed under an open socket at all, so it would have to reconnect — which is
+a disconnect the user did not ask for, taking its tabs, its tree and its results
+with it, dressed up as saving a form.
+
+**`Delete` deliberately stays available on an open row.** Deleting says the row is
+gone, which is true the moment it lands; editing says the connection is now this,
+which is not. They are different claims and only one of them is false while the
+connection is open. The session keeps running off a `savedConnectionId` that no
+longer resolves, and what that costs — a session snapshot with nowhere to land,
+orphaned stars — is a separate question from this one.
+
+**Marked by `savedConnectionId`, never the runtime `connectionId`.** The latter is
+minted fresh per session and is not what a row knows itself as; this is the same
+distinction stars already draw.

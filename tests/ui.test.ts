@@ -2145,9 +2145,32 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(dbs).toContain('shop');
     });
 
+    /*
+     * An edit writes the stored row, and a connection already running off that
+     * row never reads it again -- so the row says it is open and refuses the
+     * edit, rather than saving one that quietly does nothing. The rail's "+" is
+     * the only route to this list with a connection still open.
+     */
+    test('a connection that is open says so, and its Edit is refused', async () => {
+      await app.evaluate(`document.querySelector('[data-testid="rail-add"]').click(); true;`);
+      await Bun.sleep(600);
+
+      expect(await app.evaluate<string>(`${savedRow('pg-fixture')}.querySelector('[data-testid="saved-open"]').textContent`))
+        .toBe('Open');
+      expect(await app.evaluate<boolean>(`${savedRow('pg-fixture')}.querySelector('[data-testid="saved-edit"]').disabled`))
+        .toBe(true);
+
+      // Back to the shell, so the disconnect the next test opens with lands.
+      await app.evaluate(`document.querySelector('[data-testid="connect-back"]').click(); true;`);
+      await Bun.sleep(400);
+    });
+
     test('editing renames it in place', async () => {
       await disconnect();
       await Bun.sleep(400);
+
+      // Closed, so the mark is gone and the form is reachable again.
+      expect(await app.evaluate<boolean>(`!!${savedRow('pg-fixture')}.querySelector('[data-testid="saved-open"]')`)).toBe(false);
 
       await app.evaluate(`${savedRow('pg-fixture')}.querySelector('[data-testid="saved-actions"] button').click(); true;`);
       await Bun.sleep(500);

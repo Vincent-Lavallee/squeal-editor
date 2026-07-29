@@ -13,8 +13,6 @@ Items name features, never files or functions. Files move; the feature doesn't.
 
 Things that already work, but not well enough.
 
-- **Red delete button** — The delete button in the connection list should be red to signal a destructive action.
-
 - **Order the tree by object type, not purely alphabetically** — Tables, views,
   and functions are interleaved alphabetically in the tree today. Order by
   type instead, with no visual section header: all tables first, then all
@@ -45,12 +43,6 @@ Things that are wrong.
   makes it read as shrunken in the taskbar. Restore the full-bleed SVG and move
   the 80% downscale into the macOS packaging script that already generates the
   .icns, so each platform gets the artwork it needs from the same source.
-
-- **Editing an open connection** — The edit form for a saved connection is
-  reachable even while that connection is open, but saving changes to a live
-  connection has no effect until reconnect — the edit silently diverges from
-  what is running. Block the edit form (or warn that the connection must be
-  closed first) when the connection is currently active.
 
 - **Unbounded table listing** — `listTables` fetches every table in the database
   with no limit, so a database with thousands of tables is slow to query,

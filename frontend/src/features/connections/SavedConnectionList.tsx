@@ -37,6 +37,12 @@ interface Props {
   environments: EnvironmentDef[];
   connectingId: string | null;
   connectingPhase: string | null;
+  /**
+   * The rows that already have a connection open, by saved id -- not by the
+   * runtime `connectionId`, which is minted fresh per session and is not what a
+   * row knows itself as.
+   */
+  openIds: Set<string>;
   busy: boolean;
   onPick: (connection: SavedConnection) => void;
   onEdit: (connection: SavedConnection) => void;
@@ -68,7 +74,7 @@ function groupByEnvironment(connections: SavedConnection[], environments: Enviro
   return [...known, ...leftover];
 }
 
-export default function SavedConnectionList({ workspace, connections, environments, connectingId, connectingPhase, busy, onPick, onEdit, onDelete, onNew, onBack }: Props) {
+export default function SavedConnectionList({ workspace, connections, environments, connectingId, connectingPhase, openIds, busy, onPick, onEdit, onDelete, onNew, onBack }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const WorkspaceGlyph = workspaceGlyph(workspace.icon);
@@ -93,7 +99,8 @@ export default function SavedConnectionList({ workspace, connections, environmen
             <ul style={saved}>
               {group.connections.map((c, i) => {
                 const hovered = hoveredId === c.id;
-                const open = confirmingId === c.id || hovered;
+                const actionsShown = confirmingId === c.id || hovered;
+                const alreadyOpen = openIds.has(c.id);
 
                 return (
                   <li data-testid="saved-row" style={{ ...savedRow, ...(i > 0 ? { borderTop: `1px solid ${t.BORDER}` } : {}), ...(hovered ? { background: t.HOVER } : {}) }}
@@ -106,6 +113,9 @@ export default function SavedConnectionList({ workspace, connections, environmen
                       <span style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, minWidth: 0 }}>
                         <span data-testid="saved-name" style={{ overflow: 'hidden', fontSize: t.TEXT_BODY, fontWeight: 500, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
                         <Badge kind="accent">{engineLabel(c.config.type)}</Badge>
+                        {/* The long name beside it is what gives way -- it has an
+                            ellipsis and this has nothing to lose a character of. */}
+                        {alreadyOpen && <Badge kind="neutral" testId="saved-open" style={{ flex: 'none' }}>Open</Badge>}
                       </span>
                       {connectingId === c.id ? (
                         <span data-testid="saved-server" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, color: t.TEXT_MUTED, fontFamily: t.MONO, fontSize: t.TEXT_BADGE }}>
@@ -123,8 +133,15 @@ export default function SavedConnectionList({ workspace, connections, environmen
                       )}
                     </button>
 
-                    <div data-testid="saved-actions" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none' }}>
-                      <Button variant="ghost" onClick={() => { setConfirmingId(null); onEdit(c); }} disabled={busy}>Edit</Button>
+                    <div data-testid="saved-actions" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', opacity: actionsShown ? 1 : 0, pointerEvents: actionsShown ? 'auto' : 'none' }}>
+                      {/* Saving an edit reaches the stored row and never the
+                          connection already running off it, so the form is
+                          refused rather than left to diverge from it silently.
+                          The reason hangs off the wrapper because a disabled
+                          button receives no mouse events, and so no tooltip. */}
+                      <span title={alreadyOpen ? 'Close this connection to edit it' : undefined}>
+                        <Button data-testid="saved-edit" variant="ghost" onClick={() => { setConfirmingId(null); onEdit(c); }} disabled={busy || alreadyOpen}>Edit</Button>
+                      </span>
                       {/* Armed by a first click, committed by a second on the same
                           button -- a Yes/No pair is a second menu for one decision,
                           and this is the one control both steps happen on. */}

@@ -648,6 +648,17 @@ Three things fall out of that, and each is invisible until it bites:
   never changed. The Cancel button now only aborts (`cancelConnect`), clears
   `connectingId` and dismisses the error; it leaves `screen` untouched.
 
+**A row with a connection already open is marked `Open`, and its *Edit* is
+refused.** `ConnectScreen` reads the open saved ids off `session.connections`
+(`savedConnectionId`, never the runtime `connectionId`) and hands
+`SavedConnectionList` the set. Saving an edit writes the stored row, and a
+connection running off that row never reads it again — so the form would save
+changes that take effect on the next connect and nowhere before it, which is the
+divergence being refused rather than explained afterwards. The reason sits on a
+`<span>` wrapping the button, not on the button: a disabled button receives no
+mouse events, so a `title` on it never shows. *Delete* stays available — the row
+going is not the same claim as the row quietly disagreeing with what is running.
+
 **A cancelled attempt still lands in `session.error`, and is rendered
 differently on purpose.** `cancelConnect` aborts the in-flight `call()`, which
 rejects with `Error('Cancelled.')` (`bridge.ts`) the same way a real failure

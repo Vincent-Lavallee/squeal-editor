@@ -9,8 +9,8 @@ const badgeVariants: Record<BadgeKind, CSSProperties> = {
   purple: { background: t.PURPLE_BG, color: t.PURPLE }, neutral: { background: t.BORDER, color: t.TEXT_MUTED },
 };
 
-interface Props { kind?: BadgeKind; children: ReactNode; style?: CSSProperties; }
+interface Props { kind?: BadgeKind; children: ReactNode; style?: CSSProperties; testId?: string; title?: string; }
 
-export default function Badge({ kind = 'accent', children, style }: Props) {
-  return <span data-testid="engine-badge" style={{ ...badgeBase, ...badgeVariants[kind], ...style } as CSSProperties}>{children}</span>;
+export default function Badge({ kind = 'accent', children, style, testId = 'engine-badge', title }: Props) {
+  return <span data-testid={testId} title={title} style={{ ...badgeBase, ...badgeVariants[kind], ...style } as CSSProperties}>{children}</span>;
 }
