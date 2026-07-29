@@ -22,12 +22,6 @@ Things that already work, but not well enough.
   of one. Group them the way Chrome or VS Code do: a single top-level entry
   named "Squeal Editor" that expands to reveal its child processes.
 
-- **No skeleton on tree refresh** — Refreshing the table tree renders skeleton
-  placeholders over the tree section, the same as a first load with nothing
-  on screen yet, even though the tree already has data to show. Reserve the
-  skeleton for the true first-load case; a refresh of already-loaded data
-  should leave the tree visible and only animate the refresh icon.
-
 - **Order the tree by object type, not purely alphabetically** — Tables, views,
   and functions are interleaved alphabetically in the tree today. Order by
   type instead, with no visual section header: all tables first, then all

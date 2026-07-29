@@ -411,6 +411,36 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<string[]>(schemaLabels)).toContain('reporting');
     });
 
+    test('refreshing the tree keeps it on screen; only the icon turns', async () => {
+      const before = await app.evaluate<string[]>(treeLabels);
+      expect(before).toContain('users');
+
+      /*
+       * Read the tree *while* the refresh is in flight, which is the whole
+       * point: `tablesRequested` dispatches synchronously from the click, so
+       * React has painted the loading state by the next macrotask, and a bridge
+       * round trip to Postgres cannot have landed inside one. Sleeping first
+       * would assert nothing -- the tree is back either way by then.
+       */
+      const during = await app.evaluate<{ skeleton: boolean; spinning: boolean; labels: string[] }>(`
+        (async () => {
+          document.querySelector('[data-testid="sidebar-tables-refresh"]').click();
+          await new Promise((r) => setTimeout(r, 0));
+          return {
+            skeleton: !!document.querySelector('[data-testid="tree-skeleton"]'),
+            spinning: !!document.querySelector('[data-testid="sidebar-tables-refresh"] .spin'),
+            labels: ${treeLabels},
+          };
+        })()`);
+
+      expect(during.spinning).toBe(true);
+      expect(during.skeleton).toBe(false);
+      expect(during.labels).toEqual(before);
+
+      await app.waitFor(`document.querySelector('[data-testid="sidebar-tables-refresh"] .spin') ? null : true`);
+      expect(await app.evaluate<string[]>(treeLabels)).toEqual(before);
+    });
+
     test('groups relations under their schema, the one you are in first', async () => {
       // Postgres, so every relation names a schema and the tree draws a heading
       // per schema. `public` leads because it is the engine's default schema --

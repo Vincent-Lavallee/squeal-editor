@@ -30,6 +30,12 @@ the date they were finished.
   The app went on looking perfectly connected while nothing worked, and
   disconnecting sat for a full minute before failing.
 
+- **2026-07-28** — **No skeleton on tree refresh** — Refreshing the table tree
+  renders skeleton placeholders over the tree section, the same as a first load
+  with nothing on screen yet, even though the tree already has data to show.
+  Reserve the skeleton for the true first-load case; a refresh of already-loaded
+  data should leave the tree visible and only animate the refresh icon.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

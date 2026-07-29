@@ -155,8 +155,8 @@ export function useExplorer() {
   const refreshDatabases = useCallback((): Promise<unknown> => dispatch(loadDatabases()).unwrap(), [dispatch]);
 
   // The tree's refresh button, past `loadTables`' cache -- see `force` there.
-  // Reuses the same `loadingTables` marker a first fetch does, so the tree's
-  // existing skeleton covers a refresh too.
+  // Reuses the same `loadingTables` marker a first fetch does; `firstLoad`
+  // below is what keeps the skeleton off a refresh that already has rows.
   const refreshTables = useCallback((): Promise<unknown> | undefined => {
     if (!database) return undefined;
     return dispatch(loadTables({ database, force: true })).unwrap();
@@ -174,6 +174,17 @@ export function useExplorer() {
     },
     [dispatch]
   );
+
+  // Everything below is read against the node actually being shown -- this
+  // connection, this database. A slow fetch for a database this tab no longer
+  // points at is not this tree's news, and neither is one for a server the rail
+  // has since moved off.
+  const shownTables = connectionId && database ? (tables[connectionId]?.[database] ?? null) : null;
+  const fetching =
+    connectionId !== null &&
+    database !== null &&
+    loadingTables?.connectionId === connectionId &&
+    loadingTables.database === database;
 
   return {
     columnsFor,
@@ -195,16 +206,14 @@ export function useExplorer() {
     defaultSchema,
     databases: connectionId ? (databases[connectionId] ?? NO_DATABASES) : NO_DATABASES,
     database,
-    // Everything below is read against the node actually being shown -- this
-    // connection, this database. A slow fetch for a database this tab no longer
-    // points at is not this tree's news, and neither is one for a server the rail
-    // has since moved off.
-    tables: connectionId && database ? (tables[connectionId]?.[database] ?? null) : null,
-    loading:
-      connectionId !== null &&
-      database !== null &&
-      loadingTables?.connectionId === connectionId &&
-      loadingTables.database === database,
+    tables: shownTables,
+    /** A fetch is in flight for this node: the refresh icon turns. */
+    loading: fetching,
+    /**
+     * That fetch has nothing to show behind it, so a skeleton is the only thing
+     * the tree can draw. A refresh already holds rows and keeps them.
+     */
+    firstLoad: fetching && shownTables === null,
     error:
       connectionId !== null && database !== null && error?.connectionId === connectionId && error.database === database
         ? error.message

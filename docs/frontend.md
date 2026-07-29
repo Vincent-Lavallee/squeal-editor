@@ -1283,6 +1283,16 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   a filter whose answer depends on what you expanded earlier. A filter that
   matches nothing says *No matches*, which is a different fact from a database
   with *No tables* and reads as one.
+- **The skeleton is for a tree with nothing behind it, never for a refresh.**
+  `useExplorer` answers two questions off one `loadingTables` marker: `loading`
+  is "a fetch is in flight for this node", which is what turns the refresh icon
+  and disables the button, and `firstLoad` is that same fetch with
+  `tables === null` behind it, which is the only thing that draws
+  `<TreeSkeleton>`. They differ exactly on the refresh button, which asks past
+  the cache (`force`) for rows that are already on screen — replacing them with
+  placeholders throws away a readable tree to say something the spinning icon
+  already says. A database switch is a first load again, because that node has
+  nothing cached, so it keeps its skeleton without a second flag.
 - **Tables sort above views in the tree.** A stable sort in `Sidebar` keeps the
   server's within-group order (by name); no heading, since the view icon already
   tells the two kinds apart. It is a presentation decision, so it lives in the UI

@@ -35,7 +35,7 @@ interface Props {
 }
 
 export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition, onShowTriggerDefinition, onShowFunctionDefinition, collapsed, onToggleCollapse }: Props) {
-  const { databases, database, tables, columnsFor, loadTableColumns, triggersFor, loadTableTriggers, functionsFor, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, error } = useExplorer();
+  const { databases, database, tables, columnsFor, loadTableColumns, triggersFor, loadTableTriggers, functionsFor, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, firstLoad, error } = useExplorer();
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [flippedSchemas, setFlippedSchemas] = useState<ReadonlySet<string>>(() => new Set());
   const [filter, setFilter] = useState('');
@@ -364,7 +364,7 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
       </div>
 
       <nav style={{ flex: 1, overflowY: 'auto', padding: `${t.GAP_SM}px 6px`, display: collapsed ? 'none' : undefined }}>
-        {loading && <TreeSkeleton />}
+        {firstLoad && <TreeSkeleton />}
         {error && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.RED_TEXT }}>{error}</div>}
         {sorted?.length === 0 && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No tables</div>}
         {filteredEverythingOut && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No matches</div>}
@@ -483,9 +483,14 @@ function Triggers({ triggers, table, schema: _schema, indented, onLoadTriggers, 
   );
 }
 
+/*
+ * Its own testid rather than the `tree-note` its siblings share: the suite has
+ * to be able to assert a refresh did *not* draw one, and "no note" would also
+ * be true of a tree that had gone blank -- the very failure this replaced.
+ */
 function TreeSkeleton() {
   return (
-    <div data-testid="tree-note">
+    <div data-testid="tree-skeleton">
       {[0.55, 0.7, 0.45, 0.65, 0.5, 0.75, 0.4, 0.6].map((w, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, height: t.ROW_H_DENSE, padding: '0 6px' }}>
           <Skeleton width={16} height={16} borderRadius={3} style={{ flex: 'none' }} />
