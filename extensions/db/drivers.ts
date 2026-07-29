@@ -181,6 +181,17 @@ export interface Driver<C> {
    * bounds it.
    */
   destroyClient(client: C): void;
+  /**
+   * What the server calls its own version, in its own words.
+   *
+   * Per-engine like every other catalog read here -- `VERSION()`, a Postgres
+   * setting and a SQLite function are three different questions -- and the
+   * answer is passed on untouched. Nothing parses it or puts a product name in
+   * front of it: a MariaDB server answering `11.4.2-MariaDB` under the MySQL
+   * driver is telling the user something true, and normalising it would be the
+   * value-handling rule broken about a value that is only ever read.
+   */
+  serverVersion(client: C): Promise<string>;
   listDatabases(client: C): Promise<string[]>;
   listTables(client: C, database: string): Promise<TableMeta[]>;
   /**
@@ -746,6 +757,11 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     client.destroy();
   },
 
+  async serverVersion(client) {
+    const [rows] = (await client.query({ sql: 'SELECT VERSION()', rowsAsArray: true })) as [string[][], FieldPacket[]];
+    return rows[0]?.[0] ?? '';
+  },
+
   async listDatabases(client) {
     const [rows] = (await client.query({ sql: 'SHOW DATABASES', rowsAsArray: true })) as [string[][], FieldPacket[]];
     return rows.map((r) => r[0] as string).filter((name) => !MYSQL_SYSTEM_DBS.has(name));
@@ -1098,6 +1114,14 @@ export const postgresDriver: Driver<pg.Client> = {
     // typed (`Client.connection.stream`), not a cast into internals, and it is
     // the only thing that ends a wait on a server that is no longer listening.
     client.connection.stream.destroy();
+  },
+
+  async serverVersion(client) {
+    // `server_version` rather than `version()`: the latter is a banner carrying
+    // the build's compiler and architecture, which is a paragraph where the
+    // caller wanted a number.
+    const res = await client.query({ text: "SELECT current_setting('server_version')", rowMode: 'array' });
+    return (res.rows as string[][])[0]?.[0] ?? '';
   },
 
   async listDatabases(client) {
@@ -1620,6 +1644,11 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
    * file for every table browsed. Reporting the path keys the connection's whole
    * life to a single client, which is also the truth -- there is exactly one.
    */
+  async serverVersion(client) {
+    const version = sqliteRows(client, 'SELECT sqlite_version()')[0]?.[0];
+    return typeof version === 'string' ? version : '';
+  },
+
   async listDatabases(client) {
     return [client.filename];
   },

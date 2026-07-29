@@ -24,6 +24,7 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
   workspacesSlice.ts    the workspace list
   environmentsSlice.ts  the environment picklist + useEnvironments()
   savedSlice.ts         the stored connection list
+  connectionTestSlice.ts  what the connect form reached, without keeping it + useConnectionTest()
   explorerSlice.ts      the catalog: databases, their tables, their columns
   resultsSlice.ts       the result grid, keyed by tab
   updaterSlice.ts       the release check, download progress + useUpdater()
@@ -80,6 +81,7 @@ that lives apart from its values is two sources for one fact.
 | staged cell edits + row deletes, per tab (+ `saving`, `saveError`) | `results` context | never left, until Save |
 | the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Apply |
 | saved connections | `saved` slice | crossed |
+| the version a *Test* reached, and why one failed | `connectionTest` slice | crossed |
 | workspaces | `workspaces` slice | crossed |
 | environments (the picklist, not any connection's own) | `environments` slice | crossed |
 | the release check, download `progress`, banner `dismissed` | `updater` slice | crossed |
@@ -774,6 +776,43 @@ so unlike the password they edit back in place. IAM is a variation on the
 invisible until it bites:** an IAM connection is `hasPassword: false` like one
 that just did not save a password, so `pick` must check `config.iam` before
 routing to the password prompt — there is nothing to prompt for.
+
+### Testing what is typed, without leaving the form
+
+*Test* sits between *Cancel* and the submit and reaches the server described by
+the fields as they stand — `db.test`, which opens a connection, names its
+version and closes it (see `docs/extension.md`). Success reads
+`Connected to PostgreSQL 16.13`: the version is the extension's and the engine's
+name is the form's own, off `ENGINES`, which is the only engine knowledge the UI
+holds. Failure is the server's message in the error `Callout` beside the button,
+never the screen's error slot — *errors render where the action was taken*, and
+the fix-and-retry loop happens here.
+
+Five things are load-bearing, and each is a way the button could look right and
+be wrong:
+
+- **`serverConfig(form, iam)` is one function, used by both *Test* and the
+  submit.** Two builders would let a draft be tested as one thing and saved as
+  another, which would make a green result mean nothing about the row that
+  follows it.
+- **A test asks for none of what *saving* needs.** No name is required, so *Test*
+  is live while the submit is still disabled — a test writes no record, and
+  demanding the form's own bookkeeping first would put it in front of the
+  question. Only SQLite gates it, on a path, because there is no server to reach
+  without one.
+- **Any edit withdraws the answer.** `useEffect(..., [form])` clears it, keyed on
+  the whole form rather than hung off the handlers, so a field added later cannot
+  forget. A test changes no field, so the answer survives the render that lands
+  it.
+- **An edit form tests with the password it was never shown.** `TestPassword` is
+  `{ mode: 'stored', savedConnectionId }` exactly when the form is editing a row
+  that has one and the box is untouched — read off the *form*, not the row, so
+  switching the edit to IAM or to a file (neither of which has a password)
+  falls back to `typed` rather than sending a secret that would go unread.
+- **The button is `type="button"`, which `<Button>` now defaults to.** It was not,
+  and a `<button>` in a `<form>` is a submit button unless it says otherwise: the
+  first cut submitted the form as well as testing, which on an *edit* saved the
+  row and navigated away before the result could render. See `docs/decisions.md`.
 
 ## The editor
 

@@ -561,3 +561,14 @@ This is a record, not a plan. Nothing here is waiting on anything.
   *Edit* is refused, with the reason in the tooltip. Delete stays available: the
   row going is a claim that is true immediately, which the edit's is not. See
   `docs/decisions.md`.
+
+- **2026-07-29** — **Test a connection while editing it** — The only way to find out whether a host,
+  user and password are right is to submit the form, which on success leaves the form
+  entirely and on an edit saves as well. Add a Test button that opens a connection
+  from the values currently typed, reports, closes it, and stays put — the fix-a-field
+  and-try-again loop is the whole point and there is nowhere to do it today. It writes
+  no record, stores no password and leaves nothing open, so testing a draft cannot
+  leak a half-made connection into the list. Success names the server version reached,
+  which is how you know you hit the right box rather than a box; failure shows the
+  server's own message, and an expired AWS SSO session says that, instead of arriving
+  as a database access error.

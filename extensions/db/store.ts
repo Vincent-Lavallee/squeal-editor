@@ -531,6 +531,23 @@ export async function resolveSaved(
   return { config, password, name, environment, workspaceId, color, readOnly };
 }
 
+/**
+ * A saved connection's password alone, for testing values that are still being
+ * typed against the secret the form was never sent.
+ *
+ * Deliberately not `resolveSaved`, which hands back the stored *config* too: a
+ * test is about the address on screen, and the row's own is exactly what is
+ * being edited away from. This decrypts one field and answers nothing else --
+ * and, like every other path here, it answers toward the drivers rather than
+ * toward the bridge.
+ */
+export async function storedPassword(id: string): Promise<string> {
+  const row = findRow(id);
+  if (!row) throw new Error('That connection no longer exists.');
+  if (!row.password) throw new Error(`"${row.name}" does not store a password; type one to test it.`);
+  return decrypt(row.password);
+}
+
 /* -- User settings. The same file, and about nobody's server. ------------ */
 
 /**

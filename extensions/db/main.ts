@@ -47,6 +47,7 @@ import {
   setSession,
   setSetting,
   setStar,
+  storedPassword,
 } from './store.ts';
 
 // Killing the app does not reliably close our socket: WebView2 child processes
@@ -128,6 +129,32 @@ async function establish(
 const COMMANDS: Handlers = {
   async 'db.connect'({ config, readOnly }) {
     return establish(config, readOnly);
+  },
+
+  /**
+   * Open a connection from values still being typed, name what answered, and
+   * close it again -- never reaching `connections`, so there is no id to hand
+   * back and nothing for a later command to find.
+   *
+   * The close runs in a `finally` because the version query is the step most
+   * likely to fail after the socket is up: a connection opened and then
+   * abandoned by an early return is exactly the orphan the heartbeat exists to
+   * catch, and one this side can simply not create. `readOnly` is not asked for
+   * -- a test writes nothing either way, and a session policy is not part of
+   * whether the credentials are right.
+   *
+   * No progress is broadcast either. `CONNECT_PROGRESS_EVENT` is read as "the
+   * connect you started is at this phase", and a test is not one -- the phase
+   * would outlive it and describe a connection that never opened.
+   */
+  async 'db.test'({ config, password }) {
+    const secret = password.mode === 'typed' ? password.password : await storedPassword(password.savedConnectionId);
+    const conn = await openConnection({ ...config, password: secret }, false);
+    try {
+      return { serverVersion: await conn.serverVersion() };
+    } finally {
+      await conn.close();
+    }
   },
 
   async 'db.databases'({ connectionId }) {

@@ -266,3 +266,21 @@ export type PasswordUpdate =
   | { mode: 'store'; password: string }
   | { mode: 'none' }
   | { mode: 'keep' };
+
+/**
+ * Which password a `db.test` reaches the server with.
+ *
+ * `stored` is here for the same reason `PasswordUpdate` has a `keep` arm: the
+ * edit form is never sent the password it is editing, so "reach it with the
+ * secret already on disk" cannot be spelled as a value. It names the saved row
+ * to decrypt and nothing else -- the `ServerConfig` beside it is always the one
+ * currently typed, because testing the stored config would be testing the thing
+ * the form is in the middle of changing.
+ *
+ * There is no arm for "no password". An IAM connection mints its own token and a
+ * file engine has no authentication at all, and both already spell that as the
+ * empty string a driver never reads -- see `ConnectionConfig`.
+ */
+export type TestPassword =
+  | { mode: 'typed'; password: string }
+  | { mode: 'stored'; savedConnectionId: string };

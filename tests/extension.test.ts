@@ -56,6 +56,21 @@ describe('transport', () => {
     if (!res.ok) expect(res.error).toMatch(/Not connected/);
   });
 
+  /*
+   * The half of a test that gets used most: a wrong password has to arrive as
+   * the server's own refusal, because the point of testing a draft is knowing
+   * which field to go and fix.
+   */
+  test('a failed test is the server refusing, in its own words', async () => {
+    const { password: _password, ...server } = PG;
+    const res = await h.dispatch('db.test', {
+      config: server,
+      password: { mode: 'typed', password: 'not-the-password' },
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/password authentication failed/i);
+  });
+
   test('concurrent requests each get their own reply', async () => {
     const replies = await Promise.all(
       [1, 2, 3].map(() => h.dispatch('db.connect', { config: { type: 'oracle' } }))
@@ -105,6 +120,24 @@ describe.each([
 
   const listTables = async (): Promise<TableInfo[]> =>
     ((await h.ok('db.tables', { connectionId, database: fixtureDb })) as { tables: TableInfo[] }).tables;
+
+  /*
+   * Testing a draft is the connect form's own loop, so it has to work from a
+   * config alone -- no stored row, no session, nothing registered afterwards.
+   * The version is the whole payload because it is the whole answer: "something
+   * replied" is not the question, "which box replied" is.
+   */
+  test('a test names the version and hands back nothing to hold', async () => {
+    const { password, ...server } = config;
+    const res = (await h.ok('db.test', { config: server, password: { mode: 'typed', password } })) as {
+      serverVersion: string;
+    };
+
+    expect(res.serverVersion).toMatch(/^\d+\./);
+    // No connectionId, because there is no connection left: it was opened,
+    // asked, and closed before this resolved.
+    expect(Object.keys(res)).toEqual(['serverVersion']);
+  });
 
   test('lists tables and flags views', async () => {
     const tables = await listTables();

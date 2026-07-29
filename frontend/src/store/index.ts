@@ -1,5 +1,6 @@
 import { configureStore } from '@reduxjs/toolkit';
 
+import { connectionTestReducer } from './connectionTestSlice.ts';
 import { environmentsReducer } from './environmentsSlice.ts';
 import { explorerReducer } from './explorerSlice.ts';
 import { resultsReducer } from './resultsSlice.ts';
@@ -35,6 +36,7 @@ export const store = configureStore({
     workspaces: workspacesReducer,
     environments: environmentsReducer,
     saved: savedReducer,
+    connectionTest: connectionTestReducer,
     explorer: explorerReducer,
     results: resultsReducer,
     tabs: tabsReducer,

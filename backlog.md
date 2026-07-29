@@ -74,17 +74,6 @@ Things that do not exist yet.
   sync: that one is continuous, personal and needs an account, this one is a file you
   can hand over or keep as a backup with no network at all.
 
-- **Test a connection while editing it** — The only way to find out whether a host,
-  user and password are right is to submit the form, which on success leaves the form
-  entirely and on an edit saves as well. Add a Test button that opens a connection
-  from the values currently typed, reports, closes it, and stays put — the fix-a-field
-  and-try-again loop is the whole point and there is nowhere to do it today. It writes
-  no record, stores no password and leaves nothing open, so testing a draft cannot
-  leak a half-made connection into the list. Success names the server version reached,
-  which is how you know you hit the right box rather than a box; failure shows the
-  server's own message, and an expired AWS SSO session says that, instead of arriving
-  as a database access error.
-
 - **Export a table** — Getting a table out of the app means selecting rows by
   hand or writing the dump query yourself. Add an export that streams a whole
   table — all rows, paged from the server so a large one never has to land in the

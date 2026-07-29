@@ -15,6 +15,7 @@ import type {
   SavedConnection,
   ServerConfig,
   SqlDialect,
+  TestPassword,
   Workspace,
   WorkspaceIconId,
 } from './config.ts';
@@ -42,6 +43,31 @@ export interface Commands {
   'db.connect': {
     req: { config: ConnectionConfig; readOnly: boolean };
     res: { connectionId: string; databases: string[]; dialect: SqlDialect; defaultSchema?: string };
+  };
+  /**
+   * Reach a server from values that are still being typed, say what was reached,
+   * and let it go again.
+   *
+   * It is a command of its own rather than a `db.connect` with a flag because it
+   * is the opposite of one in the two ways that matter: it answers no
+   * `connectionId` -- there is nothing to hold, so nothing can be handed out --
+   * and it never touches the store. The connection is opened, asked its version,
+   * and closed before this resolves, so a draft that turns out to be wrong leaves
+   * no half-made connection behind in the registry or in the list.
+   *
+   * `serverVersion` is the server's own answer, verbatim, and it is the whole
+   * point of a successful test: "connected" only says something answered, while a
+   * version says *which* box did. The engine's name is not in it -- the caller
+   * already knows which engine it asked for -- for the same reason the extension
+   * reports a `dialect` and not a product name.
+   *
+   * A failure rejects with the server's own message, unchanged, which is what
+   * makes the fix-a-field-and-try-again loop worth anything: an expired AWS SSO
+   * session says so, and a refused password says that instead.
+   */
+  'db.test': {
+    req: { config: ServerConfig; password: TestPassword };
+    res: { serverVersion: string };
   };
   'db.databases': {
     req: { connectionId: string };

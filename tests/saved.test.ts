@@ -468,6 +468,57 @@ describe('editing', () => {
   });
 });
 
+/*
+ * Testing values still being typed, against a password the form was never sent.
+ * `renamed` carries a stored one by the end of `editing` above, which is the
+ * shape the edit form is always in: a config on screen and a secret on disk.
+ */
+describe('testing a draft against a stored password', () => {
+  test('`stored` reaches the server with the secret the caller never had', async () => {
+    const c = (await list()).find((x) => x.name === 'renamed')!;
+    const res = (await h.ok('db.test', {
+      config: PG_SERVER,
+      password: { mode: 'stored', savedConnectionId: c.id },
+    })) as { serverVersion: string };
+
+    expect(res.serverVersion).toMatch(/^\d+\./);
+  });
+
+  test('the config tested is the one supplied, never the row it borrows a password from', async () => {
+    const c = (await list()).find((x) => x.name === 'renamed')!;
+    const res = await h.dispatch('db.test', {
+      // The row points at a server that answers; this does not. A test that
+      // quietly used the stored config would come back a success.
+      config: { ...PG_SERVER, port: 59999 },
+      password: { mode: 'stored', savedConnectionId: c.id },
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/ECONNREFUSED|connect/i);
+  });
+
+  test('a row that stores no password says to type one', async () => {
+    const c = (await list()).find((x) => x.name === 'no-password')!;
+    const res = await h.dispatch('db.test', {
+      config: PG_SERVER,
+      password: { mode: 'stored', savedConnectionId: c.id },
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/type one to test it/i);
+  });
+
+  test('an unknown id errors rather than testing with nothing', async () => {
+    const res = await h.dispatch('db.test', {
+      config: PG_SERVER,
+      password: { mode: 'stored', savedConnectionId: 'nope' },
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/no longer exists/i);
+  });
+});
+
 describe('deleting', () => {
   test('removes it, and is safe to repeat', async () => {
     const c = (await list()).find((x) => x.name === 'renamed')!;

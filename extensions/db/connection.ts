@@ -59,6 +59,8 @@ export interface ConnectionHandle {
   readonly defaultSchema?: string;
   /** Whether the server is currently refusing writes on this connection. */
   readonly readOnly: boolean;
+  /** What the server calls its own version, for `db.test` to report back. */
+  serverVersion(): Promise<string>;
   listDatabases(): Promise<string[]>;
   listTables(database: string): Promise<TableInfo[]>;
   listColumns(database: string, relation: Relation): Promise<ColumnInfo[]>;
@@ -244,6 +246,10 @@ function build<C>(
     defaultSchema: driver.defaultSchema,
     get readOnly() {
       return readOnly;
+    },
+
+    async serverVersion() {
+      return useClient(config.database, (client) => driver.serverVersion(client));
     },
 
     async listDatabases() {

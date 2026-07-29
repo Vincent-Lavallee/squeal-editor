@@ -669,6 +669,39 @@ groups it on the rail by — `workspaceId` in particular is what lets the rail p
 the connection under its workspace. `readOnly` is the one it *acts* on, already
 applied to the connection it returns.
 
+### Testing a draft: `db.test`, the connect that keeps nothing
+
+`db.test` opens a connection from a config, asks `Driver.serverVersion`, and
+closes it — deliberately **not** through `establish`, which is the third path
+above and would register it. Nothing goes into `connections`, so there is no
+`connectionId` to answer with and nothing a later command could find.
+
+Three things about it are load-bearing:
+
+- **The close is in a `finally`.** The version query is the first thing that can
+  fail after the socket is up, and an early return there would leave exactly the
+  orphaned connection the heartbeat exists to reap — one this side can simply not
+  create.
+- **`serverVersion` is the server's own string, passed on untouched.** `VERSION()`,
+  `current_setting('server_version')` and `sqlite_version()` are three different
+  questions, which is why it is a driver method; what comes back is not parsed and
+  gets no product name put in front of it. A MariaDB server answering
+  `11.4.2-MariaDB` under the MySQL driver is telling the truth, and normalising
+  that away would be the value-handling rule broken about a value that is only
+  ever read. Postgres reads the *setting* rather than `version()`, whose banner
+  carries the build's compiler and architecture.
+- **The password may come from the store without the config doing so.**
+  `TestPassword` is `typed` or `stored`; the `stored` arm names a saved row and
+  `storedPassword` decrypts that one field and nothing else. That is not
+  `resolveSaved`, which would also hand back the row's *config* — and the config
+  is the thing the form is in the middle of editing away from. It is what lets the
+  edit form test a connection whose password it was never sent, the same case
+  `PasswordUpdate.keep` covers on the way out.
+
+No progress is broadcast. `CONNECT_PROGRESS_EVENT` reads as "the connect you
+started is at this phase", and a test is not one — the phase would outlive it and
+describe a connection that never opened.
+
 ## TLS
 
 `ServerConfig.ssl` is one boolean, and it means **verified** TLS: each driver

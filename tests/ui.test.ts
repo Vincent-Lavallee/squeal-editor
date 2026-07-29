@@ -2324,6 +2324,82 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
   });
 
+  /*
+   * Testing a draft. The two things worth driving through the real window are
+   * the ones no unit test can see: that a test leaves the form exactly where it
+   * was, and that an edit form -- which is never sent the password it is
+   * editing -- can still test the row it is editing.
+   */
+  describe('testing a connection while typing it', () => {
+    beforeAll(async () => {
+      await clearSavedConnections();
+    });
+
+    test('a draft is tested where it stands: no name, no record, no connection', async () => {
+      await app.reload();
+      await app.waitFor(`document.querySelector('#host') ? true : null`);
+      await app.evaluate(`${REACT_SETTERS} pickOption(document.querySelector('#type'), 'postgres');`);
+      await Bun.sleep(200);
+      await app.evaluate(`${REACT_SETTERS}
+        setNative(document.querySelector('#host'), ${JSON.stringify(PG.host)});
+        setNative(document.querySelector('#port'), ${JSON.stringify(String(PG.port))});
+        setNative(document.querySelector('#user'), ${JSON.stringify(PG.user)});
+        setNative(document.querySelector('#password'), ${JSON.stringify(PG.password)});
+        true;`);
+      await Bun.sleep(200);
+
+      // A test writes no record, so it asks for none of what saving one needs:
+      // Connect is refused without a name and Test is not.
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="connect-submit"]').disabled`)).toBe(true);
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="connect-test"]').disabled`)).toBe(false);
+
+      await app.evaluate(`document.querySelector('[data-testid="connect-test"]').click(); true;`);
+      expect(
+        await app.waitFor<string>(`document.querySelector('[data-testid="connect-test-result"]')?.textContent ?? null`)
+      ).toMatch(/^Connected to PostgreSQL \d+\./);
+
+      // Still the form, and nothing was opened behind it.
+      expect(await app.evaluate<boolean>(`!!document.querySelector('#host')`)).toBe(true);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="sidebar"]')`)).toBe(false);
+
+      // Editing withdraws the answer, rather than leaving it vouching for a
+      // password that has since been retyped.
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('#password'), 'not-the-password'); true;`);
+      await Bun.sleep(300);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="connect-test-result"]')`)).toBe(false);
+
+      // And a failure is the server's own words, where the button is.
+      await app.evaluate(`document.querySelector('[data-testid="connect-test"]').click(); true;`);
+      expect(
+        await app.waitFor<string>(`document.querySelector('[data-testid="connect-test-error"]')?.textContent ?? null`)
+      ).toMatch(/password authentication failed/i);
+
+      // Nothing was stored either way: an empty workspace opens on the form.
+      await app.reload();
+      await Bun.sleep(600);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('#host')`)).toBe(true);
+    });
+
+    test('an edit tests with the password it was never shown', async () => {
+      await connect(PG, 'pg-test-draft');
+      await disconnect();
+      await app.waitFor(`(${savedRow('pg-test-draft')}) ? true : null`);
+
+      await app.evaluate(`${savedRow('pg-test-draft')}.querySelector('[data-testid="saved-edit"]').click(); true;`);
+      await app.waitFor(`document.querySelector('[data-testid="connect-test"]') ? true : null`);
+      // The box reads `unchanged` and holds nothing -- the password never came
+      // back over the bridge -- so this can only pass by naming the stored row.
+      expect(await app.evaluate<string>(`document.querySelector('#password').value`)).toBe('');
+
+      await app.evaluate(`document.querySelector('[data-testid="connect-test"]').click(); true;`);
+      expect(
+        await app.waitFor<string>(`document.querySelector('[data-testid="connect-test-result"]')?.textContent ?? null`)
+      ).toMatch(/^Connected to PostgreSQL \d+\./);
+
+      await clearSavedConnections();
+    });
+  });
+
   describe('session restore', () => {
     // Its own connection, wiped after: the reconnect that restores tabs is the
     // whole subject, so nothing else may have written this connection's session.

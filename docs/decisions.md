@@ -3623,3 +3623,66 @@ and an `<input>` under a `none` ancestor cannot have its text selected in
 Chromium — including by the `select()` the editor runs when it opens, which is
 what makes double-click-and-retype work. The wrapper sets `userSelect: 'text'`
 back on for exactly that.
+
+---
+
+## Testing a connection is its own command, and it keeps nothing
+
+**Why a command and not `db.connect` with a flag.** A test is the opposite of a
+connect in the two ways that matter: it answers no `connectionId`, and it never
+touches the store. `db.test` opens a connection, asks the server its version, and
+closes it in a `finally` before it resolves — so a draft that turns out to be
+wrong cannot leave a half-made connection in the registry or a half-made row in
+the list. A flag on `db.connect` would have made "register it" a runtime question
+in the one function whose whole job is that `establish` means one thing.
+
+**The version is the answer, not "connected".** "Something replied" is not the
+question anyone has when they press Test; "did I reach the box I meant" is. So
+the response is the server's own version string and nothing else, and the UI
+prints it after the engine's label from `ENGINES` — the only engine knowledge the
+renderer is allowed to hold. *Rejected: composing the product name in the
+extension*, which would have to decide what to call a MariaDB server answering
+under the MySQL driver. It passes the string on untouched instead, which is
+*show what the server sent* pointed at a version. *Rejected: Postgres's
+`version()`*, whose banner carries the compiler and the architecture — a
+paragraph where a number was wanted; `current_setting('server_version')` is the
+same fact without the build notes.
+
+**`TestPassword` has a `stored` arm, and that is the feature.** Testing a
+connection *while editing it* is the case with no other answer: the edit form is
+never sent the password it is editing, so without this you could only test an
+edit by retyping the secret you came here not to retype. It names a saved row and
+the extension decrypts that one field — deliberately not `resolveSaved`, which
+would also hand back the row's config, and the config is exactly what the form is
+in the middle of changing. Same shape as `PasswordUpdate.keep`, pointed the other
+way down the wire.
+
+**The result is a slice, and the rule decided it rather than taste.** The version
+crossed the bridge, so it is a slice; that it has one reader is not an argument
+against one, the same answer `dialect` already got. What it is *not* is part of
+`session`: a test holds no connection, so there is nothing for the rail, the tree
+or a thunk to read off it, and letting it borrow that vocabulary would put
+"connecting" state in a slice about connections that are open.
+
+**Any edit withdraws the result**, keyed on the whole form rather than hung off
+each handler. A green "Connected to PostgreSQL 16.13" sitting under a host that
+has since been retyped is the app vouching for something it never reached — the
+same class of lie as a stale badge, and the fix-a-field-and-try-again loop is
+precisely when it would happen.
+
+**No connect-progress broadcast.** `CONNECT_PROGRESS_EVENT` means "the connect
+you started is at this phase". A test would set a phase that outlives it and
+describes a connection that never opened, for a wait the button's own label
+already covers.
+
+**What it cost to find: `<Button>` had no `type`.** A `<button>` inside a
+`<form>` is a submit button unless it says otherwise, so the first cut of *Test*
+submitted the form as well as testing it. On the *new* form that was invisible —
+the submit was disabled for want of a name and the save failed anyway. On the
+*edit* form it saved the row and navigated to the list, so the result never
+rendered and the failure read as "the test never answered". The fix is one line
+in the primitive — `type = 'button'` as the default, with `type="submit"` stated
+by the one button that means it, which every submit in the app already did. It
+also silently fixes every Cancel in every form here, each of which had been
+submitting its form and getting away with it because the handler navigated away
+first.

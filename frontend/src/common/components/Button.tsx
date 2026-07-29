@@ -58,6 +58,11 @@ const disabledStyles: Record<Variant, CSSProperties> = {
 
 export default function Button({
   variant = 'default',
+  // A `<button>` inside a `<form>` is a submit button unless it says otherwise,
+  // so every Cancel and every side action in a form was submitting it as well as
+  // doing its own job -- silently, because the submit usually failed or the
+  // handler navigated away first. The one button that means it says so.
+  type = 'button',
   style,
   disabled,
   onMouseEnter,
@@ -72,6 +77,7 @@ export default function Button({
 
   return (
     <button
+      type={type}
       style={{ ...base, ...v, ...h, ...d, ...style } as CSSProperties}
       disabled={disabled}
       onMouseEnter={(e) => {

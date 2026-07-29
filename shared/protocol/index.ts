@@ -24,6 +24,7 @@ export type {
   SavedConnection,
   ServerConfig,
   SqlDialect,
+  TestPassword,
   Workspace,
   WorkspaceIconId,
 } from './config.ts';

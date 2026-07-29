@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import type { ConnectionColorId, EngineType, Environment, EnvironmentDef, SavedConnection, ServerConfig } from '../../../../shared/protocol/index.ts';
+import type { ConnectionColorId, EngineType, Environment, EnvironmentDef, SavedConnection, ServerConfig, TestPassword } from '../../../../shared/protocol/index.ts';
 import { ENGINES, engineByType, isFileBased } from '../../common/db/engines.ts';
 import { CONNECTION_COLORS, DEFAULT_CONNECTION_COLOR } from '../../common/icons/connectionColors.ts';
+import { useConnectionTest } from '../../store/connectionTestSlice.ts';
 import Button from '../../common/components/Button.tsx';
+import Callout from '../../common/components/Callout.tsx';
 import Input from '../../common/components/Input.tsx';
 import Select from '../../common/components/Select.tsx';
 import Field from '../../common/components/Field.tsx';
@@ -83,9 +85,40 @@ function initialState(initial: SavedConnection | undefined, defaultEnvironment: 
   };
 }
 
+/**
+ * The server the form currently describes.
+ *
+ * Both what *Connect* submits and what *Test* reaches are this one function, so
+ * a draft can never be tested as one thing and saved as another -- which is the
+ * only way a test's answer means anything about the row that follows it.
+ */
+function serverConfig(form: FormState, iam: boolean): ServerConfig {
+  // No server to address and no secret to carry: the empty host, zero port and
+  // empty user are what `ServerConfig` documents a file engine writes, and the
+  // path travels as `database`.
+  if (isFileBased(form.type)) return { type: form.type, host: '', port: 0, user: '', database: form.database.trim() };
+
+  const engine = engineByType(form.type);
+  return {
+    type: form.type, host: form.host, port: Number(form.port) || engine.defaultPort,
+    user: form.user || engine.defaultUser, database: form.database || undefined,
+    ssl: iam ? true : form.ssl,
+    ...(iam ? { iam: { profile: form.awsProfile.trim(), region: form.awsRegion.trim() } } : {}),
+  };
+}
+
 export default function ConnectionForm({ mode, initial, environments, onSubmit, onCancel, busy }: Props) {
   const [form, setForm] = useState<FormState>(() => initialState(initial, environments[0]?.name ?? ''));
   const engine = engineByType(form.type);
+  const { testing, serverVersion, error: testError, test, clear } = useConnectionTest();
+
+  // A result describes the values as they were when it ran, so any edit
+  // withdraws it -- leaving "Connected to PostgreSQL 16.2" under a host that has
+  // since been retyped would be the app vouching for something it never reached.
+  // Keyed on the whole form rather than on a handler, so a field added later
+  // cannot forget to do it; testing changes no field, so the answer survives the
+  // render that lands it.
+  useEffect(() => { clear(); }, [form, clear]);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]): void {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -130,17 +163,7 @@ export default function ConnectionForm({ mode, initial, environments, onSubmit, 
     e.preventDefault();
     onSubmit({
       name: form.name.trim(),
-      config: fileBased
-        ? // No server to address and no secret to carry: the empty host, zero port
-          // and empty user are what `ServerConfig` documents a file engine writes,
-          // and the path travels as `database`.
-          { type: form.type, host: '', port: 0, user: '', database: form.database.trim() }
-        : {
-            type: form.type, host: form.host, port: Number(form.port) || engine.defaultPort,
-            user: form.user || engine.defaultUser, database: form.database || undefined,
-            ssl: iam ? true : form.ssl,
-            ...(iam ? { iam: { profile: form.awsProfile.trim(), region: form.awsRegion.trim() } } : {}),
-          },
+      config: serverConfig(form, iam),
       environment: form.environment, readOnly: form.readOnly,
       password: iam || fileBased ? '' : form.password,
       savePassword: iam || fileBased ? false : willBeStored && form.savePassword,
@@ -148,6 +171,23 @@ export default function ConnectionForm({ mode, initial, environments, onSubmit, 
       color: form.color,
     });
   }
+
+  /**
+   * An edit form is never sent the password it is editing, so testing one whose
+   * box is still untouched has to reach for the stored secret by name -- the
+   * same case `PasswordUpdate.keep` exists for on the way out. Switching the
+   * edit to IAM or to a file leaves nothing to decrypt, which is why the mode
+   * is read off the form rather than off the row it started as.
+   */
+  const testPassword: TestPassword =
+    mode === 'edit' && !iam && !fileBased && (initial?.hasPassword ?? false) && !form.passwordTouched
+      ? { mode: 'stored', savedConnectionId: initial!.id }
+      : { mode: 'typed', password: iam || fileBased ? '' : form.password };
+
+  // A test writes no record, so it asks for none of what saving one needs: the
+  // name is not part of reaching a server, and refusing to test until one is
+  // typed would put the form's own bookkeeping in front of the question.
+  const testable = !busy && !testing && (!fileBased || form.database.trim() !== '');
 
   return (
     <form style={{ display: 'flex', flexDirection: 'column', gap: t.GAP }} onSubmit={handleSubmit}>
@@ -289,10 +329,29 @@ export default function ConnectionForm({ mode, initial, environments, onSubmit, 
 
       <div data-testid="connect-actions" style={{ display: 'flex', gap: t.GAP_SM, marginTop: t.GAP_XS }}>
         {onCancel && <Button onClick={onCancel} disabled={busy}>Cancel</Button>}
-        <Button type="submit" data-testid="connect-submit" variant="primary" style={{ justifyContent: 'center', height: 34, flex: 1 }} disabled={busy || !form.name.trim() || (fileBased && !form.database.trim())}>
+        {/* Deliberately not a submit: testing must leave the form exactly where
+            it is, since fixing a field and trying again is the whole point. */}
+        <Button data-testid="connect-test" onClick={() => test(serverConfig(form, iam), testPassword)} disabled={!testable}>
+          {testing ? 'Testing…' : 'Test'}
+        </Button>
+        <Button type="submit" data-testid="connect-submit" variant="primary" style={{ justifyContent: 'center', height: 34, flex: 1 }} disabled={busy || testing || !form.name.trim() || (fileBased && !form.database.trim())}>
           {mode === 'edit' ? (busy ? 'Saving…' : 'Save changes') : busy ? 'Connecting…' : 'Connect'}
         </Button>
       </div>
+
+      {/* Beside the button that ran it, not in the screen's error slot: the
+          fix-and-retry loop happens here, and the engine's name is the form's
+          own -- the extension answers with the version and nothing else. */}
+      {serverVersion !== null && (
+        <div data-testid="connect-test-result">
+          <Callout tone="success">Connected to {engine.label} {serverVersion}</Callout>
+        </div>
+      )}
+      {testError && (
+        <div data-testid="connect-test-error">
+          <Callout>{testError}</Callout>
+        </div>
+      )}
     </form>
   );
 }
