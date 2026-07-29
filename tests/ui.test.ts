@@ -224,6 +224,36 @@ const gridCell = (r: number, c: number) =>
   `document.querySelectorAll('.grid tbody tr')[${r}].querySelectorAll('td:not(.gutter)')[${c}]`;
 /** Double-click an element expression -- how a cell opens its editor. */
 const dblClick = (expr: string) => `${expr}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); true;`;
+/** Extend a cell selection to (r, c) -- the same gesture the row gutter takes. */
+const shiftClickCell = (r: number, c: number) =>
+  `${gridCell(r, c)}.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })); true;`;
+/**
+ * Press on one cell and drag to another.
+ *
+ * React synthesises `mouseenter` from the delegated `mouseout`/`mouseover`
+ * pair, never from the native `mouseenter` -- which does not bubble, and which
+ * React therefore never listens for. It has to be the **`mouseout` of the cell
+ * being left**: on a `mouseover` whose `relatedTarget` is inside the same React
+ * root, React bails out, assuming the pair was already dispatched from that
+ * element's out event. `buttons: 1` is what tells the grid the button is down.
+ */
+const dragCells = ([fromR, fromC]: [number, number], [toR, toC]: [number, number]) => `(() => {
+  const from = ${gridCell(fromR, fromC)}, to = ${gridCell(toR, toC)};
+  from.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1 }));
+  from.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, buttons: 1, relatedTarget: to }));
+  to.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  return true;
+})()`;
+/**
+ * Move the cursor onto a cell with no button held -- a hover, not a drag.
+ *
+ * `mouseover` works here where it does not for `dragCells`: the element left
+ * behind is outside the React root, which is the case React does *not* bail on.
+ */
+const hoverCell = (r: number, c: number) => `(() => {
+  ${gridCell(r, c)}.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }));
+  return true;
+})()`;
 /** Right-click the row-number gutter, the other way into the row's context menu. */
 const rightClickGutter = (r: number) => `(() => {
   const el = document.querySelectorAll('.grid tbody tr')[${r}].querySelector('.gutter');
@@ -1283,6 +1313,96 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<number>(`document.querySelectorAll('.grid__cell--selected').length`)).toBe(0);
 
       await app.evaluate(closeTab('tags'));
+      await Bun.sleep(300);
+    });
+
+    test('shift-clicking a second cell selects the rectangle between them, copied as TSV', async () => {
+      await app.evaluate(clickTable('tags'));
+      await Bun.sleep(1500);
+
+      await app.evaluate(`${gridCell(0, 0)}.click(); true;`);
+      await Bun.sleep(150);
+      await app.evaluate(shiftClickCell(1, 1));
+      await Bun.sleep(150);
+
+      // `tags` is two rows of two columns, so the corners span the whole grid.
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid__cell--selected').length`)).toBe(4);
+      // The range is outlined once around its boundary, not boxed cell by cell:
+      // the top-left corner draws its top and left edges and nothing else, where
+      // a per-cell box would be all four. Counting `inset` survives the browser
+      // rewriting the colour and the lengths, which parsing the value would not.
+      const insets = (expr: string) =>
+        `(getComputedStyle(${expr}).boxShadow.match(/inset/g) || []).length`;
+      expect(await app.evaluate<number>(insets(gridCell(0, 0)))).toBe(2);
+      expect(await app.evaluate<number>(insets(gridCell(1, 1)))).toBe(2);
+
+      const shown = await app.evaluate<string[][]>(
+        `[...document.querySelectorAll('.grid tbody tr')].map(tr => [...tr.querySelectorAll('td:not(.gutter)')].map(td => td.textContent))`
+      );
+      await app.evaluate(
+        `document.querySelector('[data-testid="grid-scroll"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(300);
+      // Cells on tabs, rows on newlines -- the shape "Copy row" already produces.
+      expect(await app.evaluate<string>(`Neutralino.clipboard.readText()`)).toBe(
+        shown.map((row) => row.join('\t')).join('\n')
+      );
+
+      // Shift+Arrow shrinks the same range from the same anchor, rather than
+      // moving a single cell the way a bare arrow does.
+      await app.evaluate(
+        `document.querySelector('[data-testid="grid-scroll"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', shiftKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(150);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid__cell--selected').length`)).toBe(2);
+
+      await app.evaluate(closeTab('tags'));
+      await Bun.sleep(300);
+    });
+
+    test('dragging across cells selects the rectangle they span', async () => {
+      await app.evaluate(clickTable('tags'));
+      await Bun.sleep(1500);
+
+      await app.evaluate(dragCells([0, 0], [1, 1]));
+      await Bun.sleep(150);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid__cell--selected').length`)).toBe(4);
+
+      // The release ends the drag: hovering afterwards must not keep extending.
+      await app.evaluate(hoverCell(0, 1));
+      await Bun.sleep(150);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid__cell--selected').length`)).toBe(4);
+
+      await app.evaluate(closeTab('tags'));
+      await Bun.sleep(300);
+    });
+
+    test('a range is outlined once around its edge, so cells inside it draw no border', async () => {
+      // `users` is wide enough to have a column with a selected column on either
+      // side of it, which `tags` at two columns can never have.
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(1500);
+
+      await app.evaluate(dragCells([0, 0], [1, 2]));
+      await Bun.sleep(150);
+      expect(await app.evaluate<number>(`document.querySelectorAll('.grid__cell--selected').length`)).toBe(6);
+
+      // Counting `inset` rather than parsing the value, which the browser
+      // rewrites into its own colour and length spelling.
+      const insets = (expr: string) =>
+        `(getComputedStyle(${expr}).boxShadow.match(/inset/g) || []).length`;
+      // The middle column is inside the span left-to-right, so its cells carry
+      // only the horizontal edge they sit on -- one line each, not a box. This
+      // is the whole difference between one outline and a lattice of them.
+      expect(await app.evaluate<number>(insets(gridCell(0, 1)))).toBe(1);
+      expect(await app.evaluate<number>(insets(gridCell(1, 1)))).toBe(1);
+      // The corners still close the rectangle: two edges apiece.
+      expect(await app.evaluate<number>(insets(gridCell(0, 0)))).toBe(2);
+      expect(await app.evaluate<number>(insets(gridCell(1, 2)))).toBe(2);
+      // And a cell outside it draws nothing at all -- no fill, no border.
+      expect(await app.evaluate<number>(insets(gridCell(0, 4)))).toBe(0);
+
+      await app.evaluate(closeTab('users'));
       await Bun.sleep(300);
     });
 

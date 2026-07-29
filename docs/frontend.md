@@ -347,20 +347,73 @@ the tab's current text off `tabs.sqlByTab` for exactly that. Copy-as-SQL and
 FK navigation stay gated on `browse !== null` too, unchanged: they need a
 `columnInfo` this path never fetches.
 
-**A cell can be selected instead of a row, and the two are mutually exclusive** —
-selecting one clears the other, both directions, so Ctrl+C keeps meaning "copy
-what is selected" without asking which kind. `selectedCell` is component state
-in `ResultsTable`, the same shape as `selected` (the row set) and reset by the
-same effect on a new `result`. A single click on a data cell selects it (editing
-still opens on double click, so nothing already free had to be rebound); the
-arrow keys move it, clamped to the grid's own bounds; and Ctrl+C copies its
-value alone, reading the *effective* value (staged edit if there is one, else
-the original) rather than `copyRows`' raw row — a copy should match what is
-highlighted on screen. A NULL cell copies as an empty string, never the word
-the grid draws for it. Delete/Backspace still only touches row selection: a
-selected cell is not a selected row, so nothing stages a delete from it.
-Rectangular ranges (drag, shift-click, a tab-separated shape) are a deliberately
-separate, unbuilt feature — row copy already covers grabbing data in bulk.
+**Cells are selected as a rectangle, and cell and row selection are mutually
+exclusive** — selecting either clears the other, both directions, so Ctrl+C
+keeps meaning "copy what is selected" without asking which kind. `cells` is
+component state in `ResultsTable`, beside `selected` (the row set) and reset by
+the same effect on a new `result`.
+
+**The range is two corners, not four edges.** `CellRange` is `{ anchor, focus }`
+— where the selection began and where it currently reaches — because that is
+what the gestures actually name: extending moves `focus` and leaves `anchor`
+alone, which is the whole of shift-click, shift-drag and Shift+Arrow. The
+rectangle is derived (`rangeBounds`) at the two places that need it, the render
+and the copy. **A single selected cell is the 1×1 range**, both corners in one
+place; there is no separate single-cell state, the same way a row selection of
+one is a set of one.
+
+Four gestures, all of them ones rows already use:
+
+- **Click** selects one cell (editing still opens on double click, so nothing
+  already free had to be rebound).
+- **Shift-click** extends to the clicked cell.
+- **Click and drag** sweeps a rectangle. The press only *arms* it — a press
+  that never moves stays a plain click, so selecting one cell has exactly one
+  path — and the first cell the cursor enters is what turns it into a range.
+- **The arrow keys** move the focus, clamped to the grid's bounds, collapsing
+  to 1×1; **Shift+Arrow** moves the focus and keeps the anchor.
+
+Two things there are load-bearing:
+
+- **The grid's cells are `userSelect: 'none'`**, which is what makes a drag
+  select cells instead of sweeping the browser's own text selection across
+  them. `CellEditor`'s wrapper opts back in: an input inheriting `none` cannot
+  have its text selected, including by the `select()` the editor runs on open.
+  See `docs/decisions.md` for the tradeoff.
+- **A drag disarms on `mouseup` at the *window*, and on any `mouseenter` whose
+  `buttons` is 0.** A release outside the window never reaches the listener, and
+  a still-armed press turns the next stray hover into a selection.
+
+Ctrl+C copies the rectangle as tab-separated text — cells on tabs, rows on
+newlines, the shape "Copy row" already produces, so one paste target reads
+either. It reads the *effective* value (staged edit if there is one, else the
+original) rather than `copyRows`' raw row: a copy should match what is
+highlighted on screen. A NULL cell copies as an empty string, never the word the
+grid draws for it. Delete/Backspace still only touches row selection: a selected
+cell is not a selected row, so nothing stages a delete from it. Right-clicking
+clears the range, because the menu it opens is row-level throughout.
+
+**The range is one outline around its boundary, and no fill.** `cellMarks` in
+`ResultsTable.tsx` gives each cell only the sides that lie on the rectangle's
+edge — top row draws a top, leftmost column draws a left, and a cell in the
+middle draws nothing — so the range reads as one shape rather than a lattice of
+boxed cells or a wash of background. Nothing marks the focus corner apart: with
+no fill to sit inside there is nothing for a second mark to distinguish it from,
+and the corner the arrows move from is still `cells.focus` in state.
+
+Two things about how it is drawn are load-bearing:
+
+- **All of a cell's accent marks are one `box-shadow`, composed in one place.**
+  Selected, dirty and open-for-editing can all be true of the same cell — a
+  double-click selects the cell it opens — and `box-shadow` is a single
+  property, so split across CSS rules only the last one applied would survive
+  and the others would vanish without a trace. `residual.css` therefore keeps
+  `grid__cell--selected` and `--editing` as hooks with no rule of their own, and
+  leaves `--dirty` only the colour a shadow cannot carry.
+- **`box-shadow`, never a real border.** The grid's cells carry a right and a
+  bottom border and nothing on the other two sides, so a border appearing on a
+  top or left edge would grow the row and shift every column beside it. An inset
+  shadow occupies no layout.
 
 **A JSON/JSONB column edits in a drawer, not the inline text box.** `isJsonType`
 in `ResultsTable.tsx` matches a column's `columnInfo.dataType` case-insensitively

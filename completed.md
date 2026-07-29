@@ -36,6 +36,15 @@ the date they were finished.
   Reserve the skeleton for the true first-load case; a refresh of already-loaded
   data should leave the tree visible and only animate the refresh icon.
 
+- **2026-07-29** — **Multi-cell selection** — Copying more than one value at a time means
+  either a whole row via the gutter or a single cell — there is no way to
+  select a rectangle of cells. Unify `selectedCell` into the same range
+  concept already used for rows: a single cell is a 1×1 range. Extend a range
+  by shift-click, the same gesture rows already use, or by click-and-drag.
+  Copies as tab-separated text — rows on newlines, cells on tabs — the same
+  shape "Copy row" already produces, so the clipboard format stays consistent
+  across the whole grid.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

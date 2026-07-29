@@ -25,15 +25,6 @@ Things that already work, but not well enough.
   on return — reset only when the tab's query is re-run, since a fresh run's
   rows may no longer match the old position.
 
-- **Multi-cell selection** — Copying more than one value at a time means
-  either a whole row via the gutter or a single cell — there is no way to
-  select a rectangle of cells. Unify `selectedCell` into the same range
-  concept already used for rows: a single cell is a 1×1 range. Extend a range
-  by shift-click, the same gesture rows already use, or by click-and-drag.
-  Copies as tab-separated text — rows on newlines, cells on tabs — the same
-  shape "Copy row" already produces, so the clipboard format stays consistent
-  across the whole grid.
-
 ## Bugs
 
 Things that are wrong.

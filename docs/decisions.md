@@ -3590,3 +3590,36 @@ orphaned stars — is a separate question from this one.
 **Marked by `savedConnectionId`, never the runtime `connectionId`.** The latter is
 minted fresh per session and is not what a row knows itself as; this is the same
 distinction stars already draw.
+
+---
+
+## The grid trades native text selection for cell selection
+
+**Why.** Dragging across cells has to mean "select these cells". The browser's
+own answer to a press-and-sweep over a table is a text selection, and the two
+cannot both have the gesture — so the grid's cells are `user-select: none` and
+the sweep is ours. That costs the one thing the native selection was good for:
+highlighting *part* of a value to copy it, a substring out of a long JSON blob
+or a UUID's tail.
+
+Accepted, because the thing it costs is already reachable and the thing it buys
+was not. A whole cell copies with Ctrl+C, a rectangle of them copies as TSV, a
+row copies from the menu, and a JSON cell opens in a drawer holding a real
+editor where text selects normally. Every data grid this app is measured
+against — DataGrip, TablePlus — makes the same trade for the same reason.
+
+*Rejected: `preventDefault` on mousedown instead*, which suppresses the native
+selection only once the press has already happened. It also cancels the focus
+that press was going to give `grid-scroll`, and the keyboard surface — the arrow
+keys, Ctrl+C, Delete — hangs off that focus, so it would have had to be handed
+back by hand. One declarative rule beats an imperative cancel plus a repair.
+
+*Rejected: turning `user-select` off only while a drag is in flight.* By the
+time a drag is known to be one, the native selection has already started from
+the mousedown — the rule would arrive a frame late, every time.
+
+**`CellEditor` opts back in, and that is not optional.** `user-select` inherits,
+and an `<input>` under a `none` ancestor cannot have its text selected in
+Chromium — including by the `select()` the editor runs when it opens, which is
+what makes double-click-and-retype work. The wrapper sets `userSelect: 'text'`
+back on for exactly that.

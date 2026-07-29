@@ -148,21 +148,22 @@ input::placeholder { color: var(--text-faint); }
 .grid tbody tr.grid__row--selected .gutter {
   background: var(--selected);
 }
+/* A cell selection draws no fill of its own: it is one accent outline around
+   the whole rectangle, made of the boundary edges of the cells that sit on it,
+   so a range reads as one shape rather than a lattice of boxed cells. That is
+   `cellMarks` in `ResultsTable.tsx`, and it lives there rather than here
+   because a cell's accent marks all share one `box-shadow` -- selected, dirty
+   and open for editing can be true at once, and split across rules only the
+   last one applied would survive. So `--selected` and `--editing` are hooks
+   with no rule of their own, and `--dirty` keeps only the colour a shadow
+   cannot carry. */
 .grid tbody tr.grid__row--deleted td,
 .grid tbody tr.grid__row--deleted .gutter {
   background: var(--red-bg);
   color: var(--red-text);
   text-decoration: line-through;
 }
-.grid__cell--editing {
-  box-shadow: inset 0 -1.5px 0 var(--accent);
-}
-.grid__cell--selected {
-  outline: 1.5px solid var(--accent);
-  outline-offset: -1.5px;
-}
 .grid__cell--dirty {
-  box-shadow: inset 0 0 0 1px var(--accent);
   color: var(--accent);
 }
 /* A sortable header is a click target, so it says so on hover -- the same

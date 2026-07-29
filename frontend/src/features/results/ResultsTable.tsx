@@ -51,14 +51,38 @@ const sortTitle = (column: string, sortedBy: 'asc' | 'desc' | null): string =>
     : sortedBy === 'asc' ? `Sort by ${column}, descending`
       : 'Remove sort';
 
+/** The weight of the line the selected rectangle is outlined in. */
+const SELECT_EDGE = '1.5px';
+
 interface Cell { row: number; col: number; }
+/**
+ * A rectangle of selected cells, held as the two corners the gestures name
+ * rather than as four edges: `anchor` is where the selection began and `focus`
+ * is where it currently reaches. Shift-click and shift-drag move `focus` and
+ * leave `anchor` where it was, which is the whole of "extend the selection".
+ *
+ * A single selected cell is the 1x1 range with both corners in one place --
+ * there is no separate single-cell state, the same way a row selection of one
+ * is just a set of one.
+ */
+interface CellRange { anchor: Cell; focus: Cell; }
 // `col` is null when the menu was opened from the row gutter rather than a
 // cell -- there is no column to target, so column-specific items (Set NULL)
 // leave themselves out rather than guessing one.
 interface Menu { row: number; col: number | null; x: number; y: number; }
 
+const rangeBounds = (range: CellRange) => ({
+  top: Math.min(range.anchor.row, range.focus.row),
+  bottom: Math.max(range.anchor.row, range.focus.row),
+  left: Math.min(range.anchor.col, range.focus.col),
+  right: Math.max(range.anchor.col, range.focus.col),
+});
+
 const gridTable: React.CSSProperties = { borderCollapse: 'separate', borderSpacing: 0, fontFamily: t.MONO, fontSize: t.TEXT_BODY, whiteSpace: 'nowrap' };
-const cellBase: React.CSSProperties = { height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}`, textAlign: 'left', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis' };
+// `userSelect: 'none'` is what makes click-and-drag select cells instead of
+// sweeping the browser's own text selection across them; see `docs/decisions.md`
+// for the tradeoff it accepts. The cell editor's input opts back in.
+const cellBase: React.CSSProperties = { height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}`, textAlign: 'left', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' };
 const thStyle: React.CSSProperties = { ...cellBase, position: 'sticky', top: 0, zIndex: 1, background: t.BG, color: t.TEXT_MUTED, fontWeight: 600, fontSize: t.TEXT_BADGE };
 const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 1, background: t.BG, color: t.TEXT_FAINT, textAlign: 'right', userSelect: 'none', fontSize: t.TEXT_BADGE, height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}` };
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
@@ -69,7 +93,10 @@ export default function ResultsTable() {
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const anchor = useRef<number | null>(null);
-  const [selectedCell, setSelectedCell] = useState<Cell | null>(null);
+  const [cells, setCells] = useState<CellRange | null>(null);
+  // Armed by a press, spent by the first cell the cursor enters. A press that
+  // never moves stays a plain click, so selecting one cell has exactly one path.
+  const dragFrom = useRef<Cell | null>(null);
   const [editing, setEditing] = useState<Cell | null>(null);
   const [jsonEditing, setJsonEditing] = useState<Cell | null>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -80,11 +107,20 @@ export default function ResultsTable() {
   const editBlockedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setSelected(new Set()); setSelectedCell(null); setEditing(null); setJsonEditing(null); setMenu(null); anchor.current = null;
+    setSelected(new Set()); setCells(null); setEditing(null); setJsonEditing(null); setMenu(null); anchor.current = null;
     setEditBlockedHint(null);
   }, [result]);
 
   useEffect(() => () => { if (editBlockedTimeout.current) clearTimeout(editBlockedTimeout.current); }, []);
+
+  // On the window, not on the grid: a drag released outside the table -- past
+  // its edge, over the sidebar -- has still ended, and a button left armed
+  // would extend the range on the next stray hover.
+  useEffect(() => {
+    const disarm = () => { dragFrom.current = null; };
+    window.addEventListener('mouseup', disarm);
+    return () => window.removeEventListener('mouseup', disarm);
+  }, []);
 
   useEffect(() => {
     if (!running || !startedAt) { setElapsed(0); return; }
@@ -174,6 +210,39 @@ export default function ResultsTable() {
   const stagedCell = (r: number, c: number): CellValue | undefined => pending.edits[r]?.[c];
   const effective = (r: number, c: number): CellValue => { const s = stagedCell(r, c); return s !== undefined ? s : original(r, c); };
 
+  const bounds = cells ? rangeBounds(cells) : null;
+  const inCellRange = (r: number, c: number): boolean =>
+    bounds !== null && r >= bounds.top && r <= bounds.bottom && c >= bounds.left && c <= bounds.right;
+
+  /**
+   * Every accent mark a cell can carry, composed into the one `box-shadow` it
+   * has to share.
+   *
+   * That sharing is the reason this is a function and not three CSS rules:
+   * `box-shadow` is a single property, and a cell can be selected *and* dirty
+   * *and* open for editing at once — the ordinary case, since a double-click
+   * selects the cell it opens — so rules written separately would leave only
+   * whichever one the cascade applied last and silently drop the others.
+   *
+   * The selection is the rectangle's own edges, not a box per cell: each cell
+   * draws only the sides that lie on the boundary, so a cell in the middle of a
+   * range draws nothing and the range reads as one outline around the whole
+   * area. `box-shadow` rather than a real border throughout, because a border
+   * appearing on a cell that had none would grow the row and shift the grid.
+   */
+  const cellMarks = (r: number, c: number, isEditing: boolean, dirty: boolean): string | undefined => {
+    const marks: string[] = [];
+    if (bounds && inCellRange(r, c)) {
+      if (r === bounds.top) marks.push(`inset 0 ${SELECT_EDGE} 0 ${t.ACCENT}`);
+      if (r === bounds.bottom) marks.push(`inset 0 -${SELECT_EDGE} 0 ${t.ACCENT}`);
+      if (c === bounds.left) marks.push(`inset ${SELECT_EDGE} 0 0 ${t.ACCENT}`);
+      if (c === bounds.right) marks.push(`inset -${SELECT_EDGE} 0 0 ${t.ACCENT}`);
+    }
+    if (dirty) marks.push(`inset 0 0 0 1px ${t.ACCENT}`);
+    if (isEditing) marks.push(`inset 0 -${SELECT_EDGE} 0 ${t.ACCENT}`);
+    return marks.length > 0 ? marks.join(', ') : undefined;
+  };
+
   // Split from the state that closes whichever editor is open, so the JSON
   // drawer's Save/Set NULL can apply the same write without touching `editing`
   // -- the inline `<CellEditor>`'s state, which the drawer never enters.
@@ -201,43 +270,86 @@ export default function ResultsTable() {
   const setNull = (row: number, col: number) => { applyNull(row, col); setEditing(null); };
 
   const selectRow = (r: number, e: React.MouseEvent) => {
-    setSelectedCell(null);
+    setCells(null);
     if (e.shiftKey && anchor.current !== null) { const [lo, hi] = [Math.min(anchor.current, r), Math.max(anchor.current, r)]; const range = new Set<number>(); for (let i = lo; i <= hi; i++) range.add(i); setSelected(range); }
     else if (e.ctrlKey || e.metaKey) { setSelected((prev) => { const next = new Set(prev); if (next.has(r)) next.delete(r); else next.add(r); return next; }); anchor.current = r; }
     else { setSelected(new Set([r])); anchor.current = r; }
   };
 
-  const selectCell = (r: number, c: number) => {
+  // Extending keeps the anchor and moves the focus; starting fresh puts both on
+  // the clicked cell. Extending with nothing selected is a fresh 1x1, since
+  // there is no anchor to extend from.
+  const selectCell = (r: number, c: number, extend: boolean) => {
     setSelected(new Set());
     anchor.current = null;
-    setSelectedCell({ row: r, col: c });
+    setCells((cur) => (extend && cur ? { anchor: cur.anchor, focus: { row: r, col: c } } : { anchor: { row: r, col: c }, focus: { row: r, col: c } }));
   };
 
-  const moveCell = (dr: number, dc: number) => {
-    setSelectedCell((cur) => {
+  const armCellDrag = (r: number, c: number, e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    // A shift-press widens the rectangle already on screen rather than starting
+    // a new one under the cursor, so the drag has to inherit its anchor.
+    dragFrom.current = e.shiftKey && cells ? cells.anchor : { row: r, col: c };
+  };
+
+  const dragCellTo = (r: number, c: number, e: React.MouseEvent) => {
+    // Asked of the event rather than trusted from `mouseup`: a button released
+    // outside the window never reaches that listener, and the next hover would
+    // otherwise extend a drag the user finished somewhere else.
+    if (e.buttons === 0) dragFrom.current = null;
+    const from = dragFrom.current;
+    if (!from) return;
+    setSelected(new Set());
+    anchor.current = null;
+    setCells({ anchor: from, focus: { row: r, col: c } });
+  };
+
+  const moveCell = (dr: number, dc: number, extend: boolean) => {
+    setCells((cur) => {
       if (!cur) return cur;
-      const row = Math.min(Math.max(cur.row + dr, 0), result.rows.length - 1);
-      const col = Math.min(Math.max(cur.col + dc, 0), result.columns.length - 1);
-      return { row, col };
+      const row = Math.min(Math.max(cur.focus.row + dr, 0), result.rows.length - 1);
+      const col = Math.min(Math.max(cur.focus.col + dc, 0), result.columns.length - 1);
+      const focus = { row, col };
+      return extend ? { anchor: cur.anchor, focus } : { anchor: focus, focus };
     });
+  };
+
+  /**
+   * The selected rectangle as tab-separated text: cells on tabs, rows on
+   * newlines -- the shape "Copy row" already produces, so one paste target
+   * reads either.
+   *
+   * Values are the *effective* ones (a staged edit if there is one), because a
+   * copy should match what is highlighted on screen, and a NULL copies as an
+   * empty string rather than as the word the grid draws for it.
+   */
+  const copyCells = (range: CellRange) => {
+    const { top, bottom, left, right } = rangeBounds(range);
+    const lines: string[] = [];
+    for (let r = top; r <= bottom; r++) {
+      const line: string[] = [];
+      for (let c = left; c <= right; c++) { const value = effective(r, c); line.push(value === null ? '' : String(value)); }
+      lines.push(line.join('\t'));
+    }
+    void Neutralino.clipboard.writeText(lines.join('\n'));
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (editing) return;
     if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
-      if (selectedCell) { const value = effective(selectedCell.row, selectedCell.col); void Neutralino.clipboard.writeText(value === null ? '' : String(value)); e.preventDefault(); }
+      if (cells) { copyCells(cells); e.preventDefault(); }
       else if (selected.size > 0) { copyRows([...selected].sort((a, b) => a - b)); e.preventDefault(); }
     }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && editable && selected.size > 0) { for (const r of selected) if (!isDeleted(r)) toggleDelete(r); e.preventDefault(); }
-    else if (selectedCell && e.key === 'ArrowUp') { moveCell(-1, 0); e.preventDefault(); }
-    else if (selectedCell && e.key === 'ArrowDown') { moveCell(1, 0); e.preventDefault(); }
-    else if (selectedCell && e.key === 'ArrowLeft') { moveCell(0, -1); e.preventDefault(); }
-    else if (selectedCell && e.key === 'ArrowRight') { moveCell(0, 1); e.preventDefault(); }
+    else if (cells && e.key === 'ArrowUp') { moveCell(-1, 0, e.shiftKey); e.preventDefault(); }
+    else if (cells && e.key === 'ArrowDown') { moveCell(1, 0, e.shiftKey); e.preventDefault(); }
+    else if (cells && e.key === 'ArrowLeft') { moveCell(0, -1, e.shiftKey); e.preventDefault(); }
+    else if (cells && e.key === 'ArrowRight') { moveCell(0, 1, e.shiftKey); e.preventDefault(); }
   };
 
   const openMenu = (r: number, c: number | null) => (e: React.MouseEvent) => {
     e.preventDefault();
-    setSelectedCell(null);
+    setCells(null);
     if (!selected.has(r)) { setSelected(new Set([r])); anchor.current = r; }
     setEditing(null); setMenu({ row: r, col: c, x: e.clientX, y: e.clientY });
   };
@@ -357,17 +469,18 @@ export default function ResultsTable() {
                     onClick={(e) => selectRow(r, e)} onContextMenu={openMenu(r, null)} title="Click to select the row">{firstRow + r}</td>
                   {row.map((_cell, c) => {
                     const isEditing = editing?.row === r && editing.col === c;
-                    const isCellSelected = selectedCell?.row === r && selectedCell.col === c;
                     const value = effective(r, c);
                     const dirty = stagedCell(r, c) !== undefined;
                     const cellCls = [
                       isEditing && 'grid__cell--editing',
-                      isCellSelected && 'grid__cell--selected',
+                      inCellRange(r, c) && 'grid__cell--selected',
                       dirty && 'grid__cell--dirty',
                     ].filter(Boolean).join(' ') || undefined;
                     return (
-                      <td key={c} className={cellCls} style={cellBase}
-                        onClick={() => !isEditing && selectCell(r, c)}
+                      <td key={c} className={cellCls} style={{ ...cellBase, boxShadow: cellMarks(r, c, isEditing, dirty) }}
+                        onMouseDown={(e) => !isEditing && armCellDrag(r, c, e)}
+                        onMouseEnter={(e) => !isEditing && dragCellTo(r, c, e)}
+                        onClick={(e) => !isEditing && selectCell(r, c, e.shiftKey)}
                         onDoubleClick={() => startEdit(r, c)} onContextMenu={openMenu(r, c)}>
                         {isEditing ? (
                           <CellEditor initial={value} canNull={!isKeyCol(c)}
@@ -419,7 +532,10 @@ function CellEditor({ initial, canNull, onCommit, onNull, onCancel }: {
   useEffect(() => { ref.current?.focus(); ref.current?.select(); }, []);
 
   return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, width: '100%' }}>
+    // `userSelect` back on: the cells around it are `none` so a drag selects
+    // them rather than sweeping text, and an input inheriting that cannot have
+    // its own text selected -- including by the `select()` above.
+    <span style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, width: '100%', userSelect: 'text' }}>
       <input ref={ref} data-testid="cell-edit-input" style={{ flex: 1, minWidth: 0, padding: 0, border: 'none', outline: 'none', background: 'transparent', color: t.TEXT, fontFamily: t.MONO, fontSize: t.TEXT_BODY, caretColor: t.ACCENT }}
         value={draft} onChange={(e) => setDraft(e.target.value)}
         onBlur={() => onCommit(draft)}
