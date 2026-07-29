@@ -534,3 +534,13 @@ This is a record, not a plan. Nothing here is waiting on anything.
   header replaces the sort rather than adding to it. Clicking the same header
   again cycles asc → desc → unsorted, the last click returning to the
   original query's own order.
+
+- **2026-07-29** — **Task Manager names the app's processes** — The app's processes each
+  showed up under a name that had nothing to do with it: the Neutralino shell as
+  "A Neutralinojs application", the extension as "Bun" with the Bun logo, so a
+  user trying to find or force-quit "Squeal Editor" had nothing to search for.
+  Both Windows binaries now carry the app's name and icon in their version
+  resource, and every row reads "Squeal Editor". Filed asking for one collapsible
+  entry the way Chrome and VS Code have; that half is not achievable — Task
+  Manager groups by executable image and this app is deliberately two programs.
+  See `docs/decisions.md`.

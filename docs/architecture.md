@@ -198,6 +198,16 @@ just that binary before `neu build`. That drops the raw source and the symlinked
 permitted, symlink` that used to force `neu build` to run in an admin or
 Developer-Mode shell. It now packages without elevation.
 
+Both Windows binaries carry the app's name and icon in their version resource, so
+every row Task Manager draws for the app reads "Squeal Editor" rather than "A
+Neutralinojs application" and "Bun". They stay separate rows — Task Manager
+groups by executable image and this app is two of them, see
+`docs/decisions.md`. The extension is named where it is compiled
+(`scripts/build-extension.ts`, via `bun build --compile`'s `--windows-*` flags);
+the shell binary is named by `scripts/stamp-version-info.ts`, which must run
+**after `neu build` and before the installer** — `neu build` rewrites that file,
+and the installer reads it. See `docs/decisions.md`.
+
 Releases are automated in `.github/workflows/release.yml`, two jobs:
 
 - **release-please** runs on every push to `dev`. Conventional-commit messages

@@ -3463,3 +3463,90 @@ orders by a constant and is inert, where MySQL and Postgres both reject the
 statement. Unreachable from the UI, which only ever sorts by a header it drew, so
 the test asserts what is true on all three (the connection is still standing)
 rather than asserting which engine it is talking to.
+
+---
+
+## Windows names its own processes, and it takes two mechanisms to do it
+
+Task Manager labels a row with the executable's `FileDescription`, falling back
+to the file name. Nothing here set one worth reading: `neu build` writes "A
+Neutralinojs application" onto the shell binary, and `bun build --compile` leaves
+the extension calling itself "Bun", carrying the Bun logo. So the app appeared as
+a generic Neutralino row, an unrelated-looking Bun row, and a handful of WebView2
+rows — nothing a user searching "squeal" could find. Naming both binaries makes
+every row read "Squeal Editor" (and the webview ones "WebView2: Squeal Editor",
+which Task Manager derives from its host).
+
+**This names the rows; it does not merge them.** See the entry below for why
+nothing can.
+
+**Why two mechanisms rather than one.** `bun build --compile` accepts
+`--windows-title`/`-description`/`-publisher`/`-version`/`-icon` and writes the
+resource itself, which is also the only way to replace the Bun icon it embeds —
+so the extension is named where it is built (`scripts/build-extension.ts`). The
+Neutralino binary has no such switch and is not ours to compile, so
+`scripts/stamp-version-info.ts` builds a `VS_VERSIONINFO` blob by hand and writes
+it with `UpdateResourceW`. One binary each, each by the only route it has.
+
+**The trap that makes a correct-looking stamp do nothing.** `neu build` files its
+version resource under the **neutral** language, and `GetFileVersionInfo` reads
+whichever it finds first — neutral sorts ahead of en-US. A resource written under
+en-US therefore lands in the binary, verifies as written, and is never read: the
+file still reports "A Neutralinojs application". The stamp has to overwrite the
+neutral entry, not add a better one beside it.
+
+**Ordering is load-bearing.** `neu build` rewrites the shell binary from `bin/`
+every time, so stamping before it is thrown away; the installer reads the stamped
+file, so stamping after it is too late. It runs between the two, and only on
+Windows.
+
+**Why the icon is wrapped rather than converted.** `--windows-icon` needs an
+`.ico`, and there is no image library in this build. Windows has read
+PNG-compressed icon entries since Vista, so the 256px source PNG is wrapped in an
+ICO container as-is and Windows downscales it for the 16px row. Re-encoding to a
+DIB would need a PNG decoder for no visible gain.
+
+**What this does not fix: `cmd.exe` and `conhost.exe`.** Neutralino spawns an
+extension through `cmd.exe /c`, so the real tree is app → `cmd.exe` → extension,
+and cmd's console brings a `conhost.exe` with it. Both sit *inside* the group,
+where they read as "Windows Command Processor" and "Console Window Host". Neither
+is reachable from `neutralino.config.json` — the shell wrapper is how Neutralino
+launches extensions, not something the `commandWindows` value chooses — so the
+group is one entry with two rows in it that the app did not name.
+
+---
+
+## Task Manager cannot show this app as one entry, and the reason is the image path
+
+The obvious ask — one "Squeal Editor" row that expands to the app's other
+processes, the way Chrome and VS Code look — was tried and abandoned. Task
+Manager's Processes tab groups **processes that run the same executable image**.
+Chrome and VS Code get one entry because every helper is the same binary
+re-invoked with different arguments, not because of anything they declare.
+
+The app cannot be that shape. The shell is Neutralino's C++ binary and the
+extension is a Bun binary, and that they are separate programs is the constraint
+the whole architecture rests on. So they are two images, and Task Manager gives
+two rows — plus `cmd.exe`, its `conhost.exe`, and the WebView2 processes, each a
+further image of its own.
+
+**What was tested and does not work: `AppUserModelID`.** It is the identity
+Electron sets with `app.setAppUserModelId`, child processes inherit it, and a
+shortcut can carry one (Inno Setup exposes it as `[Icons] ... AppUserModelID`).
+Launching the app from a process holding an explicit AppUserModelID changed
+nothing — the rows stayed exactly as they were. It governs taskbar and jump-list
+grouping, not this list. There was also no way to reach the shell process with it
+anyway: the Neutralino binary's startup is not ours to edit, so inheritance and a
+shortcut property were the only vectors, and they are the same mechanism.
+
+**The counterexample that settles it, visible on any machine with Docker
+installed.** Docker Desktop is an installed app with Start Menu shortcuts, and it
+still appears as two entries — `Docker Desktop (5)` and `Docker Desktop Backend
+(2)` — because those are two different executables. If declaring an identity
+could bridge images, Docker would not split.
+
+**What is achievable, and was done, is naming** — see the entry above. It buys
+the part of the complaint that had teeth: the app is now findable. Searching
+"squeal" in Task Manager returns every process it owns, which is what someone
+trying to force-quit it actually needs. Do not reopen this expecting the rows to
+merge.

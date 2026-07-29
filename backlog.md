@@ -15,13 +15,6 @@ Things that already work, but not well enough.
 
 - **Red delete button** — The delete button in the connection list should be red to signal a destructive action.
 
-- **Task Manager process grouping on Windows** — The app's processes (the
-  Neutralino shell and the Bun extension) each show up as their own
-  unrelated-looking top-level row in Task Manager, so a user trying to find
-  or force-quit "Squeal Editor" sees several unnamed-looking entries instead
-  of one. Group them the way Chrome or VS Code do: a single top-level entry
-  named "Squeal Editor" that expands to reveal its child processes.
-
 - **Order the tree by object type, not purely alphabetically** — Tables, views,
   and functions are interleaved alphabetically in the tree today. Order by
   type instead, with no visual section header: all tables first, then all

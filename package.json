@@ -10,7 +10,7 @@
   "scripts": {
     "postinstall": "neu update",
     "build": "bun run --filter @squeal/frontend build",
-    "build:ext": "bun build extensions/db/main.ts --compile --outfile extensions/db/squeal-db-ext",
+    "build:ext": "bun run scripts/build-extension.ts",
     "start": "bun run build && bun run build:ext && neu run -- --window-enable-inspector=true",
     "dev": "bun run build:ext && neu run -- --window-enable-inspector=true",
     "typecheck": "tsc -p frontend --noEmit && tsc -p extensions/db --noEmit",

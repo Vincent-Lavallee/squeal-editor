@@ -111,6 +111,14 @@ jobs:
           version="${{ needs.release-please.outputs.tag_name }}"
           bash scripts/package-macos.sh "${version#v}"
 
+      # `neu build` names the binary it patches "A Neutralinojs application",
+      # which is what Task Manager then shows above the app's other processes.
+      # Rewriting the resource names the whole group "Squeal Editor". The
+      # extension binary is already named by `bun build --compile` above.
+      - name: Name the Windows binary
+        if: runner.os == 'Windows'
+        run: bun run scripts/stamp-version-info.ts
+
       # The installer is the only Windows download: it's the path the
       # auto-updater leans on, and a second, unsigned way to run the app is one
       # more support question for zero benefit. Inno Setup usually ships on the

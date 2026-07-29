@@ -23,3 +23,8 @@ neutralinojs.log
 dist/
 # Temp file bun leaves behind when `bun build --compile` is interrupted.
 .*.bun-build
+
+# Inno Setup writes the installer and its signature next to the script.
+installer/*.exe
+installer/*.sig
+SHA256SUMS*
