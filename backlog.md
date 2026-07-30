@@ -51,6 +51,36 @@ Things that are wrong.
 
 Things that do not exist yet.
 
+- **Run only the selected text** — Ctrl/⌘+Enter always runs the entire editor's
+  contents, so trying one query out of several already written in the same tab
+  means commenting out or deleting the rest first. When there is a selection,
+  run exactly that text, verbatim — the same "run it as typed" philosophy the
+  full editor already gets. A cursor with nothing highlighted still runs the
+  whole editor, unchanged from today; a selection that trims to whitespace runs
+  nothing at all, no silent fallback to running everything. A selection
+  spanning more than one statement is split into separate results the same way
+  running the whole editor's multiple statements is.
+
+- **Split multi-statement results into tabs** — Running text that contains more
+  than one statement today shows only one result: Postgres silently keeps the
+  last statement's and drops the rest, MySQL refuses the whole thing outright
+  (`multipleStatements` stays off deliberately, on the assumption the editor
+  only ever ran one statement at a time). Run each statement in order as its
+  own round-trip and show each one's result in its own numbered tab — "Result
+  1", "Result 2" — nested inside the query tab's results pane; a single
+  statement still shows no tab strip at all, unchanged from today. Every
+  statement gets a tab, including ones that return no rows (DDL/DML show the
+  same message a lone one does today). The batch stops at the first failure —
+  nothing after it runs — and there is no implicit transaction wrapping it:
+  whatever already committed stays committed, the same as running the
+  statements one at a time by hand would leave it. Sorting a column in one
+  tab re-runs only that tab's own statement, never the whole batch — both for
+  correctness (re-running an earlier INSERT or DELETE a second time would be
+  actively harmful) and because each tab already tracks its own statement
+  independently. The statement splitter has to be quote- and comment-safe — a
+  semicolon inside a string literal or a comment must not end a statement
+  early.
+
 - **Export and import connections** — Moving connections to another machine means
   retyping every one of them. Export all workspaces and their connections from the
   File menu to a file chosen by a native save dialog, and import one back, merging
@@ -161,15 +191,6 @@ Things that should be improved on code wise
   exercises the running app and a regression that shows only in the mac webview
   ships unseen. Add a suite that drives the macOS webview the way the Windows one
   drives WebView2, so both platforms the app targets are covered.
-
-- **One file per database engine** — The engine layer keeps the driver contract,
-  the engine-neutral assemblers, and all three engines' SQL and value handling in
-  one file, so adding a database means growing a file that already interleaves
-  three and the clean "add an engine" the docs promise is buried in it. Split each
-  engine's implementation into its own file, leaving the contract, the shared
-  assemblers, and the dispatch central, so a new engine is a new file rather than
-  an edit into a shared one. Structure only — every engine still answers the same
-  contract tests.
 
 - **Contributing guide** — A new contributor has no single place for how the
   project works: the conventions live in the agent working-agreement, the

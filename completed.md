@@ -582,3 +582,12 @@ This is a record, not a plan. Nothing here is waiting on anything.
 - **2026-07-30** — **Saved queries** — Save the current editor content as a named
   query with Ctrl+S, then reopen any saved query into a new tab from a button at
   the right of the tab bar. Queries are global, not scoped to any connection.
+
+- **2026-07-30** — **One file per database engine** — The engine layer keeps the
+  driver contract, the engine-neutral assemblers, and all three engines' SQL and
+  value handling in one file, so adding a database means growing a file that
+  already interleaves three and the clean "add an engine" the docs promise is
+  buried in it. Split each engine's implementation into its own file, leaving the
+  contract, the shared assemblers, and the dispatch central, so a new engine is a
+  new file rather than an edit into a shared one. Structure only — every engine
+  still answers the same contract tests.

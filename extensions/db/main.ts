@@ -5,7 +5,7 @@
  * database, so it spawns this process (with Bun, which runs this TypeScript
  * directly -- no build step) and talks to it over a WebSocket.
  *
- * This file owns the transport and the connection registry; drivers.ts owns the
+ * This file owns the transport and the connection registry; drivers/ owns the
  * per-engine SQL and connection.ts owns a single server connection. Everything
  * the UI can ask for is a handler in COMMANDS below.
  */
