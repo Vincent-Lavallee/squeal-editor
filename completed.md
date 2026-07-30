@@ -578,3 +578,7 @@ This is a record, not a plan. Nothing here is waiting on anything.
   which is how you know you hit the right box rather than a box; failure shows the
   server's own message, and an expired AWS SSO session says that, instead of arriving
   as a database access error.
+
+- **2026-07-30** — **Saved queries** — Save the current editor content as a named
+  query with Ctrl+S, then reopen any saved query into a new tab from a button at
+  the right of the tab bar. Queries are global, not scoped to any connection.

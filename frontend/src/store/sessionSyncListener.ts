@@ -3,7 +3,16 @@ import { createListenerMiddleware, isAnyOf } from '@reduxjs/toolkit';
 import { browseTable } from './resultsSlice.ts';
 import type { SessionSnapshot } from './sessionSnapshot.ts';
 import { disconnect, saveSession } from './sessionSlice.ts';
-import { databaseChanged, sqlChanged, tabActivated, tabMoved, tabOpened, tabRenamed, tabsClosed } from './tabsSlice.ts';
+import {
+  databaseChanged,
+  sqlChanged,
+  tabActivated,
+  tabMoved,
+  tabOpened,
+  tabRenamed,
+  tabSaved,
+  tabsClosed,
+} from './tabsSlice.ts';
 import type { AppDispatch, RootState } from './index.ts';
 
 /**
@@ -57,7 +66,13 @@ function snapshotFor(state: RootState, connectionId: string): SessionSnapshot {
         const filter = browsed ? browsed.filter : (tab.filter ?? null);
         return { kind: tab.kind, table: tab.table, schema: tab.schema, title: tab.title, filter };
       }
-      return { kind: tab.kind, title: tab.title, sql: state.tabs.sqlByTab[tab.id] ?? '' };
+      return {
+        kind: tab.kind,
+        title: tab.title,
+        sql: state.tabs.sqlByTab[tab.id] ?? '',
+        savedQueryId: tab.savedQueryId,
+        unsaved: tab.unsaved,
+      };
     }),
     activeIndex: activeIndex < 0 ? null : activeIndex,
     nextQueryNo: state.tabs.nextQueryNo[connectionId] ?? tabs.length + 1,
@@ -80,7 +95,7 @@ function saveIfChanged(state: RootState, dispatch: AppDispatch, connectionId: st
 // snapshot with the empty shape its own teardown leaves behind.
 startAppListening({
   matcher: isAnyOf(
-    tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged, tabRenamed, browseTable.fulfilled
+    tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged, tabRenamed, tabSaved, browseTable.fulfilled
   ),
   effect: async (_action, api) => {
     api.cancelActiveListeners();

@@ -24,6 +24,7 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
   workspacesSlice.ts    the workspace list
   environmentsSlice.ts  the environment picklist + useEnvironments()
   savedSlice.ts         the stored connection list
+  savedQueriesSlice.ts  the kept statements, and which tabs have drifted from theirs + useSavedQueries()
   connectionTestSlice.ts  what the connect form reached, without keeping it + useConnectionTest()
   awsSignInSlice.ts     what each AWS profile can currently do, and the sign-in that fixes it + useAwsSignIn()
   explorerSlice.ts      the catalog: databases, their tables, their columns
@@ -39,6 +40,7 @@ src/features/
   rail/                 ConnectionRail: the open connections, and the way between
   tabs/                 TabStrip: the strip, its menu, and its drag
   explorer/             Sidebar, DropTableConfirm, useExplorer
+  queries/              SavedQueriesButton (the strip's picker), SaveQueryDialog
   editor/               EditorPane, useEditor (text surface over the tabs slice), monaco (theme + worker),
                         completion + keywords + sqlScope + useSqlCompletion,
                         format + useSqlFormatter
@@ -78,12 +80,14 @@ that lives apart from its values is two sources for one fact.
 | `order`, `activeConnectionId` | `session` slice | never left, but see above |
 | a tab's `connectionId`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
 | `database`, per connection | `tabs` slice | crossed |
-| `tabs`, `activeTabId`, `kind`, `title`, a grid tab's `filter` seed | `tabs` slice | never left, but see above |
+| `tabs`, `activeTabId`, `kind`, `title`, a grid tab's `filter` seed, an editor tab's `savedQueryId` | `tabs` slice | never left, but see above |
 | `databases`, `tables`, `columns`, `stars` | `explorer` slice | crossed |
 | `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), per tab | `results` slice | crossed |
 | staged cell edits + row deletes, per tab (+ `saving`, `saveError`) | `results` context | never left, until Save |
 | the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Apply |
 | saved connections | `saved` slice | crossed |
+| saved queries | `savedQueries` slice | crossed |
+| whether a tab holds edits it has not saved back (`unsaved`) | `tabs` slice | never left, but it is a fact about a tab, and tabs live here |
 | the version a *Test* reached, and why one failed | `connectionTest` slice | crossed |
 | which AWS profile was signed in, why one failed, the CLI's `prompt`, and what each AWS profile can currently do | `awsSignIn` slice | crossed |
 | workspaces | `workspaces` slice | crossed |
@@ -225,7 +229,7 @@ rows, only the shape.
 which is the split the whole feature exists inside.
 
 **Closing takes a set, and closing one is the set of one.** `tabsClosed({ ids })`
-is the only close action there is. "Close all except current" is not a loop over a
+is the only close action there is. "Close others" is not a loop over a
 single close: dispatching N times re-picks the active tab N times, walking it
 along the survivors instead of landing where the menu was summoned from, and
 every reader keyed by tab id sees N events for one gesture. One action carries the
@@ -280,6 +284,106 @@ the whole field on every render meant the next keystroke replaced everything
 typed so far, the way typing over a selected word does. `useEffect(..., [renaming?.id])`
 runs once when rename mode is entered for a given tab and not again while its
 draft changes, which is the fix.
+
+## Saved queries
+
+Ctrl+S keeps the editor's text as a named query; the bookmark button at the right
+of the strip opens one back into a tab. They are **global** — a query names no
+connection, so `savedQueriesSlice` is not keyed by one and nothing clears it when
+a connection opens or closes. See `docs/extension.md` for the store's side.
+
+**`Tab.savedQueryId` is the whole mechanism.** A tab opened from a saved query is
+born carrying the id it came from, so Ctrl+S on it writes over that row and asks
+nothing; a tab that came from nowhere gets the dialog, once, and is linked by
+`tabSaved` when it lands. That is the difference between Ctrl+S meaning *save*
+and meaning *save another copy*, and it is one field.
+
+**It rides in the session snapshot, and that is not an exception to "runtime ids
+are left out".** The ids that are left out are the tab ids, minted fresh each
+session; a saved query's id is the extension's and outlives every session, which
+is exactly why the link can be written down. `tabSaved` therefore joins the
+session-sync listener's watched actions, or a link would type-check and paint and
+then not survive a restart — the same line `tabRenamed` already needed.
+
+**Both halves are wired in `Shell`**, because both span more than one feature:
+opening one mints a tab (tabs) and seeds it (editor) from a query (the slice),
+and saving reads the active tab's text and links the tab back. `SavedQueriesButton`
+takes `onOpen`; `EditorPane` takes `onSaveQuery`, which takes **no text** — the
+handler reads the active tab's off the store, the same rule a thunk reads its own
+target by.
+
+**Two tabs on one saved query are two views of it, not two copies.** `tabSaved`
+therefore writes the saved text, the name and a cleared mark into **every** tab
+carrying that `savedQueryId`, not just the one that pressed the key — so saving
+in one place is the query changing, and both tabs show it. `EditorPane`'s inbound
+write is what carries that into the other tab's Monaco model; without it the
+store and the model would disagree and the next keystroke there would write the
+stale text back over the save.
+
+*The cost, accepted:* a sibling tab holding edits of its own loses them to that
+save. Two views of one query are last-write-wins, the way two editors over one
+file are. The alternative is two tabs claiming to be the same query while showing
+different text, which is what this replaced. See `docs/decisions.md`.
+
+**The unsaved mark is `Tab.unsaved`, a flag about the tab — not a comparison
+against the stored query.** It is the *only* feedback a silent save gives (the
+dot going away is how a Ctrl+S that opened no dialog says it landed), so what it
+claims has to be exactly right. Comparing `sqlByTab` against `query.sql` was the
+first cut and it answered a different question: *this text is not what is on
+disk* is a fact about the **query**, so it was true of every tab holding it —
+which, before the tabs shared a save, lit the mark on copies the user had never
+edited. Deleting the query lit it on all of them at once for the same reason.
+
+Three writes and no others: `sqlChanged` sets it (only for a tab that has a
+`savedQueryId` — a blank Query 1 is not holding edits to anything), `tabSaved`
+clears it across the query's tabs, and `deleteSavedQuery.fulfilled` drops it
+along with the link. It rides in the session snapshot as a boolean, so a tab left
+mid-edit comes back saying so.
+
+**A save clears the mark when it *lands*, not when the key is pressed.** `Shell`
+clears it in the thunk's `.then`, so a write the extension refuses leaves the tab
+still claiming it holds edits — which it does. Nothing else renders that failure:
+the mark staying put is the report.
+
+**Opening a saved query is one action, `openSavedQueryTab`.** Not
+`openEditorTab` followed by `setSql`: a `sqlChanged` is what marks a tab edited,
+so seeding through one would light the mark on a tab nobody has touched at the
+instant it appears. `tabOpened` carries the `sql` and the reducer writes it.
+
+**A deleted query releases its tabs rather than leaving them pointing at
+nothing.** `tabsSlice` clears `savedQueryId` on `deleteSavedQuery.fulfilled`, so
+the link never rides into a snapshot naming a row that is gone and no reader has
+to keep asking whether it still resolves. The tab keeps its title and its text —
+what was deleted is the stored copy, not the query you are looking at — and its
+next Ctrl+S asks for a name.
+
+**A link whose query has been deleted falls back to the dialog** rather than
+re-creating the row: the extension refuses a save under a vanished id, and the
+honest reading of a deleted query is that this tab came from nowhere again.
+`Shell` resolves the link against the list it already holds, so it takes that
+branch without a round trip — and since the reducer above has already cleared the
+link, that branch is the only one left to take.
+
+**The dot occupies the close button's slot and gives it back on hover.** VS
+Code's idiom, and it earns its place twice: the mark costs no width of its own
+beside the label, and the control it stands in for is one pointer-move away
+rather than gone. The swap is keyed on hovering **that button**, not the tab — at
+tab level the dot would vanish the instant the pointer touched the tab anywhere,
+which is most of the time you are looking at it. An unsaved tab's slot is always
+shown, active or not, unlike a plain close: the dot is a *state*, not an action
+offered on hover.
+
+Two smaller things, and each was found by looking:
+
+- **The button is a sibling of `TabStrip`, not a control inside it.** The strip
+  scrolls horizontally once there are more tabs than fit, and a control inside it
+  would scroll away with them — so `Shell` puts the two in one flex row and the
+  strip takes `flex: 1`.
+- **Ctrl+S is bound twice, like Ctrl+Enter, and the window half prevents the key
+  on *every* tab kind.** A grid tab has nothing to save, but letting the key
+  through there hands the webview its own "save this page" dialog over the app.
+  Monaco's own binding covers the case where the editor has focus, which is most
+  of them.
 
 ## The database is the connection's, not any one tab's
 
@@ -1021,14 +1125,19 @@ Six things there look incidental and are not:
 
 - **`inherit: false` on the theme.** vs-dark ships a `string.sql` rule that
   outranks any `string` rule the app writes. Inherit and the strings come up red.
-- **Text flows one way: out.** Nothing writes the editor from outside — browsing
-  a table opens its own grid tab, and swapping tabs swaps the *model*, which is
-  not `setValue`. The formatter is the first outside writer that arrived and it
-  obeys this: it returns a full-range *edit*, which Monaco applies like a
-  keystroke, so the change flows out through `onDidChangeModelContent`. Whatever
-  writes next (the palette) either does the same or feeds the value in *only when
-  it differs from Monaco's own* — setting the value Monaco already holds fires on
-  every keystroke and throws the cursor to the top of the document.
+- **Text flows one way: out — and the two exceptions both prove the shape of it.**
+  Browsing a table opens its own grid tab, and swapping tabs swaps the *model*,
+  which is not `setValue`. The formatter was the first outside writer and it
+  obeys the rule: it returns a full-range *edit*, which Monaco applies like a
+  keystroke, so the change flows out through `onDidChangeModelContent`. **Saving
+  a saved query is the second**, and it is the first that writes into a model
+  nobody is looking at — the other tabs open on that query (see *Saved queries*).
+  It does both of the things the rule asks: a full-range edit rather than
+  `setValue`, and only **when the value actually differs from Monaco's own**.
+  That guard is not caution, it is what stops the loop: a keystroke updates
+  `sqlByTab` from the model, so the effect watching `sqlByTab` would otherwise
+  fire on every keystroke and throw the cursor to the top of the document.
+  Whatever writes next (the palette) does the same two things.
 - **A table's definition is the one inbound writer, and it writes at birth.**
   "Open definition" opens a new editor tab holding the table's `CREATE`, which
   looks like writing text in from outside — but it does not touch a live model.
@@ -1053,7 +1162,10 @@ Six things there look incidental and are not:
 - **Ctrl+Enter is rebound in the editor.** It is Monaco's own "insert line
   below", and Monaco wins inside its own DOM — the `window` listener that serves
   the rest of the app never sees the key. That listener is live on a grid tab
-  too — the pane is mounted, just hidden — so it refuses for itself.
+  too — the pane is mounted, just hidden — so it refuses for itself. Ctrl+B and
+  Ctrl+S are the same arrangement; Ctrl+S has one extra reason to be bound at all,
+  which is that the webview otherwise treats it as *save this page* and opens the
+  OS file dialog over the app.
 - **`window.squealEditor` is the UI suite's seam.** Monaco's text lives in a
   model, so there is no `.value` to read and nothing to type into. It holds no
   model at all while a grid tab is showing, so reads of it must guard.
@@ -1174,7 +1286,11 @@ Two things there are load-bearing:
    needs the original's *text*, which lives in the editor's context and not in the
    tab, so `Shell` owns `duplicateTab` and `TabStrip` takes `onDuplicateTab`. Its
    other three items — the closes — stay in the strip, because closing tabs is the
-   tab list changing and nothing else.
+   tab list changing and nothing else. **Saved queries are the fifth and they
+   arrive as two props**, one on each side of the gesture: `SavedQueriesButton`
+   takes `onOpen` and `EditorPane` takes `onSaveQuery`, because opening one spans
+   the tabs, the editor and the queries slice, and saving spans the same three
+   back the other way.
 2. **Components never touch `dispatch` or `call` directly.** Each feature exports
    one hook — `useExplorer`, `useResults`, `useEditor`, plus app-level
    `useSession` and `useTabs` — and that hook is the feature's whole public

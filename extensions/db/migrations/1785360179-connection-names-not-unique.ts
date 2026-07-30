@@ -32,6 +32,16 @@ import type { Migration } from './migration.ts';
  * Verified rather than assumed: `PRAGMA foreign_key_check` at the end, inside the
  * transaction, so a rebuild that orphaned anything takes the whole migration down
  * with it instead of shipping a store that is quietly wrong.
+ *
+ * **`color` is `COALESCE`d, and that is not defensive tidying.** Stores exist
+ * whose `saved_connections.color` is a bare nullable `TEXT` holding NULLs, rather
+ * than the `NOT NULL DEFAULT 'slate'` that `connection-colour` declares -- so
+ * copying the column straight across inserts an explicit NULL, which **bypasses
+ * the default** and fails the rebuilt table's NOT NULL. A rebuild is the one
+ * place a column's declared shape and the values actually sitting in it have to
+ * be reconciled, because it is the only statement that reads every row and writes
+ * it back under a new constraint. `slate` is the neutral swatch
+ * `connection-colour` already promises a colourless connection gets.
  */
 export const migration: Migration = {
   version: 1785360179,
@@ -67,7 +77,7 @@ export const migration: Migration = {
         (id, workspace_id, name, engine, host, port, username, default_database, environment,
          password, ssl, read_only, aws_profile, aws_region, color)
       SELECT id, workspace_id, name, engine, host, port, username, default_database, environment,
-             password, ssl, read_only, aws_profile, aws_region, color
+             password, ssl, read_only, aws_profile, aws_region, COALESCE(color, 'slate')
       FROM saved_connections
     `);
     db.run('DROP TABLE saved_connections');

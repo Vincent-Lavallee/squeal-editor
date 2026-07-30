@@ -25,6 +25,7 @@ interface Props {
 export default function TabStrip({ onDuplicateTab }: Props) {
   const { tabs: tabList, activeTabId, activateTab, closeTab, closeOtherTabs, closeTabsToTheRight, closeAllTabs, moveTab, openEditorTab, renameTab } = useTabs();
   const [hoveredTabId, setHoveredTabId] = useState<string | null>(null);
+  const [hoveredCloseId, setHoveredCloseId] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<DropAt>(undefined);
@@ -70,18 +71,23 @@ export default function TabStrip({ onDuplicateTab }: Props) {
     const last = index === tabList.length - 1;
     return [
       { label: 'Duplicate', disabled: !onDuplicateTab, onSelect: () => onDuplicateTab?.(id) },
-      { label: 'Close All Except Current', disabled: only, onSelect: () => closeOtherTabs(id) },
+      { label: 'Close others', disabled: only, onSelect: () => closeOtherTabs(id) },
       { label: 'Close Tabs to the Right', disabled: last, onSelect: () => closeTabsToTheRight(id) },
       { label: 'Close All', onSelect: () => closeAllTabs() },
     ];
   };
 
   return (
-    <div data-testid="tabs" style={{ display: 'flex', alignItems: 'stretch', minWidth: 0, borderBottom: `1px solid ${t.BORDER}`, overflowX: 'auto', scrollbarWidth: 'none' }} role="tablist"
+    <div data-testid="tabs" style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0, borderBottom: `1px solid ${t.BORDER}`, overflowX: 'auto', scrollbarWidth: 'none' }} role="tablist"
       onDragOver={(e) => { if (draggingId) e.preventDefault(); }} onDrop={drop}>
       {tabList.map((tab, index) => {
         const active = tab.id === activeTabId;
         const hovered = hoveredTabId === tab.id;
+        // The dot stands in for the close until the pointer is on the slot
+        // itself; an unsaved tab's slot never hides, since the dot is a state
+        // and not an action offered on hover.
+        const showsDot = tab.unsaved === true && hoveredCloseId !== tab.id;
+        const shown = active || hovered || tab.unsaved === true;
         const Icon = tab.kind === 'grid' ? TableIcon : QueryIcon;
         // Not on the tab being dragged: an insertion mark on the thing you are
         // holding says a move that is no move at all.
@@ -126,9 +132,28 @@ export default function TabStrip({ onDuplicateTab }: Props) {
                   onDoubleClick={(e) => { e.stopPropagation(); setRenaming({ id: tab.id, draft: tab.title }); }}>{tab.title}</span>
               </button>
             )}
-            <button data-testid="tab-close" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', width: 20, height: 20, padding: 0, border: 'none', borderRadius: t.RADIUS, background: 'none', color: t.TEXT_MUTED, cursor: 'pointer', opacity: active || hovered ? 1 : 0, pointerEvents: active || hovered ? 'auto' : 'none' }}
-              onClick={() => closeTab(tab.id)} aria-label={`Close ${tab.title}`}>
-              <CloseIcon style={iconSvg} aria-hidden="true" />
+            {/* One slot, two marks. An unsaved tab shows a dot where its close
+                would be and swaps to the close on hover -- so the mark costs no
+                width of its own beside the label, and the control it stands in
+                for is one pointer-move away rather than gone.
+
+                The swap is keyed on hovering *this button*, not the tab: at tab
+                level the dot would vanish the moment the pointer touched the tab
+                anywhere, which is most of the time you are looking at it.
+
+                An unsaved tab's slot is always shown, active or not -- it is the
+                only acknowledgement a silent Ctrl+S gives, so it may not be
+                hidden behind a hover the way a plain close is. */}
+            <button data-testid="tab-close" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', width: 20, height: 20, padding: 0, border: 'none', borderRadius: t.RADIUS, background: 'none', color: t.TEXT_MUTED, cursor: 'pointer', opacity: shown ? 1 : 0, pointerEvents: shown ? 'auto' : 'none' }}
+              onMouseEnter={() => setHoveredCloseId(tab.id)} onMouseLeave={() => setHoveredCloseId(null)}
+              onClick={() => closeTab(tab.id)} aria-label={`Close ${tab.title}`}
+              title={showsDot ? 'Unsaved changes — click to close' : undefined}>
+              {showsDot ? (
+                <span data-testid="tab-unsaved" role="img" aria-label="Unsaved changes"
+                  style={{ width: 7, height: 7, borderRadius: t.RADIUS_PILL, background: t.TEXT_MUTED }} />
+              ) : (
+                <CloseIcon style={iconSvg} aria-hidden="true" />
+              )}
             </button>
           </div>
         );

@@ -922,6 +922,44 @@ chose.
 The first one is `tree.groupBySchema`. Settings live here rather than in the
 webview for the store's own reason — see `docs/decisions.md`.
 
+### Saved queries
+
+`saved_queries` (id, name, sql) is the one table in this file that **references
+nothing**. Stars and session snapshots hang off `saved_connections` because a
+star names a relation on one server; a query is text, and the same text is worth
+running against a dev box and a replica alike — so filing it under a connection
+would mean saving it twice to use it twice. Nothing here is keyed by a
+connection, nothing is cleared when one closes, and `queries.list` takes no
+argument.
+
+**The command names drop the `db.` prefix**, the same call `settings.*` makes and
+for the same reason: it is about nobody's server. The store keeps the SQL as
+text and never parses it, which is the settings rule again — this side has no
+opinion about what a query says, only that it was kept.
+
+**`name` is `UNIQUE`, and the clash is checked rather than left to the
+constraint.** That is the *workspace's* rule, not the connection's: the picker
+addresses a query by its name and has nothing else to tell two apart with, while
+two connections called `api` are honestly two servers and are told apart by
+colour and address. `saveWorkspace`'s reason applies to the check too — a raw
+SQLite error names a column and tells the user nothing about what to type
+instead.
+
+**`queries.save` takes an optional `id`, and that is the whole of what makes
+Ctrl+S mean *save*** rather than *save another copy*: an editor tab carries the
+id of the query it was opened from and writes back through it. Two refusals
+follow from it, and the second is the one that looks like helpfulness:
+
+- A name another row already holds, so a second query nothing can tell apart is
+  never filed.
+- An `id` that no longer names a row. Re-creating the query under its old id
+  would undo a deliberate delete — a tab can outlive the query it came from, and
+  the honest reading of that is *this tab is unsaved again*, which is what the UI
+  does with the refusal. See `docs/frontend.md`.
+
+The clash check excludes the row being written (`id IS NOT ?`), or saving a query
+over itself would refuse it for colliding with itself.
+
 ### Starred tables
 
 `stars` is a table in the same file, `connection_id REFERENCES
@@ -1004,6 +1042,8 @@ migrations/
   1784997641-connection-sessions.ts     the opaque per-connection session snapshot
   1785067675-environments.ts            the environment picklist, seeded with the four
                                         names `saved_connections.environment` already held
+  1785360179-connection-names-not-unique.ts
+  1785428731-saved-queries.ts           named statements, referencing nothing
 ```
 
 A file is `<epoch>-what-it-does.ts` and **that epoch is its `version`** — the
@@ -1036,6 +1076,20 @@ Three rules, and the first is the one that will bite:
   finds every file and passes. It fails only in a packaged build, as a store
   that quietly has no tables. `index.ts` also asserts its own order at import,
   since the list is hand-maintained.
+
+- **A rebuild must reconcile a column's declared shape with the values actually
+  in it.** The list says what a store's schema *should* be; what is on someone's
+  disk can differ, and a rebuild is the only statement that reads every row and
+  writes it back under a new constraint — so it is where the difference surfaces,
+  and it surfaces as a migration that throws on launch and takes every migration
+  after it down with it, forever. Found for real: `connection-colour` declares
+  `color TEXT NOT NULL DEFAULT 'slate'` and stores exist whose column is a bare
+  nullable `TEXT` holding NULLs. `SELECT color` then inserts an explicit NULL,
+  which **bypasses the default rather than falling back to it**, and fails the
+  rebuilt table's NOT NULL. `connection-names-not-unique` therefore writes
+  `COALESCE(color, 'slate')`. The symptom is never about the column: it is
+  whatever the *next* migration was going to add, quietly missing — which is how
+  this was found, as a `no such table: saved_queries` weeks after the fact.
 
 The workspaces rebuild is the only non-trivial one. **SQLite cannot drop a
 constraint**, so the table is rebuilt: rename the old one, create the new one,

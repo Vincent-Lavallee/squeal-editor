@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import type { FunctionInfo, TableInfo, TriggerInfo } from '../../shared/protocol/index.ts';
+import type { FunctionInfo, SavedQuery, TableInfo, TriggerInfo } from '../../shared/protocol/index.ts';
 import { relationLabel, relationOf } from './common/db/relation.ts';
 import { useAppSelector } from './store/hooks.ts';
+import { useSavedQueries } from './store/savedQueriesSlice.ts';
 import { useTabs } from './store/tabsSlice.ts';
 import { EditorPane, useEditor } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
+import { SaveQueryDialog, SavedQueriesButton } from './features/queries/index.ts';
 import { ConnectionRail } from './features/rail/index.ts';
 import { ResultsProvider, ResultsTable, useResults } from './features/results/index.ts';
 import { StatusBar } from './features/statusbar/index.ts';
@@ -34,10 +36,11 @@ export default function Shell({ onAddConnection }: Props) {
 }
 
 function ShellLayout({ onAddConnection }: Props) {
-  const { tabs, activeTab, openGridTab, openEditorTab, setDatabase } = useTabs();
+  const { tabs, activeTab, openGridTab, openEditorTab, openSavedQueryTab, setDatabase, markTabSaved } = useTabs();
   const { run, running, browseIn } = useResults();
   const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema } = useExplorer();
   const { setSql, peekSql } = useEditor();
+  const { queries, save: saveQuery } = useSavedQueries();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const toggleSidebar = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
@@ -145,6 +148,52 @@ function ShellLayout({ onAddConnection }: Props) {
     if (id) setSql(id, peekSql(tabId) ?? '');
   }, [tabs, openGridTab, openEditorTab, browseIn, setSql, peekSql]);
 
+  /*
+   * Saved queries span the tabs, the editor's text and the queries slice, so both
+   * halves are wired here and arrive at the strip and the editor as props.
+   *
+   * Opening one is a *new* tab every time, the rule clicking a table already
+   * follows: reopening the same query beside itself is how you compare an edit
+   * against what is stored. It is born named, linked and already holding its
+   * text -- one action rather than an open and a `setSql`, since a `setSql` is
+   * what marks a tab edited.
+   */
+  const openSavedQuery = useCallback((query: SavedQuery) => {
+    openSavedQueryTab(query.id, query.name, query.sql);
+  }, [openSavedQueryTab]);
+
+  /*
+   * Ctrl+S. Which of the two things it does is whether this tab already knows
+   * which saved query it is:
+   *
+   * - it does -- write over that row, no dialog. The strip's unsaved mark
+   *   clearing is the acknowledgement, which is why saving silently is allowed
+   *   to be silent.
+   * - it does not -- ask for a name, once.
+   *
+   * A link whose query has since been deleted falls to the second case rather
+   * than re-creating the row under its old id: the extension refuses that, and
+   * the honest reading of a deleted query is that this tab is unsaved again.
+   */
+  const [namingTab, setNamingTab] = useState<{ id: string; title: string; sql: string } | null>(null);
+
+  const saveActiveQuery = useCallback(() => {
+    if (activeTab?.kind !== 'editor') return;
+    const tabId = activeTab.id;
+    const sql = peekSql(tabId) ?? '';
+    const linked = queries.find((query) => query.id === activeTab.savedQueryId);
+    if (linked) {
+      // The mark is cleared by the *save landing*, not by pressing the key: a
+      // write that the extension refuses must leave the tab saying it still
+      // holds edits, because it does.
+      void saveQuery({ id: linked.id, name: linked.name, sql })
+        .then((saved) => markTabSaved(tabId, saved.id, saved.name, saved.sql))
+        .catch(() => undefined);
+      return;
+    }
+    setNamingTab({ id: tabId, title: activeTab.title, sql });
+  }, [activeTab, peekSql, queries, saveQuery, markTabSaved]);
+
   // The picker moved. It re-browses the active grid tab so what is on screen
   // follows the database that is now selected -- if the table it was showing
   // is not there, that surfaces as this tab's own error, not as the picker
@@ -166,8 +215,14 @@ function ShellLayout({ onAddConnection }: Props) {
         {!sidebarCollapsed && <ResizeHandle orientation="vertical" onDrag={dragSidebar} />}
 
         <main data-testid={showEditor ? undefined : 'main-grid'} className={showEditor ? '' : 'main--grid'} style={{ display: 'grid', gridTemplateRows: showEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(${EDITOR_MIN}px, 1fr) auto ${resultsHeight}px` : `${t.TAB_H}px 1fr`, minWidth: 0, minHeight: 0 }}>
-          <TabStrip onDuplicateTab={duplicateTab} />
-          <EditorPane onRun={run} running={running} onToggleSidebar={toggleSidebar} />
+          {/* The button is beside the strip, not inside it: the strip scrolls
+              once there are more tabs than fit, and a control inside it would
+              scroll away with them. */}
+          <div style={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
+            <TabStrip onDuplicateTab={duplicateTab} />
+            <SavedQueriesButton onOpen={openSavedQuery} />
+          </div>
+          <EditorPane onRun={run} running={running} onToggleSidebar={toggleSidebar} onSaveQuery={saveActiveQuery} />
           {showEditor && <ResizeHandle orientation="horizontal" onDrag={dragResults} />}
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: showEditor ? undefined : `1px solid ${t.BORDER}` }}>
             {activeTab ? <ResultsTable /> : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}
@@ -176,6 +231,15 @@ function ShellLayout({ onAddConnection }: Props) {
       </div>
 
       <StatusBar />
+
+      {namingTab && (
+        <SaveQueryDialog
+          initialName={namingTab.title}
+          sql={namingTab.sql}
+          onSaved={(query) => { markTabSaved(namingTab.id, query.id, query.name, query.sql); setNamingTab(null); }}
+          onClose={() => setNamingTab(null)}
+        />
+      )}
     </div>
   );
 }

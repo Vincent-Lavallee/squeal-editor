@@ -6,6 +6,7 @@ import type { TableFilter } from '../../../shared/protocol/index.ts';
 import { relationName, type Relation } from '../common/db/relation.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
 import type { RootState } from './index.ts';
+import { deleteSavedQuery } from './savedQueriesSlice.ts';
 import { disconnect, sessionOpened } from './sessionSlice.ts';
 
 /**
@@ -52,6 +53,27 @@ export interface Tab {
    * Query 2 silently becomes Query 1, renaming a tab the user never touched.
    */
   title: string;
+  /**
+   * The saved query this editor tab is the open copy of, if it is one.
+   *
+   * This is what makes Ctrl+S mean *save* rather than *save another copy*: a
+   * linked tab writes over the row it came from and never asks for a name again.
+   * Absent for a blank query tab, for a definition tab, and for every grid tab,
+   * none of which came from anywhere.
+   */
+  savedQueryId?: string;
+  /**
+   * Whether *this tab* has been edited since it was opened or last saved.
+   *
+   * A flag rather than a comparison against the stored query's text, and the
+   * difference is the whole of what it means. Comparing said "this text is not
+   * what is on disk", which is a fact about the query and therefore true of
+   * **every** tab holding it: saving one copy lit the mark on every other copy,
+   * and deleting the query lit it on all of them at once, in both cases about an
+   * edit the user had not made there. The mark is about the tab, so the tab is
+   * what carries it. See `docs/decisions.md`.
+   */
+  unsaved?: boolean;
 }
 
 interface TabsState {
@@ -143,13 +165,25 @@ const tabsSlice = createSlice({
         schema?: string;
         /**
          * A title for an `editor` tab. Given only when the tab is opened *for*
-         * something -- a table's definition -- so it is named for it and does not
-         * consume a `Query N`. Absent for a blank query tab, which numbers itself.
+         * something -- a table's definition, a saved query -- so it is named for
+         * it and does not consume a `Query N`. Absent for a blank query tab,
+         * which numbers itself.
          */
         title?: string;
+        /** Set when the tab is opened *from* a saved query, so it is born linked to it. */
+        savedQueryId?: string;
+        /**
+         * The text a tab opened from a saved query is born holding.
+         *
+         * It rides on the open rather than following as a `sqlChanged`, because a
+         * `sqlChanged` is what marks a tab edited -- seeding through it would light
+         * the unsaved mark on a tab the user has not touched, at the instant it
+         * appears. One action, one tab, already holding what it was opened with.
+         */
+        sql?: string;
       }>
     ) {
-      const { connectionId, kind, table, schema, title } = action.payload;
+      const { connectionId, kind, table, schema, title, savedQueryId, sql } = action.payload;
 
       if (kind === 'grid') {
         // The caller's label when it has one -- it knows which schema goes
@@ -164,7 +198,8 @@ const tabsSlice = createSlice({
       // A named editor tab keeps its name and leaves the query counter alone; an
       // unnamed one is the next Query N.
       if (title) {
-        mint(state, { connectionId, kind, title });
+        const id = mint(state, { connectionId, kind, title, savedQueryId });
+        if (sql !== undefined) state.sqlByTab[id] = sql;
         return;
       }
       const no = state.nextQueryNo[connectionId] ?? 1;
@@ -269,6 +304,10 @@ const tabsSlice = createSlice({
      */
     sqlChanged(state, action: PayloadAction<{ tabId: string; sql: string }>) {
       state.sqlByTab[action.payload.tabId] = action.payload.sql;
+      // Only a tab that came from a saved query has anything to be unsaved
+      // *against*; a blank Query 1 is not holding edits to something.
+      const tab = state.tabs.find((t) => t.id === action.payload.tabId);
+      if (tab?.savedQueryId !== undefined) tab.unsaved = true;
     },
 
     /**
@@ -287,10 +326,64 @@ const tabsSlice = createSlice({
       const tab = state.tabs.find((t) => t.id === action.payload.id);
       if (tab) tab.title = title;
     },
+
+    /**
+     * A tab's text was saved as a named query, so the tab is now that query's
+     * open copy -- and **so is every other tab already holding that query**.
+     *
+     * A saved query is one thing, not one thing per tab: two tabs open on it are
+     * two views of the same query, so the save lands in all of them. Each takes
+     * the text that was written, the name it was written under, and a cleared
+     * mark -- there is nothing left unsaved anywhere, because what is on disk is
+     * now what they all hold.
+     *
+     * The **cost, accepted**: a sibling tab carrying edits of its own loses them
+     * to this. Two views of one query are last-write-wins, the way two editors
+     * over one file are; the alternative is two tabs claiming to be the same
+     * query while showing different text, which is the state this replaced. See
+     * `docs/decisions.md`.
+     *
+     * Renaming is deliberately not left to a second `tabRenamed` dispatch -- one
+     * gesture is one action, the same reason `tabsClosed` takes a set. The tab
+     * and the query would otherwise be able to disagree about what the thing is
+     * called for exactly one render.
+     */
+    tabSaved(state, action: PayloadAction<{ id: string; savedQueryId: string; title: string; sql: string }>) {
+      const { id, savedQueryId, title, sql } = action.payload;
+      const saving = state.tabs.find((t) => t.id === id);
+      if (!saving) return;
+      saving.savedQueryId = savedQueryId;
+
+      for (const tab of state.tabs) {
+        if (tab.savedQueryId !== savedQueryId) continue;
+        tab.title = title;
+        tab.unsaved = false;
+        // The saving tab's own text is already this; a sibling's is what changes,
+        // and `EditorPane` carries it into that tab's model. See `docs/frontend.md`.
+        state.sqlByTab[tab.id] = sql;
+      }
+    },
   },
 
   extraReducers: (builder) => {
     builder
+      /*
+       * The query a tab came from was deleted, so the tab came from nowhere now.
+       *
+       * The link is cleared rather than left dangling: it would otherwise ride
+       * into the session snapshot pointing at a row that no longer exists, and
+       * every reader would have to keep asking whether the id still resolves.
+       * The tab keeps its title and its text -- what was deleted is the stored
+       * copy, not the query you are looking at -- and its next Ctrl+S asks for a
+       * name, which is the honest reading of a tab that is no longer anywhere.
+       */
+      .addCase(deleteSavedQuery.fulfilled, (state, action) => {
+        for (const tab of state.tabs) {
+          if (tab.savedQueryId !== action.payload) continue;
+          delete tab.savedQueryId;
+          delete tab.unsaved;
+        }
+      })
       .addCase(disconnect.fulfilled, (state, action) => {
         const { connectionId } = action.payload;
         // Only this connection's. The others are still open and still have tabs
@@ -330,6 +423,8 @@ const tabsSlice = createSlice({
               schema: tab.schema,
               filter: tab.filter ?? undefined,
               title: tab.title,
+              savedQueryId: tab.savedQueryId,
+              unsaved: tab.unsaved,
             })
           );
           session.tabs.forEach((tab, i) => {
@@ -354,7 +449,7 @@ const tabsSlice = createSlice({
   },
 });
 
-export const { tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged, tabRenamed } =
+export const { tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged, tabRenamed, tabSaved } =
   tabsSlice.actions;
 export const tabsReducer = tabsSlice.reducer;
 
@@ -433,6 +528,21 @@ export function useTabs() {
       },
       [dispatch, store]
     ),
+    /**
+     * A saved query opened into a tab of its own -- named, linked and already
+     * holding its text, in **one** action.
+     *
+     * Deliberately not `openEditorTab` followed by `setSql`: a `sqlChanged` is
+     * what marks a tab edited, so seeding through one would light the unsaved
+     * mark on a tab nobody has touched, at the instant it appears.
+     */
+    openSavedQueryTab: useCallback(
+      (savedQueryId: string, title: string, sql: string): void => {
+        const id = store.getState().session.activeConnectionId;
+        if (id) dispatch(tabOpened({ connectionId: id, kind: 'editor', title, savedQueryId, sql }));
+      },
+      [dispatch, store]
+    ),
     closeTab: useCallback((id: string) => dispatch(tabsClosed({ ids: [id] })), [dispatch]),
     /*
      * Which tabs each of these means is worked out here and not in the strip,
@@ -463,6 +573,15 @@ export function useTabs() {
     ),
     activateTab: useCallback((id: string) => dispatch(tabActivated({ id })), [dispatch]),
     renameTab: useCallback((id: string, title: string) => dispatch(tabRenamed({ id, title })), [dispatch]),
+    /**
+     * This tab is now the open copy of `savedQueryId` -- and so is every other
+     * tab already on that query, which takes the same text and name.
+     */
+    markTabSaved: useCallback(
+      (id: string, savedQueryId: string, title: string, sql: string) =>
+        dispatch(tabSaved({ id, savedQueryId, title, sql })),
+      [dispatch]
+    ),
     /**
      * The picker moved. Reads the connection off state the way `openGridTab`
      * does, since there is nothing for a caller to hand it -- and now that the

@@ -35,16 +35,19 @@ import {
   addEnvironment,
   dataDir,
   deleteEnvironment,
+  deleteQuery,
   deleteSaved,
   deleteWorkspace,
   getSession,
   listEnvironments,
+  listQueries,
   listSaved,
   listSettings,
   listStars,
   listWorkspaces,
   resolveSaved,
   saveConnection,
+  saveQuery,
   saveWorkspace,
   setSession,
   setSetting,
@@ -329,6 +332,21 @@ const COMMANDS: Handlers = {
 
   async 'window.fitMaximized'({ pid }) {
     return { applied: fitMaximizedToWorkArea(pid) };
+  },
+
+  /* -- Saved queries (the same store, and about no connection either) --- */
+
+  async 'queries.list'() {
+    return { queries: listQueries() };
+  },
+
+  async 'queries.save'({ id, name, sql }) {
+    return { query: saveQuery({ id, name, sql }) };
+  },
+
+  async 'queries.delete'({ id }) {
+    deleteQuery(id);
+    return { ok: true };
   },
 
   /* -- User settings (the same store, and about no connection) ---------- */

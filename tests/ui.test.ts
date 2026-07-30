@@ -1744,12 +1744,12 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // Asserted as one list for the same reason the tree's menu is: the menu
       // being the whole surface is the point.
       expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
-        'Duplicate', 'Close All Except Current', 'Close Tabs to the Right', 'Close All',
+        'Duplicate', 'Close others', 'Close Tabs to the Right', 'Close All',
       ]);
 
       // One tab open: there is nothing to close except it, and nothing to its
       // right. Both say so rather than being offered and doing nothing.
-      expect(await app.evaluate<boolean>(`${contextItem('Close All Except Current')}.disabled`)).toBe(true);
+      expect(await app.evaluate<boolean>(`${contextItem('Close others')}.disabled`)).toBe(true);
       expect(await app.evaluate<boolean>(`${contextItem('Close Tabs to the Right')}.disabled`)).toBe(true);
 
       await app.evaluate(pressEscape);
@@ -1886,7 +1886,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<string>(activeTabLabel)).toBe(first);
     });
 
-    test('"Close All Except Current" leaves the one it was asked from', async () => {
+    test('"Close others" leaves the one it was asked from', async () => {
       await app.evaluate(newTab);
       await Bun.sleep(500);
       const keep = await app.evaluate<string>(activeTabLabel);
@@ -1896,7 +1896,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await app.evaluate(rightClickTab(keep));
       await Bun.sleep(200);
-      await app.evaluate(clickContextItem('Close All Except Current'));
+      await app.evaluate(clickContextItem('Close others'));
       await Bun.sleep(500);
 
       expect(await app.evaluate<string[]>(tabLabels)).toEqual([keep]);
@@ -2456,6 +2456,208 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await disconnect();
       await clearSavedConnections();
+    });
+  });
+
+  describe('saved queries', () => {
+    const openPicker = `document.querySelector('[data-testid="saved-queries-open"]').click(); true;`;
+    const pickerNames = `[...document.querySelectorAll('[data-testid="saved-query-pick"]')].map(e => e.textContent)`;
+    const pickQuery = (name: string) => `
+      [...document.querySelectorAll('[data-testid="saved-query-pick"]')]
+        .find(e => e.textContent === ${JSON.stringify(name)}).click(); true;`;
+    /** Ctrl+S on the window, which is the binding outside Monaco's own DOM. */
+    const pressSave = `document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true })); true;`;
+    const unsavedMarks = `document.querySelectorAll('[data-testid="tab-unsaved"]').length`;
+    const dialogOpen = `!!document.querySelector('[data-testid="save-query-name"]')`;
+
+    /** Armed by a first click, committed by a second on that same button. */
+    async function deleteFirstSavedQuery(): Promise<void> {
+      await app.evaluate(openPicker);
+      await app.waitFor(`document.querySelector('[data-testid="saved-query-delete"]') ? true : null`);
+      await app.evaluate(`document.querySelector('[data-testid="saved-query-delete"]').click(); true;`);
+      await Bun.sleep(200);
+      // Still the same button, and still there -- an armed row keeps its delete
+      // whether or not the pointer is on it.
+      await app.evaluate(`document.querySelector('[data-testid="saved-query-delete"]').click(); true;`);
+      await Bun.sleep(400);
+      await app.evaluate(pressEscape);
+    }
+
+    beforeAll(async () => {
+      await clearSavedConnections();
+      await connect(PG, 'pg-queries');
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1500);
+    });
+
+    afterAll(async () => {
+      await disconnect();
+      await clearSavedConnections();
+    });
+
+    test('Ctrl+S names it, and the tab takes that name', async () => {
+      await app.evaluate(setEditorText('select 1 as saved'));
+      await Bun.sleep(400);
+      await app.evaluate(pressSave);
+
+      // Offered the tab's current name, so the common case is Enter.
+      await app.waitFor(`document.querySelector('[data-testid="save-query-name"]') ? true : null`);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="save-query-name"]').value`)).toBe('Query 1');
+
+      await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('[data-testid="save-query-name"]'), 'ui-saved'); true;`);
+      await Bun.sleep(150);
+      await app.evaluate(`document.querySelector('[data-testid="save-query-submit"]').click(); true;`);
+      await Bun.sleep(600);
+
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['ui-saved']);
+      expect(await app.evaluate<boolean>(dialogOpen)).toBe(false);
+    });
+
+    test('editing marks it unsaved, and a second Ctrl+S saves without asking again', async () => {
+      // The mark is the whole of the feedback a silent save gives, which is what
+      // makes saving silently allowed to be silent.
+      await app.evaluate(setEditorText('select 2 as saved'));
+      await Bun.sleep(500);
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(1);
+
+      await app.evaluate(pressSave);
+      await Bun.sleep(700);
+      // No dialog: the tab knows which query it is, so there is nothing to ask.
+      expect(await app.evaluate<boolean>(dialogOpen)).toBe(false);
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
+    });
+
+    test('the dot takes the close button\'s slot, and gives it back on hover', async () => {
+      /*
+       * The mark costs no width beside the label, and the control it stands in
+       * for is one pointer-move away rather than gone.
+       *
+       * Driven with `mouseover`/`mouseout`, **not** `mouseenter`: React
+       * synthesises `onMouseEnter` from the delegated pair, so a synthetic
+       * `mouseenter` reaches the DOM and no handler at all -- which reads as the
+       * swap being broken. See `docs/testing.md`.
+       */
+      const slots = `[...document.querySelectorAll('[data-testid="tab-close"]')].map(b => b.querySelector('[data-testid="tab-unsaved"]') ? 'dot' : 'close')`;
+      const hoverClose = (e: string) =>
+        `document.querySelector('[data-testid="tab-close"]').dispatchEvent(new MouseEvent(${JSON.stringify(e)}, { bubbles: true, relatedTarget: document.body })); true;`;
+
+      expect(await app.evaluate<string[]>(slots)).toEqual(['close']);
+
+      await app.evaluate(setEditorText('select 9 as saved'));
+      await Bun.sleep(500);
+      expect(await app.evaluate<string[]>(slots)).toEqual(['dot']);
+
+      await app.evaluate(hoverClose('mouseover'));
+      await Bun.sleep(250);
+      expect(await app.evaluate<string[]>(slots)).toEqual(['close']);
+
+      await app.evaluate(hoverClose('mouseout'));
+      await Bun.sleep(250);
+      expect(await app.evaluate<string[]>(slots)).toEqual(['dot']);
+
+      // Back to saved, so the tests after this one start where they expect to.
+      await app.evaluate(pressSave);
+      await Bun.sleep(800);
+      expect(await app.evaluate<string[]>(slots)).toEqual(['close']);
+    });
+
+    test('the picker opens it into a new tab, seeded and runnable', async () => {
+      await app.evaluate(openPicker);
+      await app.waitFor(`document.querySelector('[data-testid="saved-queries-panel"]') ? true : null`);
+      expect(await app.evaluate<string[]>(pickerNames)).toEqual(['ui-saved']);
+
+      // Always a *new* tab, never re-pointing the current one -- the same rule
+      // clicking a table follows, so an edit can be compared against what is stored.
+      await app.evaluate(pickQuery('ui-saved'));
+      await Bun.sleep(800);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['ui-saved', 'ui-saved']);
+      // What the test above left stored -- the copy is seeded from the query,
+      // not from whatever the tab it was opened beside happens to hold.
+      expect(await app.evaluate<string>(editorText)).toBe('select 9 as saved');
+
+      await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
+      await Bun.sleep(2000);
+      expect(await app.evaluate<number>(rowCount)).toBe(1);
+    });
+
+    test('saving one copy lands in every other tab open on the same query', async () => {
+      // Two tabs on one saved query are two views of it, not two copies: the
+      // save is the query changing, so it shows up in both. Neither is left
+      // marked, because what is on disk is now what they both hold.
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['ui-saved', 'ui-saved']);
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
+
+      await app.evaluate(setEditorText('select 4 as saved'));
+      await Bun.sleep(500);
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(1);
+
+      await app.evaluate(pressSave);
+      await Bun.sleep(800);
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
+
+      // The other tab is carrying the saved text, in its own Monaco model --
+      // which only happens if the write reached the model and not just the
+      // store. Switching to it is what proves the model was right beforehand:
+      // attaching one never fills it.
+      await app.evaluate(`document.querySelectorAll('[data-testid="tab-pick"]')[0].click(); true;`);
+      await Bun.sleep(500);
+      expect(await app.evaluate<string>(editorText)).toBe('select 4 as saved');
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
+
+      // And it is still live: typing into the tab just written to marks it,
+      // rather than the inbound write having left the model detached from the
+      // store.
+      await app.evaluate(setEditorText('select 5 as saved'));
+      await Bun.sleep(500);
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(1);
+      await app.evaluate(pressSave);
+      await Bun.sleep(800);
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
+
+      await app.evaluate(closeTab('ui-saved'));
+      await Bun.sleep(300);
+    });
+
+    test('the link survives a reconnect, so the reopened tab still saves in place', async () => {
+      // `savedQueryId` rides in the session snapshot. Without it the restored tab
+      // would look identical and quietly ask for a name again on the next Ctrl+S.
+      await disconnect();
+      await app.waitFor(`(${savedRow('pg-queries')}) ? true : null`);
+      await app.evaluate(`${savedRow('pg-queries')}.querySelector('[data-testid="saved-pick"]').click(); true;`);
+      await Bun.sleep(3000);
+
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['ui-saved']);
+      await app.evaluate(setEditorText('select 3 as saved'));
+      await Bun.sleep(500);
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(1);
+
+      await app.evaluate(pressSave);
+      await Bun.sleep(700);
+      expect(await app.evaluate<boolean>(dialogOpen)).toBe(false);
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
+    });
+
+    test('deleting it empties the list and leaves the open tab alone', async () => {
+      // Deleting used to mark every tab that came from the query as unsaved, all
+      // at once. What was deleted is the stored copy, not the query on screen.
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
+
+      await deleteFirstSavedQuery();
+      await app.evaluate(openPicker);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(pickerNames)).toEqual([]);
+      await app.evaluate(pressEscape);
+
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['ui-saved']);
+
+      // The tab came from nowhere now, so Ctrl+S has a name to ask for again --
+      // never a silent write that re-creates the row just deleted.
+      await app.evaluate(pressSave);
+      await app.waitFor(`document.querySelector('[data-testid="save-query-name"]') ? true : null`);
+      await app.evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent === 'Cancel').click(); true;`);
+      await Bun.sleep(300);
+      expect(await app.evaluate<boolean>(dialogOpen)).toBe(false);
     });
   });
 

@@ -33,6 +33,7 @@ import type {
   TablePage,
   TriggerInfo,
 } from './results.ts';
+import type { SavedQuery } from './queries.ts';
 import type { UpdateStatus } from './updater.ts';
 
 /**
@@ -454,6 +455,39 @@ export interface Commands {
    * connect form needs at least one to offer a new connection.
    */
   'db.environments.remove': {
+    req: { id: string };
+    res: { ok: true };
+  };
+
+  /* -- Saved queries. The same store, and not about any connection either. - */
+
+  /**
+   * Every saved query, in the order the picker draws them: by name.
+   *
+   * There is no per-connection variant of this, because a saved query names no
+   * connection -- see `SavedQuery`. The whole list is a handful of short strings
+   * and is read once, the same call `settings.list` makes for the same reason.
+   */
+  'queries.list': {
+    req: Record<string, never>;
+    res: { queries: SavedQuery[] };
+  };
+  /**
+   * Omit `id` to add; pass one to replace that query in place.
+   *
+   * `id` is what makes Ctrl+S mean *save* rather than *save another copy*: a tab
+   * opened from a saved query carries the id it came from, so pressing it again
+   * writes over the same row instead of asking for a name a second time.
+   *
+   * Rejects on a name another query already holds, rather than filing a second
+   * one nothing can tell apart, and on an `id` that no longer names a row --
+   * re-creating a deleted query under its old id would undo a deliberate delete.
+   */
+  'queries.save': {
+    req: { id?: string; name: string; sql: string };
+    res: { query: SavedQuery };
+  };
+  'queries.delete': {
     req: { id: string };
     res: { ok: true };
   };

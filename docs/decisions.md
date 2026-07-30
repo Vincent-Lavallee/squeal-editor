@@ -4090,3 +4090,145 @@ between the list being drawn and the token being minted.
 **The sign-in split into a button and a status for this.** One CLI runs at a
 time, so the URL and code it is waiting on are rendered once per screen, while
 the button that starts it belongs on each row it would unblock.
+
+---
+
+## Saved queries are global, and a tab remembers which one it is
+
+**Why global.** A saved query is text. The same statement is worth running
+against a dev box and its replica, so filing it under a connection would mean
+saving it twice to use it twice — and the second copy would drift. `saved_queries`
+is therefore the one table in the store that references nothing, and `queries.*`
+drops the `db.` prefix the way `settings.*` already does: it is about nobody's
+server.
+
+**Cost, accepted.** A query that only makes sense on one schema is offered
+everywhere, and running it elsewhere fails as any wrong query does. Scoping was
+the alternative and it buys a shorter list at the price of the thing the feature
+is for.
+
+**Why the tab carries `savedQueryId`.** Without it, Ctrl+S can only mean *save
+another copy*: every press asks for a name again and the list fills with
+`revenue`, `revenue 2`. With it, a tab opened from a query — or one that has been
+saved once — writes over that row and asks nothing. It is one optional field on
+`Tab`, and it earns a place in the session snapshot for the same reason the text
+does: a link that does not survive a quit is a tab that silently reverts to
+asking.
+
+*It is not the exception to "the snapshot leaves runtime ids out" that it looks
+like.* What that rule excludes is tab ids, minted fresh each session. A saved
+query's id is the extension's and outlives every session, which is exactly what
+makes it writable down.
+
+**A silent save needs a visible answer, and the answer is a flag on the tab.**
+*Rejected: a toast, and a status-bar line.* The bar carries facts about the
+active connection, and a query belongs to none; a toast is a thing to dismiss for
+an action that succeeded. The mark beside the tab's name is the whole of it.
+
+*It was a comparison first, and that was the wrong question.*
+`sqlByTab[tab.id] !== query.sql` looked like the cheaper answer — both halves
+already in the store, no field to keep in step — but what it computes is *this
+text is not what is on disk*, which is a fact about the **query** and therefore
+true of every tab holding it. Two consequences, both reported from real use and
+both about edits the user had not made: saving one copy of a query lit the mark
+on every other copy, and deleting a query lit it on all of them at once. The
+question the mark is actually asking is *has this tab been edited since it was
+opened or last saved*, which nothing but the tab can answer, so `Tab.unsaved`
+carries it — set by `sqlChanged`, cleared by `tabSaved`.
+
+## Two tabs on one saved query are two views, not two copies
+
+**Why.** The first cut treated them as independent: each tab held its own text
+and saved its own, so the same query could be open twice showing two different
+statements, and whichever tab you happened to press Ctrl+S in silently won. That
+is not what "the same saved query" means to anyone looking at it.
+
+**So the save lands in all of them.** `tabSaved` writes the saved text, the name
+and a cleared mark into every tab carrying that `savedQueryId`. Saving is the
+*query* changing, so every view of it changes.
+
+**Cost, accepted, and it is the real one:** a sibling tab holding edits of its
+own loses them to that save. Two views of one file are last-write-wins in every
+editor there is, and the alternative — two tabs claiming to be the same query
+while showing different text — is the state this replaced.
+
+*Not extended to live keystroke-by-keystroke syncing*, which is the other way to
+be honest about "one query". Saving is a moment the user chose; propagating every
+keystroke into a tab they are not looking at is a lot of machinery, and it would
+end the one thing having the query open twice is good for — reading the old text
+beside the new until you commit.
+
+**It cost the editor its second inbound writer**, and that is the part worth
+knowing before touching `EditorPane`: the tab being written to is usually a
+*background* one, whose model already exists, so seeding at creation cannot serve
+it. The write is a full-range edit applied only when the value differs from
+Monaco's own — see *Text flows one way* in `docs/frontend.md` for why both halves
+of that are load-bearing.
+
+**Two things follow from the flag that the comparison got for free**, and both
+are the kind that would otherwise be found by looking at a wrong dot. Opening a
+saved query has to seed its text *in the open action* rather than through a
+following `setSql`, since a `sqlChanged` is what marks a tab edited and the tab
+would be born dirty. And a save has to clear the mark when it **lands**, not when
+the key is pressed, so a write the extension refuses leaves the tab still saying
+it holds edits — which is also the only report that failure gets.
+
+**Names are unique, checked in words.** This follows the *workspace's* rule and
+not the connection's, and the difference is what the name is for: the picker
+addresses a query by its name and has nothing else to tell two apart with, while
+two connections called `api` are honestly two servers and are told apart by
+colour and address. See *A connection's name is a label, not a key* above for the
+other half of that pair.
+
+**A save under a deleted id is refused, not resurrected.** The tempting
+alternative — insert it back under the same id — writes a row someone deliberately
+removed, from a tab that happened to still be open. The refusal is what lets the
+UI fall back to asking for a name, which is the honest reading: this tab is
+unsaved again.
+
+**The picker is beside the tab strip, not inside it.** The strip scrolls once
+there are more tabs than fit, so a control inside it scrolls away with them. This
+is the same shape as the status bar sitting outside the `.app` grid: something
+that must hold for the whole strip does not live in the part of it that moves.
+
+---
+
+## A migration that throws is silent until the migration after it matters
+
+**What happened.** `saved_queries` did not exist on a real store, reported as
+`no such table` the first time Ctrl+S was pressed. The saved-queries migration
+was fine. `connection-names-not-unique`, three places earlier in the list, was
+throwing `NOT NULL constraint failed: saved_connections_rebuilt.color` — and
+`runMigrations` walks the list in order, so everything after it had never run on
+that file and never would, on any launch.
+
+**The defect underneath.** `connection-colour` declares
+`color TEXT NOT NULL DEFAULT 'slate'`; the column on that store was a bare
+nullable `TEXT` with three rows holding NULL. The rebuild's
+`SELECT … color …` therefore inserted an **explicit** NULL, and an explicit NULL
+bypasses a column default rather than falling back to it. `COALESCE(color,
+'slate')` is the fix — the neutral swatch `connection-colour` already promises a
+colourless connection gets.
+
+**Why the migration was edited rather than a new one appended.** Appending
+cannot work here, and that is the whole shape of the problem: a later migration
+never runs, because the failing one is what stops the walk. Editing a shipped
+migration is normally forbidden (see the rules in `migrations/index.ts`), and the
+two things that make it right in this one case are worth stating so the exception
+is not read as a licence: it was **unreleased** — on `dev` only, no tag contains
+it — and `COALESCE` over a non-null value is a no-op, so a store where it already
+succeeded is unaffected either way.
+
+**The rule this leaves behind.** A rebuild is the only statement that reads every
+row and writes it back under a new constraint, so it is the one place a column's
+*declared* shape and the values *actually in it* have to be reconciled. Do not
+trust the list's account of what is on disk when rebuilding — `COALESCE` every
+NOT NULL target that any earlier version could have left null.
+
+**And the lesson about the symptom.** A failing migration never reports itself as
+a failing migration. It reports as a missing table, a missing column, or a
+feature that silently does nothing — attributed to whatever was added *last*,
+which is the code most likely to be blamed and least likely to be at fault. When
+something the store should hold is not there, read `schema_migrations` before
+reading the feature: the gap is the answer, and the last row is where the walk
+stopped.

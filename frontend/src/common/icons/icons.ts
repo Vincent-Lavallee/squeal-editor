@@ -9,6 +9,7 @@ import {
   RiArrowUpSLine,
   RiBroadcastLine,
   RiBarChart2Line,
+  RiBookmarkLine,
   RiBox3Line,
   RiBuilding2Line,
   RiCheckLine,
@@ -132,6 +133,13 @@ export const SidebarUnfoldIcon = RiArrowRightDoubleLine;
 export const QueryIcon = RiCodeSSlashLine;
 export const NewTabIcon = RiAddLine;
 export const CloseIcon = RiCloseLine;
+
+/**
+ * The saved queries a tab can be reopened from, at the right of the strip. A
+ * bookmark rather than a floppy disk: what the button does is *reopen* one, and
+ * saving has no control of its own -- it is Ctrl+S.
+ */
+export const SavedQueryIcon = RiBookmarkLine;
 
 /** Leaving a workspace for the picker. Not `PrevPageIcon`: paging is not going back. */
 export const BackIcon = RiArrowLeftLine;

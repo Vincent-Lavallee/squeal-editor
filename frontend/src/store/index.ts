@@ -5,6 +5,7 @@ import { connectionTestReducer } from './connectionTestSlice.ts';
 import { environmentsReducer } from './environmentsSlice.ts';
 import { explorerReducer } from './explorerSlice.ts';
 import { resultsReducer } from './resultsSlice.ts';
+import { savedQueriesReducer } from './savedQueriesSlice.ts';
 import { savedReducer } from './savedSlice.ts';
 import { sessionReducer } from './sessionSlice.ts';
 import { sessionSyncMiddleware } from './sessionSyncListener.ts';
@@ -37,6 +38,7 @@ export const store = configureStore({
     workspaces: workspacesReducer,
     environments: environmentsReducer,
     saved: savedReducer,
+    savedQueries: savedQueriesReducer,
     connectionTest: connectionTestReducer,
     awsSignIn: awsSignInReducer,
     explorer: explorerReducer,

@@ -14,6 +14,10 @@ import type { TableFilter } from '../../../shared/protocol/index.ts';
  * `sql`, a grid tab's filter on `filter`; `activeIndex` names which tab was in
  * front by position, since the ids will not survive. `database` is the
  * connection's, not any one tab's -- see `docs/decisions.md`.
+ *
+ * `savedQueryId` is the exception to "runtime ids are left out", and only looks
+ * like one: it is a *stored* query's id, minted by the extension and outliving
+ * every session, which is exactly why the link can be written down at all.
  */
 export interface SessionSnapshot {
   tabs: Array<{
@@ -23,6 +27,9 @@ export interface SessionSnapshot {
     title: string;
     sql?: string;
     filter?: TableFilter | null;
+    savedQueryId?: string;
+    /** Whether this tab held edits it had not saved back to its query. */
+    unsaved?: boolean;
   }>;
   activeIndex: number | null;
   nextQueryNo: number;

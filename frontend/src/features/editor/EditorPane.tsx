@@ -36,6 +36,12 @@ interface Props {
   running: boolean;
   /** Toggling the sidebar is a shell concern; Monaco would otherwise swallow Ctrl+B. */
   onToggleSidebar?: () => void;
+  /**
+   * Ctrl+S. Saving spans the tabs and the saved-queries slice, so the shell owns
+   * what it does and this only says when. It takes no text: the handler reads the
+   * active tab's off the store, the same rule a thunk reads its own target by.
+   */
+  onSaveQuery?: () => void;
 }
 
 declare global {
@@ -54,7 +60,7 @@ declare global {
   }
 }
 
-export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
+export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuery }: Props) {
   const { dialect } = useSession();
   const { tabs, activeTab, database } = useTabs();
   const { sqlByTab, setSql, peekSql } = useEditor();
@@ -93,8 +99,8 @@ export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
    * has to run whatever the *current* handler, text and tab are -- capturing
    * them would pin it to the first render and run the empty query forever.
    */
-  const latest = useRef({ sql, onRun, dialect, activeTabId, peekSql, onToggleSidebar });
-  latest.current = { sql, onRun, dialect, activeTabId, peekSql, onToggleSidebar };
+  const latest = useRef({ sql, onRun, dialect, activeTabId, peekSql, onToggleSidebar, onSaveQuery });
+  latest.current = { sql, onRun, dialect, activeTabId, peekSql, onToggleSidebar, onSaveQuery };
 
   // The button is the same action the shortcut and the context menu run, not a
   // second path into the formatter: reach for Monaco's registered action rather
@@ -190,6 +196,13 @@ export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
       latest.current.onToggleSidebar?.();
     });
 
+    // Ctrl+S saves the query. Same pattern again, with one extra reason to be
+    // here rather than only on the window: unhandled, the webview treats Ctrl+S
+    // as "save this page" and opens the OS file dialog over the app.
+    instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      latest.current.onSaveQuery?.();
+    });
+
     editor.current = instance;
     window.squealEditor = instance;
 
@@ -260,6 +273,36 @@ export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
   }, [dialect]);
 
   /*
+   * Carry a text change made *outside* this editor into the model holding it.
+   *
+   * This is the one inbound write into a live model, and it exists for one
+   * caller: saving a saved query writes the saved text into every other tab open
+   * on that query, because they are views of one query rather than copies of it
+   * (see `docs/frontend.md`). Seeding at creation cannot serve it -- those models
+   * already exist.
+   *
+   * Three things keep it from being the loop the one-way rule warns about:
+   *
+   * - **It writes only when the value actually differs.** A keystroke updates
+   *   `sqlByTab` from the model, so by the time this runs the two agree and
+   *   nothing happens. Without the guard this would fire on every keystroke.
+   * - **It applies an *edit*, not `setValue`.** Monaco treats it as a keystroke:
+   *   undo still works and the change flows back out through
+   *   `onDidChangeModelContent`, so the store stays the one source. `setValue`
+   *   would throw the cursor to the top of the document.
+   * - **Every model, not just the attached one.** The tab being written to is
+   *   usually a background one; its model exists and must be right before it is
+   *   ever shown, since the switch effect only attaches a model, never fills it.
+   */
+  useEffect(() => {
+    for (const [id, model] of models.current) {
+      const text = sqlByTab[id];
+      if (text === undefined || model.getValue() === text) continue;
+      model.pushEditOperations([], [{ range: model.getFullModelRange(), text }], () => null);
+    }
+  }, [sqlByTab]);
+
+  /*
    * Dispose the models of tabs that are gone.
    *
    * Keyed on the tab list rather than hooked to the close button, so that
@@ -282,7 +325,8 @@ export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
   // the event here -- this covers the rest of the window.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      const chord = e.ctrlKey || e.metaKey;
+      if (chord && e.key === 'Enter') {
         e.preventDefault();
         // A grid tab has no query to run. This pane is still mounted underneath
         // it -- there is one Monaco and every tab's model hangs off it -- so the
@@ -290,10 +334,18 @@ export default function EditorPane({ onRun, running, onToggleSidebar }: Props) {
         if (!isEditorTab) return;
         onRun(sql);
       }
+      // Prevented whichever tab is in front, unlike Run: a grid tab has nothing
+      // to save, but letting the key through there would still hand the webview
+      // its own "save this page" dialog.
+      if (chord && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        if (!isEditorTab) return;
+        onSaveQuery?.();
+      }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [sql, onRun, isEditorTab]);
+  }, [sql, onRun, onSaveQuery, isEditorTab]);
 
   return (
     <>

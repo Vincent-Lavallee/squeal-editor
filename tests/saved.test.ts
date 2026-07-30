@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { MIGRATIONS } from '../extensions/db/migrations/index.ts';
-import type { SavedConnection, Workspace } from '../shared/protocol/index.ts';
+import type { SavedConnection, SavedQuery, Workspace } from '../shared/protocol/index.ts';
 import { FIXTURE_DB, PG, SQLITE, SQLITE_FILE } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 
@@ -709,6 +709,102 @@ describe('starred tables', () => {
   });
 });
 
+describe('saved queries', () => {
+  const queries = async (): Promise<SavedQuery[]> =>
+    ((await h.ok('queries.list', {})) as { queries: SavedQuery[] }).queries;
+
+  const keep = async (data: Record<string, unknown>): Promise<SavedQuery> =>
+    ((await h.ok('queries.save', data)) as { query: SavedQuery }).query;
+
+  test('one is saved, listed and deleted', async () => {
+    const saved = await keep({ name: 'daily revenue', sql: 'SELECT 1' });
+    expect(saved.id).toBeTruthy();
+    expect(await queries()).toContainEqual(saved);
+
+    await h.ok('queries.delete', { id: saved.id });
+    expect((await queries()).map((q) => q.id)).not.toContain(saved.id);
+  });
+
+  test('saving with an id replaces that query rather than adding a second', async () => {
+    // This is the whole of what makes Ctrl+S mean *save* rather than *save
+    // another copy*: a tab carries the id it was opened from and writes back
+    // through it.
+    const saved = await keep({ name: 'reused', sql: 'SELECT 1' });
+    const again = await keep({ id: saved.id, name: 'reused', sql: 'SELECT 2' });
+
+    expect(again.id).toBe(saved.id);
+    expect((await queries()).filter((q) => q.name === 'reused')).toEqual([{ id: saved.id, name: 'reused', sql: 'SELECT 2' }]);
+
+    await h.ok('queries.delete', { id: saved.id });
+  });
+
+  test('renaming through the same id moves it in the list without duplicating it', async () => {
+    const saved = await keep({ name: 'zulu', sql: 'SELECT 1' });
+    const renamed = await keep({ id: saved.id, name: 'alpha', sql: 'SELECT 1' });
+
+    expect(renamed.name).toBe('alpha');
+    expect((await queries()).map((q) => q.name)).not.toContain('zulu');
+
+    await h.ok('queries.delete', { id: saved.id });
+  });
+
+  test('a name another query already holds is refused, in words', async () => {
+    // Checked rather than left to the UNIQUE constraint: a raw SQLite error
+    // names a column and tells the user nothing about what to type instead.
+    const saved = await keep({ name: 'taken', sql: 'SELECT 1' });
+    const res = await h.dispatch('queries.save', { name: 'taken', sql: 'SELECT 2' });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/already exists/i);
+
+    await h.ok('queries.delete', { id: saved.id });
+  });
+
+  test('a query keeps its own name when it is saved over itself', async () => {
+    // The clash check must exclude the row being written, or saving a query
+    // twice would refuse the second one for colliding with itself.
+    const saved = await keep({ name: 'self', sql: 'SELECT 1' });
+    await h.ok('queries.save', { id: saved.id, name: 'self', sql: 'SELECT 2' });
+    await h.ok('queries.delete', { id: saved.id });
+  });
+
+  test('an id that no longer names a query is refused, not re-created under it', async () => {
+    // A tab can outlive the query it was opened from. Saving it must not
+    // resurrect the row someone deleted on purpose.
+    const saved = await keep({ name: 'gone', sql: 'SELECT 1' });
+    await h.ok('queries.delete', { id: saved.id });
+
+    const res = await h.dispatch('queries.save', { id: saved.id, name: 'gone', sql: 'SELECT 2' });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/no longer exists/i);
+  });
+
+  test('they are listed by name, not by insertion order', async () => {
+    const c = await keep({ name: 'order-c', sql: 'SELECT 3' });
+    const a = await keep({ name: 'order-a', sql: 'SELECT 1' });
+    const b = await keep({ name: 'order-b', sql: 'SELECT 2' });
+
+    const names = (await queries()).map((q) => q.name).filter((name) => name.startsWith('order-'));
+    expect(names).toEqual(['order-a', 'order-b', 'order-c']);
+
+    for (const query of [a, b, c]) await h.ok('queries.delete', { id: query.id });
+  });
+
+  test('they name no connection, and survive a new extension process', async () => {
+    // The one stored thing in here that hangs off nothing: deleting every
+    // connection cannot take a query with it, because no query ever named one.
+    const saved = await keep({ name: 'survivor', sql: 'SELECT 1' });
+    const connection = await save({ name: 'queries-unrelated', config: PG_SERVER, password: { mode: 'none' } });
+    await h.ok('db.saved.delete', { id: connection.id });
+
+    await h.stop();
+    h = await startHarness(ENV);
+
+    expect(await queries()).toContainEqual(saved);
+    await h.ok('queries.delete', { id: saved.id });
+  });
+});
+
 describe('saved sessions', () => {
   // The store keeps the snapshot verbatim and never parses it -- the UI owns the
   // shape -- so the tests treat it as the opaque string it is.
@@ -938,6 +1034,7 @@ const stamps = (): Stamp[] => {
 
 /** What each migration would have to undo, for the rewind below. Newest first. */
 const UNDO: Record<string, string[]> = {
+  'saved-queries': ['DROP TABLE saved_queries'],
   // The inverse of a rebuild is the same rebuild with the constraint put back.
   // It is far shorter than the migration it undoes for one reason: `rewindTo`
   // runs with `PRAGMA foreign_keys = OFF`, so dropping the parent cascades into
@@ -1112,6 +1209,7 @@ describe('migrating a store written before workspaces', () => {
       db.run('DROP TABLE stars');
       db.run('DROP TABLE connection_sessions');
       db.run('DROP TABLE environments');
+      db.run('DROP TABLE saved_queries');
       db.run('DROP TABLE schema_migrations');
     })();
     const legacyNames = (db.query('SELECT name FROM saved_connections').all() as { name: string }[]).map((r) => r.name);
@@ -1424,6 +1522,76 @@ describe('migrating a store written before connection names could repeat', () =>
     // constraint back: a pair of rows this migration made legal is exactly what
     // a store rewound past it can no longer hold.
     await h.ok('db.saved.delete', { id: twin.id });
+  });
+
+  test('a colour column that is nullable on disk still rebuilds', async () => {
+    /*
+     * Found on a real store, and it halted the whole sequence.
+     *
+     * `connection-colour` declares `NOT NULL DEFAULT 'slate'`, but stores exist
+     * whose column is a bare nullable `TEXT` holding NULLs. Copying it straight
+     * across inserts an explicit NULL, which **bypasses the default** rather than
+     * falling back to it, and fails the rebuilt table's NOT NULL -- taking this
+     * migration and every migration after it down, on every launch, forever. The
+     * symptom is never about colour: it is whatever the next migration was going
+     * to add, missing.
+     *
+     * The shape is rebuilt by hand because no rewind can reach it: dropping the
+     * column and re-adding it is what puts the default back.
+     */
+    const ws = (await workspaces())[0]!.id;
+    await save({ workspaceId: ws, name: 'colourless-one', config: PG_SERVER, password: { mode: 'none' } });
+    await save({ workspaceId: ws, name: 'colourless-two', config: PG_SERVER, password: { mode: 'none' } });
+
+    await h.stop();
+    rewindTo('connection-colour');
+
+    const db = new Database(DB_FILE);
+    db.run('PRAGMA foreign_keys = OFF');
+    db.transaction(() => {
+      db.run('ALTER TABLE saved_connections RENAME TO saved_connections_typed');
+      db.run(`CREATE TABLE saved_connections (
+        id               TEXT PRIMARY KEY,
+        workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        engine           TEXT NOT NULL,
+        host             TEXT NOT NULL,
+        port             INTEGER NOT NULL,
+        username         TEXT NOT NULL,
+        default_database TEXT,
+        environment      TEXT NOT NULL,
+        password         BLOB,
+        ssl              INTEGER NOT NULL DEFAULT 0,
+        read_only        INTEGER NOT NULL DEFAULT 0,
+        aws_profile      TEXT,
+        aws_region       TEXT,
+        color            TEXT,
+        UNIQUE (workspace_id, name)
+      )`);
+      db.run('INSERT INTO saved_connections SELECT * FROM saved_connections_typed');
+      db.run('DROP TABLE saved_connections_typed');
+      // The state the declared schema says cannot exist, which is the whole point.
+      db.run("UPDATE saved_connections SET color = NULL WHERE name LIKE 'colourless%'");
+    })();
+    const nulls = (db.query('SELECT COUNT(*) AS n FROM saved_connections WHERE color IS NULL').get() as { n: number }).n;
+    db.close();
+
+    h = await startHarness(ENV);
+
+    // The tables the migrations *after* the rebuild create are actually there,
+    // which is the symptom this defect presents as. It doubles as the command
+    // that opens the store -- stamps are read after one, never straight after a
+    // restart, or nothing has migrated yet and the table is not there to read.
+    await h.ok('queries.list', {});
+
+    // The migration ran at all, which is the defect itself: a throw here stops
+    // the sequence and nothing above it is ever applied, on every launch.
+    expect(stamps().map((s) => s.version)).toEqual(ALL_VERSIONS);
+
+    // The nulls became the neutral swatch rather than being dropped or refused.
+    const colours = (await list()).filter((c) => c.name.startsWith('colourless'));
+    expect(colours.length).toBe(nulls);
+    expect(colours.every((c) => c.color === 'slate')).toBe(true);
   });
 });
 

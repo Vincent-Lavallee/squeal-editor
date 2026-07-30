@@ -6,8 +6,9 @@
  * on the other.
  *
  * Split by domain -- `config` (reaching a server and filing it), `results` (what
- * comes back and what is written back), `updater`, `commands` (the verbs) and
- * `events` (the channel) -- but imported as one contract. Both sides import from
+ * comes back and what is written back), `queries` (statements the user kept),
+ * `updater`, `commands` (the verbs) and `events` (the channel) -- but imported as
+ * one contract. Both sides import from
  * here rather than from a domain file, so which domain a type lives in is a fact
  * about reading this directory and never about the fifty places that use it: a
  * type moving between the files below is not a change anywhere else.
@@ -51,6 +52,8 @@ export type {
   TablePage,
   TriggerInfo,
 } from './results.ts';
+
+export type { SavedQuery } from './queries.ts';
 
 export type { UpdateProgress, UpdateStatus } from './updater.ts';
 

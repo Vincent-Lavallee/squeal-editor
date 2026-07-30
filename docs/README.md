@@ -19,6 +19,7 @@ reading the others first, except `architecture.md`, which is the map.
 | touching what happens when a connection drops, or a driver's client lifecycle | `extension.md` + `decisions.md` |
 | touching React components, state, or the UI's data flow | `frontend.md` |
 | touching the editor, its completion, or what it knows about the schema | `frontend.md` + `extension.md` |
+| touching saved queries, or anything a tab remembers about where its text came from | `frontend.md` + `extension.md` |
 | touching the titlebar, window controls, dragging, resizing or the frame's colour | `frontend.md` + `decisions.md` |
 | writing any markup or CSS, adding a component, picking a colour or an icon | `design-system.md` |
 | redrawing the app icon | `design-system.md` + `architecture.md` |
@@ -46,7 +47,7 @@ reading the others first, except `architecture.md`, which is the map.
 ## Conventions
 
 - `shared/protocol/` is the contract between the UI and the extension. Change
-  it and both sides must agree — that is the point of it existing. It is five
+  it and both sides must agree — that is the point of it existing. It is six
   domain files behind one barrel: **import `protocol/index.ts`, never a domain
   file directly**, so a type can move between them without touching its callers.
 - Comments explain *why*, never *what*. If a line looks arbitrary, it needs a

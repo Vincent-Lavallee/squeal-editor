@@ -54,7 +54,15 @@ discovers every `*.test.ts` — the script name cannot override it. The UI suite
 would therefore try to launch a window on a bare `bun test`, so it opts out
 behind `SQUEAL_UI=1` (set by `test:ui`, along with a longer timeout, because
 launching the app blows past Bun's 5s default hook timeout). Expect
-`235 pass / 110 skip` from a bare run, and `81 pass` in ~185s from `test:ui`.
+`338 pass / 141 skip` from a bare run, and `115 pass` in ~300s from `test:ui`.
+
+**`test:ui` builds the extension too, and driving the app by hand must as well.**
+`build:ext` compiles `extensions/db/squeal-db-ext.exe`, which is what
+`neutralino.config.json` actually spawns — the source tree is only what `bun test`
+runs. A frontend-only `bun run build` therefore launches a new UI against the
+*old* extension, and a command added on this side comes back as a failure inside
+whatever UI action called it, naming nothing about a stale binary. `bun start`
+and `test:ui` both build both; a hand-rolled `neu run` is the case to watch.
 
 **A stray app from a previous run used to fail the whole suite, and now cannot.**
 The debug port is a fixed 9333 and the harness finds its window by *title*, so an
@@ -202,6 +210,13 @@ Three of these tests are the ones that matter:
   — mean anything; a hand-written blob could only ever prove the row moved. These
   are the tests standing between a schema change and someone's real connections.
 
+**A new table costs three lines here, and one of them is easy to miss.** A
+migration needs its inverse in `UNDO` (which throws by name rather than skipping,
+so that one announces itself) *and* a `DROP` in the hand-built legacy store the
+*before workspaces* test assembles — that one enumerates every table added since,
+because a file claiming to predate them must not be holding one. Miss the second
+and an unrelated migration test fails with `table X already exists`.
+
 ### Downgrading, now that the store records its version
 
 `rewindTo('migration-name')` is how those tests make a file look like an older
@@ -267,6 +282,13 @@ Two things to know:
   `setSelect` and surfaces as `Illegal invocation`) and Monaco's tokenizing,
   which passed or failed according to *how many tests ran before it*. Convert the
   next one that bites rather than all of them at once.
+- **React ignores a synthetic `mouseenter`/`mouseleave`.** It synthesises
+  `onMouseEnter` from the delegated `mouseover`/`mouseout` pair at the root, so a
+  dispatched `mouseenter` reaches the DOM and no handler at all — which reads as
+  the hover behaviour being broken rather than as the event being the wrong one.
+  Dispatch `mouseover` and `mouseout` (with a `relatedTarget` outside the
+  element) instead. The tab strip's unsaved dot, which swaps for the close button
+  on hover, is the test that found this.
 - **React ignores `el.value = x`.** Use the `REACT_SETTERS` helper, which goes
   through the native setter and dispatches a bubbling `input` event. It is for
   the connect form; the editor is not an input at all (below).

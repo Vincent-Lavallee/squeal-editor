@@ -61,6 +61,7 @@ import { migration as connectionColour } from './1784997750-connection-colour.ts
 import { migration as dropWorkspaceColour } from './1784997850-drop-workspace-colour.ts';
 import { migration as environments } from './1785067675-environments.ts';
 import { migration as connectionNamesNotUnique } from './1785360179-connection-names-not-unique.ts';
+import { migration as savedQueries } from './1785428731-saved-queries.ts';
 
 /** Oldest first. Append only. */
 export const MIGRATIONS: Migration[] = [
@@ -78,6 +79,7 @@ export const MIGRATIONS: Migration[] = [
   dropWorkspaceColour,
   environments,
   connectionNamesNotUnique,
+  savedQueries,
 ];
 
 /*

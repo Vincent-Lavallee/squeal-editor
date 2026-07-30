@@ -107,8 +107,6 @@ Things that do not exist yet.
 
 - **Preferences menu** — Add a Preferences menu next to About in the title bar with two items: Settings (a shell screen with placeholders that Light theme and French/English UI populate later) and Keyboard shortcuts (a visual editor for remapping keys).
 
-- **Saved queries** — Save the current editor content as a named query with Ctrl+S, then reopen any saved query into a new tab from a button at the right of the tab bar. Queries are global, not scoped to any connection.
-
 - **Split the editor** — Working two queries means constantly switching tabs and
   losing your place, whether comparing two results, referencing one query while
   writing another, or copying between them. Let a tab be dragged to the side to
