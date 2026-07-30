@@ -15,6 +15,10 @@
   --hover: #ffffff0a;
   --selected: #0eb39e24;
   --scrim: #00000099;
+  --veil: #111113b3;
+  --veil-edge: #ffffff1f;
+  --veil-sheen: #ffffff14;
+  --veil-deep: #111113f2;
   --text: #edeef0;
   --text-muted: #b0b4ba;
   --text-faint: #696e77;
@@ -135,9 +139,20 @@ input::placeholder { color: var(--text-faint); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* The colour picker takes its row over rather than floating a panel above it,
+   so it has to read as *arriving* — dropped in without a beat, the row looks
+   like it was re-rendered by something else. */
+@keyframes swatch-row-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.conn-colors { animation: swatch-row-in 0.12s ease-out; }
+
 /* ---- :has() rules (no inline equivalent) ---- */
+/* A radio drawn as a tile hides the input, so the focus ring has to be moved
+   onto the tile — the global :focus-visible rule lands on something 0px wide. */
 .ws-icons__pick:has(input:focus-visible),
-.ws-colors__pick:has(input:focus-visible) {
+.conn-colors__pick:has(input:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }

@@ -65,8 +65,8 @@ export function dataDir(): string {
  * that drifts from the first the moment either is edited alone.
  *
  * Two shapes the rest of this file leans on, both made there: a connection's
- * name is unique *per workspace* rather than globally, and its `workspace_id`
- * references `workspaces` ON DELETE CASCADE.
+ * name is not unique at all -- it is a label, and `id` is the key -- and its
+ * `workspace_id` references `workspaces` ON DELETE CASCADE.
  */
 
 /** What a store with no workspaces yet gets, so the feature can be ignored. */
@@ -415,13 +415,11 @@ export async function saveConnection({
   const workspace = open().query('SELECT id FROM workspaces WHERE id = ?').get(workspaceId) as { id: string } | null;
   if (!workspace) throw new Error('That workspace no longer exists.');
 
-  // Checked rather than left to the UNIQUE constraint: a raw SQLite error names
-  // the column, which tells the user nothing about what to do. Scoped to the
-  // workspace, because that is what the constraint is scoped to.
-  const clash = open()
-    .query('SELECT id FROM saved_connections WHERE workspace_id = ? AND name = ? COLLATE NOCASE AND id IS NOT ?')
-    .get(workspaceId, trimmed, id ?? null) as { id: string } | null;
-  if (clash) throw new Error(`A connection named "${trimmed}" already exists in this workspace.`);
+  // Nothing checks the name against its neighbours. A connection's name is a
+  // label rather than a key -- two rows may honestly be the same server twice,
+  // a reader and a writer -- and `connection-names-not-unique` removed the
+  // constraint that used to say otherwise. A workspace's name is still unique;
+  // that one *is* how the picker addresses it.
 
   const row: Row = {
     id: id ?? randomUUID(),

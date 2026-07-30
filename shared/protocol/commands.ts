@@ -7,6 +7,7 @@
  */
 
 import type {
+  AwsCredentialStatus,
   ConnectionColorId,
   ConnectionConfig,
   Environment,
@@ -478,6 +479,52 @@ export interface Commands {
   /** Write one setting, inserting or replacing it. */
   'settings.set': {
     req: { key: string; value: string };
+    res: { ok: true };
+  };
+
+  /* -- AWS. Only ever the credentials behind an IAM connection. ----------- */
+
+  /**
+   * Can this profile mint credentials right now?
+   *
+   * Asked before an IAM connection is opened, so that a lapsed SSO session is a
+   * step the UI can put in front of the user rather than a failure it has to
+   * explain afterwards. It is the same resolution the connect would do first,
+   * stopped before any database socket is opened.
+   *
+   * **It never rejects.** "Not signed in" is an answer, and one the caller acts
+   * on differently from an error — the same shape as `window.matchFrame`'s
+   * `applied: false`. `signInHelps` says whether *Sign in to AWS* would fix this
+   * one: a missing profile or a malformed config is not something a login
+   * repairs, and offering a button that cannot work is worse than none.
+   */
+  'aws.credentialStatus': {
+    req: { profile: string };
+    res: AwsCredentialStatus;
+  };
+
+  /**
+   * Refresh the AWS SSO session a `profile` mints its RDS tokens from, by
+   * running the user's own `aws sso login --profile <profile>`.
+   *
+   * It shells out rather than implementing the OIDC device flow here, and that
+   * is the point: the CLI already owns the token cache this app reads through
+   * `fromIni`, including where it lives, how it is named and what a refresh
+   * writes into it. A second implementation would have to agree with all of
+   * that forever, and would be wrong the first time AWS changed any of it.
+   *
+   * The browser leg is the user's own browser, opened by the CLI. Nothing about
+   * the login is rendered inside the app: an identity provider's page framed by
+   * the app that wants the credentials is indistinguishable from a phishing
+   * page, and most IdPs refuse to be framed at all.
+   *
+   * This resolves only once the CLI has exited cleanly, which is *after* the
+   * browser round trip -- so it is slow by nature, not by fault. A non-zero exit
+   * rejects with the CLI's own stderr, and a missing CLI rejects saying so
+   * rather than as a generic spawn failure.
+   */
+  'aws.ssoLogin': {
+    req: { profile: string };
     res: { ok: true };
   };
 

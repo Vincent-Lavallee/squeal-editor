@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 
 import {
+  AWS_SSO_PROMPT_EVENT,
   CONNECT_PROGRESS_EVENT,
   CONNECTION_STATE_EVENT,
   DB_RESPONSE_EVENT,
@@ -26,6 +27,7 @@ import {
   type SqlDialect,
 } from '../../shared/protocol/index.ts';
 import { fitMaximizedToWorkArea, matchWindowFrame } from './chrome.ts';
+import { credentialStatus, ssoLogin } from './iam.ts';
 import { applyUpdate, checkForUpdate, downloadUpdate } from './updater.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';
 import { log } from './log.ts';
@@ -303,6 +305,19 @@ const COMMANDS: Handlers = {
 
   async 'db.environments.remove'({ id }) {
     deleteEnvironment(id);
+    return { ok: true };
+  },
+
+  /* -- AWS credentials (iam.ts explains why the CLI does this) ---------- */
+
+  async 'aws.credentialStatus'({ profile }) {
+    return credentialStatus(profile);
+  },
+
+  async 'aws.ssoLogin'({ profile }) {
+    // Broadcast rather than returned: the URL and the code are what the user has
+    // to act on, and they arrive while this is still waiting for them to.
+    await ssoLogin(profile, (prompt) => send(AWS_SSO_PROMPT_EVENT, prompt));
     return { ok: true };
   },
 

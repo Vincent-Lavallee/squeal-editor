@@ -793,10 +793,43 @@ Four things are load-bearing:
   the OS trust store — only IAM, whose target is known to be RDS, gets the bundle.
   See `docs/decisions.md`.
 - **An expired SSO session is rewritten, not passed through.** `mapAwsError` turns
-  the SDK's credentials failure into a message naming `aws sso login --profile X`,
-  so a lapsed session reads as "log in again" rather than as the database
-  rejecting the connection. Because the first client opens eagerly, it lands as a
-  failed *Connect*. Detection is best-effort on the SDK's error name and text.
+  the SDK's credentials failure into a message naming both the connect form's
+  *Sign in to AWS* button and `aws sso login --profile X`, so a lapsed session
+  reads as "log in again" rather than as the database rejecting the connection.
+  Because the first client opens eagerly, it lands as a failed *Connect*.
+  Detection is best-effort on the SDK's error name and text.
+- **`aws.credentialStatus` answers the question before the connect asks it.**
+  `credentialStatus` resolves the profile through the same `fromIni` the token
+  mint uses and stops there — no database socket, so a "no" costs a beat and
+  reveals nothing. It **resolves rather than rejecting**, because not being
+  signed in is an answer and not a failure of the asking; a rejection would be
+  indistinguishable at the call site from the connect failure it exists to
+  pre-empt. `signInHelps` is the only field the UI acts on rather than prints,
+  and it is false for exactly one kind — a profile that is not in the config,
+  which no login creates. `awsFailureKind` is that classification, split out of
+  `mapAwsError` because two callers need the answer and not the sentence.
+- **`aws.ssoLogin` runs the user's own AWS CLI**, so the fix for that message is
+  a button rather than a terminal. `ssoLogin` (in `iam.ts`) spawns
+  `aws sso login --profile <profile>`, which writes the SSO token cache — the
+  same cache `fromIni` above then reads. It shells out rather than implementing
+  the OIDC device flow here precisely because that cache is the CLI's: a second
+  writer of it would have to keep agreeing with the first forever. A missing CLI
+  is reported as a missing CLI; anything else is the CLI's own last few lines of
+  output. A 5-minute ceiling kills a login nobody is going to finish, and killing
+  one writes nothing. See `docs/decisions.md`.
+- **Its stdout is read line by line while it runs, not collected until it exits.**
+  The CLI performs *device authorization*: it prints a verification URL and a
+  user code, tries to open a browser, and polls until someone approves them. Those
+  two lines are the entire interaction and the only recourse when the browser does
+  not open — so they are broadcast as they arrive (`AWS_SSO_PROMPT_EVENT`) rather
+  than sitting in a pipe until the command is over, which is exactly when they
+  stop being useful. `readPrompts` reports the URL as soon as it has it and again
+  once the code follows a line or two later.
+- **The last line has no newline while the CLI waits.** The code is the final
+  thing printed and its newline only arrives when the login completes, so a reader
+  that only handles terminated lines never sees it. `readPrompts` therefore
+  flushes whatever is left when the stream ends *and* buffers partial lines across
+  chunk boundaries — `iam.test.ts` pins both, down to one byte per chunk.
 - **Nothing secret is stored.** The store keeps `aws_profile` and `aws_region`
   (see below), never a token — `resolveSaved` returns an empty password for an
   IAM row and lets `getClient` mint the token. `hasPassword` is false for an IAM
@@ -826,10 +859,13 @@ The rules that hold the grouping together:
   store with none has nowhere to put a connection. `ensureDefaultWorkspace`
   creates `Default` when the table is empty, and `deleteWorkspace` refuses the
   last one rather than letting the app reach that state and recover from it.
-- **A connection's name is unique per workspace**, not globally — `UNIQUE
-  (workspace_id, name)`. That is the whole point of grouping: a project has the
-  same servers again in each environment, so `api` in Dev and `api` in
-  Production must be able to coexist.
+- **A connection's name is not unique anywhere**, and nothing checks it. It is a
+  label; `id` is the key. Two rows in one workspace may honestly be the same
+  server twice — a reader and a writer, a replica and its primary — and the UI
+  tells them apart by colour and by the server each one names. A *workspace's*
+  name is still unique, because that one is how the picker addresses it. See
+  `docs/decisions.md`, and `connection-names-not-unique` for what dropping the
+  constraint cost.
 - **Deleting a workspace deletes its connections, explicitly.** `deleteWorkspace`
   deletes the rows itself inside a transaction rather than leaning on the
   CASCADE, because taking someone's stored passwords with a workspace is the

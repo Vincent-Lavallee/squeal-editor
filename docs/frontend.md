@@ -25,6 +25,7 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
   environmentsSlice.ts  the environment picklist + useEnvironments()
   savedSlice.ts         the stored connection list
   connectionTestSlice.ts  what the connect form reached, without keeping it + useConnectionTest()
+  awsSignInSlice.ts     what each AWS profile can currently do, and the sign-in that fixes it + useAwsSignIn()
   explorerSlice.ts      the catalog: databases, their tables, their columns
   resultsSlice.ts       the result grid, keyed by tab
   updaterSlice.ts       the release check, download progress + useUpdater()
@@ -32,6 +33,7 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
 src/features/
   connections/          ConnectScreen, ConnectionForm, SavedConnectionList,
                         WorkspacePicker, WorkspaceForm, PasswordPrompt,
+                        AwsSignIn (AwsSignInButton + AwsSignInStatus),
                         useSavedConnections, useWorkspaces
   titlebar/             Titlebar, Menu, AboutDialog, EnvironmentsDialog, useAbout, useWindowChrome
   rail/                 ConnectionRail: the open connections, and the way between
@@ -72,6 +74,7 @@ that lives apart from its values is two sources for one fact.
 | | Where | Why |
 |---|---|---|
 | open connections: id, `savedConnectionId`, config, `dialect`, `name`, `workspaceId`, `color`, `environment`, `readOnly`, `lostReason` | `session` slice | crossed |
+| `connectingPhase`, and `awsCredentialsFailed` derived from it at rejection | `session` slice | crossed |
 | `order`, `activeConnectionId` | `session` slice | never left, but see above |
 | a tab's `connectionId`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
 | `database`, per connection | `tabs` slice | crossed |
@@ -82,6 +85,7 @@ that lives apart from its values is two sources for one fact.
 | the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Apply |
 | saved connections | `saved` slice | crossed |
 | the version a *Test* reached, and why one failed | `connectionTest` slice | crossed |
+| which AWS profile was signed in, why one failed, the CLI's `prompt`, and what each AWS profile can currently do | `awsSignIn` slice | crossed |
 | workspaces | `workspaces` slice | crossed |
 | environments (the picklist, not any connection's own) | `environments` slice | crossed |
 | the release check, download `progress`, banner `dismissed` | `updater` slice | crossed |
@@ -91,6 +95,7 @@ that lives apart from its values is two sources for one fact.
 | `maximized`, the open menu | `titlebar` local state | never left |
 | which tree rows are expanded, which schema groups are collapsed, and the tree's filter text | `Sidebar` local state | never left |
 | the sidebar's width and the results panel's height | `Shell` local state | never left |
+| whether the colour picker is expanded, and whether a submit has already looked for missing fields | `ConnectionForm` local state | never left |
 | whether a `<Select>` is open, and its search text | `Select` local state | never left |
 
 `adding` is the test pointing at "nowhere" rather than at a slice. It is a
@@ -752,19 +757,100 @@ under its own heading afterward, sorted alphabetically, rather than dropping it
 from view; see `docs/decisions.md` for why display shows exactly what is stored,
 with no capitalising or abbreviating layered back on top of arbitrary text.
 
-**A connection's name is required** — the form disables *Connect* until one is
-typed, and `submitNew` saves the row before it connects. There is no unnamed,
-workspace-less throwaway connection any more: every open connection is a saved,
-named member of a workspace, which is what lets the rail group every one of them
-under its workspace. `session.connect` therefore carries the `workspaceId` it was
-launched from, the same UI-side fact as the `name`, `environment` and `color` it
-already threaded — `db.connect` never hears any of the four.
+**The line under the title names the screen, not the app.** `screenSubtitle` is a
+switch over the same resolved `Screen` the body renders, so the card's one
+sentence of prose changes as you move between the picker, a list and a form. It
+replaced a fixed tagline, which said the same thing on every screen and was
+therefore read once, on the first launch, and never again.
 
-**Every connection has a colour; a workspace has none.** The form's picker sits
-beside the environment select: the same nine swatches `WorkspaceForm`'s icon
-picker shape offers, defaulting new to the neutral `slate`. `flexWrap: 'nowrap'`
-and a tightened gap keep all nine on one row at the card's fixed width. See
-`docs/decisions.md`.
+**A connection's name is required, and `submitNew` saves the row before it
+connects.** There is no unnamed, workspace-less throwaway connection any more:
+every open connection is a saved, named member of a workspace, which is what lets
+the rail group every one of them under its workspace. `session.connect` therefore
+carries the `workspaceId` it was launched from, the same UI-side fact as the
+`name`, `environment` and `color` it already threaded — `db.connect` never hears
+any of the four. **Required is not the same as unique**: the store stopped
+enforcing uniqueness (see `docs/extension.md`), so two connections in one
+workspace may share a name and are told apart by their colour and their server.
+
+### The order the form asks in
+
+Engine, then name, then environment and colour, then the server, then
+authentication, then the options. That is a narrative — *what kind of thing, what
+you call it, where it is, who you are, how it opens* — and each step is only
+answerable once the one before it is.
+
+**Engine is first because it decides which fields exist at all.** A file engine
+has no host, no port and no authentication; asked last, every answer above it was
+given without knowing that, and switching then blanks half of them. The three
+`Section` headings (*Server*, *Authentication*, *Options*) are the same argument
+made visible: the method select and the fields it swaps are one question, so they
+sit under one heading and nothing outside it moves when the method changes.
+
+**Read-only and SSL share the Options row**, because both answer "how should it
+open" rather than "where is it" — and a file engine, which has no SSL, simply
+leaves read-only alone in the row.
+
+### Saying what is missing
+
+*Connect* is never disabled for an incomplete form. Submitting computes
+`missingFields` — a **list**, in the order the fields are drawn — and if it is
+non-empty the form marks each entry, focuses the first, and does not submit. A
+disabled button states that something is wrong and nothing about what, and the
+user is left comparing the form against itself to find it.
+
+Four things there are load-bearing:
+
+- **Nothing is marked until a submit has actually looked.** `submitted` is the
+  gate; without it the form reddens fields you have not reached yet, which is
+  scolding someone for not typing fast enough.
+- **The mark clears per field, with no second submit.** `missing` is derived on
+  every render, so a field that stops being empty stops being marked — and one
+  that is emptied again is marked again, because `submitted` stays set.
+- **`noValidate` on the `<form>`.** The browser's own validation bubble *is* the
+  "you may not submit this" being replaced, and it fires before the handler. The
+  `required` attributes came off the inputs for the same reason.
+- **Only the exceptions carry a label.** Nearly everything here is required, so
+  `(optional)` is the hint worth the space and `(required)` is not; the same slot
+  carries `required` in red once a submit has found the field empty, which is
+  what keeps the row from changing height when it does.
+
+### Stopping an attempt started from the form
+
+`ConnectScreen` has one abort — the elapsed line and *Cancel* under everything it
+renders — and on the connect form that is under a form tall enough to put it
+below the fold. So the form takes the job over: while `onAbortConnect` is set,
+the actions row becomes `[Cancel] [Connecting for 3.4s…]`, and `ConnectScreen`
+suppresses its own block for the `new` screen only. Every other screen here is
+short, so for them it is still the one place an attempt is called off from.
+
+Two things there are load-bearing:
+
+- **The row is scrolled into view when the attempt starts.** Pressing *Connect*
+  leaves the row under the cursor already and `block: 'nearest'` is a no-op — but
+  submitting with Enter from a field near the top does not, and the abort would
+  be off screen at the exact moment it is the only control that matters.
+- **`submitNew` remembers the row it saved** (`draftRowId`), so a second attempt
+  edits it instead of adding another. The save lands before the connect and
+  cannot be taken back, so a cancelled attempt leaves a real row behind — and
+  pressing *Connect* again used to be caught by the store's duplicate-name check,
+  which is no longer there. Without this, the fix-a-field-and-retry loop quietly
+  fills the workspace with copies. `go(...)` clears it, because leaving the form
+  ends the draft.
+
+**One case never reaches any of this**, and it is the first connection in an
+empty workspace: saving its row makes `saved.connections` non-empty, which
+re-derives the un-pinned screen from `new` to `list` mid-connect. The form is
+gone by the time the connect is in flight, and `ConnectScreen`'s own abort —
+under a short list — is the one that shows.
+
+**Every connection has a colour; a workspace has none.** The picker shares a row
+with the environment select — the same fact about *which connection this is*,
+rather than how to reach it. At rest it is one tile showing the current hue;
+clicking it expands the nine swatches across that same row, and picking one
+collapses it back. Deliberately **not** a floating panel: it is one 32px row
+either way, so nothing below it moves, and there is no layer to dismiss. See
+`docs/decisions.md` and the *colour picker* recipe in `design-system.md`.
 
 `ConnectionForm` chooses an authentication method: a password, or an RDS IAM
 token minted from an AWS profile. Choosing IAM swaps the password field for a
@@ -776,6 +862,112 @@ so unlike the password they edit back in place. IAM is a variation on the
 invisible until it bites:** an IAM connection is `hasPassword: false` like one
 that just did not save a password, so `pick` must check `config.iam` before
 routing to the password prompt — there is nothing to prompt for.
+
+**IAM also gets a *Sign in to AWS* button**, beside the profile and region, which
+dispatches `aws.ssoLogin` — the extension running the user's own
+`aws sso login --profile X` (see `docs/extension.md`). The answer lives in
+`awsSignInSlice`, a sibling of `connectionTestSlice` rather than a field on it:
+both crossed the bridge, but a test describes the whole form and is withdrawn by
+any edit, while a sign-in describes one profile and survives everything except
+that profile being retyped — which is why the two have separate clearing effects
+in `ConnectionForm`, one keyed on `form` and one on `form.awsProfile`. It holds
+the profile rather than a boolean, so the success message cannot vouch for a
+profile the field no longer names.
+
+### A connection you cannot open yet is veiled, not left to fail
+
+**Whether an IAM connection can be opened is a fact about the row, so it is
+established before anyone reaches for it.** `SavedConnectionList` asks
+`aws.credentialStatus` for every distinct IAM profile it draws, as it draws
+them — not on the click. A profile that cannot mint credentials dims its
+rows, disables their `saved-pick`, and reveals a glass pane on hover carrying
+*Sign in to AWS* — see the *veiled row* recipe in `design-system.md` for what the
+pane is made of and why it is not a blur. Signing in clears the row and connects
+it.
+
+Five things there are load-bearing:
+
+- **The check is keyed by profile, not by connection.** A workspace commonly
+  holds several IAM connections that share one profile, and the answer belongs to
+  the profile — so one check lights or clears every row that names it.
+- **The component asks on every render pass that could have changed the set, and
+  `checkAwsCredentials`'s own `condition` is what makes that free.** The same
+  arrangement `loadColumns` has with the completion provider, and for the same
+  reason: a component should say what it needs, not keep a private record of what
+  it has already asked for.
+- **Unknown is not blocked.** A profile still being checked, or one nothing has
+  answered for, leaves the row exactly as it was. Gating on "we have not asked
+  yet" would grey out every IAM connection for the first beat after the list
+  appears, which reads as broken rather than as careful.
+- **The veil covers the pick target and nothing else**, so a row you cannot open
+  is still one you can edit or delete — editing the profile name being one of the
+  two ways out of the state.
+- **The pane reveals on hover *and* focus**, the same amendment the row's own
+  Edit and Delete needed: `SavedConnectionList` tracks `focusedId` off the row's
+  `onFocus`/`onBlur`, because a pane that only answered to the pointer would be
+  the one control on a blocked row a keyboard could never reach.
+- **A successful sign-in forgets the profile rather than assuming it good.** The
+  CLI exiting zero means it wrote the token cache, not that `fromIni` will now
+  resolve against it; the entry is deleted and the effect asks again, which is
+  the same question that gated the row.
+
+**`pick` therefore does no checking at all.** By the time it runs the answer is
+already known to be yes, and re-asking would put a beat of nothing in front of
+every IAM connect to re-learn what the row already shows.
+
+**It is a reduction, not a guarantee, so the after-the-fact offer stays.**
+Credentials valid when the list was drawn can lapse before the token is minted,
+and the check itself can fail to be made at all — in which case it answers
+*valid*, on purpose: a question the app could not ask must not stand between the
+user and a connection that might work perfectly well.
+
+**Only a missing profile withholds the sign-in button** (`signInHelps`); the veil
+then carries the reason instead. The narrower rule — offer it only for a
+recognised expired-SSO error — was wrong in the direction that matters: the
+credential-provider chain has no stable error shape, so an unrecognised failure
+is more likely to be a session a login would fix than one it would not, and
+withholding the button there withholds it from the very case the feature exists
+for. A sign-in that turns out not to help says so in its own words; a button that
+never appears says nothing.
+
+**The sign-in is split into a button and a status, because they do not always sit
+together.** `AwsSignInButton` goes wherever the action belongs — the form's
+Authentication section, a veiled row, beside a failed connect — while
+`AwsSignInStatus` (the CLI's URL and code, and how the last attempt ended) is
+rendered **once per screen**. There is one CLI running at a time, so a copy beside
+every veiled row would be the same URL repeated down the list.
+
+**The same button is offered beside a *failed* connect, and there it retries.**
+The veil catches the common case, but credentials can lapse between the list
+being drawn and the token being minted, so this is the backstop. The form passes
+no `onSignedIn` (there is no connection yet to retry); `ConnectScreen` passes the
+very `connectSaved` that just failed, so signing in and getting in is one click.
+**The retry runs in the click handler, not in an effect watching `signedIn`** —
+that value stays set, so an effect would fire again on the next render that
+touched it and reconnect behind the user's back after a second failure.
+
+**Whether to offer it is read off the phase, never off the error text.**
+`session.awsCredentialsFailed` is set in the rejection reducer from
+`connectingPhase === 'iam-token'`: the extension emits that phase immediately
+before minting the token and replaces it with `connecting` immediately after, so
+a rejection while it still says `iam-token` *is* a credentials failure, by
+construction. Matching `mapAwsError`'s wording up here would be the same fact
+written twice in two places that cannot be kept in step. A *cancel* is excluded —
+stopping an attempt mid-token is not the credentials being wrong. `ConnectScreen`
+then resolves the profile off the saved row (`config.iam.profile`) rather than
+carrying it through the store, since it already holds the row it was connecting.
+
+**The URL and code arrive on a broadcast, and they are the sign-in rather than a
+status line about it.** `aws sso login` runs *device authorization*: it prints a
+verification URL and a user code, tries to open a browser, and then polls until
+someone approves them. Both arrive long before the command exits, so they cannot
+ride back on the reply — `AWS_SSO_PROMPT_EVENT` is the fourth broadcast, and
+`main.tsx` dispatches `promptReceived` for it beside the other three.
+`awsSignInSlice.prompt` holds it; the form draws an *Open the sign-in page*
+button (`Neutralino.os.open`) plus the code and the raw URL. **The reducer drops
+a prompt arriving while nothing is signing in** — that is a stale broadcast from
+an attempt already abandoned, and drawing it under a button at rest would offer
+a link to a login nobody is waiting on.
 
 ### Testing what is typed, without leaving the form
 

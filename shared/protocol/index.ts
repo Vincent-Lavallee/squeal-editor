@@ -14,6 +14,7 @@
  */
 
 export type {
+  AwsCredentialStatus,
   AwsIamAuth,
   ConnectionColorId,
   ConnectionConfig,
@@ -55,8 +56,9 @@ export type { UpdateProgress, UpdateStatus } from './updater.ts';
 
 export type { CommandName, CommandReq, CommandRes, Commands } from './commands.ts';
 
-export type { ConnectionState, ConnectProgress, DbResponse } from './events.ts';
+export type { AwsSsoPrompt, ConnectionState, ConnectProgress, DbResponse } from './events.ts';
 export {
+  AWS_SSO_PROMPT_EVENT,
   CONNECT_PROGRESS_EVENT,
   CONNECTION_STATE_EVENT,
   DB_RESPONSE_EVENT,

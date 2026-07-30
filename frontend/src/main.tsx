@@ -3,15 +3,18 @@ import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 
 import {
+  AWS_SSO_PROMPT_EVENT,
   CONNECT_PROGRESS_EVENT,
   CONNECTION_STATE_EVENT,
   UPDATE_PROGRESS_EVENT,
+  type AwsSsoPrompt,
   type ConnectionState,
   type ConnectProgress,
   type UpdateProgress,
 } from '../../shared/protocol/index.ts';
 import App from './App.tsx';
 import { store } from './store/index.ts';
+import { promptReceived } from './store/awsSignInSlice.ts';
 import { connectionProgressReceived, connectionStateReceived } from './store/sessionSlice.ts';
 import { loadSettings } from './store/settingsSlice.ts';
 import { progressReceived } from './store/updaterSlice.ts';
@@ -42,6 +45,13 @@ void Neutralino.events.on(CONNECT_PROGRESS_EVENT, (evt: CustomEvent) => {
 // this way rather than as the reply to a command.
 void Neutralino.events.on(CONNECTION_STATE_EVENT, (evt: CustomEvent) => {
   store.dispatch(connectionStateReceived(evt.detail as ConnectionState));
+});
+
+// What `aws sso login` is waiting for. Not progress: the URL and the code *are*
+// the interaction, and they arrive while the command is still running, so they
+// cannot ride back on its reply.
+void Neutralino.events.on(AWS_SSO_PROMPT_EVENT, (evt: CustomEvent) => {
+  store.dispatch(promptReceived(evt.detail as AwsSsoPrompt));
 });
 
 const root = document.getElementById('root');

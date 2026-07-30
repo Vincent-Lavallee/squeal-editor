@@ -62,6 +62,21 @@ export interface AwsIamAuth {
 }
 
 /**
+ * Whether a profile can mint credentials, asked before a connection is opened.
+ *
+ * `problem` is already the sentence to show -- `mapAwsError`'s, the same words a
+ * failed connect would have produced -- so the UI never composes one from a
+ * classification it would have to keep in step. `signInHelps` is that
+ * classification, and it is the only part the UI acts on rather than prints: a
+ * lapsed SSO session is fixed by signing in, a missing profile is not.
+ */
+export interface AwsCredentialStatus {
+  valid: boolean;
+  problem: string | null;
+  signInHelps: boolean;
+}
+
+/**
  * Everything needed to reach a server *except* the secret.
  *
  * The split is what lets the password stay out of places that have no business

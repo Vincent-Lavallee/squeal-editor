@@ -43,7 +43,7 @@ export default function PasswordPrompt({ connection, connecting, onSubmit, onCan
         <Button onClick={onCancel} disabled={connecting}>
           Cancel
         </Button>
-        <Button type="submit" variant="primary" style={{ justifyContent: 'center', height: 34, flex: 1 }} disabled={connecting}>
+        <Button type="submit" variant="primary" style={{ justifyContent: 'center', flex: 1 }} disabled={connecting}>
           {connecting ? 'Connecting…' : `Connect to ${connection.name}`}
         </Button>
       </div>

@@ -13,11 +13,6 @@ Items name features, never files or functions. Files move; the feature doesn't.
 
 Things that already work, but not well enough.
 
-- **Order the tree by object type, not purely alphabetically** — Tables, views,
-  and functions are interleaved alphabetically in the tree today. Order by
-  type instead, with no visual section header: all tables first, then all
-  views, then all functions — alphabetical within each group.
-
 - **Retain result grid scroll position per tab** — Switching away from a tab
   and back resets its result grid's scroll position (both horizontal and
   vertical) to top-left, for both query tabs and table-browse tabs opened
@@ -201,4 +196,4 @@ Things that should be improved on code wise
 - **Strip what-comments** — The codebase carries comments that narrate what the
   code already says, against the standing rule that a comment explains why and
   never what. Do a pass that removes the noise, leaving only the why-comments the
-  rule keeps.
+  rule keeps. Can you also update the claude md so that it's more respected

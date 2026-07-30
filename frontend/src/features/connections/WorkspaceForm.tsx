@@ -37,7 +37,7 @@ export default function WorkspaceForm({ mode, initial, onSubmit, onCancel, busy 
           {WORKSPACE_ICONS.map(({ id, Glyph }) => {
             const on = icon === id;
             return (
-              <label key={id} style={{ ...pickBase, color: t.TEXT_MUTED, ...(on ? { borderColor: t.ACCENT, background: t.SELECTED, color: t.ACCENT } : {}) }}>
+              <label key={id} className="ws-icons__pick" style={{ ...pickBase, color: t.TEXT_MUTED, ...(on ? { borderColor: t.ACCENT, background: t.SELECTED, color: t.ACCENT } : {}) }}>
                 <input type="radio" name="workspace-icon" value={id} checked={on} onChange={() => setIcon(id)} style={hiddenRadio} />
                 <Glyph style={iconSvg} />
               </label>
@@ -48,7 +48,7 @@ export default function WorkspaceForm({ mode, initial, onSubmit, onCancel, busy 
 
       <div style={{ display: 'flex', gap: t.GAP_SM, marginTop: t.GAP_XS }}>
         <Button onClick={onCancel} disabled={busy}>Cancel</Button>
-        <Button type="submit" data-testid="connect-submit" variant="primary" style={{ justifyContent: 'center', height: 34, flex: 1 }} disabled={busy || !name.trim()}>
+        <Button type="submit" data-testid="connect-submit" variant="primary" style={{ justifyContent: 'center', flex: 1 }} disabled={busy || !name.trim()}>
           {busy ? 'Saving…' : mode === 'edit' ? 'Save changes' : 'Create workspace'}
         </Button>
       </div>

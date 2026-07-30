@@ -636,9 +636,11 @@ the four that are relevant.
 
 **A workspace groups and has no behaviour.** Nothing about connecting reads one;
 a connection works identically whichever it is in. The only rule that follows
-from grouping at all is the one it enforces: **a connection's name is unique
-within a workspace, not across the app** — otherwise `api` in Dev and `api` in
-Production, the exact case the feature exists for, could not coexist.
+from grouping at all was the one it used to enforce: **a connection's name is
+unique within a workspace, not across the app** — otherwise `api` in Dev and
+`api` in Production, the exact case the feature exists for, could not coexist.
+That rule is gone too now, and a workspace enforces nothing at all; see *A
+connection's name is a label, not a key* below.
 
 **Environment is a field on a connection, from a fixed set.** Free text gives you
 `prod`, `Prod` and `production` as three groups, and the point is headings that
@@ -3686,3 +3688,389 @@ by the one button that means it, which every submit in the app already did. It
 also silently fixes every Cancel in every form here, each of which had been
 submitting its form and getting away with it because the handler navigated away
 first.
+
+## A connection's name is a label, not a key
+
+**Why.** `UNIQUE (workspace_id, name)` made the name do two jobs, and the second
+one was never true. Two rows in a workspace may honestly be the same server
+twice — a reader and a writer, a replica and its primary, the same host under two
+credentials — and the app already tells them apart by their colour strip and by
+the server each row names. Refusing the second one made the store the authority
+on a question only the user can answer.
+
+**Rejected: keeping it and offering a suffix.** `api (2)` is the app naming
+something on the user's behalf, and it names it worse than they would have.
+
+**Rejected: dropping it and adding the host under each row.** Considered, and it
+is the obvious mitigation — but the list already carries a colour strip and an
+environment heading, and a second line of grey text on every row to disambiguate
+a case most people never hit is paying for the exception in the common path. It
+stays available if duplicates turn out to be confusing in practice.
+
+**What it cost: SQLite cannot drop a constraint, and this table has children.**
+`connection-names-not-unique` is long for reasons worth writing down, because
+every shorter version of it silently destroys data.
+
+- **The rename-aside dance no longer works here.** It is what `workspaces` did
+  the last time this table was rebuilt, and modern SQLite rewrites the
+  `REFERENCES` clauses in *other* tables to follow a rename — so `stars` and
+  `connection_sessions` would come out pointing at `saved_connections_old` and
+  lose their parent when it is dropped. `PRAGMA legacy_alter_table = ON` is the
+  documented switch for that and **does not take effect**, because the runner
+  wraps every migration in a transaction. Tried, and the evidence was two empty
+  child tables.
+- **`DROP TABLE` is an implicit `DELETE FROM`.** `store.open()` sets
+  `PRAGMA foreign_keys = ON` before the migrations deliberately, so dropping the
+  parent cascades into every star and every saved session. That pragma cannot be
+  turned off from inside a transaction either.
+
+So the children are lifted into carry tables, dropped, and rebuilt around the new
+parent — with their DDL spelled out in full rather than reached for from the
+migrations that made them, per the freezing rule. `PRAGMA foreign_key_check` runs
+at the end, inside the transaction, so a rebuild that orphaned anything fails the
+migration instead of shipping a store that is quietly wrong.
+
+**The test is the point of the whole exercise.** *the rebuild keeps the stars and
+sessions hanging off it* (`saved.test.ts`) is the only thing standing between a
+future edit here and a release where everyone keeps their connections and loses
+every star and every restored tab. The rewind's `UNDO` entry is the same dance
+inverted, and it is much shorter — `rewindTo` runs with `foreign_keys = OFF`,
+which is exactly the pragma the migration could not reach.
+
+## The connect form allows the submit and says what is missing
+
+**Why.** A disabled *Connect* states that something is wrong and nothing about
+what. On a form this long — engine, name, environment, colour, host, port,
+database, method, user, password, two toggles — that leaves the user comparing
+the form against itself to find the empty box. Pressing the button and being told
+is one step; hunting is unbounded.
+
+**Rejected: a summary callout listing what is missing.** It duplicates
+information that belongs beside the fields, and it makes the reader map names
+back onto controls. Considered together with per-field marks and dropped as noise
+on top of the answer.
+
+**Rejected: validating on blur.** It reddens a field the moment you tab out of it
+on the way to filling in the next one, which is the same scolding the `submitted`
+gate exists to prevent, just earlier.
+
+**The mark lives in the label's hint slot.** `<Field hint>` already draws text
+beside the label, so `required` in `--red-text` goes there rather than into a new
+line under the control — the row does not change height when a field is marked,
+and nothing below it moves. The control gets `borderColor: RED` and
+`aria-invalid`; `style` is applied last in `<Input>`/`<Select>`, so the red beats
+the focus accent on the field being focused.
+
+**`missingFields` returns a list, not a set.** The first entry is focused, and
+"first" has to mean the topmost field on screen. A `Set` would focus whichever one
+it happened to iterate to, which reads as the form picking at random.
+
+**Only the exceptions are labelled.** Nearly everything here is required, so
+`(required)` on eight fields is eight labels carrying no information;
+`(optional)` on the three that are is the same fact stated where it is
+surprising.
+
+**What it cost to find: `required` and the browser's bubble.** The inputs carried
+`required`, which meant the browser refused the submit and popped its own
+validation tooltip *before* the handler ran — the very "you may not submit this"
+being replaced, in a style this app has no control over. Removing the attributes
+and adding `noValidate` to the `<form>` are part of the change, not tidying.
+
+## The colour picker expands in place, rather than opening a panel
+
+**Why.** Nine swatches always visible is a wall of colour above the fields that
+actually address a server, and it puts the least consequential choice on the form
+in the most prominent state. A floating panel is the other reflex and it is a
+dropdown wearing a different hat: a layer to dismiss, an outside click to handle,
+and a popup that has to be placed.
+
+**The row is the sub-menu.** At rest the field is one 32px tile showing the
+current hue, beside the environment select. Clicking it expands the nine swatches
+across that same row; picking one, or the trailing `×`, collapses it back. The
+tiles are the same 32px as the select they replace, so the row is exactly as tall
+in both states — nothing below it moves, which is what makes the expansion read
+as the row changing its mind rather than as the form reflowing.
+
+**It shares a row with the environment because they are the same kind of fact.**
+Both say *which connection this is*, not how to reach it — the colour is what the
+rail chip and the saved-list strip spend, and the environment is its heading.
+Host and port are the other question entirely.
+
+## AWS SSO signs in through the user's own CLI, not inside the app
+
+**Why.** An expired SSO session is the common, recoverable failure on an IAM
+connection, and the only fix used to be a terminal the app never mentions again.
+*Sign in to AWS* on the connect form runs `aws sso login --profile X` in the
+extension and reports what it said.
+
+**Rejected outright: rendering the login in an iframe or a webview panel.** Asked
+for, and it is the wrong shape twice over. Identity providers send
+`X-Frame-Options` / `frame-ancestors` precisely to stop being framed, so most
+corporate IdPs would refuse to render at all — but the reason it stays refused
+even where it works is that an app-controlled frame around an identity provider's
+login page is indistinguishable, to the person typing into it, from a
+credential-phishing page. The browser's own URL bar is the thing being taken
+away, and it is the only thing that makes the page trustworthy.
+
+**Rejected: the OIDC device flow in the extension.** It is what the CLI does, it
+needs no CLI installed, and it was the better answer on paper. The CLI owns the
+SSO token cache that `fromIni` reads — where it lives, how the files are named,
+what a refresh writes into it — so a second implementation would be a second
+writer of that cache that has to keep agreeing with the first one forever, and
+would be wrong the first time AWS changed any of it. Shelling out costs a
+dependency on the CLI being installed and buys never having to track that.
+
+**The answer is a slice of its own, beside `connectionTest`.** Both crossed the
+bridge, so both are slices; they are two because a test describes the whole form
+and is withdrawn by any edit, while a sign-in describes one profile and survives
+everything except that profile being retyped. `signedIn` holds the profile name
+rather than `true`, so a success message cannot vouch for a profile the field no
+longer names.
+
+## The checkbox is drawn by the app, because two platforms drew it differently
+
+**Why.** The recipe was a native `<input type="checkbox">` with
+`accentColor: ACCENT`, which is the right instinct — the platform's control, one
+token for the hue. It is only right on one platform at a time. WebView2 and
+WKWebView each draw the box at their own size, with their own corner radius and
+their own tick, and honour nothing but the fill: the same checked state wore two
+different marks on Windows and macOS, which is the one thing a design system
+cannot express.
+
+**`appearance: none` takes away the paint and nothing else.** It is still a real
+`<input type="checkbox">` — focus, Space, the label association and the form
+value are the platform's and stay so. The standing rule ("do not rebuild it out
+of divs and lose the platform's focus and keyboard behaviour") is about giving up
+the input, not about drawing the box.
+
+**The tick is a sibling `<span>`, not a `::after`.** The obvious implementation is
+a pseudo-element on the input, and Safari renders no pseudo-element on an
+`<input>` at all — which would have been the same cross-platform inconsistency one
+layer down, discovered later. A sibling positioned over the box works everywhere
+and costs one element.
+
+## The AWS sign-in shows the URL and the code, because that *is* the sign-in
+
+An addendum to *AWS SSO signs in through the user's own CLI*, above, and the
+reason the first cut of it did not work.
+
+**What was missed.** `aws sso login` was treated as a command that either
+succeeds or fails, so its output was collected and shown only once it exited. It
+is not one. The CLI runs **device authorization**: it prints a verification URL
+and a user code, *attempts* to open a browser, and then polls until someone
+approves them. The URL and the code are the entire interaction, they arrive
+seconds in, and the command does not exit until minutes later — so collecting
+them meant hiding them for exactly as long as they were the only things that
+could let the login finish. A browser that failed to open was indistinguishable
+from an app that had hung, until the 5-minute kill.
+
+Verified rather than assumed: a spawned CLI with a piped stdout was observed
+calling `StartDeviceAuthorization`, which is the flow that prints a code.
+
+**So the prompt is a broadcast**, `AWS_SSO_PROMPT_EVENT` — the fourth, and the
+same shape and the same reason as `connect.progress`: it describes something the
+command is still doing, so it cannot ride back on the command's reply.
+
+**The UI opens the URL, not the extension.** The extension already spawned the
+CLI and could open a browser itself, but that is the call `app.dataDir` already
+decided the other way: the webview has `Neutralino.os.open` and the extension
+should hand back what it knows rather than grow a second answer. The CLI's own
+browser attempt stays in place, so the button is the fallback rather than the
+route — and passing `--no-browser` to guarantee we are the only opener was
+rejected for that reason: it would trade a working common case for a click.
+
+**What it cost to find: the last line has no newline.** The code is the final
+thing the CLI prints and its newline only arrives when the login completes, so a
+reader that splits on newlines and drops the remainder never reports the code at
+all — while the login is exactly the thing waiting on it. `readPrompts` buffers
+partial lines and flushes the remainder at end of stream, and `iam.test.ts`
+pins it at one byte per chunk.
+
+## Cancelling a connect belongs in the form's own actions row
+
+**Why.** `ConnectScreen` renders one abort, under everything else on the card.
+Every screen it serves is short enough for that to be fine except the one that
+matters most: the connect form is taller than the window, so the button that
+stops the attempt sat below the fold at the moment it was the only control worth
+having. Measured, not guessed — 905px down a 786px viewport.
+
+**So the form takes the job over while an attempt is in flight**, and the screen
+suppresses its own block for that one view. The actions row is where the user
+just clicked, which is the same rule as *errors render where the action was
+taken*. It also scrolls itself into view, for the submit that came from Enter in
+a field near the top rather than from the button.
+
+**What it cost to find: a cancelled attempt leaves a saved row.** `submitNew`
+saves before it connects, so aborting leaves a real connection behind — and
+pressing *Connect* again saved *another* one. The store's duplicate-name check
+used to catch that by accident, and dropping it (see *A connection's name is a
+label, not a key*) removed the accident along with the rule. `draftRowId` is the
+fix: the first submit remembers the row it wrote and every retry edits it.
+**Two changes that were each right made a third thing wrong**, which is the only
+interesting part of this entry — the abort is what made retrying common enough to
+notice.
+
+## Which leg a connect died on is the phase, not the message
+
+The AWS sign-in had to be offered beside a *failed* saved connection, not only on
+the form — a stored IAM connection whose SSO session lapsed is the case that
+actually happens, and the fix used to be a message telling the user to go and
+find a button on another screen.
+
+**The question is "did this fail at AWS or at the database", and there are two
+places to read it from.** The error string is the obvious one and the wrong one:
+`mapAwsError` composes that text in the extension, and matching on it in the
+webview would be the same fact written twice in two files that nothing keeps in
+step. A reworded message would silently stop offering the fix, and no test would
+notice.
+
+**`connectingPhase` already answers it, structurally.** The extension emits
+`iam-token` immediately before minting the token and `connecting` immediately
+after, so a rejection arriving while the phase still says `iam-token` *is* a
+credentials failure — by construction, not by inference. `awsCredentialsFailed`
+is that comparison, made in the rejection reducer before the phase is cleared.
+It was already broadcast for the progress line; this is the same fact read for a
+second purpose rather than a second fact.
+
+*Rejected: carrying a typed error code across the bridge.* `DbResponse` is
+`{ ok: false, error: string }` and widening it to classify failures would touch
+every command to serve one. The phase was already there.
+
+**A cancel is excluded.** Stopping an attempt mid-token is the user withdrawing
+the question, not the credentials being wrong, and offering a sign-in for it
+would be answering something nobody asked.
+
+**The profile is resolved from the saved row, not carried through the store.**
+`ConnectScreen` holds the connection it was connecting (`connectingId`), and that
+row has `config.iam.profile`. Putting it in `session` state would be a second
+copy of something already on screen — and `connectingId` being the only source of
+it is also what keeps the offer off the connect form, which has its own sign-in
+and its own profile field.
+
+**The retry is in the click handler, not an effect.** `signedIn` stays set after
+a successful sign-in, so an effect watching it fires again on the next render
+that touches it — reconnecting behind the user's back after a second failure.
+Awaiting the sign-in and then retrying, in one handler, runs exactly once per
+click. `useAwsSignIn().start` returns whether it completed for that reason.
+
+## The AWS credentials are checked before the connect, not by it
+
+An addendum to *Which leg a connect died on is the phase*, above. That entry
+made a failed IAM connect recoverable. This one stops most of them being
+failures at all.
+
+**Why.** A lapsed SSO session is the commonest reason a stored IAM connection
+will not open, and it has nothing to do with the database. Letting the attempt
+run and fail paints a red *could not connect* over what is really a step the user
+has not taken yet — and it says it about a server that was never contacted.
+`aws.credentialStatus` resolves the profile through the same `fromIni` the token
+mint uses and stops before any socket is opened, so `pick` can decline to connect
+and say *sign in first* instead. Measured at ~120ms for a negative answer.
+
+**It resolves rather than rejecting**, and that is the shape the whole thing
+turns on: "not signed in" is an answer, and one the caller acts on differently
+from an error. A rejection would be indistinguishable, at the call site, from the
+very connect failure this exists to pre-empt.
+
+**A check that cannot be made answers *valid*.** If the bridge call itself fails,
+the thunk returns `valid: true` and the connect proceeds. A question the app could
+not ask must never stand between the user and a connection that might work
+perfectly well — and the connect's own failure is still there to catch it.
+
+**It is a reduction, not a guarantee, so the after-the-fact offer stays.**
+Credentials valid at the check can lapse before the token is minted a moment
+later. Two mechanisms for one problem would normally be a smell; here the second
+is the backstop for the first being a snapshot.
+
+**What it cost to find: the button was withheld from the case it exists for.**
+The first cut offered *Sign in to AWS* only when `awsFailureKind` recognised an
+expired SSO session, on the reasoning that a button which cannot work is worse
+than none. That is true and it was the wrong default: the credential-provider
+chain has no stable error shape, so `other` is where an unfamiliar
+never-signed-in failure lands — and offering nothing there is offering nothing in
+precisely the situation the feature was built for. Inverted: the button appears
+unless the profile is *missing*, which is the one kind no login creates. A
+sign-in that turns out not to help says so in its own words.
+
+**And the missing-profile detection was wrong about the real message.** An
+unknown profile does not say "could not be found"; the chain says *"Could not
+resolve credentials using profile: [x] in configuration/credentials file(s)"*,
+which fell through to `other`. Found by running it, not by reading it. The
+phrasing is broad enough to swallow a lapsed session too, so it is tested
+**after** the SSO checks — order that `iam.test.ts` pins, because getting it
+backwards silently withholds the button again.
+
+## A connection that cannot be opened yet is veiled, not clicked and refused
+
+This supersedes the placement in *The AWS credentials are checked before the
+connect*, above. That entry's reasoning holds — the check is right, and doing it
+before any socket opens is right — but it put the check on the **click**, and the
+click is already too late.
+
+**Whether an IAM connection can be opened is a fact about the row.** It does not
+depend on anything the user is about to do, so making them ask for it is making
+them discover it. The list now asks `aws.credentialStatus` for every distinct IAM
+profile it draws, as it draws them, and a profile that cannot mint credentials
+dims its rows, disables their pick target, and reveals a pane over it carrying
+*Sign in to AWS*.
+
+**The veil is a new visual device, adopted deliberately and narrowly.** The
+system has one background and no elevation, and the veil does not break that: it
+is the same `--bg`, laid *over* content rather than under it. What earns it is
+that the row has to stay legible — its name, colour strip and server are what
+tell you which connection you are being asked to sign in for. `--scrim` is the
+same move for the modal and is black for the opposite reason: that one dims the
+whole app, this one veils one row of it.
+
+**And it is glass rather than blur, which is the second thing this got wrong.**
+The first cut blurred the row, and blur is precisely the effect that destroys the
+one thing the pane exists to preserve — you could no longer read which connection
+was being asked about, which is the whole justification for veiling it rather
+than replacing it with an empty state. What replaced it lifts the backdrop
+instead of softening it (`saturate` and `brightness`), grades `--veil` toward
+`--veil-deep` at the trailing edge, and adds a sheen and a hairline on top.
+Light *added over* the one background, never a lighter surface under it.
+
+**Two placement lessons, both from looking at it rather than reasoning about
+it.** The pane is a `<button>` in its own right, not a button centred inside a
+`<div>`: it is already row-width, so a small control floating in it leaves nine
+tenths of an obviously interactive surface inert. And its label sits at the
+*trailing* edge — centred, it landed squarely on the connection's name and engine
+badge, which is the collision the glass was chosen to avoid.
+
+**It reveals on hover, so the row is dimmed at rest.** Without the dim, a blocked
+row is indistinguishable from a live one until the click that does nothing.
+Revealing on focus as well as hover is the same amendment the row's own Edit and
+Delete already needed, and `pointerEvents` tracking `opacity` is the same trap:
+an invisible pane over the row eats every click.
+
+**Keyed by profile, not by connection.** Several IAM connections commonly share
+one profile, so one check lights or clears every row that names it.
+
+**The list asks on every render pass that could have changed the set, and the
+thunk's `condition` makes that free** — the arrangement `loadColumns` already has
+with the completion provider. A component should say what it needs, not keep a
+private record of what it has already asked.
+
+**Unknown is not blocked.** Gating on "not asked yet" would grey every IAM row
+for the first beat after the list appears, which reads as broken rather than as
+careful. Only an answered `valid: false` veils anything.
+
+**The veil covers the click target and nothing else**, so a row you cannot open
+is still one you can edit or delete — editing the profile name being one of the
+two ways out of the state.
+
+**A successful sign-in forgets the profile rather than marking it good.** The CLI
+exiting zero means it wrote the token cache, not that `fromIni` will resolve
+against it; the entry is deleted and the list asks again, which is the same
+question that gated the row.
+
+**And `pick` stopped checking entirely.** With the row gated, the answer is
+already known by the time the click happens, and re-asking would put a beat of
+nothing in front of every IAM connect to re-learn what the row already shows. The
+offer beside a *failed* connect stays as the backstop, for credentials that lapse
+between the list being drawn and the token being minted.
+
+**The sign-in split into a button and a status for this.** One CLI runs at a
+time, so the URL and code it is waiting on are rendered once per screen, while
+the button that starts it belongs on each row it would unblock.

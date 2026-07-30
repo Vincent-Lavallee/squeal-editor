@@ -28,6 +28,24 @@ export type ConnectProgress = {
 export const CONNECT_PROGRESS_EVENT = 'connect.progress';
 
 /**
+ * What `aws sso login` is waiting for, while it is still waiting.
+ *
+ * The CLI runs the *device authorization* flow: it prints a verification URL and
+ * a user code and then polls until someone approves them. Both are the whole
+ * interaction, and both arrive long before the command exits -- so they cannot
+ * ride back on `aws.ssoLogin`'s reply, which only resolves once the login is
+ * over. Same shape and same reason as `connect.progress`.
+ *
+ * `code` is null until the CLI has printed it, which is a line or two after the
+ * URL. The UI shows whatever it has.
+ */
+export type AwsSsoPrompt = {
+  url: string;
+  code: string | null;
+};
+export const AWS_SSO_PROMPT_EVENT = 'aws.ssoPrompt';
+
+/**
  * An already-open connection changing state underneath the UI, which nothing
  * asked for and so cannot be the reply to any `reqId`.
  *

@@ -126,6 +126,18 @@ interface SessionState {
   /** When the in-flight connect attempt started, for the elapsed timer beside Cancel. */
   connectingStartedAt: number | null;
   error: string | null;
+  /**
+   * The last attempt failed on the AWS credentials leg rather than at the
+   * database, so a sign-in is worth offering beside the error.
+   *
+   * Read off `connectingPhase` at the moment of rejection, which the extension
+   * set: `iam-token` is emitted immediately before the token is minted and
+   * replaced by `connecting` immediately after, so a rejection while it still
+   * says `iam-token` *is* a credentials failure, by construction. Matching on the
+   * error text would be the same fact stated a second time, in a place that
+   * cannot be kept in step with `mapAwsError`.
+   */
+  awsCredentialsFailed: boolean;
 }
 
 const initialState: SessionState = {
@@ -136,6 +148,7 @@ const initialState: SessionState = {
   connectingPhase: null,
   connectingStartedAt: null,
   error: null,
+  awsCredentialsFailed: false,
 };
 
 /**
@@ -388,6 +401,7 @@ const sessionSlice = createSlice({
         state.connectingPhase = null;
         state.connectingStartedAt = Date.now();
         state.error = null;
+        state.awsCredentialsFailed = false;
       })
       .addMatcher(sessionOpened, (state, action) => {
         const { connectionId, savedConnectionId, config, dialect, defaultSchema, name, workspaceId, color, environment, readOnly } =
@@ -417,6 +431,11 @@ const sessionSlice = createSlice({
       })
       .addMatcher(isAnyOf(connect.rejected, connectSaved.rejected), (state, action) => {
         state.connecting = false;
+        // Read before the phase is cleared, and never for a cancel: the user
+        // stopping an attempt mid-token is not the credentials being wrong, and
+        // offering them a sign-in for it would be answering a question they
+        // withdrew.
+        state.awsCredentialsFailed = state.connectingPhase === 'iam-token' && action.payload !== 'Cancelled.';
         state.connectingPhase = null;
         state.connectingStartedAt = null;
         state.error = action.payload ?? 'Could not connect.';
@@ -457,7 +476,8 @@ export const selectConnections = (s: RootState): OpenConnection[] =>
  */
 export function useSession() {
   const dispatch = useAppDispatch();
-  const { connecting, connectingPhase, connectingStartedAt, error, activeConnectionId } = useAppSelector((s) => s.session);
+  const { connecting, connectingPhase, connectingStartedAt, error, awsCredentialsFailed, activeConnectionId } =
+    useAppSelector((s) => s.session);
   const active = useAppSelector(selectActiveConnection);
   const connections = useAppSelector(selectConnections);
 
@@ -481,6 +501,7 @@ export function useSession() {
     connectingPhase,
     connectingStartedAt,
     error,
+    awsCredentialsFailed,
     connected: activeConnectionId !== null,
     serverLabel: active ? serverLabel(active.config) : '',
     connect: useCallback(

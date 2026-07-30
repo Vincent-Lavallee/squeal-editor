@@ -49,8 +49,10 @@ import {
  * glyphs actually drawn. A `Record<string, Icon>` lookup, or a re-export of the
  * whole module, defeats that and ships all 3000.
  *
- * Size and colour are not set here -- see `.icon` in `components.css`. The
- * `size` prop is the set's way of hardcoding a size in a component, which is
+ * Size and colour are not set here. Each caller sets `width`/`height` inline
+ * from `ICON` in `tokens.ts` -- there is no `.icon` class to lean on, and a
+ * glyph given one silently comes out at the set's own 24px. Colour is inherited.
+ * The `size` prop is the set's way of hardcoding a size in a component, which is
  * the one thing the design system forbids.
  */
 export const TableIcon = RiTableLine;

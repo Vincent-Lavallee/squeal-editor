@@ -1,5 +1,6 @@
 import { configureStore } from '@reduxjs/toolkit';
 
+import { awsSignInReducer } from './awsSignInSlice.ts';
 import { connectionTestReducer } from './connectionTestSlice.ts';
 import { environmentsReducer } from './environmentsSlice.ts';
 import { explorerReducer } from './explorerSlice.ts';
@@ -37,6 +38,7 @@ export const store = configureStore({
     environments: environmentsReducer,
     saved: savedReducer,
     connectionTest: connectionTestReducer,
+    awsSignIn: awsSignInReducer,
     explorer: explorerReducer,
     results: resultsReducer,
     tabs: tabsReducer,

@@ -38,6 +38,28 @@ export const SELECTED = '#0eb39e24'; /* ACCENT at 14% */
  */
 export const SCRIM = '#00000099';
 
+/**
+ * The app's own background at 70%, laid over content that is *there but not
+ * usable yet* — a saved connection whose AWS profile has not signed in.
+ *
+ * Not a second surface and not elevation: it sits over the row it obscures and
+ * blurs it (`backdrop-filter`), so the row still reads as the row rather than
+ * being replaced by an empty state. SCRIM is the modal's answer to the same
+ * shape of question and is deliberately black — that one pushes the whole app
+ * back, this one veils one row of it in the app's own colour.
+ */
+export const VEIL = '#111113b3';
+/**
+ * What makes the veil read as glass rather than as a flat wash: a hairline along
+ * its edges and a sheen down its top half, both white at very low alpha. Same
+ * family as HOVER (white at 4%) — light *added* to the one background, never a
+ * second surface underneath it.
+ */
+export const VEIL_EDGE = '#ffffff1f';
+export const VEIL_SHEEN = '#ffffff14';
+/** The far end of the veil, where its label sits and needs a settled ground. */
+export const VEIL_DEEP = '#111113f2';
+
 /* ---- Text ---- */
 export const TEXT = '#edeef0'; /* slate-12: primary */
 export const TEXT_MUTED = '#b0b4ba'; /* slate-11: labels, axes, secondary */

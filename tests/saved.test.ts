@@ -155,16 +155,17 @@ describe('the store', () => {
     await h.ok('db.saved.delete', { id: locked.id });
   });
 
-  test('duplicate names are refused, case-insensitively', async () => {
-    const res = await h.dispatch('db.saved.save', {
-      workspaceId: DEFAULT_WS,
-      name: 'WITH-PASSWORD',
-      config: PG_SERVER,
-      environment: 'local',
-      password: { mode: 'none' },
-    });
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toMatch(/already exists/i);
+  test('a duplicate name is allowed, and is a second row', async () => {
+    // The name is a label, not a key: the same server twice under one workspace
+    // -- a reader and a writer -- is a thing people actually have.
+    const twin = await save({ workspaceId: DEFAULT_WS, name: 'WITH-PASSWORD', config: PG_SERVER, password: { mode: 'none' } });
+    expect(twin.name).toBe('WITH-PASSWORD');
+
+    const named = (await list()).filter((c) => c.name.toLowerCase() === 'with-password');
+    expect(named).toHaveLength(2);
+    expect(new Set(named.map((c) => c.id)).size).toBe(2);
+
+    await h.ok('db.saved.delete', { id: twin.id });
   });
 
   test('a nameless connection is refused', async () => {
@@ -823,7 +824,7 @@ describe('workspaces', () => {
     expect((await workspaces()).filter((w) => w.id === made.id)).toHaveLength(1);
   });
 
-  test('a connection name only has to be unique within its workspace', async () => {
+  test('a connection name is a label: it need not be unique anywhere', async () => {
     const a = await saveWorkspace({ name: 'Project A', icon: 'cube' });
     const b = await saveWorkspace({ name: 'Project B', icon: 'globe' });
 
@@ -835,16 +836,15 @@ describe('workspaces', () => {
     expect(inB.name).toBe('api');
     expect(inA.id).not.toBe(inB.id);
 
-    // Within one, it is still a clash.
-    const res = await h.dispatch('db.saved.save', {
-      workspaceId: a.id,
-      name: 'API',
-      config: PG_SERVER,
-      environment: 'dev',
-      password: { mode: 'none' },
-    });
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toMatch(/already exists in this workspace/i);
+    // And within one, since `connection-names-not-unique`: two rows may be the
+    // same server twice, told apart by their colour and by what they point at.
+    const alsoInA = await save({ workspaceId: a.id, name: 'API', config: PG_SERVER, password: { mode: 'none' } });
+    expect(alsoInA.id).not.toBe(inA.id);
+    expect((await list()).filter((c) => c.workspaceId === a.id)).toHaveLength(2);
+
+    // A rewind later in this file puts the constraint back, and a pair this
+    // migration made legal is what a store rewound past it cannot hold.
+    await h.ok('db.saved.delete', { id: alsoInA.id });
   });
 
   test('the environment is stored per connection, not per workspace', async () => {
@@ -938,6 +938,34 @@ const stamps = (): Stamp[] => {
 
 /** What each migration would have to undo, for the rewind below. Newest first. */
 const UNDO: Record<string, string[]> = {
+  // The inverse of a rebuild is the same rebuild with the constraint put back.
+  // It is far shorter than the migration it undoes for one reason: `rewindTo`
+  // runs with `PRAGMA foreign_keys = OFF`, so dropping the parent cascades into
+  // nothing and the children can be left standing -- which is exactly the
+  // pragma the migration itself could not reach, being wrapped in a transaction.
+  'connection-names-not-unique': [
+    `CREATE TABLE saved_connections_undo (
+       id               TEXT PRIMARY KEY,
+       workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+       name             TEXT NOT NULL,
+       engine           TEXT NOT NULL,
+       host             TEXT NOT NULL,
+       port             INTEGER NOT NULL,
+       username         TEXT NOT NULL,
+       default_database TEXT,
+       environment      TEXT NOT NULL,
+       password         BLOB,
+       ssl              INTEGER NOT NULL DEFAULT 0,
+       read_only        INTEGER NOT NULL DEFAULT 0,
+       aws_profile      TEXT,
+       aws_region       TEXT,
+       color            TEXT NOT NULL DEFAULT 'slate',
+       UNIQUE (workspace_id, name)
+     )`,
+    'INSERT INTO saved_connections_undo SELECT * FROM saved_connections',
+    'DROP TABLE saved_connections',
+    'ALTER TABLE saved_connections_undo RENAME TO saved_connections',
+  ],
   environments: ['DROP TABLE environments'],
   // The inverse of a DROP: put the column this migration removed back, with the
   // same default the ADD COLUMN it undoes gave it.
@@ -1336,6 +1364,66 @@ describe('migrating a store written before connection colours', () => {
       password: { mode: 'keep' },
     });
     expect(edited.color).toBe('cyan');
+  });
+});
+
+/**
+ * The one migration that rebuilds `saved_connections` while other tables
+ * reference it, so it is the only one whose risk is not its own table.
+ *
+ * `stars` and `connection_sessions` hang off it `ON DELETE CASCADE`, and under
+ * `PRAGMA foreign_keys = ON` -- which the app sets before the migrations run --
+ * every way of removing the old table is also a way of deleting theirs. This
+ * asserts the thing that would otherwise be silent: a user upgrades, keeps their
+ * connections, and finds every star and every restored tab gone.
+ */
+describe('migrating a store written before connection names could repeat', () => {
+  test('the rebuild keeps the stars and sessions hanging off it, and names may then repeat', async () => {
+    const ws = (await workspaces())[0]!.id;
+    const conn = await save({
+      workspaceId: ws,
+      name: 'pre-rebuild-conn',
+      config: PG_SERVER,
+      password: { mode: 'store', password: PG_PASSWORD },
+    });
+    await h.ok('db.stars.set', { savedConnectionId: conn.id, database: 'shop', table: 'orders', starred: true });
+    await h.ok('db.session.save', { savedConnectionId: conn.id, session: '{"tabs":[],"activeIndex":0}' });
+    await h.stop();
+
+    // Back to the last version that still forbade a duplicate name.
+    rewindTo('environments');
+
+    h = await startHarness(ENV);
+
+    const migrated = (await list()).find((c) => c.name === 'pre-rebuild-conn')!;
+    expect(migrated.id).toBe(conn.id);
+    // The password is a blob, so a rebuild that round-tripped it through text
+    // would lose it -- and would look fine until something tried to decrypt.
+    expect(migrated.hasPassword).toBe(true);
+
+    const { stars } = (await h.ok('db.stars.list', { savedConnectionId: conn.id })) as {
+      stars: { database: string; table: string }[];
+    };
+    expect(stars.map((s) => `${s.database}.${s.table}`)).toEqual(['shop.orders']);
+
+    // Read off the file rather than through a connect: the row surviving is the
+    // claim, and reaching a real server to prove it would be testing restore.
+    const db = new Database(DB_FILE);
+    const kept = db.query('SELECT snapshot FROM connection_sessions WHERE connection_id = ?').get(conn.id) as
+      | { snapshot: string }
+      | null;
+    db.close();
+    expect(kept?.snapshot).toBe('{"tabs":[],"activeIndex":0}');
+
+    // And the constraint really did go, rather than the rebuild having quietly
+    // recreated it.
+    const twin = await save({ workspaceId: ws, name: 'pre-rebuild-conn', config: PG_SERVER, password: { mode: 'none' } });
+    expect(twin.id).not.toBe(conn.id);
+
+    // Cleared before leaving, because the rewind below this one puts the
+    // constraint back: a pair of rows this migration made legal is exactly what
+    // a store rewound past it can no longer hold.
+    await h.ok('db.saved.delete', { id: twin.id });
   });
 });
 

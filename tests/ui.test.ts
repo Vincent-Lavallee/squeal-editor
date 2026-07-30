@@ -2220,9 +2220,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         .toEqual(['pg-fixture']);
     });
 
-    test('the connect form will not connect without a name', async () => {
+    test('the connect form marks the missing name rather than refusing the click', async () => {
       // The throwaway, workspace-less connection is gone: a name is required, so
       // every open connection belongs to a workspace the rail can group it under.
+      // What changed is how the form says so -- submit is live and answers by
+      // naming what is empty, instead of being disabled and saying nothing.
       await app.evaluate(`document.querySelector('[data-testid="saved-new"]')?.click(); true;`);
       await Bun.sleep(300);
       await app.evaluate(`${REACT_SETTERS}
@@ -2231,12 +2233,21 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         setNative(document.querySelector('#user'), ${JSON.stringify(MYSQL.user)});
         true;`);
       await Bun.sleep(200);
-      // Disabled with no name...
-      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="connect-submit"]').disabled`)).toBe(true);
-      // ...and enabled the moment one is typed.
+
+      // Live with no name, and nothing marked until it has actually been tried.
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="connect-submit"]').disabled`)).toBe(false);
+      expect(await app.evaluate<string | null>(`document.querySelector('#name').getAttribute('aria-invalid')`)).toBe(null);
+
+      // Submitting connects to nothing and says which field is empty.
+      await app.evaluate(`document.querySelector('[data-testid="connect-submit"]').click(); true;`);
+      await Bun.sleep(300);
+      expect(await app.evaluate<string | null>(`document.querySelector('#name').getAttribute('aria-invalid')`)).toBe('true');
+      expect(await app.evaluate<boolean>(`!!document.querySelector('#name')`)).toBe(true);
+
+      // Typing withdraws the mark on that field alone, without a second submit.
       await app.evaluate(`${REACT_SETTERS} setNative(document.querySelector('#name'), 'needs-a-name'); true;`);
       await Bun.sleep(200);
-      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="connect-submit"]').disabled`)).toBe(false);
+      expect(await app.evaluate<string | null>(`document.querySelector('#name').getAttribute('aria-invalid')`)).toBe(null);
 
       // Back to the list without connecting, so the row assertions below stand.
       await app.reload();
@@ -2348,9 +2359,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         true;`);
       await Bun.sleep(200);
 
-      // A test writes no record, so it asks for none of what saving one needs:
-      // Connect is refused without a name and Test is not.
-      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="connect-submit"]').disabled`)).toBe(true);
+      // A test writes no record, so it asks for none of what saving one needs.
+      // Neither button is disabled -- Connect would answer "name is required"
+      // and Test simply reaches the server, which is the difference.
       expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="connect-test"]').disabled`)).toBe(false);
 
       await app.evaluate(`document.querySelector('[data-testid="connect-test"]').click(); true;`);
