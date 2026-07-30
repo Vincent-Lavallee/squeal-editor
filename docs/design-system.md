@@ -364,6 +364,13 @@ The eye is a `--bg`-filled circle rather than a cut-out, since the plate is
 always behind it. It disappears below ~24px. That is expected; the silhouette
 carries the mark on its own.
 
+The plate fills the SVG's canvas edge to edge — every consumer of this source
+(the Windows window/exe icon, the taskbar) shows it at native size and wants the
+full plate. macOS is the one platform that wants an inset, because Dock/Finder
+composite their own icons with a content box already built in; that inset is
+applied only when `scripts/package-macos.sh` builds `icon.icns`, not in the
+source drawing. See `architecture.md`.
+
 ## Adapting the reference
 
 The reference described a security dashboard. The visual language transferred;

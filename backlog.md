@@ -24,12 +24,6 @@ Things that already work, but not well enough.
 
 Things that are wrong.
 
-- **Windows icon is too small** — The icon SVG was scaled to 80% to satisfy macOS
-  Dock compositing, but Windows shows the icon at native size and the padding
-  makes it read as shrunken in the taskbar. Restore the full-bleed SVG and move
-  the 80% downscale into the macOS packaging script that already generates the
-  .icns, so each platform gets the artwork it needs from the same source.
-
 - **Unbounded table listing** — `listTables` fetches every table in the database
   with no limit, so a database with thousands of tables is slow to query,
   renders an unusable tree, and chokes autocomplete. Cap the result at a fixed

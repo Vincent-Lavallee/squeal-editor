@@ -236,6 +236,15 @@ Releases are automated in `.github/workflows/release.yml`, two jobs:
 `icon.icns` from `frontend/public/icon.png` with `sips` + `iconutil`, ad-hoc
 signs, and lays the result into a `.dmg` beside an `/Applications` symlink.
 
+**`icon.icns` gets an 80% inset that nothing else does.** `frontend/public/icon.png`
+is full-bleed, right for a window/exe icon shown at native size. macOS composites
+its own icons (Dock, Finder) with a ~80% content box baked into their artwork, so
+a full-bleed plate placed among them reads visibly larger than its neighbors. The
+script shrinks the source to 80% and pads it back out to each target size before
+handing it to `iconutil`, rather than baking the inset into the committed SVG,
+which would leave Windows — the platform that shows the icon at native size —
+with dead margin around it.
+
 **`CFBundleExecutable` is a shell launcher, not the Neutralino binary.** On macOS
 `NL_PATH` follows the **working directory**, not the executable — and Finder
 launches an app with the working directory set to `/`, so Neutralino resolves

@@ -45,6 +45,12 @@ the date they were finished.
   shape "Copy row" already produces, so the clipboard format stays consistent
   across the whole grid.
 
+- **2026-07-30** — **Windows icon is too small** — The icon SVG was scaled to 80% to satisfy macOS
+  Dock compositing, but Windows shows the icon at native size and the padding
+  makes it read as shrunken in the taskbar. Restore the full-bleed SVG and move
+  the 80% downscale into the macOS packaging script that already generates the
+  .icns, so each platform gets the artwork it needs from the same source.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

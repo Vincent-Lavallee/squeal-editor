@@ -11,13 +11,13 @@
   flipper hangs below the belly line on purpose: same-fill shapes inside the
   outline are invisible, so a limb only exists if it breaks the silhouette.
 
-  The plate sits at 80% of the canvas, centered, rather than filling it edge to
-  edge. macOS composites its own icons (Dock, Finder) with that same ~80% content
-  box baked into their artwork; a full-bleed plate has no room for that margin and
-  reads visibly larger than its neighbors once placed in the Dock.
+  The plate fills the canvas edge to edge. macOS composites its own icons (Dock,
+  Finder) with a ~80% content box baked into their artwork, so that inset is
+  applied when scripts/package-macos.sh builds icon.icns from this source — every
+  other consumer (the Windows window/exe icon, the taskbar) shows the icon at
+  native size and wants the full plate, not a shrunken one with dead margin.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <g transform="translate(3.2 3.2) scale(0.8)">
   <rect width="32" height="32" rx="7" fill="#111113"/>
   <g transform="rotate(-8 16 16)">
     <!-- head, body and hind flippers: one mass -->
@@ -43,6 +43,5 @@
       Z"/>
     <!-- eye: plate-coloured rather than a cut-out, since the plate is always behind -->
     <circle cx="6.8" cy="10.4" r="1.75" fill="#111113"/>
-  </g>
   </g>
 </svg>

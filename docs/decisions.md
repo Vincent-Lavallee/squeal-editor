@@ -353,6 +353,22 @@ to be this drawing, not the stock one.
 
 ---
 
+## The macOS Dock inset is applied in packaging, not baked into the SVG
+
+The source `icon.svg` used to draw its plate at 80% of the canvas, centered,
+because macOS composites Dock/Finder icons with that same content box baked into
+their own artwork and a full-bleed plate reads larger than its neighbors there.
+But every other consumer — the Windows window icon and the taskbar — shows the
+icon at native size, so the same margin that fixed macOS read as a shrunken icon
+everywhere else.
+
+**Fixed by moving the inset to `scripts/package-macos.sh`.** The committed SVG
+and PNG are full-bleed again; the script shrinks a copy to 80% and pads it back
+out before handing it to `iconutil`, so `icon.icns` gets the inset and nothing
+else does. One drawing, each platform's packaging asks for what it needs from it.
+
+---
+
 ## The query pane is Monaco, and the engine names its own dialect
 
 **Why Monaco.** A textarea cannot highlight, number a line or find and replace,

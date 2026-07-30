@@ -106,13 +106,26 @@ LAUNCHER
 
 chmod +x "$macos/squeal-editor" "$macos/squeal-editor-bin" "$resources/extensions/db/squeal-db-ext"
 
+# frontend/public/icon.png is full-bleed — right for a window/exe icon shown at
+# native size, but macOS composites its own icons (Dock, Finder) with a ~80%
+# content box baked into their artwork, and a full-bleed plate next to them reads
+# visibly larger than its neighbors. So icon.icns gets that inset here, by
+# shrinking the source to 80% and padding back out to each target size, rather
+# than baking it into the committed SVG where every other consumer would inherit
+# the dead margin too.
 iconset="dist/icon.iconset"
 rm -rf "$iconset"
 mkdir -p "$iconset"
 for size in 16 32 128 256 512; do
-  sips -z $size $size frontend/public/icon.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
-  sips -z $((size * 2)) $((size * 2)) frontend/public/icon.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+  for name in "icon_${size}x${size}.png:$size" "icon_${size}x${size}@2x.png:$((size * 2))"; do
+    file="${name%%:*}"
+    px="${name##*:}"
+    inner=$((px * 8 / 10))
+    sips -z $inner $inner frontend/public/icon.png --out "$iconset/inner.png" >/dev/null
+    sips -p $px $px "$iconset/inner.png" --out "$iconset/$file" >/dev/null
+  done
 done
+rm -f "$iconset/inner.png"
 iconutil -c icns "$iconset" -o "$resources/icon.icns"
 
 cat > "$app/Contents/Info.plist" <<PLIST
