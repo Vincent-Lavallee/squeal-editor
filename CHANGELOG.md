@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.12.0...v0.12.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* Added Shell path on macos for AWS CLI ([cfb0c6d](https://github.com/Vincent-Lavallee/squeal-editor/commit/cfb0c6dc94a8d8e009cc41da4b7d1cd52d7ab97d))
+
 ## [0.12.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.11.0...v0.12.0) (2026-07-31)
 
 
