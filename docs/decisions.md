@@ -1274,7 +1274,7 @@ nor, for a direct DB socket, the OS store — so a real RDS connect came back
 `unable to get local issuer certificate`, exactly the "silently doesn't deliver"
 risk the choice was known to carry. The fix is the option that was deferred:
 `rds-global-bundle.pem` (Amazon's published bundle of every RDS regional CA) is
-committed and folded into the compiled binary, and `drivers.ts::tlsOptions` makes
+committed and folded into the compiled binary, and `drivers/common.ts::tlsOptions` makes
 it the `ca` for an IAM connection. `rejectUnauthorized` stays on — it is the
 *trusted set* that changed, not whether trust is checked, so an RDS certificate
 now verifies without weakening anything.
@@ -4232,3 +4232,40 @@ which is the code most likely to be blamed and least likely to be at fault. When
 something the store should hold is not there, read `schema_migrations` before
 reading the feature: the gap is the answer, and the last row is where the walk
 stopped.
+
+---
+
+## The engine layer became one file per engine, with the contract left central
+
+**What it was.** `drivers.ts`, 1,900 lines: the `Driver<C>` contract, the
+engine-neutral assemblers, and all three engines' SQL interleaved in one file.
+Adding a fourth meant growing it, and the "add an engine" the docs promise was
+buried three implementations deep.
+
+**What it is.** `extensions/db/drivers/` — `driver.ts` (the contract),
+`common.ts` (the assemblers), `index.ts` (the barrel and the dispatch), and one
+file per engine. Structure only: not a line of SQL changed, and every engine
+still answers the same contract tests.
+
+**Why the split lands where it does.** The cut is "what must not differ per
+engine" against "what only makes sense inside one". `pickRowKey`,
+`pickForeignKeys`, `runWrites`, `buildWhere` and `orderByClause` are central
+because a second answer to *what counts as a row identity* or *how a filter is
+assembled* is a bug that only shows up on one engine — which is the same reason
+they took `quoteIdent` and `placeholder` as callbacks before there were three
+files to keep honest. `splitRelation` went the other way, into `postgres.ts`: it
+is Postgres guessing a schema out of punctuation, and nothing else ever calls it.
+
+**The barrel rule is the load-bearing part.** `connection.ts` imports
+`drivers/index.ts`, never `drivers/postgres.ts`, exactly as both sides import
+`shared/protocol/index.ts` — so a helper can move between `common.ts` and an
+engine without touching a caller, which is the thing that makes the boundary
+adjustable rather than another wall. The engine files themselves are the one
+exception, importing `driver.ts` and `common.ts` directly, because importing the
+barrel that imports them is the cycle.
+
+**What this does not license.** A file per engine makes an `if (engine === …)`
+inside `connection.ts` cheaper to write and no less wrong. `LIMIT/OFFSET` and the
+sort wrapper still live there because all three engines spell them identically;
+the first engine that does not makes them `Driver` methods, which is now a method
+on the contract and a line in each of four files — visible, and the point.

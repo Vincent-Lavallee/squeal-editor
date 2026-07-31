@@ -20,7 +20,7 @@ process that holds the connections and runs the SQL.
 │                 │ WebSocket (localhost)  │
 │  ┌──────────────▼─────────────────────┐  │
 │  │ extension: squeal-db-ext (compiled)│  │
-│  │   connection.ts → drivers.ts       │  │
+│  │   connection.ts → drivers/         │  │
 │  └──────────────┬─────────────────────┘  │
 └─────────────────┼────────────────────────┘
                   │ TCP
@@ -53,7 +53,11 @@ frontend/             React + Vite → builds into resources/
 extensions/db/        the process that makes the calls the webview cannot
   main.ts             transport, registry, command handlers
   connection.ts       one server connection; hides the driver's client type
-  drivers.ts          per-engine SQL (mysql2 / pg)
+  drivers/            the engine layer; both sides import index.ts
+    index.ts          the barrel: the dispatch, and the contract re-exported
+    driver.ts         the contract every engine answers
+    common.ts         the engine-neutral assemblers all of them lean on
+    mysql.ts, postgres.ts, sqlite.ts    one file per engine (mysql2 / pg / bun:sqlite)
   store.ts            workspaces + saved connections: the SQLite file, the migration, the encryption
   chrome.ts           the window frame's colour, over bun:ffi (Windows-only)
 tests/                real-database + real-app suites
@@ -116,8 +120,9 @@ know something engine-specific: the driver reports a `SqlDialect` and the UI
 passes it to Monaco without reading it. Carrying a value is not knowing it —
 what would break the rule is a table up there mapping `mysql` to a grammar.
 
-Consequence: adding an engine touches `drivers.ts` and `EngineType`, plus one
-entry in the UI's engine dropdown. Nothing else.
+Consequence: adding an engine is a new file in `extensions/db/drivers/`, a case
+in that folder's barrel and a member of `EngineType`, plus one entry in the UI's
+engine dropdown. Nothing else.
 
 ## Process lifecycle
 

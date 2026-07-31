@@ -9,7 +9,7 @@ import type {
   TableFilter,
   TableInfo,
 } from '../../shared/protocol/index.ts';
-import { buildWhere, orderByClause, withDriver, type Driver, type QueryOutcome, type Relation } from './drivers.ts';
+import { buildWhere, orderByClause, withDriver, type Driver, type QueryOutcome, type Relation } from './drivers/index.ts';
 import { rdsAuthToken } from './iam.ts';
 
 /**

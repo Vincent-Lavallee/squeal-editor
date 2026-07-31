@@ -6,7 +6,7 @@ export const sqlLiteral = (value: string): string => `'${value.replace(/'/g, "''
 /**
  * Quotes an identifier the way this dialect's own driver would.
  *
- * Mirrors `Driver.quoteIdent` in `extensions/db/drivers.ts` exactly — backtick
+ * Mirrors `Driver.quoteIdent` in `extensions/db/drivers/` exactly — backtick
  * for MySQL, double quote (the ANSI default, and every other engine this app
  * or a future one is likely to speak) otherwise, each escaping an embedded
  * instance of its own quote character by doubling it. `SqlDialect` is already

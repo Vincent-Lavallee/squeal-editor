@@ -49,7 +49,7 @@ export interface StarredTable {
  * showing a navigable icon on it would filter the related table by a fifth of a
  * key and land on every row that shares that fifth, silently. `null`, not a
  * guess, is this rule's answer for a composite constraint: see `pickForeignKeys`
- * in `drivers.ts`.
+ * in `drivers/common.ts`.
  */
 export interface ForeignKeyRef {
   table: string;

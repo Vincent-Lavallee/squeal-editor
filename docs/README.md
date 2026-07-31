@@ -50,6 +50,9 @@ reading the others first, except `architecture.md`, which is the map.
   it and both sides must agree — that is the point of it existing. It is six
   domain files behind one barrel: **import `protocol/index.ts`, never a domain
   file directly**, so a type can move between them without touching its callers.
+- `extensions/db/drivers/` is the same rule applied to the engines: the contract,
+  the shared assemblers and one file per engine, behind `drivers/index.ts`.
+  Import the barrel; only the engine files reach past it, and only inward.
 - Comments explain *why*, never *what*. If a line looks arbitrary, it needs a
   comment; if it reads plainly, it does not.
 - Prose in these docs describes the current state. `decisions.md` is the only

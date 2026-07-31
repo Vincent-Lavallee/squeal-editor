@@ -23,7 +23,7 @@ not an objection.
 |---|---|
 | `main.ts` | transport (WebSocket, heartbeat), the connection registry, command handlers |
 | `connection.ts` | one server connection; per-database clients; the page SQL for browsing |
-| `drivers.ts` | per-engine SQL and value handling |
+| `drivers/` | the engine layer: the contract, the shared assemblers, the dispatch, and one file per engine's SQL and value handling |
 | `store.ts` | workspaces and saved connections: the SQLite file, the rows, and the password encryption |
 | `migrations/` | the store's schema, one file per change, plus the runner that brings a file up to it |
 | `chrome.ts` | the window frame's colour and the maximise clamp, over `bun:ffi`. Windows-only, best-effort |
@@ -31,23 +31,51 @@ not an objection.
 | `updater.ts` | the user-initiated updater: the release check, the verified download, and launching the installer. Windows-only |
 | `updateKey.ts` | the committed ed25519 public key the download's signature is checked against |
 
-The split matters: `main.ts` knows nothing about SQL, `drivers.ts` knows nothing
+The split matters: `main.ts` knows nothing about SQL, `drivers/` knows nothing
 about the transport, and `store.ts` and `chrome.ts` know nothing about either.
+
+### Inside `drivers/`
+
+| File | Owns |
+|---|---|
+| `driver.ts` | the contract: `Driver<C>`, `Relation`, `TableMeta`, `QueryOutcome` |
+| `common.ts` | what every engine leans on and none of them may spell differently: `toDisplayValue`, `pickRowKey`, `pickForeignKeys`, `runWrites`, `buildWhere`, `orderByClause`, `selectExpressionAt`, the TLS options |
+| `mysql.ts`, `postgres.ts`, `sqlite.ts` | one engine each: its SQL, its catalog queries, its quoting, and its library's quirks |
+| `index.ts` | the barrel: `withDriver`, and the contract re-exported |
+
+**Import `drivers/index.ts`, never a file beside it** — the same rule
+`shared/protocol/` follows, and for the same reason: a helper can move between
+`common.ts` and an engine without touching a caller. The engine files are the one
+exception, importing `driver.ts` and `common.ts` directly, because importing the
+barrel that imports them would be the cycle.
+
+An engine file knows nothing of the other two. Anything two of them would
+otherwise both spell is a `common.ts` assembler taking `quoteIdent` and
+`placeholder` as callbacks — that is what keeps "how a filter is built" from
+having three answers.
 
 ## Adding an engine
 
 1. Add the name to `EngineType` in `shared/protocol/config.ts`.
-2. Write a `Driver<C>` in `drivers.ts`, where `C` is the library's client type.
+2. Write `extensions/db/drivers/<engine>.ts`, exporting a `Driver<C>` where `C`
+   is the library's client type.
    Its `dialect` is how the editor will highlight it *and* which words it will
    suggest — one of Monaco's SQL language ids, or `sql` if it has no grammar of
    its own. Do not invent one: `sql` is the deliberate fallback, and a dialect
    with no grammar behind it means an editor that suggests nothing.
-3. Add a `case` to `withDriver`.
-4. Add the option to `ENGINES` in `frontend/src/engines.ts`.
+3. Import it in `drivers/index.ts` and add a `case` to `withDriver`. By hand,
+   for `migrations/index.ts`'s reason: the extension ships compiled with its
+   source deleted beside it, so only a statically imported file is in there.
+4. Add the option to `ENGINES` in `frontend/src/common/db/engines.ts`.
 
 Then add it to the `describe.each` in `tests/extension.test.ts` — every engine
 runs the *same* contract tests, which is what keeps them interchangeable. The UI
 cannot tell engines apart, so anything asymmetric is a bug.
+
+The point of the shape is that steps 2–3 are a *new file* and a line, never an
+edit into somebody else's engine. If a change asks you to widen `common.ts`
+instead, that is the signal to check whether the contract is missing a method —
+see *Browsing a table* on `LIMIT/OFFSET`, which is the standing example.
 
 ### An engine that is a file, not a server
 
@@ -214,7 +242,7 @@ the only side that may author it. **Filtering a query's result is deliberately
 not offered** — that would mean wrapping the user's statement, which is the same
 refusal `db.query` already makes.
 
-`buildWhere` in `drivers.ts` is the shared assembler, the same shape as
+`buildWhere` in `drivers/common.ts` is the shared assembler, the same shape as
 `runWrites` beside it: engine-neutral assembly, with `quoteIdent` and
 `placeholder` as the two callbacks. `Driver.placeholder` is new and is the pair
 of `quoteIdent` — `?` for mysql2, `$n` for pg — so every assembler that binds a
@@ -252,8 +280,8 @@ the hundred rows after they arrive would sort each page within itself and leave
 the pages themselves in natural order — correct-looking on page one, wrong from
 page two.
 
-`orderByClause` in `drivers.ts` is the assembler, beside `buildWhere` and the
-same shape, with one difference: it takes `quoteIdent` alone and no
+`orderByClause` in `drivers/common.ts` is the assembler, beside `buildWhere` and
+the same shape, with one difference: it takes `quoteIdent` alone and no
 `placeholder`, because a sort has **no value to bind**. Both halves reach the SQL
 as text, so both are guarded rather than parameterised — the column through the
 driver's own `quoteIdent` (which escapes the quote character, so a name carrying
@@ -788,7 +816,7 @@ Four things are load-bearing:
   neither Node/Bun's bundled roots nor a direct socket's OS store — so verified
   TLS fails with `unable to get local issuer certificate` without them.
   `rds-global-bundle.pem` (Amazon's published bundle) is committed and folded into
-  the binary as text, and `drivers.ts::tlsOptions` makes it the `ca` for an IAM
+  the binary as text, and `drivers/common.ts::tlsOptions` makes it the `ca` for an IAM
   connection while leaving `rejectUnauthorized` on. A password connection keeps
   the OS trust store — only IAM, whose target is known to be RDS, gets the bundle.
   See `docs/decisions.md`.
