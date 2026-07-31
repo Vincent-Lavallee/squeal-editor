@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useSession } from '../../store/sessionSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
@@ -31,7 +31,11 @@ const editorBox: React.CSSProperties = {
 };
 
 interface Props {
-  /** Running belongs to the results feature, so the shell supplies both. */
+  /**
+   * Running belongs to the results feature, so the shell supplies both. The text
+   * is this pane's to decide -- see `sqlToRun`, which is what makes running a
+   * selection the same action as running the tab.
+   */
   onRun: (sql: string) => void;
   running: boolean;
   /** Toggling the sidebar is a shell concern; Monaco would otherwise swallow Ctrl+B. */
@@ -84,6 +88,11 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
+  // Only so the Run button can name what it will run. What actually runs is read
+  // off Monaco at the moment of the run (`sqlToRun`), never from this -- a label
+  // one frame behind is cosmetic, a query one frame behind is not.
+  const [hasSelection, setHasSelection] = useState(false);
+
   /*
    * One editor, one model per tab. The model is what makes the text per tab, and
    * swapping it is why nothing here has to write text *into* Monaco: `setModel`
@@ -101,6 +110,24 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
    */
   const latest = useRef({ sql, onRun, dialect, activeTabId, peekSql, onToggleSidebar, onSaveQuery });
   latest.current = { sql, onRun, dialect, activeTabId, peekSql, onToggleSidebar, onSaveQuery };
+
+  /*
+   * What every way of running runs: the selection when there is one, the whole
+   * tab otherwise. Read off Monaco at the moment of the run rather than tracked
+   * in state -- a selection is Monaco's and the store has never heard of it, so
+   * there is nothing to keep in step.
+   *
+   * A selection of nothing but whitespace runs *nothing*, and does so by being
+   * passed along: `runQuery` already refuses a blank statement, which is the same
+   * no-op an empty editor gets. Falling back to the whole tab there would run the
+   * text the user had just narrowed away from.
+   */
+  const sqlToRun = useCallback((): string => {
+    const model = editor.current?.getModel();
+    const selection = editor.current?.getSelection();
+    if (!model || !selection || selection.isEmpty()) return latest.current.sql;
+    return model.getValueInRange(selection);
+  }, []);
 
   // The button is the same action the shortcut and the context menu run, not a
   // second path into the formatter: reach for Monaco's registered action rather
@@ -186,8 +213,10 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
      * here is what keeps the app's one shortcut working where it is used most.
      */
     instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-      latest.current.onRun(latest.current.sql);
+      latest.current.onRun(sqlToRun());
     });
+
+    instance.onDidChangeCursorSelection((e) => setHasSelection(!e.selection.isEmpty()));
 
     // Ctrl+B toggles the sidebar. Monaco wins inside its own DOM, so without
     // this the window listener never sees the key — the same pattern as
@@ -218,7 +247,7 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
     };
     // Mount only. The models flow in through the effect below instead, because
     // re-creating the editor on every keystroke is not a way to keep it in sync.
-  }, [setSql]);
+  }, [setSql, sqlToRun]);
 
   /*
    * Show the active tab's model.
@@ -253,6 +282,10 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
 
     const saved = viewStates.current.get(activeTabId);
     if (saved) ed.restoreViewState(saved);
+    // A tab carries its selection in its view state, so the button has to be
+    // told what the tab it just landed on has -- the cursor event above fires
+    // for edits and clicks, not for a model being swapped underneath it.
+    setHasSelection(!(ed.getSelection()?.isEmpty() ?? true));
     // Only when moving between tabs: on the first render this would steal focus
     // from a screen the user has not asked to type into yet.
     if (switching) ed.focus();
@@ -332,7 +365,10 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
         // it -- there is one Monaco and every tab's model hangs off it -- so the
         // listener is live and has to refuse for itself.
         if (!isEditorTab) return;
-        onRun(sql);
+        // The selection outlives the focus leaving the editor -- Monaco still
+        // draws it, and running from out here has to mean what running from
+        // inside it does.
+        onRun(sqlToRun());
       }
       // Prevented whichever tab is in front, unlike Run: a grid tab has nothing
       // to save, but letting the key through there would still hand the webview
@@ -345,7 +381,7 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [sql, onRun, onSaveQuery, isEditorTab]);
+  }, [onRun, onSaveQuery, isEditorTab, sqlToRun]);
 
   return (
     <>
@@ -358,8 +394,8 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
           <Button style={barButton} onClick={format}>
             Format
           </Button>
-          <Button style={barButton} data-testid="run-btn" variant="primary" onClick={() => onRun(sql)} disabled={running}>
-            {running ? 'Running…' : 'Run'}
+          <Button style={barButton} data-testid="run-btn" variant="primary" onClick={() => onRun(sqlToRun())} disabled={running}>
+            {running ? 'Running…' : hasSelection ? 'Run selection' : 'Run'}
           </Button>
         </div>
       )}

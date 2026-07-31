@@ -56,9 +56,22 @@ export function useResults() {
    * edit away instead of a re-open.
    */
   const gridTable = activeTab?.kind === 'grid' ? (activeTab.table ?? null) : null;
-  const { result, browse, editTarget, runSeq, sort, error, running, startedAt, columns } = useAppSelector(
-    (s) => (activeTabId ? s.results[activeTabId] : undefined) ?? EMPTY
-  );
+  const {
+    result,
+    browse,
+    editTarget,
+    // The statement that produced what is on screen, which is not the tab's
+    // current editor text: a run may have been of the selection, and the text
+    // has been free to change since. Everything that re-runs this result reads
+    // it -- see `ResultsState.sql`.
+    sql: ranSql,
+    runSeq,
+    sort,
+    error,
+    running,
+    startedAt,
+    columns,
+  } = useAppSelector((s) => (activeTabId ? s.results[activeTabId] : undefined) ?? EMPTY);
 
   /*
    * A hand-typed query's row identity is a *candidate*, not a fact the way a
@@ -287,12 +300,6 @@ export function useResults() {
     .filter((r) => !deletedSet.has(r) && Object.keys(pending.edits[r] ?? {}).length > 0);
   const dirtyCount = editedRows.length + deletedRows.length;
 
-  // A hand query has no page to step back to after Save -- only the statement
-  // to run again, the same way a browsed page re-reads itself. `tabs.sqlByTab`
-  // is app-level state, the same slice `selectActiveTab` above already reaches
-  // into, not a reach into the editor feature.
-  const sql = useAppSelector((s) => (activeTabId ? s.tabs.sqlByTab[activeTabId] : undefined));
-
   /**
    * Sort by a column, or step the sort it already has.
    *
@@ -304,9 +311,11 @@ export function useResults() {
    *
    * Which of the two paths runs is the same boundary drawn everywhere else, and
    * for once both sides are open. A grid tab re-browses: the order goes into the
-   * page SQL the extension already authors. An editor tab re-runs its statement
-   * with a sort the extension wraps around it -- the one rewrite this app makes,
-   * and the reason it is allowed is that the row set is unchanged. Both go
+   * page SQL the extension already authors. An editor tab re-runs the statement
+   * that produced *this* result -- `ranSql`, never whatever the editor holds
+   * now, which may have been edited since or may be a whole tab of statements a
+   * selection was run out of -- with a sort the extension wraps around it: the
+   * one rewrite this app makes, allowed because the row set is unchanged. Both go
    * through the server rather than reordering the rows already in hand: a BIGINT
    * arrives as a string and a timestamp as the engine's own text, so comparing
    * them up here would sort `9` after `10` and order dates by their spelling.
@@ -322,11 +331,11 @@ export function useResults() {
       const next = nextSort(sort, column);
       if (gridTable) {
         void dispatch(browseTable({ tabId: activeTabId, table: gridTable, offset: 0, filter: appliedFilter, sort: next }));
-      } else if (sql !== undefined) {
-        void dispatch(runQuery({ tabId: activeTabId, sql, sort: next }));
+      } else if (ranSql !== null) {
+        void dispatch(runQuery({ tabId: activeTabId, sql: ranSql, sort: next }));
       }
     },
-    [dispatch, activeTabId, gridTable, appliedFilter, sort, sql]
+    [dispatch, activeTabId, gridTable, appliedFilter, sort, ranSql]
   );
 
   const save = useCallback(async () => {
@@ -368,17 +377,19 @@ export function useResults() {
         // staging is keyed by row index, so a page that came back in a different
         // order would leave every remaining index pointing at the wrong row.
         dispatch(browseTable({ tabId: activeTabId, table: browse.table, offset: browse.offset, filter: browse.filter, sort }));
-      } else if (sql !== undefined) {
+      } else if (ranSql !== null) {
         // There is no page to re-read; re-running is the only "same view" a
-        // hand query has, the same reason it is what Save re-does for one.
-        dispatch(runQuery({ tabId: activeTabId, sql, sort }));
+        // hand query has, the same reason it is what Save re-does for one. The
+        // statement that produced the rows, not the editor's current text --
+        // "the same view" is not the same view if it is a different query.
+        dispatch(runQuery({ tabId: activeTabId, sql: ranSql, sort }));
       }
     } else {
       // Beside the save bar, not in `error`: a failed save must leave the grid and
       // the edits the user is still holding on screen, not blank them.
       view.setSaveError(activeTabId, (action.payload as string | undefined) ?? 'Could not save the changes.');
     }
-  }, [activeTabId, browse, editTable, editSchema, page, keyColumns, result, dirtyCount, editedRows, deletedRows, pending, view, dispatch, sql, sort]);
+  }, [activeTabId, browse, editTable, editSchema, page, keyColumns, result, dirtyCount, editedRows, deletedRows, pending, view, dispatch, ranSql, sort]);
 
   /** Copy rows as tab-separated text -- a webview clipboard write, crossing nothing. */
   const copyRows = useCallback(
@@ -646,6 +657,7 @@ const EMPTY = Object.freeze({
   result: null,
   browse: null,
   editTarget: null,
+  sql: null,
   runSeq: 0,
   sort: null,
   error: null,

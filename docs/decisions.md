@@ -4441,3 +4441,46 @@ do, and the seam and the collision were both invisible until there was a picture
 a scratch harness seeded a store with an SSO profile that cannot mint credentials
 (`AWS_CONFIG_FILE` pointing at a throwaway config is enough — `fromIni` reads it),
 hovered the row over CDP and screenshotted it.
+
+## Running a selection, and the result remembering the statement it came from
+
+**One decision with two halves, and the second is the one that had to be found.**
+Running only the highlighted text is a small feature — read the selection off
+Monaco, hand it to `onRun`, done. What it broke is that two things *re-run* a
+result after the fact, and both were reading the tab's editor text to do it:
+sorting a query's grid, and re-reading it after a save. Once a run can be of a
+fragment, "the statement that produced this grid" and "what the editor holds"
+stop being the same string, so `ResultsState.sql` records the former and both
+re-runs read it.
+
+**It was already subtly wrong before the selection made it obvious.** Run a
+query, edit the text, click a header: the sort re-ran the edited text and
+labelled the result with the arrow from the previous one. Nobody reported it
+because the window between running and sorting is usually short. A selection
+widens that window to *always*, since the tab's text is normally several
+statements when a selection is worth making — and wrapping several statements in
+`SELECT * FROM (…) squeal_sorted` is a syntax error rather than a quiet mismatch,
+which is what turned a latent bug into a visible one.
+
+**Rejected: keeping the selection in the store.** It is Monaco's own state,
+changes on every cursor move, and the store has never heard of it — the same test
+that keeps `maximized` and the sidebar's width out. `sqlToRun` reads it at the
+moment of the run, so there is nothing to keep in step. The one thing that *is*
+kept in React state is a `hasSelection` boolean, and only so the button can be
+labelled *Run selection*; if it were ever a frame behind, the label would be
+stale and the query would still be right.
+
+**Rejected: falling back to the whole tab when the selection is blank.** A
+selection of whitespace is a gesture that names nothing, and the two readings are
+"they meant nothing" or "they meant everything". Running everything is the
+expensive way to be wrong: the text they selected *away* from is, by
+construction, the statement they did not want run — and on a tab of several
+statements that includes whatever DML is sitting above the SELECT. It runs
+nothing, and it gets there without a branch, because `runQuery` already refuses a
+blank statement.
+
+**Rejected: splitting a multi-statement selection here.** The backlog asks for a
+selection of several statements to behave the way a whole tab of several
+statements does, which it now does for free — same text, same `db.query`. Making
+this feature *also* split them would be implementing the separate backlog item
+inside it, and would leave the two paths to diverge the moment one is changed.

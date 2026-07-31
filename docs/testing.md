@@ -312,6 +312,16 @@ Two things to know:
   reads have to guard (`getModel()?.getValue() ?? null`), and that guard is
   itself the assertion that a grid tab really has no editor on it. Asserting the
   text of a background tab means switching to it first.
+- **A selection is set through the same seam** (`selectLines`), and the run it
+  drives is asserted by which columns come back: the fixture query is two
+  statements, because Postgres answers a multi-statement run with the *last*
+  one's result — so "the selected line ran" and "the whole tab ran" cannot be
+  confused for one another.
+- **Anything evaluated with a `const` in it has to be wrapped in an IIFE.** Each
+  `Runtime.evaluate` is its own script but shares one global lexical scope, so a
+  bare top-level `const` persists and the *second* call throws
+  `Identifier … has already been declared` — a failure that reads as the app
+  being broken rather than the helper.
 - **Some Monaco ids are commands, not actions.** `getAction('closeFindWidget')`
   returns `null`; it wants `editor.trigger(...)`. That distinction cost a
   confusing failure in a test whose subject had already passed.

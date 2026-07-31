@@ -82,7 +82,7 @@ that lives apart from its values is two sources for one fact.
 | `database`, per connection | `tabs` slice | crossed |
 | `tabs`, `activeTabId`, `kind`, `title`, a grid tab's `filter` seed, an editor tab's `savedQueryId` | `tabs` slice | never left, but see above |
 | `databases`, `tables`, `columns`, `stars` | `explorer` slice | crossed |
-| `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), per tab | `results` slice | crossed |
+| `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), the `sql` the result came from, per tab | `results` slice | crossed |
 | staged cell edits + row deletes, per tab (+ `saving`, `saveError`) | `results` context | never left, until Save |
 | the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Apply |
 | saved connections | `saved` slice | crossed |
@@ -453,8 +453,9 @@ on the tab being a `grid` tab (`gridTable`, `FilterBar`'s own early return),
 so a hand query's grid never grows a pager or a `WHERE` builder — extending
 either would mean the extension silently rewriting a statement it promised
 to run as written. `Save` here re-runs the original SQL instead of
-re-browsing a page, since there is no page to read back — `useResults` reads
-the tab's current text off `tabs.sqlByTab` for exactly that. Copy-as-SQL and
+re-browsing a page, since there is no page to read back — and *original* is
+meant literally: it re-runs `results[tabId].sql`, the statement the rows on
+screen came from, not whatever the editor holds now. Copy-as-SQL and
 FK navigation stay gated on `browse !== null` too, unchanged: they need a
 `columnInfo` this path never fetches.
 
@@ -643,7 +644,12 @@ said about this column.
 
 **Which path runs is the tab's kind, and both go to the server.** A grid tab
 re-browses, so the order goes into the page SQL the extension already authors; an
-editor tab re-runs its statement with a sort the extension wraps around it.
+editor tab re-runs **the statement the result came from** — `ResultsState.sql`,
+written by the run that produced it — with a sort the extension wraps around it.
+Not the tab's current text: that has been free to change since, and once a run
+can be of a *selection* the two are routinely different strings. Re-running the
+tab would wrap several statements, or a query the user is halfway through
+rewriting, and report the answer under a header they clicked on the old one.
 Neither reorders the rows already in hand, and that is not laziness: a BIGINT
 arrives as a string and a timestamp as the engine's own text, so a comparator up
 here would sort `9` after `10` and order dates by their spelling. It is *Never
@@ -1177,6 +1183,37 @@ Six things there look incidental and are not:
 **The pane is hidden on a grid tab, never unmounted.** That is not a preference:
 there is one instance and every tab's model hangs off it, so unmounting would
 dispose the lot and every other tab would come back empty.
+
+### Running a selection
+
+With text selected, running runs exactly that text; with nothing selected it runs
+the whole tab, unchanged. One function decides it — `sqlToRun` in `EditorPane` —
+and all three ways in call it: Monaco's Ctrl+Enter, the window listener behind it,
+and the toolbar's *Run*. The `onRun` prop takes the text, so the results feature
+never learns that a selection is a thing.
+
+Four things there are load-bearing:
+
+- **It is read off Monaco at the moment of the run, never tracked in state.** A
+  selection is Monaco's own and the store has never heard of it, so there is
+  nothing to keep in step and no frame to be behind.
+- **A selection of nothing but whitespace runs nothing at all**, and gets there
+  by being passed along rather than by a branch: `runQuery`'s own condition
+  refuses a blank statement, which is the same no-op an empty editor already
+  gets. Falling back to the whole tab would run the text the user just narrowed
+  away from — the loudest possible way to be wrong, since what they narrowed away
+  from is usually the statement they did not want to run.
+- **The window listener runs the selection too.** A selection outlives the focus
+  leaving the editor — Monaco still draws it — so running from the toolbar or from
+  a keypress anywhere else has to mean what running from inside the editor means.
+- **The button says which**, reading a `hasSelection` boolean kept from
+  `onDidChangeCursorSelection`. That state is *only* the label: it is also
+  refreshed in the tab-switch effect, because a tab carries its selection in its
+  view state and swapping a model underneath the editor is not a cursor event.
+
+A selection spanning more than one statement is not a case this handles — it is
+the same text going to the same `db.query`, so whatever running a whole tab of
+several statements does today, running a selection of several does too.
 
 ### Completion
 

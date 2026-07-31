@@ -601,3 +601,13 @@ This is a record, not a plan. Nothing here is waiting on anything.
   preserve its case. Postgres-only: MySQL column lookups are case-insensitive
   regardless of quoting, and SQLite is lenient about ASCII case, so neither
   reproduces this.
+
+- **2026-07-31** — **Run only the selected text** — Ctrl/⌘+Enter always runs the entire editor's
+  contents, so trying one query out of several already written in the same tab
+  means commenting out or deleting the rest first. When there is a selection,
+  run exactly that text, verbatim — the same "run it as typed" philosophy the
+  full editor already gets. A cursor with nothing highlighted still runs the
+  whole editor, unchanged from today; a selection that trims to whitespace runs
+  nothing at all, no silent fallback to running everything. A selection
+  spanning more than one statement is split into separate results the same way
+  running the whole editor's multiple statements is.

@@ -73,6 +73,17 @@ export interface ResultsState {
   browse: BrowseState | null;
   editTarget: EditTarget | null;
   /**
+   * The statement the result on screen came from, or null when it came from
+   * somewhere else -- a browsed page, a failure, a tab that has never run.
+   *
+   * Held here rather than read back off the tab's editor text, and the two are
+   * not the same string: a run may be of the *selection*, and the text keeps
+   * changing after the result lands. Everything that re-runs this result --
+   * sorting it, re-reading it after a save -- has to run the statement that
+   * produced it, or a click on a header would silently run something else.
+   */
+  sql: string | null;
+  /**
    * Bumped every time `runQuery` is dispatched for this tab, whatever the
    * outcome. `useResults` folds it into the staging page key for a query-edited
    * grid (`table@query@runSeq`), which has no offset or filter of its own to
@@ -124,7 +135,7 @@ type ResultsByTab = Record<string, ResultsState>;
 const initialState: ResultsByTab = {};
 
 const blank = (): ResultsState =>
-  ({ result: null, browse: null, editTarget: null, runSeq: 0, sort: null, error: null, running: false, startedAt: null, columns: [] });
+  ({ result: null, browse: null, editTarget: null, sql: null, runSeq: 0, sort: null, error: null, running: false, startedAt: null, columns: [] });
 
 /**
  * Reads its target off the state rather than taking it as an argument. That is
@@ -190,11 +201,12 @@ export const runQuery = createAppThunk(
         }
       }
 
-      // The sort is echoed into the payload rather than read back off `meta.arg`
-      // in the reducer, so what the result *was fetched with* and what came back
-      // are one fact arriving together -- the same shape `browseTable` uses for
-      // its filter.
-      return { result, editTarget, sort: arg.sort ?? null };
+      // The sort and the statement are echoed into the payload rather than read
+      // back off `meta.arg` in the reducer, so what the result *was fetched
+      // with* and what came back are one fact arriving together -- the same
+      // shape `browseTable` uses for its filter. The trimmed `sql` is what was
+      // actually sent, so it is what a re-run has to send again.
+      return { result, editTarget, sql, sort: arg.sort ?? null };
     } catch (err) {
       return rejectWithValue(errorMessage(err));
     } finally {
@@ -365,6 +377,7 @@ const resultsSlice = createSlice({
         // The grid now holds SQL the user wrote, which has no page N to step to.
         s.browse = null;
         s.editTarget = action.payload.editTarget;
+        s.sql = action.payload.sql;
         s.sort = action.payload.sort;
       })
       .addCase(runQuery.rejected, (state, action) => {
@@ -375,6 +388,9 @@ const resultsSlice = createSlice({
         s.result = null;
         s.browse = null;
         s.editTarget = null;
+        // Nothing on screen came from it any more, and the header that would
+        // re-run it is gone with the grid.
+        s.sql = null;
         // The grid the arrow described is gone, so the arrow goes with it. A
         // sort the server refused must not stay on screen claiming to be in
         // force, and the next click on that header starts from ascending again.
@@ -406,8 +422,10 @@ const resultsSlice = createSlice({
         };
         s.sort = sort;
         // A browsed page has its own row identity (`browse.keyColumns` above);
-        // a hand query's detected one does not apply to it.
+        // a hand query's detected one does not apply to it. Nor did any
+        // statement produce this page -- re-reading it is a re-browse.
         s.editTarget = null;
+        s.sql = null;
         // Held apart from the page, so a later failure does not take it -- see
         // `ResultsState.columns`. Only a successful page may replace it.
         if (page.columnInfo.length > 0) s.columns = page.columnInfo;

@@ -41,16 +41,6 @@ Things that are wrong.
 
 Things that do not exist yet.
 
-- **Run only the selected text** — Ctrl/⌘+Enter always runs the entire editor's
-  contents, so trying one query out of several already written in the same tab
-  means commenting out or deleting the rest first. When there is a selection,
-  run exactly that text, verbatim — the same "run it as typed" philosophy the
-  full editor already gets. A cursor with nothing highlighted still runs the
-  whole editor, unchanged from today; a selection that trims to whitespace runs
-  nothing at all, no silent fallback to running everything. A selection
-  spanning more than one statement is split into separate results the same way
-  running the whole editor's multiple statements is.
-
 - **Split multi-statement results into tabs** — Running text that contains more
   than one statement today shows only one result: Postgres silently keeps the
   last statement's and drops the rest, MySQL refuses the whole thing outright

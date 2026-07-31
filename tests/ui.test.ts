@@ -161,6 +161,21 @@ const dropTab = (label: string) =>
  */
 const editorText = `window.squealEditor.getModel()?.getValue() ?? null`;
 const setEditorText = (sql: string) => `window.squealEditor.setValue(${JSON.stringify(sql)}); true;`;
+/**
+ * Select whole lines, the way dragging down the gutter does. The end column is
+ * read off the model rather than counted here, so this stays a selection of the
+ * line and not an assertion about how long the line is. Wrapped in an IIFE
+ * because a bare `const` here would declare into the page's global scope and
+ * throw on the second call.
+ */
+const selectLines = (from: number, to: number) => `(() => {
+  const model = window.squealEditor.getModel();
+  window.squealEditor.setSelection({
+    startLineNumber: ${from}, startColumn: 1,
+    endLineNumber: ${to}, endColumn: model.getLineMaxColumn(${to}),
+  });
+  return true;
+})()`;
 
 /**
  * Types a query, puts the cursor where the `|` was, and reads the popup's labels.
@@ -1138,6 +1153,66 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // The grid now holds SQL the user wrote, and the extension will not
       // rewrite that to reach page 2 -- so there is no page 2 to offer.
       expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="results-pager"]').length`)).toBe(0);
+    });
+
+    /*
+     * Running a selection, and the three tests below are one arrangement.
+     *
+     * The tab holds two statements on purpose: Postgres answers a multi-statement
+     * run with the *last* one's result, so "the first line ran" and "the whole tab
+     * ran" come back under different column names. There is no passing this by
+     * accident.
+     */
+    const twoStatements = 'SELECT name FROM users ORDER BY id;\nSELECT email FROM users ORDER BY id;';
+    const gridHeaders = `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`;
+
+    test('a selection is what runs, and the button says which', async () => {
+      await app.evaluate(setEditorText(twoStatements));
+      await Bun.sleep(200);
+      await app.evaluate(selectLines(1, 1));
+      await Bun.sleep(200);
+
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="run-btn"]').textContent`)).toBe('Run selection');
+
+      // Dispatched at the document, so this is the window listener rather than
+      // Monaco's own binding: a selection outlives the focus leaving the editor,
+      // and running from out here has to mean what running from inside it means.
+      await app.evaluate(
+        `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(1500);
+
+      expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
+    });
+
+    /*
+     * The result remembers the statement it came from, which is the half of this
+     * feature that is not the running. Sorting re-runs that statement -- if it
+     * re-ran the tab's text instead, the wrap would go around two statements and
+     * come back a syntax error rather than a subtly different grid.
+     */
+    test('sorting a selection\'s result re-runs the selection, not the tab', async () => {
+      await app.evaluate(clickHeader('name'));
+      await Bun.sleep(1500);
+
+      expect(await app.evaluate<string | null>(sortState)).toBe('name:asc');
+      expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="note-error"]')?.textContent ?? ''`)).toBe('');
+    });
+
+    test('a selection of nothing but whitespace runs nothing, rather than everything', async () => {
+      await app.evaluate(setEditorText('SELECT name FROM users;\n   \nSELECT email FROM users;'));
+      await Bun.sleep(200);
+      await app.evaluate(selectLines(2, 2));
+      await Bun.sleep(200);
+      await app.evaluate(
+        `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(1500);
+
+      // Still the grid the test above left: falling back to the whole tab would
+      // have run the second statement and answered under `email`.
+      expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
     });
 
     /*
