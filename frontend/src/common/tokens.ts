@@ -39,16 +39,18 @@ export const SELECTED = '#0eb39e24'; /* ACCENT at 14% */
 export const SCRIM = '#00000099';
 
 /**
- * The app's own background at 70%, laid over content that is *there but not
+ * The app's own background, thinned, laid over content that is *there but not
  * usable yet* — a saved connection whose AWS profile has not signed in.
  *
- * Not a second surface and not elevation: it sits over the row it obscures and
- * blurs it (`backdrop-filter`), so the row still reads as the row rather than
- * being replaced by an empty state. SCRIM is the modal's answer to the same
- * shape of question and is deliberately black — that one pushes the whole app
- * back, this one veils one row of it in the app's own colour.
+ * Not a second surface and not elevation: it sits over the row it obscures
+ * rather than under it. SCRIM is the modal's answer to the same shape of
+ * question and is deliberately black — that one pushes the whole app back, this
+ * one veils one row of it in the app's own colour.
+ *
+ * Thin because it is not what does the obscuring: VEIL_BLUR is. A wash heavy
+ * enough to obscure on its own reads as paint, and the frost is the point.
  */
-export const VEIL = '#111113b3';
+export const VEIL = '#11111359';
 /**
  * What makes the veil read as glass rather than as a flat wash: a hairline along
  * its edges and a sheen down its top half, both white at very low alpha. Same
@@ -58,7 +60,14 @@ export const VEIL = '#111113b3';
 export const VEIL_EDGE = '#ffffff1f';
 export const VEIL_SHEEN = '#ffffff14';
 /** The far end of the veil, where its label sits and needs a settled ground. */
-export const VEIL_DEEP = '#111113f2';
+export const VEIL_DEEP = '#111113e6';
+/**
+ * How hard the frost bites, in px of `backdrop-filter: blur()`. Deep enough that
+ * what it covers is unreadable — anything less looks like a mistake rather than
+ * a state — which is affordable only because the veil is masked and never
+ * reaches the end of the row that says *which* connection this is.
+ */
+export const VEIL_BLUR = 12;
 
 /* ---- Text ---- */
 export const TEXT = '#edeef0'; /* slate-12: primary */

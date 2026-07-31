@@ -4047,12 +4047,20 @@ instead of softening it (`saturate` and `brightness`), grades `--veil` toward
 `--veil-deep` at the trailing edge, and adds a sheen and a hairline on top.
 Light *added over* the one background, never a lighter surface under it.
 
+*Superseded on the blur, and only on the blur, by* **The veil blurs after all,
+because the blur is masked** *below. The objection above stands and is what the
+mask answers; the sheen, the grade and the hairline all survive.*
+
 **Two placement lessons, both from looking at it rather than reasoning about
 it.** The pane is a `<button>` in its own right, not a button centred inside a
 `<div>`: it is already row-width, so a small control floating in it leaves nine
-tenths of an obviously interactive surface inert. And its label sits at the
-*trailing* edge — centred, it landed squarely on the connection's name and engine
-badge, which is the collision the glass was chosen to avoid.
+tenths of an obviously interactive surface inert. And its label sits against an
+*edge*, not centred — centred, it landed squarely on the connection's name and
+engine badge with the row's own text either side of it, which is the collision
+the glass was chosen to avoid.
+
+*Superseded on which edge, by the same entry below: the chip is at the leading
+one now, and the frost was mirrored to follow it.*
 
 **It reveals on hover, so the row is dimmed at rest.** Without the dim, a blocked
 row is indistinguishable from a live one until the click that does nothing.
@@ -4354,3 +4362,82 @@ and the first suspect should not be the code under test. Reading the error's
 `code`/`message` off the protocol — rather than the exception the harness
 rethrows — is what named it: the string is the same either way, and only one of
 them is the page's.
+
+---
+
+## The veil blurs after all, because the blur is masked
+
+This supersedes *"it is glass rather than blur"* in *A connection that cannot be
+opened yet is veiled*, above — and only that. The objection recorded there is
+correct and is exactly what this arrangement answers: a pane that hides which
+connection it is asking about has thrown away its own justification.
+
+**The mask is the whole idea.** The frost layer carries
+`blur(--veil-blur) saturate(1.3)` behind a `mask-image` that is opaque under the
+chip at the leading edge and thins away to `transparent` across the row.
+Everything the mask governs travels together — the blur, the wash and the
+hairlines — so the trailing end of the row is untouched: the server line stays as
+sharp as on a row that is not blocked, and it is what still says which connection
+is being asked about, since the chip covers the name. What the earlier entry
+rejected was blur *across the row*. Blur that stops is a different thing.
+
+**A `mask-image`, never a `clip-path`.** A clip would take the uncovered half out
+of the element's hit target, and the whole pane being the click is the other
+half of this design.
+
+**The short feather at the leading edge is not symmetry, it is a seam.** The
+pane's own edge falls mid-row, beside the colour strip, and frost cut off square
+there drew a vertical line down the row — a rectangle pasted over it rather than
+glass lying on it. Six percent of fade is all it takes, and it was only visible
+by looking: reasoning about the mask produces the long ramp and never the short
+one.
+
+**The fade-in must live on the frost element itself.** An *ancestor* whose
+opacity is between 0 and 1 becomes a backdrop root, so a pane fading from 0 to 1
+with the blur on a child leaves that blur sampling an empty group for the whole
+transition and snapping in at the end. Opacity on the blurred element is fine —
+that is the element's own result being faded, not its backdrop being isolated.
+So the pane holds no opacity at all now; the frost and the chip each carry their
+own, and `pointerEvents` tracks the reveal flag rather than an opacity value.
+
+**The label gained a ground, and that is a consequence of the mask, not
+decoration.** The label is the one thing deliberately *not* masked — it must stay
+readable whatever is under it — so a long one runs out past the frost and lands
+on row text that is still sharp. A ground of its own keeps them apart, and a 72%
+cap keeps it inside the frost.
+
+**And the ground is the primary button, because that is what this is.** The
+translucent glass chip it started as was the third try and the wrong one: it
+matched the veil beautifully and said nothing about being the one action the row
+is waiting on — a word floating on frost, in a pane that has no box of its own to
+say otherwise. Solid `--accent` with `--on-accent` on it, `--radius` at
+`--button-h`, which is also what puts it on the same line as the row's own
+*Edit*. The shape grammar decides this outright and both halves of the pane obey
+it: the sign-in is a button, so 6px; *Profile not set up* is a state, so a pill.
+Neither can be the real `<Button>` or `<Badge>` — the pane itself is the
+`<button>`, and a button cannot contain one.
+
+*No hover state on it, unlike a real `<Button>`.* The pane is only up while it is
+already hovered or focused, so a hover fill would be the only fill ever seen.
+
+**The chip sits at the leading edge, and the frost was mirrored to follow it.**
+The trailing edge was the first arrangement and it is where the row has nothing
+of its own — but it puts the one thing on this pane worth reading at the end the
+eye arrives at last, behind the name it is not about. Leading, it is the first
+thing read, at the cost of covering that name. What pays for that cost is the
+mask: the frost thins out before the server line, so the row still identifies
+itself by its host while the chip is up. A veil whose chip covered *everything*
+would be an empty state with extra steps, and that is the line this stays on the
+right side of.
+
+**Which is also why the missing-profile pane stopped rendering its reason.** That
+string names the profile, so it is as long as the profile is — wide enough to
+cover the connection it is about. The chip says *Profile not set up* and the
+reason is the pane's `title`.
+
+**Verified by driving the real app, not by reasoning about the CSS.** A masked
+`backdrop-filter` is exactly the kind of thing a WebView either does or does not
+do, and the seam and the collision were both invisible until there was a picture:
+a scratch harness seeded a store with an SSO profile that cannot mint credentials
+(`AWS_CONFIG_FILE` pointing at a throwaway config is enough — `fromIni` reads it),
+hovered the row over CDP and screenshotted it.

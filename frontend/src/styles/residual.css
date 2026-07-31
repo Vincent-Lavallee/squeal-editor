@@ -15,10 +15,11 @@
   --hover: #ffffff0a;
   --selected: #0eb39e24;
   --scrim: #00000099;
-  --veil: #111113b3;
+  --veil: #11111359;
   --veil-edge: #ffffff1f;
   --veil-sheen: #ffffff14;
-  --veil-deep: #111113f2;
+  --veil-deep: #111113e6;
+  --veil-blur: 12px;
   --text: #edeef0;
   --text-muted: #b0b4ba;
   --text-faint: #696e77;

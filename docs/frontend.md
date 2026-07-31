@@ -986,10 +986,10 @@ profile the field no longer names.
 established before anyone reaches for it.** `SavedConnectionList` asks
 `aws.credentialStatus` for every distinct IAM profile it draws, as it draws
 them — not on the click. A profile that cannot mint credentials dims its
-rows, disables their `saved-pick`, and reveals a glass pane on hover carrying
+rows, disables their `saved-pick`, and reveals a frosted pane on hover carrying
 *Sign in to AWS* — see the *veiled row* recipe in `design-system.md` for what the
-pane is made of and why it is not a blur. Signing in clears the row and connects
-it.
+pane is made of and why its blur stops where it does. Signing in clears the row
+and connects it.
 
 Five things there are load-bearing:
 
@@ -1028,7 +1028,9 @@ and the check itself can fail to be made at all — in which case it answers
 user and a connection that might work perfectly well.
 
 **Only a missing profile withholds the sign-in button** (`signInHelps`); the veil
-then carries the reason instead. The narrower rule — offer it only for a
+then says *Profile not set up* and carries the reason itself as its `title` —
+the reason names the profile, so it is as long as the profile is, and a chip that
+long lands on the connection's name. The narrower rule — offer it only for a
 recognised expired-SSO error — was wrong in the direction that matters: the
 credential-provider chain has no stable error shape, so an unrecognised failure
 is more likely to be a session a login would fix than one it would not, and
