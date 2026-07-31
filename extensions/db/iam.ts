@@ -66,6 +66,34 @@ const VERIFICATION_URL = /(https:\/\/\S+)/;
 const USER_CODE = /^\s*([A-Z0-9]{4}-[A-Z0-9]{4})\s*$/;
 
 /**
+ * The `PATH` a login shell builds, on macOS only.
+ *
+ * A GUI app launched from Finder or the Dock is a child of launchd, not of a
+ * shell, so it inherits launchd's bare `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`)
+ * -- not the one `~/.zprofile` extends, which is where Homebrew's installer (and
+ * most `aws` CLI installs) put the binary. Terminal spawns a login shell, so
+ * `aws sso login` works there and only fails from the app. Windows and Linux
+ * processes started from their shells don't have this split, so this is asked
+ * only on darwin, and only for its answer -- `aws` is still run directly,
+ * unquoted and un-shelled, so `readPrompts` keeps reading its stdout rather than
+ * a wrapping shell's.
+ */
+async function loginShellPath(): Promise<string | undefined> {
+  if (process.platform !== 'darwin') return undefined;
+
+  try {
+    const shell = process.env.SHELL || '/bin/zsh';
+    const proc = Bun.spawn([shell, '-l', '-c', 'echo -n "$PATH"'], { stdin: 'ignore', stdout: 'pipe', stderr: 'ignore' });
+    const path = await new Response(proc.stdout).text();
+    await proc.exited;
+    return path.trim() || undefined;
+  } catch {
+    // No worse off than before: the spawn below falls back to the inherited PATH.
+    return undefined;
+  }
+}
+
+/**
  * Refresh the SSO session behind a profile by running the user's own AWS CLI.
  *
  * Why the CLI and not the OIDC device flow in-process: the CLI owns the token
@@ -88,7 +116,9 @@ export async function ssoLogin(profile: string, onPrompt: (prompt: AwsSsoPrompt)
 
   let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>;
   try {
-    proc = Bun.spawn(['aws', 'sso', 'login', '--profile', trimmed], { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+    const path = await loginShellPath();
+    const env = path ? { ...process.env, PATH: path } : undefined;
+    proc = Bun.spawn(['aws', 'sso', 'login', '--profile', trimmed], { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', env });
   } catch {
     // Every other failure in here is the CLI's own answer; this one is that
     // there was nothing to answer with, and it needs to say so plainly.

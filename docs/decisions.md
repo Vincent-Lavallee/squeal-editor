@@ -3887,6 +3887,29 @@ calling `StartDeviceAuthorization`, which is the flow that prints a code.
 same shape and the same reason as `connect.progress`: it describes something the
 command is still doing, so it cannot ride back on the command's reply.
 
+## `ssoLogin` resolves `PATH` through a login shell, on macOS only
+
+**Why.** "The AWS CLI was not found" fired for users who had it installed and
+working in Terminal. The app is a child of launchd when opened from Finder or
+the Dock, not of a shell, so `Bun.spawn(['aws', ...])` searched launchd's bare
+`PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — never the one `~/.zprofile` extends,
+which is where Homebrew's installer (and most `aws` CLI installs) put the
+binary. Terminal spawns a login shell and never hit this.
+
+**The fix asks a login shell for its `PATH` and hands that to the spawn, rather
+than shelling the whole command out through the shell.** `loginShellPath` runs
+`$SHELL -l -c 'echo -n "$PATH"'` and merges the result into the env `aws` is
+spawned with; `aws sso login` itself is still spawned directly, as an argument
+array. Running the command itself through a shell was rejected: `readPrompts`
+depends on reading `aws`'s own stdout line by line as it waits on device
+authorization (see above), and a wrapping shell is one more thing that could
+buffer or reshape that stream.
+
+**Windows and Linux are untouched.** Both spawn GUI apps as descendants of a
+shell already, so the inherited `PATH` already has what a terminal would have
+had. Asking for a login shell there would be solving a problem that only exists
+on macOS.
+
 **The UI opens the URL, not the extension.** The extension already spawned the
 CLI and could open a browser itself, but that is the call `app.dataDir` already
 decided the other way: the webview has `Neutralino.os.open` and the extension

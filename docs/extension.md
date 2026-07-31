@@ -865,6 +865,15 @@ Four things are load-bearing:
   that only handles terminated lines never sees it. `readPrompts` therefore
   flushes whatever is left when the stream ends *and* buffers partial lines across
   chunk boundaries — `iam.test.ts` pins both, down to one byte per chunk.
+- **On macOS, the spawn's `PATH` comes from a login shell, not from what the app
+  inherited.** A GUI app opened from Finder or the Dock is a child of launchd,
+  whose `PATH` lacks whatever `~/.zprofile` adds — including, commonly, the
+  directory Homebrew installed `aws` into — so a CLI that works from Terminal
+  reads as "not found" from the app. `loginShellPath` asks `$SHELL -l -c` for its
+  `PATH` and merges it into the env `aws` spawns with; `aws` itself still runs
+  directly, not through the shell, so `readPrompts` keeps reading its stdout
+  rather than a wrapper's. Windows and Linux don't have this split and are left
+  alone. See `docs/decisions.md`.
 - **Nothing secret is stored.** The store keeps `aws_profile` and `aws_region`
   (see below), never a token — `resolveSaved` returns an empty password for an
   IAM row and lets `getClient` mint the token. `hasPassword` is false for an IAM
