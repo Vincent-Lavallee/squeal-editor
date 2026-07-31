@@ -41,26 +41,6 @@ Things that are wrong.
 
 Things that do not exist yet.
 
-- **Split multi-statement results into tabs** — Running text that contains more
-  than one statement today shows only one result: Postgres silently keeps the
-  last statement's and drops the rest, MySQL refuses the whole thing outright
-  (`multipleStatements` stays off deliberately, on the assumption the editor
-  only ever ran one statement at a time). Run each statement in order as its
-  own round-trip and show each one's result in its own numbered tab — "Result
-  1", "Result 2" — nested inside the query tab's results pane; a single
-  statement still shows no tab strip at all, unchanged from today. Every
-  statement gets a tab, including ones that return no rows (DDL/DML show the
-  same message a lone one does today). The batch stops at the first failure —
-  nothing after it runs — and there is no implicit transaction wrapping it:
-  whatever already committed stays committed, the same as running the
-  statements one at a time by hand would leave it. Sorting a column in one
-  tab re-runs only that tab's own statement, never the whole batch — both for
-  correctness (re-running an earlier INSERT or DELETE a second time would be
-  actively harmful) and because each tab already tracks its own statement
-  independently. The statement splitter has to be quote- and comment-safe — a
-  semicolon inside a string literal or a comment must not end a statement
-  early.
-
 - **Export and import connections** — Moving connections to another machine means
   retyping every one of them. Export all workspaces and their connections from the
   File menu to a file chosen by a native save dialog, and import one back, merging

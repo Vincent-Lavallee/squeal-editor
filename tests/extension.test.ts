@@ -1011,6 +1011,66 @@ describe.each([
 });
 
 /*
+ * The far half of the UI's `DELIMITER` handling, and the only half a database
+ * can answer for.
+ *
+ * `splitStatements` (in the frontend, with its own suite) consumes the directive
+ * and hands the routine body over whole, semicolons and all. That is only worth
+ * anything if the *server* agrees the body is one statement -- which is the
+ * claim no unit test can make, because it is a claim about mysqld's parser and
+ * about a client running `multipleStatements: false`. If it did not hold, the
+ * split would look right and every routine anyone wrote would still fail.
+ *
+ * MySQL alone, and not skipped elsewhere but absent: Postgres dollar-quotes a
+ * body and SQLite has no routines, so neither has the question.
+ */
+describe('mysql compound statements', () => {
+  let connectionId: string;
+  const routine = 'split_probe';
+
+  beforeAll(async () => {
+    connectionId = ((await h.ok('db.connect', { config: MYSQL })) as { connectionId: string }).connectionId;
+  });
+
+  // Re-runnable: the fixture must look untouched afterwards, so the routine this
+  // creates is dropped whether the assertions passed or not.
+  afterAll(async () => {
+    await h.dispatch('db.query', { connectionId, database: FIXTURE_DB, sql: `DROP FUNCTION IF EXISTS ${routine}` });
+    await h.dispatch('db.disconnect', { connectionId });
+  });
+
+  test('a BEGIN … END body is one statement to the server, semicolons and all', async () => {
+    await h.ok('db.query', { connectionId, database: FIXTURE_DB, sql: `DROP FUNCTION IF EXISTS ${routine}` });
+
+    // Exactly what `splitStatements` yields for a `DELIMITER //` block: the body
+    // intact, with the directive and the custom terminator already taken off.
+    const body = [
+      `CREATE FUNCTION ${routine}(x INT) RETURNS INT DETERMINISTIC`,
+      'BEGIN',
+      '  DECLARE doubled INT;',
+      '  SET doubled = x * 2;',
+      '  RETURN doubled;',
+      'END',
+    ].join('\n');
+    expect((await h.dispatch('db.query', { connectionId, database: FIXTURE_DB, sql: body })).ok).toBe(true);
+
+    const res = (await h.ok('db.query', {
+      connectionId,
+      database: FIXTURE_DB,
+      sql: `SELECT ${routine}(21)`,
+    })) as QueryResult;
+    expect(String(res.rows[0]![0])).toBe('42');
+  });
+
+  test('two stacked statements are still refused, which is why the split exists', async () => {
+    // The other half of the same fact: the body above is accepted because the
+    // server reads it as one statement, not because stacking became allowed.
+    const res = await h.dispatch('db.query', { connectionId, database: FIXTURE_DB, sql: 'SELECT 1; SELECT 2' });
+    expect(res.ok).toBe(false);
+  });
+});
+
+/*
  * A connection the *server* ends, which is the one failure this app cannot
  * prevent and has to survive: an idle timeout, a failover, an administrator's
  * KILL. It is the everyday shape of an RDS IAM connection, which sits idle

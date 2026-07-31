@@ -13,7 +13,7 @@ import type {
 import { relationLabel } from '../../common/db/relation.ts';
 import { quoteIdentifier, sqlLiteral } from '../../common/db/sql.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
-import { browseTable, runQuery, saveEdits } from '../../store/resultsSlice.ts';
+import { activePart, browseTable, runQuery, runStatements, saveEdits, statementSelected, type ResultsState } from '../../store/resultsSlice.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import { selectActiveTab, useTabs } from '../../store/tabsSlice.ts';
 import { EMPTY_PENDING, useResultsView, type FilterDraft } from './ResultsContext.tsx';
@@ -56,6 +56,26 @@ export function useResults() {
    * edit away instead of a re-open.
    */
   const gridTable = activeTab?.kind === 'grid' ? (activeTab.table ?? null) : null;
+
+  /*
+   * A tab holds a list of results now -- one per statement the last run held --
+   * and everything below reads the one in front. The list itself is the strip's
+   * business and nothing else's: a browsed page and a single statement are both
+   * lists of one, so every rule in this file about "the result" is unchanged by
+   * there sometimes being a second.
+   */
+  const tabResults = useAppSelector((s) => (activeTabId ? s.results[activeTabId] : undefined));
+  const statements = tabResults?.parts ?? NO_STATEMENTS;
+  const activeStatement = tabResults?.active ?? 0;
+  const statementCount = tabResults?.statementCount ?? 1;
+  // Counted on the tab rather than on a statement, so it survives a new batch --
+  // see `TabResults.runSeq` for what starting it over would carry across.
+  const runSeq = tabResults?.runSeq ?? 0;
+  // The tab is busy while *any* statement of the batch is, which is not the same
+  // question as whether the one on screen is: the pane can be showing a finished
+  // Result 1 while Result 2 is still going. Run and Cancel answer to this one.
+  const tabRunning = statements.some((part) => part.running);
+
   const {
     result,
     browse,
@@ -65,13 +85,12 @@ export function useResults() {
     // has been free to change since. Everything that re-runs this result reads
     // it -- see `ResultsState.sql`.
     sql: ranSql,
-    runSeq,
     sort,
     error,
     running,
     startedAt,
     columns,
-  } = useAppSelector((s) => (activeTabId ? s.results[activeTabId] : undefined) ?? EMPTY);
+  } = activePart(tabResults) ?? EMPTY;
 
   /*
    * A hand-typed query's row identity is a *candidate*, not a fact the way a
@@ -103,10 +122,17 @@ export function useResults() {
   // rows the user never saw, which is the failure the row-identity design exists
   // to prevent. A hand query needs no such term: sorting one re-runs it, and
   // `runSeq` has already moved by the time the new rows arrive.
+  //
+  // The statement index joins it for the same reason once more: two statements
+  // of one batch are two different sets of rows under one tab id, so switching
+  // between them has to start the staging fresh rather than carry row 3's edit
+  // onto whatever row 3 is over there. The cost is that clicking away from a
+  // half-edited Result 1 and back discards it -- the same discard paging already
+  // makes, accepted for the same reason.
   const page = browse
     ? `${browse.table}@${browse.offset}@${filterKey(browse.filter)}@${sortKey(sort)}`
     : queryEditable
-      ? `${editTable}@query@${runSeq}`
+      ? `${editTable}@query@${activeStatement}@${runSeq}`
       : null;
   const pending = activeTabId && page ? view.pendingFor(activeTabId, page) : EMPTY_PENDING;
 
@@ -141,11 +167,25 @@ export function useResults() {
       ? `Select ${queryKeyColumns.join(', ')} to make this result editable.`
       : null;
 
+  /**
+   * Run what the editor handed over -- one statement or a tab full of them.
+   *
+   * `runStatements` is what splits it and issues each one in order; this side
+   * never learns how many there were. No sort goes with it: running is the user
+   * asking for these statements, and whatever order the last result was put in
+   * was about the last result.
+   */
   const run = useCallback(
     (sql: string) => {
-      // No sort: running is the user asking for this statement, and whatever
-      // order the last result was put in was about the last result.
-      if (activeTabId) void dispatch(runQuery({ tabId: activeTabId, sql }));
+      if (activeTabId) void dispatch(runStatements({ tabId: activeTabId, sql }));
+    },
+    [dispatch, activeTabId]
+  );
+
+  /** Show another statement's result. Nothing re-runs; the answers are all held. */
+  const selectStatement = useCallback(
+    (index: number) => {
+      if (activeTabId) dispatch(statementSelected({ tabId: activeTabId, index }));
     },
     [dispatch, activeTabId]
   );
@@ -332,10 +372,14 @@ export function useResults() {
       if (gridTable) {
         void dispatch(browseTable({ tabId: activeTabId, table: gridTable, offset: 0, filter: appliedFilter, sort: next }));
       } else if (ranSql !== null) {
-        void dispatch(runQuery({ tabId: activeTabId, sql: ranSql, sort: next }));
+        // Back into the slot this result already occupies, so a batch's other
+        // statements are untouched -- re-running an earlier INSERT or DELETE to
+        // reorder the SELECT beside it would be actively harmful, and each slot
+        // has held its own statement since the batch ran.
+        void dispatch(runQuery({ tabId: activeTabId, sql: ranSql, part: activeStatement, sort: next }));
       }
     },
-    [dispatch, activeTabId, gridTable, appliedFilter, sort, ranSql]
+    [dispatch, activeTabId, gridTable, appliedFilter, sort, ranSql, activeStatement]
   );
 
   const save = useCallback(async () => {
@@ -382,14 +426,15 @@ export function useResults() {
         // hand query has, the same reason it is what Save re-does for one. The
         // statement that produced the rows, not the editor's current text --
         // "the same view" is not the same view if it is a different query.
-        dispatch(runQuery({ tabId: activeTabId, sql: ranSql, sort }));
+        // Into its own slot, the same rule `toggleSort` follows.
+        dispatch(runQuery({ tabId: activeTabId, sql: ranSql, part: activeStatement, sort }));
       }
     } else {
       // Beside the save bar, not in `error`: a failed save must leave the grid and
       // the edits the user is still holding on screen, not blank them.
       view.setSaveError(activeTabId, (action.payload as string | undefined) ?? 'Could not save the changes.');
     }
-  }, [activeTabId, browse, editTable, editSchema, page, keyColumns, result, dirtyCount, editedRows, deletedRows, pending, view, dispatch, ranSql, sort]);
+  }, [activeTabId, browse, editTable, editSchema, page, keyColumns, result, dirtyCount, editedRows, deletedRows, pending, view, dispatch, ranSql, sort, activeStatement]);
 
   /** Copy rows as tab-separated text -- a webview clipboard write, crossing nothing. */
   const copyRows = useCallback(
@@ -432,6 +477,18 @@ export function useResults() {
     startedAt,
     run,
     browseIn,
+
+    // The numbered strip's whole surface. `statements` is what ran, in order;
+    // `statementCount` is what the batch set out to run, so the two differing is
+    // how a batch that stopped at a failure says so. `tabRunning` is the tab's
+    // busy state rather than the shown result's -- the Run button and the strip's
+    // Cancel answer to it, since the pane can be showing a finished result while
+    // a later statement is still going.
+    statements,
+    statementCount,
+    activeStatement,
+    selectStatement,
+    tabRunning,
     navigateForeignKey,
     // Editing surface. `pending` is what the grid reads its dirty state from.
     editable,
@@ -658,10 +715,12 @@ const EMPTY = Object.freeze({
   browse: null,
   editTarget: null,
   sql: null,
-  runSeq: 0,
   sort: null,
   error: null,
   running: false,
   startedAt: null,
   columns: [],
 });
+
+/** Its plural, for the same reason: a tab with no results reads as a stable empty list. */
+const NO_STATEMENTS: readonly ResultsState[] = Object.freeze([]);

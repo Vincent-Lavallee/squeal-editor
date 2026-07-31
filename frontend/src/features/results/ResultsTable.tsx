@@ -13,6 +13,7 @@ import FilterBar from './FilterBar.tsx';
 import JsonCellDrawer from './JsonCellDrawer.tsx';
 import Note from '../../common/components/Note.tsx';
 import Skeleton from '../../common/components/Skeleton.tsx';
+import StatementTabs from './StatementTabs.tsx';
 import * as t from '../../common/tokens';
 
 /** MySQL's `COLUMN_TYPE` and Postgres' `format_type` both answer bare `json`/`jsonb`
@@ -132,13 +133,28 @@ export default function ResultsTable() {
 
   const emptyCtr: React.CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 0, padding: t.GAP_XL, textAlign: 'center' };
 
-  // Above every early return, because a grid tab keeps its filter whatever the
-  // grid beneath is showing -- and a rejected filter is exactly the case where
-  // the bar has to still be there to be corrected. It draws nothing on an
-  // editor tab, so a query's result is unchanged.
+  /*
+   * The two bars that belong to the *tab* rather than to whatever the grid is
+   * currently showing, so they sit above every early return below.
+   *
+   * The filter is the older of the two and the reason is the sharper: a filter
+   * the server rejects replaces the grid with an error, and a bar keyed off that
+   * grid would vanish along with the one control that fixes it. The statement
+   * strip is the same shape -- a batch that failed on Result 2 still has Result 1
+   * to go back to, and the strip is how. Neither ever draws at the same time as
+   * the other: the filter is a grid tab's and the strip needs two statements,
+   * which only an editor tab can have.
+   */
+  const tabBars = (
+    <>
+      <StatementTabs />
+      <FilterBar />
+    </>
+  );
+
   if (running) return (
     <>
-      <FilterBar />
+      {tabBars}
       <div data-testid="results-bar" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `0 ${t.GAP_LG}px`, height: 32, borderBottom: `1px solid ${t.BORDER}`, fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>
         <ThinkingOrb state="shaping" size={20} theme="dark" aria-label="Running" />
         <span>Running for {elapsed}s…</span>
@@ -153,7 +169,7 @@ export default function ResultsTable() {
   );
   if (error) return (
     <>
-      <FilterBar />
+      {tabBars}
       <div style={emptyCtr}>
         <div data-testid="note-error" style={{ position: 'relative', maxWidth: 560, width: '100%', padding: t.GAP, border: `1px solid ${t.RED}`, borderRadius: t.RADIUS_LG, background: t.RED_BG, color: t.RED_TEXT, fontSize: t.TEXT_BODY, fontFamily: t.MONO, whiteSpace: 'pre-wrap', wordBreak: 'break-word', textAlign: 'left' }}>
           {error}
@@ -167,7 +183,7 @@ export default function ResultsTable() {
   );
   if (!result) return (
     <>
-      <FilterBar />
+      {tabBars}
       <div style={emptyCtr}>
         <div style={{ color: t.TEXT_FAINT, fontSize: t.TEXT_TITLE, fontWeight: 500, marginBottom: t.GAP_XS }}>No results yet</div>
         <Note kind="muted">Run a query to see results.</Note>
@@ -177,7 +193,7 @@ export default function ResultsTable() {
 
   if (result.columns.length === 0) return (
     <>
-      <FilterBar />
+      {tabBars}
       <div style={emptyCtr}>
         <div style={{ color: t.GREEN, fontSize: t.TEXT_TITLE, fontWeight: 500, marginBottom: t.GAP_XS }}>Query finished</div>
         <Note kind="ok">{result.message}</Note>
@@ -369,7 +385,7 @@ export default function ResultsTable() {
 
   return (
     <>
-      <FilterBar />
+      {tabBars}
       <div data-testid="results-bar" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `0 ${t.GAP_LG}px`, height: barH, borderBottom: `1px solid ${t.BORDER}`, fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>
         {/* No table name: the tab and the filter bar above both already say
             which table this is, and one place names a thing. */}

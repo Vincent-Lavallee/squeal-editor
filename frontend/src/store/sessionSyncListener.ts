@@ -1,6 +1,6 @@
 import { createListenerMiddleware, isAnyOf } from '@reduxjs/toolkit';
 
-import { browseTable } from './resultsSlice.ts';
+import { activePart, browseTable } from './resultsSlice.ts';
 import type { SessionSnapshot } from './sessionSnapshot.ts';
 import { disconnect, saveSession } from './sessionSlice.ts';
 import {
@@ -62,7 +62,7 @@ function snapshotFor(state: RootState, connectionId: string): SessionSnapshot {
         // The filter a browsed page was fetched with is authoritative once the
         // tab has browsed; before that -- a restored tab never yet viewed -- the
         // seed it was reopened with is all there is.
-        const browsed = state.results[tab.id]?.browse;
+        const browsed = activePart(state.results[tab.id])?.browse;
         const filter = browsed ? browsed.filter : (tab.filter ?? null);
         return { kind: tab.kind, table: tab.table, schema: tab.schema, title: tab.title, filter };
       }

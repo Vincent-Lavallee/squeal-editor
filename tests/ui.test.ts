@@ -1158,13 +1158,19 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     /*
      * Running a selection, and the three tests below are one arrangement.
      *
-     * The tab holds two statements on purpose: Postgres answers a multi-statement
-     * run with the *last* one's result, so "the first line ran" and "the whole tab
-     * ran" come back under different column names. There is no passing this by
-     * accident.
+     * The tab holds two statements on purpose, and **the strip is what tells the
+     * two runs apart**: running the whole tab runs both and draws a tab each, so
+     * a selection that quietly ran everything would still answer under `name` on
+     * *Result 1* and pass on the headers alone. Asserting there is no strip is
+     * asserting exactly one statement went to the server.
      */
     const twoStatements = 'SELECT name FROM users ORDER BY id;\nSELECT email FROM users ORDER BY id;';
     const gridHeaders = `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`;
+    const statementTabs = `[...document.querySelectorAll('[data-testid="statement-tab"]')].map(e => e.textContent)`;
+    // Collapse whatever the previous test selected. Running is *the selection or
+    // the whole tab*, so a test about running the tab has to say there is no
+    // selection rather than assume `setValue` dropped one.
+    const clearSelection = `window.squealEditor.setPosition({ lineNumber: 1, column: 1 }); true;`;
 
     test('a selection is what runs, and the button says which', async () => {
       await app.evaluate(setEditorText(twoStatements));
@@ -1183,6 +1189,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(1500);
 
       expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
+      // One statement means no strip at all, not a strip of one.
+      expect(await app.evaluate<string[]>(statementTabs)).toEqual([]);
     });
 
     /*
@@ -1211,7 +1219,69 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(1500);
 
       // Still the grid the test above left: falling back to the whole tab would
-      // have run the second statement and answered under `email`.
+      // have run both statements, drawn a strip, and answered under `email` on
+      // Result 2.
+      expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
+      expect(await app.evaluate<string[]>(statementTabs)).toEqual([]);
+    });
+
+    /*
+     * Several statements in one run. Each goes to the server on its own -- which
+     * is what this is really pinning, since Postgres answers a *stacked* run with
+     * only the last statement's result and drops the rest. Two tabs holding two
+     * different column sets is that not having happened.
+     */
+    test('a run of several statements gets a numbered tab each', async () => {
+      await app.evaluate(setEditorText(twoStatements));
+      await Bun.sleep(200);
+      await app.evaluate(clearSelection);
+      await Bun.sleep(100);
+      await app.evaluate(
+        `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(2500);
+
+      expect(await app.evaluate<string[]>(statementTabs)).toEqual(['Result 1', 'Result 2']);
+      // The first is what shows, so a batch reads in the order it was written.
+      expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
+
+      await app.evaluate(`document.querySelectorAll('[data-testid="statement-tab"]')[1].click(); true;`);
+      await Bun.sleep(300);
+
+      // Held, not re-run: the answer was already there.
+      expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['email']);
+    });
+
+    /*
+     * The batch stops at the first failure, and the strip is where that is
+     * legible: the statements that ran have a tab, the failure is selected, and
+     * what never ran is counted rather than silently missing.
+     */
+    test('a failing statement stops the batch and the strip says what did not run', async () => {
+      await app.evaluate(setEditorText('SELECT name FROM users;\nSELECT * FROM no_such_table;\nSELECT email FROM users;'));
+      await Bun.sleep(200);
+      await app.evaluate(clearSelection);
+      await Bun.sleep(100);
+      await app.evaluate(
+        `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`
+      );
+      await Bun.sleep(2500);
+
+      expect(await app.evaluate<string[]>(statementTabs)).toEqual(['Result 1', 'Result 2']);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="statements-not-run"]')?.textContent ?? ''`)).toBe('1 not run');
+
+      // The failure is what is on screen -- landing on Result 1's grid would
+      // leave the user looking at a success and wondering why the run stopped.
+      expect(await app.evaluate<string>(
+        `document.querySelectorAll('[data-testid="statement-tab"]')[1].getAttribute('aria-selected')`
+      )).toBe('true');
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="note-error"]')?.textContent ?? ''`))
+        .toMatch(/no_such_table/i);
+
+      // Result 1 still holds its own answer: a failure later in the batch takes
+      // nothing away from what already ran.
+      await app.evaluate(`document.querySelectorAll('[data-testid="statement-tab"]')[0].click(); true;`);
+      await Bun.sleep(300);
       expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
     });
 

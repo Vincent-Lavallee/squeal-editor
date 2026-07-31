@@ -54,7 +54,7 @@ discovers every `*.test.ts` — the script name cannot override it. The UI suite
 would therefore try to launch a window on a bare `bun test`, so it opts out
 behind `SQUEAL_UI=1` (set by `test:ui`, along with a longer timeout, because
 launching the app blows past Bun's 5s default hook timeout). Expect
-`339 pass / 146 skip` from a bare run, and `120 pass` in ~325s from `test:ui`.
+`367 pass / 151 skip` from a bare run, and `125 pass` in ~325s from `test:ui`.
 
 **`test:ui` builds the extension too, and driving the app by hand must as well.**
 `build:ext` compiles `extensions/db/squeal-db-ext.exe`, which is what
@@ -180,6 +180,41 @@ has to name the one it means.
 The third test is a clock: it kills a connection and asserts *Disconnect* returns
 inside 5s. What it is really pinning is that nothing waits on a server that has
 gone — the behaviour it replaced took the bridge's whole 60s timeout.
+
+### The one-engine blocks, and why they are not the asymmetry rule broken
+
+*mysql compound statements* runs against MySQL alone, and the other two engines
+are **absent rather than skipped** — the same shape as the dropped-connection
+block above. The rule is that anything in the *contract* must be symmetric,
+because the UI cannot tell engines apart. A `DELIMITER` block is not in the
+contract: it exists because MySQL has no in-language way to quote a routine body,
+where Postgres has dollar-quoting and SQLite has no routines at all. There is no
+question here for the other two to answer, so a skip would be claiming there was
+one and that it was being ducked.
+
+## `tests/statements.test.ts` — the one suite with no server in it
+
+It splits a tab's text into statements (`splitStatements`, in the frontend) and
+asserts where the cuts land. That it needs no database is not this suite going
+soft on the rule above: it runs **before** any connection exists and decides
+*what gets sent*, so the failure it guards against — a statement torn in half —
+is the one failure no database can be asked about. Each half would arrive looking
+exactly like something the user typed, and a real server would answer both.
+
+Every case in it is one where a plain `sql.split(';')` is wrong: a semicolon
+inside a literal, a doubled quote, a quoted identifier, either comment form, a
+dollar-quoted function body, a `DELIMITER` block. The per-engine ones are
+asserted **both ways** — `SELECT 'a\'; b'` is one statement on MySQL and two on
+Postgres — because an assertion that only holds for one dialect would pass just
+as well if the dialect were being ignored.
+
+**Its `DELIMITER` half is only worth anything with a real server behind it**, and
+that half lives in `extension.test.ts` (*mysql compound statements*): this suite
+proves the directive is consumed and the body handed over whole, and only mysqld
+can say whether it accepts the body as one statement. Both are needed, and the
+second one carries a companion assertion that `SELECT 1; SELECT 2` on the same
+connection is *still* refused — otherwise "the body was accepted" would pass just
+as well if stacking had quietly become legal.
 
 ## `tests/saved.test.ts`
 
@@ -313,10 +348,14 @@ Two things to know:
   itself the assertion that a grid tab really has no editor on it. Asserting the
   text of a background tab means switching to it first.
 - **A selection is set through the same seam** (`selectLines`), and the run it
-  drives is asserted by which columns come back: the fixture query is two
-  statements, because Postgres answers a multi-statement run with the *last*
-  one's result — so "the selected line ran" and "the whole tab ran" cannot be
-  confused for one another.
+  drives is asserted by the **absence of the statement strip**: the fixture query
+  is two statements, so running the whole tab draws a tab each while running one
+  line draws none. The columns alone stopped telling those apart the day a batch
+  started showing *Result 1* first — both answer under `name` — which is why the
+  assertion is the strip and not the headers. A test that runs the whole tab has
+  to collapse the previous one's selection first (`clearSelection`), since
+  running means *the selection or the tab* and `setValue` is not a promise that
+  there is no selection.
 - **Anything evaluated with a `const` in it has to be wrapped in an IIFE.** Each
   `Runtime.evaluate` is its own script but shares one global lexical scope, so a
   bare top-level `const` persists and the *second* call throws

@@ -4479,8 +4479,102 @@ statements that includes whatever DML is sitting above the SELECT. It runs
 nothing, and it gets there without a branch, because `runQuery` already refuses a
 blank statement.
 
-**Rejected: splitting a multi-statement selection here.** The backlog asks for a
-selection of several statements to behave the way a whole tab of several
-statements does, which it now does for free — same text, same `db.query`. Making
-this feature *also* split them would be implementing the separate backlog item
-inside it, and would leave the two paths to diverge the moment one is changed.
+**Rejected: splitting a multi-statement selection here.** A selection of several
+statements has to behave the way a whole tab of several statements does, and
+making this feature *also* split them would have been implementing a separate
+backlog item inside it, leaving two paths to diverge the moment one changed. That
+item has since shipped, and the arrangement held: the splitter sits behind
+`onRun`, so both a selection and a whole tab reach it as the same text and get
+the same treatment. See *Statements are split in the UI, and each is its own
+round trip*.
+
+## Statements are split in the UI, and each is its own round trip
+
+Text holding more than one statement had exactly one answer before this, and it
+was a different wrong answer per engine: Postgres ran the lot and handed back the
+**last** statement's result, silently dropping the rest; MySQL refused the whole
+thing, because `multipleStatements` is off in the driver. Neither is a report of
+what happened. The fix is to stop asking either engine the question: the tab is
+cut into statements and each one is a `db.query` of its own, in order, with a
+numbered result tab apiece.
+
+**The split lives in the UI, and that is the decision.** The reflex reading of
+this repo's own rules says otherwise — *only the extension may write SQL*, and
+the split is undeniably about what SQL means. Two things settle it the other way:
+
+- **Nothing is authored.** The rule exists because *composing* a statement needs
+  the engine's quoting and its catalog, which is why `db.browse` pages and
+  `db.ddl` reassembles down there. Cutting the user's own text on the semicolons
+  that really end a statement composes nothing; each piece goes over exactly as
+  typed, which is the same promise `db.query` already makes about the whole.
+- **Each result has to be re-runnable on its own.** Sorting *Result 2* must
+  re-run only the second statement — re-running the batch would repeat an
+  `INSERT` or a `DELETE` that already committed, which is actively harmful rather
+  than merely wasteful. So the UI has to hold each statement's text regardless.
+  Had the extension split, it would have had to hand the pieces *back* for that,
+  which is the split crossing the bridge in order to be used up here anyway.
+
+The lexical knowledge this costs the UI is the kind it already keeps: `sql.ts`
+knows which character quotes an identifier per dialect and `format.ts` maps a
+dialect to a formatter language. What stays forbidden is a table up here mapping
+an engine to a *catalog* or a *grammar*; how the text on screen is spelled has
+always been the editor's own business.
+
+**Rejected: a `db.queryBatch` command.** It would put the loop on the far side of
+a bridge that cannot report progress mid-call — the UI would sit on one pending
+promise while N statements ran, with no way to show *Result 1* the moment it
+landed and no way to cancel between statements. The UI-side loop gets both for
+free, because each statement is an ordinary `db.query` with the abort controller
+already wired to it.
+
+**Rejected: wrapping the batch in a transaction.** It is the tempting safety net
+and it is the wrong one twice. It would be this side authoring a `BEGIN` the user
+never wrote — precisely what "run the statement exactly as written" forbids — and
+it would roll back work an earlier statement finished, which is not what running
+those statements by hand would have done. The batch stops at the first failure
+and whatever already committed stays committed; that is the honest reading, and
+it is the only one that does not surprise someone half-way through a migration.
+
+**Rejected: minting every statement's tab up front.** The strip would then stop
+jumping in width as a batch lands, at the price of tabs standing for statements
+that have not run and may never — a *Result 3* that is empty because it is
+waiting and a *Result 3* that is empty because the batch died before it look
+identical. A tab exists because a statement ran; the shortfall is stated instead,
+as `1 not run`, which says the thing the empty tab was only implying.
+
+**Rejected: following the running statement with the selection.** Then *Cancel*
+would always be on screen and there would be no second question about which
+result is in front — but a fast batch would land the user on the last statement,
+and a batch is read from the top. `active` stays on *Result 1*, a **failure**
+pulls it to itself (that one has to be seen), and Cancel gets a second home in
+the strip, which is the only place that can offer it while a finished grid is
+showing.
+
+**MySQL's `DELIMITER` is handled in the splitter, and that is not an exception to
+any of the above.** It reads like the one piece of SQL the UI has no business
+interpreting, and it is the reverse: `DELIMITER` is not SQL. The server has never
+heard of it — the `mysql` CLI consumes the line and never sends it — so a *client*
+is the only thing that can act on it, and after the decision above this is the
+client. Putting it in the extension would have meant the extension reading a
+directive in order to decide something the UI had already decided.
+
+It was briefly shipped as a known gap, on the reasoning that recognising a
+routine body needs a per-dialect parser. That confused two different problems.
+Recognising `BEGIN … END` *would* need a parser; honouring an explicit
+instruction about what ends a statement needs a regex and a variable, because the
+user has already said where the boundaries are. The gap was mine, not the design's.
+
+**What makes it more than a client trick is that the server agrees.** A
+`CREATE FUNCTION … BEGIN …; …; END` is one statement to mysqld — the semicolons
+are inside a compound body — so the whole thing goes over a connection running
+`multipleStatements: false` and is accepted. `tests/extension.test.ts` pins both
+halves against the real server: the body is accepted, and `SELECT 1; SELECT 2` on
+the same connection is still refused. Without the second assertion the first
+would prove only that stacking had quietly become legal.
+
+Two guards keep the word from being read where it is not a directive: it must be
+at the head of a statement *and* at the head of a line, which is what the CLI
+does and what stops a column honestly named `delimiter` from swallowing a line.
+It is MySQL-only, since Postgres dollar-quotes a body and SQLite has no routines
+— on either of those the word is ordinary text, and treating it otherwise would
+be discarding someone's SQL to honour a command their engine does not have.

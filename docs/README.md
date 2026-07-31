@@ -19,6 +19,7 @@ reading the others first, except `architecture.md`, which is the map.
 | touching what happens when a connection drops, or a driver's client lifecycle | `extension.md` + `decisions.md` |
 | touching React components, state, or the UI's data flow | `frontend.md` |
 | touching the editor, its completion, or what it knows about the schema | `frontend.md` + `extension.md` |
+| touching what one *Run* sends, or how a tab is cut into statements | `frontend.md` + `decisions.md` |
 | touching saved queries, or anything a tab remembers about where its text came from | `frontend.md` + `extension.md` |
 | touching the titlebar, window controls, dragging, resizing or the frame's colour | `frontend.md` + `decisions.md` |
 | writing any markup or CSS, adding a component, picking a colour or an icon | `design-system.md` |

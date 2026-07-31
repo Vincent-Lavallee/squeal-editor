@@ -1,8 +1,9 @@
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 import type { ColumnInfo, QueryResult, RowDelete, RowEdit, SortOrder, TableFilter } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { detectSingleTable } from '../common/db/detectSingleTable.ts';
+import { splitStatements } from '../common/db/splitStatements.ts';
 import { disconnect } from './sessionSlice.ts';
 import { tabsClosed } from './tabsSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
@@ -84,16 +85,6 @@ export interface ResultsState {
    */
   sql: string | null;
   /**
-   * Bumped every time `runQuery` is dispatched for this tab, whatever the
-   * outcome. `useResults` folds it into the staging page key for a query-edited
-   * grid (`table@query@runSeq`), which has no offset or filter of its own to
-   * tell two runs apart the way a browsed page's key does -- rows are
-   * positional and the server's order is not guaranteed stable between runs
-   * (see `db.browse`'s own "no ORDER BY" rule), so re-running the identical SQL
-   * must still discard whatever was staged against the last answer.
-   */
-  runSeq: number;
-  /**
    * The column the result on screen was ordered by, or null for the order the
    * statement itself produced.
    *
@@ -124,18 +115,73 @@ export interface ResultsState {
 }
 
 /**
- * A grid per tab, keyed by tab id. A tab absent from the map has never run
+ * Every result one tab is holding, and which of them is on screen.
+ *
+ * A tab used to hold exactly one, and for a browsed table it still does. What
+ * made it plural is that running text with more than one statement in it runs
+ * each one separately (see `runStatements`), and each answers for itself -- its
+ * own rows, its own error, its own sort. So the tab keeps a list and the results
+ * pane draws a numbered strip over it, which is nothing at all when there is one.
+ *
+ * `parts` grows as the batch lands rather than being minted empty up front, so a
+ * slot exists because a statement *ran*. `statementCount` is what the batch set
+ * out to run, held apart from it: the two differ exactly when the batch stopped
+ * at a failure, which is the one case the strip has something extra to say.
+ */
+export interface TabResults {
+  parts: ResultsState[];
+  /** Index into `parts`. Fixed at 0 by a new run, moved by a click or a failure. */
+  active: number;
+  statementCount: number;
+  /**
+   * Bumped every time `runQuery` is dispatched for this tab, whatever the
+   * outcome and whichever statement it was for. `useResults` folds it into the
+   * staging page key for a query-edited grid (`table@query@part@runSeq`), which
+   * has no offset or filter of its own to tell two runs apart the way a browsed
+   * page's key does -- rows are positional and the server's order is not
+   * guaranteed stable between runs (see `db.browse`'s own "no ORDER BY" rule),
+   * so re-running the identical SQL must still discard whatever was staged
+   * against the last answer.
+   *
+   * **It counts on the tab and therefore survives `batchStarted`**, which is the
+   * whole of what makes that true: a per-statement counter would start at zero
+   * with each new batch, so running the same text twice would mint the same key
+   * twice and carry the first run's staged edits onto the second run's rows.
+   * That is the exact failure this field exists to prevent, reintroduced by the
+   * list it now sits above.
+   */
+  runSeq: number;
+}
+
+/**
+ * A tab's results, keyed by tab id. A tab absent from the map has never run
  * anything -- which is what the "Run a query to see results" state renders from.
  *
  * Keyed rather than singular because the grid belongs to the tab that asked for
  * it: one grid would paint the last tab's rows under this one's query.
  */
-type ResultsByTab = Record<string, ResultsState>;
+type ResultsByTab = Record<string, TabResults>;
 
 const initialState: ResultsByTab = {};
 
 const blank = (): ResultsState =>
-  ({ result: null, browse: null, editTarget: null, sql: null, runSeq: 0, sort: null, error: null, running: false, startedAt: null, columns: [] });
+  ({ result: null, browse: null, editTarget: null, sql: null, sort: null, error: null, running: false, startedAt: null, columns: [] });
+
+/** The result on screen for a tab, or undefined before anything has run in it. */
+export const activePart = (tab: TabResults | undefined): ResultsState | undefined => tab?.parts[tab.active];
+
+/**
+ * The slot a landing result belongs in, minting the tab's entry and the slot
+ * itself if this is the first time either is written.
+ *
+ * `pending` is the only caller that may create -- `fulfilled` and `rejected`
+ * read `state[tabId]?.parts[index]` and no-op on a miss, so a query still in
+ * flight when its tab closes cannot resurrect the entry `tabsClosed` deleted.
+ */
+function slotFor(state: ResultsByTab, tabId: string, index: number): ResultsState {
+  const tab = (state[tabId] ??= { parts: [], active: 0, statementCount: 1, runSeq: 0 });
+  return (tab.parts[index] ??= blank());
+}
 
 /**
  * Reads its target off the state rather than taking it as an argument. That is
@@ -151,10 +197,17 @@ const blank = (): ResultsState =>
  * moved. The tab knows which server it belongs to; nothing else does. The
  * database, in turn, is the connection's -- one value shared by every tab of
  * it, not the tab's own. See `docs/decisions.md`.
+ *
+ * **`part` is the destination, exactly as `tabId` is** -- which slot of the
+ * tab's results this answer belongs in, never anything the bridge hears about.
+ * It runs one statement and only one: a batch is `runStatements` dispatching
+ * this once per statement, and sorting or re-reading a single result is this
+ * same thunk aimed back at the slot that result already occupies. That is what
+ * keeps a sort on *Result 2* from re-running the `INSERT` in *Result 1*.
  */
 export const runQuery = createAppThunk(
   'results/runQuery',
-  async (arg: { tabId: string; sql: string; sort?: SortOrder | null }, { getState, rejectWithValue }) => {
+  async (arg: { tabId: string; sql: string; part?: number; sort?: SortOrder | null }, { getState, rejectWithValue }) => {
     // The target is still read, never passed: the arg names *which tab*, and the
     // tab is what holds the connection. A `database` argument stays forbidden,
     // and a `connectionId` one is forbidden for the same reason.
@@ -214,6 +267,53 @@ export const runQuery = createAppThunk(
     }
   },
   { condition: (arg) => arg.sql.trim().length > 0 }
+);
+
+/**
+ * Run what the editor asked to run -- which is one statement, or several.
+ *
+ * The text is cut into statements up here (`splitStatements`) and each one is a
+ * `db.query` of its own, in order. That is the whole feature: Postgres answers a
+ * stacked run with the last statement's result and drops the rest, MySQL refuses
+ * one outright (`multipleStatements` stays off), so neither engine could ever
+ * have reported more than one answer for text holding more than one question.
+ *
+ * Four rules, and each is a decision rather than a detail:
+ *
+ * - **It stops at the first failure.** Nothing after a rejected statement runs,
+ *   which is the only reading that does not surprise: a batch that carried on
+ *   would apply the rest of a migration on top of a step that did not take.
+ * - **There is no transaction around it.** Whatever committed stays committed,
+ *   exactly as running the statements one at a time by hand would leave it.
+ *   Wrapping the batch would be this side authoring a `BEGIN` the user did not
+ *   write, and would silently roll back work an earlier statement finished.
+ * - **A batch is announced before it starts** (`batchStarted`), so the strip
+ *   knows how many statements are coming and can say when it stopped early. It
+ *   is dispatched only once there is something to run: a blank editor and a tab
+ *   of nothing but comments both split to nothing and leave the last result
+ *   alone, the same no-op `runQuery`'s own condition already gave them.
+ * - **The dialect is read here, once.** The split is lexical and per-engine (a
+ *   `#` comment, a `$$` body), so it is asked of the connection the tab belongs
+ *   to -- the tab's, never the session's, for `runQuery`'s reason.
+ */
+export const runStatements = createAppThunk(
+  'results/runStatements',
+  async (arg: { tabId: string; sql: string }, { getState, dispatch }) => {
+    const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
+    if (!tab) return;
+    const dialect = getState().session.connections[tab.connectionId]?.dialect ?? 'sql';
+
+    const statements = splitStatements(arg.sql, dialect);
+    if (statements.length === 0) return;
+
+    dispatch(batchStarted({ tabId: arg.tabId, statementCount: statements.length }));
+    for (const [part, sql] of statements.entries()) {
+      const outcome = await dispatch(runQuery({ tabId: arg.tabId, sql, part }));
+      // A rejection is a failed statement, a cancelled one, or a tab that closed
+      // underneath the batch. All three mean the same thing here: stop.
+      if (!runQuery.fulfilled.match(outcome)) return;
+    }
+  }
 );
 
 /**
@@ -329,7 +429,30 @@ export const saveEdits = createAppThunk(
 const resultsSlice = createSlice({
   name: 'results',
   initialState,
-  reducers: {},
+  reducers: {
+    /**
+     * A new run is starting, and it holds this many statements.
+     *
+     * It replaces the tab's results outright rather than adding to them: what is
+     * on screen came from the last run, and a run is the user asking again. The
+     * slots themselves are left to `runQuery.pending` to mint one at a time, so
+     * a statement the batch never reached never gets a tab -- `statementCount`
+     * is what still says it was there.
+     *
+     * `runSeq` is the one thing carried across, and it has to be: it is what
+     * tells two runs of the identical text apart for the staging page key, so
+     * starting it over here would hand the second run the first run's key.
+     */
+    batchStarted(state, action: PayloadAction<{ tabId: string; statementCount: number }>) {
+      const runSeq = state[action.payload.tabId]?.runSeq ?? 0;
+      state[action.payload.tabId] = { parts: [], active: 0, statementCount: action.payload.statementCount, runSeq };
+    },
+    /** A click on the numbered strip. Ignores an index no statement has reached. */
+    statementSelected(state, action: PayloadAction<{ tabId: string; index: number }>) {
+      const tab = state[action.payload.tabId];
+      if (tab && action.payload.index >= 0 && action.payload.index < tab.parts.length) tab.active = action.payload.index;
+    },
+  },
   extraReducers: (builder) => {
     builder
       // Only the tabs that went with it. This used to reset the lot, which was
@@ -356,17 +479,17 @@ const resultsSlice = createSlice({
       .addCase(runQuery.pending, (state, action) => {
         // `pending` is the only place an entry is created, which is exactly why
         // the tab id has to be in the arg: `pending` has no payload to carry one.
-        const s = (state[action.meta.arg.tabId] ??= blank());
+        const s = slotFor(state, action.meta.arg.tabId, action.meta.arg.part ?? 0);
         s.running = true;
         s.startedAt = Date.now();
         s.error = null;
         // Bumped on every attempt, not just a successful one: a page key built
         // from it must stop matching the moment a new run starts, whether or
         // not this one ever reaches `fulfilled`.
-        s.runSeq += 1;
+        state[action.meta.arg.tabId]!.runSeq += 1;
       })
       .addCase(runQuery.fulfilled, (state, action) => {
-        const s = state[action.meta.arg.tabId];
+        const s = state[action.meta.arg.tabId]?.parts[action.meta.arg.part ?? 0];
         // A query still in flight when its tab closes must not resurrect the
         // entry `tabsClosed` just deleted: creating it here would leak it for the
         // life of the session, and nothing would ever collect it again.
@@ -381,8 +504,14 @@ const resultsSlice = createSlice({
         s.sort = action.payload.sort;
       })
       .addCase(runQuery.rejected, (state, action) => {
-        const s = state[action.meta.arg.tabId];
-        if (!s) return;
+        const tab = state[action.meta.arg.tabId];
+        const part = action.meta.arg.part ?? 0;
+        const s = tab?.parts[part];
+        if (!tab || !s) return;
+        // The failure is what the user has to see, so the strip moves to it
+        // rather than leaving them on an earlier statement's grid wondering why
+        // the batch stopped. On a single statement this is already where they are.
+        tab.active = part;
         s.running = false;
         s.startedAt = null;
         s.result = null;
@@ -397,14 +526,17 @@ const resultsSlice = createSlice({
         s.sort = null;
         s.error = action.payload ?? 'The query failed.';
       })
+      // A page is always one result: the extension wrote its SQL and there is
+      // exactly one statement in it, so a grid tab's list is a list of one and
+      // the numbered strip never draws over it.
       .addCase(browseTable.pending, (state, action) => {
-        const s = (state[action.meta.arg.tabId] ??= blank());
+        const s = slotFor(state, action.meta.arg.tabId, 0);
         s.running = true;
         s.startedAt = Date.now();
         s.error = null;
       })
       .addCase(browseTable.fulfilled, (state, action) => {
-        const s = state[action.meta.arg.tabId];
+        const s = state[action.meta.arg.tabId]?.parts[0];
         if (!s) return;
         const { database, table, filter, sort, page } = action.payload;
         s.running = false;
@@ -431,7 +563,7 @@ const resultsSlice = createSlice({
         if (page.columnInfo.length > 0) s.columns = page.columnInfo;
       })
       .addCase(browseTable.rejected, (state, action) => {
-        const s = state[action.meta.arg.tabId];
+        const s = state[action.meta.arg.tabId]?.parts[0];
         if (!s) return;
         s.running = false;
         s.startedAt = null;
@@ -453,4 +585,5 @@ const resultsSlice = createSlice({
   },
 });
 
+export const { batchStarted, statementSelected } = resultsSlice.actions;
 export const resultsReducer = resultsSlice.reducer;

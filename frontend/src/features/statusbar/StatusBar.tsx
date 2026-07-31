@@ -16,8 +16,13 @@ export default function StatusBar() {
   const [lockHovered, setLockHovered] = useState(false);
   const [discHovered, setDiscHovered] = useState(false);
   const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
-  const queryRunning = useAppSelector((s) => (activeTabId ? s.results[activeTabId]?.running : false) ?? false);
-  const queryStartedAt = useAppSelector((s) => (activeTabId ? s.results[activeTabId]?.startedAt : null) ?? null);
+  // The statement actually in flight, which is not always the one on screen: a
+  // run of several statements leaves an earlier result showing while the next one
+  // goes. The bar times what the server is doing, so it follows the batch.
+  const statements = useAppSelector((s) => (activeTabId ? s.results[activeTabId]?.parts : undefined));
+  const runningStatement = statements?.find((part) => part.running) ?? null;
+  const queryRunning = runningStatement !== null;
+  const queryStartedAt = runningStatement?.startedAt ?? null;
   const [queryElapsed, setQueryElapsed] = useState(0);
 
   useEffect(() => {

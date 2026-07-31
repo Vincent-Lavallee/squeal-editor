@@ -37,7 +37,10 @@ export default function Shell({ onAddConnection }: Props) {
 
 function ShellLayout({ onAddConnection }: Props) {
   const { tabs, activeTab, openGridTab, openEditorTab, openSavedQueryTab, setDatabase, markTabSaved } = useTabs();
-  const { run, running, browseIn } = useResults();
+  // `tabRunning`, not the shown result's own `running`: a batch of several
+  // statements leaves the pane showing a finished one while a later one is still
+  // going, and Run must stay busy until the whole batch is done.
+  const { run, tabRunning, browseIn } = useResults();
   const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema } = useExplorer();
   const { setSql, peekSql } = useEditor();
   const { queries, save: saveQuery } = useSavedQueries();
@@ -222,7 +225,7 @@ function ShellLayout({ onAddConnection }: Props) {
             <TabStrip onDuplicateTab={duplicateTab} />
             <SavedQueriesButton onOpen={openSavedQuery} />
           </div>
-          <EditorPane onRun={run} running={running} onToggleSidebar={toggleSidebar} onSaveQuery={saveActiveQuery} />
+          <EditorPane onRun={run} running={tabRunning} onToggleSidebar={toggleSidebar} onSaveQuery={saveActiveQuery} />
           {showEditor && <ResizeHandle orientation="horizontal" onDrag={dragResults} />}
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: showEditor ? undefined : `1px solid ${t.BORDER}` }}>
             {activeTab ? <ResultsTable /> : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}

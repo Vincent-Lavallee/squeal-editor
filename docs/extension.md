@@ -608,8 +608,15 @@ objects (→ text) are flattened. Anything a driver can return must survive
   `SELECT 1 AS x, 2 AS x` would lose a column. Column names come from the field
   metadata instead — except on SQLite, whose *name* list collapses even when the
   rows do not; see *An engine that is a file, not a server*.
-- **No stacked statements** (`multipleStatements: false`). The editor runs one
-  statement at a time.
+- **No stacked statements** (`multipleStatements: false`), and this side is not
+  what changed when the editor learned to run several. `db.query` takes one
+  statement and always has; the UI splits its tab into statements and issues a
+  `db.query` per statement, in order, stopping at the first failure — so every
+  one is its own round trip on its own terms, with no transaction wrapped around
+  the batch. Turning this flag on would put the two engines back into
+  disagreement it exists to prevent: Postgres answers a stacked run with the
+  *last* statement's result and drops the rest, which is exactly the answer the
+  split was written to stop losing. See `docs/frontend.md`.
 - **System catalogs are hidden** from the tree (`information_schema`, `mysql`,
   `performance_schema`, `sys`, `pg_catalog`).
 - **A relation carries its schema as a field**, and `Driver.qualify` is what

@@ -44,7 +44,8 @@ src/features/
   editor/               EditorPane, useEditor (text surface over the tabs slice), monaco (theme + worker),
                         completion + keywords + sqlScope + useSqlCompletion,
                         format + useSqlFormatter
-  results/              ResultsTable, ResultsContext (useResultsView), useResults
+  results/              ResultsTable, StatementTabs, FilterBar, JsonCellDrawer,
+                        ResultsContext (useResultsView), useResults
   statusbar/            StatusBar + ReadOnlyConfirm: the bottom bar and its lock
   updater/              UpdateBanner, useUpdater: the found-update strip
 src/neutralino.d.ts     ambient types for the global Neutralino client
@@ -82,7 +83,8 @@ that lives apart from its values is two sources for one fact.
 | `database`, per connection | `tabs` slice | crossed |
 | `tabs`, `activeTabId`, `kind`, `title`, a grid tab's `filter` seed, an editor tab's `savedQueryId` | `tabs` slice | never left, but see above |
 | `databases`, `tables`, `columns`, `stars` | `explorer` slice | crossed |
-| `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), the `sql` the result came from, per tab | `results` slice | crossed |
+| `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), the `sql` the result came from, per statement, per tab | `results` slice | crossed |
+| which of a tab's statements is on screen, and how many the run held | `results` slice | never left, but it is the key its results are held under |
 | staged cell edits + row deletes, per tab (+ `saving`, `saveError`) | `results` context | never left, until Save |
 | the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Apply |
 | saved connections | `saved` slice | crossed |
@@ -414,6 +416,96 @@ the newly picked database is not protected from that — it re-browses and
 surfaces the failure as its own error, the same as any other missing-table
 browse. See `docs/decisions.md`.
 
+## Running several statements
+
+Running text that holds more than one statement runs **each of them separately,
+in order**, and the results pane grows a numbered strip — *Result 1*, *Result 2*
+— over the grid. One statement draws no strip at all, which is the whole of how
+the ordinary case is unchanged.
+
+It exists because neither engine could ever answer more than one question at a
+time: Postgres takes a stacked run, executes it, and hands back only the last
+statement's result; MySQL refuses one outright, since `multipleStatements` is off
+in the driver and stays off. Splitting up here is what makes every statement's
+answer reachable.
+
+**`ResultsState` went plural, and the split is `TabResults`.** A tab now holds
+`{ parts, active, statementCount, runSeq }`: `parts` is one `ResultsState` per
+statement that ran, `active` is which one the pane is showing, `statementCount` is
+what the run set out to do, and `runSeq` counts runs for the tab (see below).
+Every rule that used to be about "the tab's result" is
+unchanged and now about `parts[active]` — a browsed page is a list of one, and so
+is a single statement.
+
+**The splitter is `common/db/splitStatements.ts`, and it is a lexer, not a
+scan.** `sqlScope.ts` is allowed to be a loose regex because a miss there costs a
+suggestion; a miss here would tear a statement in half and send both pieces to a
+server. So it walks string literals, quoted identifiers, line and block comments
+and Postgres' dollar-quoted bodies rather than pattern-matching around them, and
+a semicolon inside any of those is not a terminator. It is the third thing in the
+UI that reads `SqlDialect` for itself, beside `sql.ts`'s quoting and `format.ts`'s
+language map, and for the same reason: how the text on screen is *spelled* is the
+editor's business, while what SQL *means* stays the extension's. Nothing here
+authors SQL — it only says where one statement the user typed ends.
+
+**MySQL's `DELIMITER` is honoured, and it belongs here precisely because it is
+not SQL.** The server has never heard of it — the `mysql` CLI consumes the line
+and never sends it — so the client is the only thing that can act on it, which
+after the split moved up here is this file. It is what makes a
+`CREATE TRIGGER … BEGIN …; …; END` body reach the server whole rather than being
+cut on its own semicolons, and the server does accept it: the semicolons are
+inside a compound statement, so `multipleStatements: false` is no obstacle (there
+is a test against the real MySQL for exactly that, and for stacking still being
+refused beside it). It is recognised only at the head of a statement *and* the
+head of a line — the CLI's own two guards, which is what keeps a column named
+`delimiter` from being read as a command — and only on MySQL, since Postgres
+dollar-quotes a body and SQLite has no routines to write.
+
+Five things are load-bearing:
+
+- **A slot exists because a statement ran.** `batchStarted` empties the list and
+  records the count; `runQuery.pending` mints slot *i*. So a batch that stopped
+  early ends with fewer tabs than statements, and `statementCount` is what lets
+  the strip say `1 not run` rather than leaving the shortfall invisible.
+- **The batch stops at the first failure, with no transaction around it.**
+  Nothing after a rejected statement runs — carrying on would apply the rest of a
+  migration on top of a step that did not take. Whatever already committed stays
+  committed, exactly as running the statements by hand would leave it; wrapping
+  the batch in a `BEGIN` would be this side authoring SQL the user did not write
+  and rolling back work an earlier statement finished.
+- **A failure selects itself.** `runQuery.rejected` moves `active` to its own
+  slot, so the pane shows the statement that stopped the run rather than leaving
+  the user on an earlier success wondering why it stopped. Every other landing
+  result leaves `active` where it is, so a batch reads from *Result 1* in the
+  order it was written.
+- **`part` is a destination, exactly as `tabId` is.** It is which slot an answer
+  belongs in and nothing the bridge hears about. That is what makes sorting one
+  result re-run only *its* statement: `toggleSort` and the re-read after a Save
+  both aim `runQuery` back at the slot the result already occupies. Re-running the
+  tab's text would re-run an earlier `INSERT` or `DELETE`, which is not a cost
+  worth paying for a different `ORDER BY`.
+- **The statement index is part of the staging page key, and `runSeq` moved onto
+  the tab.** The index is the same lesson the filter and the sort each taught that
+  key already: two statements of one batch are two sets of rows under one tab id,
+  so row 3 of one is not row 3 of the other. `runSeq` is the subtler half — it is
+  what tells two runs of the *identical* text apart, so it counts on `TabResults`
+  and survives `batchStarted`. Left per statement it would restart at zero with
+  every batch, mint the same key twice, and carry the first run's staged edits
+  onto the second run's rows, which is precisely what it exists to stop. The cost,
+  accepted: clicking away from a half-edited result and back discards the staging,
+  the same discard paging already makes.
+
+**Running is the tab's state, not the shown result's.** `tabRunning` is true
+while any statement of the batch is in flight, which is what *Run* is disabled on
+and what the status bar times — the pane can be showing a finished *Result 1*
+while *Result 2* is still going. That is also why *Cancel* has a second home in
+the strip: the running pane's own Cancel is unreachable in exactly that case.
+
+**The strip renders above every early return in `ResultsTable`**, beside
+`FilterBar` and for its reason: a batch that failed on *Result 2* still has
+*Result 1* to go back to, and the strip is the way. The two never draw together —
+the filter is a grid tab's and two statements can only be an editor tab's.
+
 ## The editable grid
 
 A browsed grid can be edited: change a cell, delete a row, copy selected rows as
@@ -646,10 +738,13 @@ said about this column.
 re-browses, so the order goes into the page SQL the extension already authors; an
 editor tab re-runs **the statement the result came from** — `ResultsState.sql`,
 written by the run that produced it — with a sort the extension wraps around it.
-Not the tab's current text: that has been free to change since, and once a run
-can be of a *selection* the two are routinely different strings. Re-running the
-tab would wrap several statements, or a query the user is halfway through
-rewriting, and report the answer under a header they clicked on the old one.
+Not the tab's current text: that has been free to change since, and between a run
+of a *selection* and a run holding several statements the two are routinely
+different strings. Re-running the tab would re-run the whole batch — including
+an `INSERT` or `DELETE` that already landed — or a query the user is halfway
+through rewriting, and report the answer under a header they clicked on the old
+one. The re-run goes back into the statement's own slot; see *Running several
+statements*.
 Neither reorders the rows already in hand, and that is not laziness: a BIGINT
 arrives as a string and a timestamp as the engine's own text, so a comparator up
 here would sort `9` after `10` and order dates by their spelling. It is *Never
@@ -1211,9 +1306,9 @@ Four things there are load-bearing:
   refreshed in the tab-switch effect, because a tab carries its selection in its
   view state and swapping a model underneath the editor is not a cursor event.
 
-A selection spanning more than one statement is not a case this handles — it is
-the same text going to the same `db.query`, so whatever running a whole tab of
-several statements does today, running a selection of several does too.
+A selection spanning more than one statement needs no case of its own — it is the
+same text going the same way, so it is split and run statement by statement
+exactly as a whole tab of several is. See *Running several statements*.
 
 ### Completion
 
