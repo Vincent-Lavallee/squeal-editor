@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.12.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.11.0...v0.12.0) (2026-07-31)
+
+
+### Features
+
+* Connection screen UX improvments + SSO login support on IAM ([fe6f218](https://github.com/Vincent-Lavallee/squeal-editor/commit/fe6f218595573749f830d5eccd97a3117d3ffead))
+* Multi-cell selection ([6beb77e](https://github.com/Vincent-Lavallee/squeal-editor/commit/6beb77e388640129091116cf5ad52456bf56d7c3))
+* Multiple result sets ([a60db04](https://github.com/Vincent-Lavallee/squeal-editor/commit/a60db047b9298b038f0c74d058db3c110be3bb4f))
+* Run selection in editor ([dd0a48c](https://github.com/Vincent-Lavallee/squeal-editor/commit/dd0a48c5237b31ea319862d837cbce9919f5a169))
+* Saved queries ([2535f45](https://github.com/Vincent-Lavallee/squeal-editor/commit/2535f4541723ed6d9f53792ccc23071e9570d7d9))
+* Test connection ([c19b721](https://github.com/Vincent-Lavallee/squeal-editor/commit/c19b72134ef5acd3f00682262b88bd646e93ca3c))
+
+
+### Bug Fixes
+
+* Postgres casing autocomplete ([8d2a93c](https://github.com/Vincent-Lavallee/squeal-editor/commit/8d2a93c0ed157f2b07e5bafdd835c613431f4f29))
+* SSO styling ([8443294](https://github.com/Vincent-Lavallee/squeal-editor/commit/84432940e71282b11372e2977cd6990ab1c371e9))
+* Windows icon size ([9119ead](https://github.com/Vincent-Lavallee/squeal-editor/commit/9119ead5bb7273deeec79da0e553a3f01df0eb01))
+
 ## [0.11.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.10.1...v0.11.0) (2026-07-29)
 
 
