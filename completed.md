@@ -591,3 +591,13 @@ This is a record, not a plan. Nothing here is waiting on anything.
   contract, the shared assemblers, and the dispatch central, so a new engine is a
   new file rather than an edit into a shared one. Structure only — every engine
   still answers the same contract tests.
+
+- **2026-07-30** — **Unquoted mixed-case identifiers in Postgres autocomplete** —
+  Autocomplete suggests Postgres column and table names as-is, so accepting a
+  suggestion for a mixed-case identifier like `createdAt` inserts it unquoted.
+  Postgres folds unquoted identifiers to lowercase, so the resulting query fails
+  with `column "createdat" does not exist` even though the name came straight
+  from the tree. Quote an identifier on insertion whenever it needs quoting to
+  preserve its case. Postgres-only: MySQL column lookups are case-insensitive
+  regardless of quoting, and SQLite is lenient about ASCII case, so neither
+  reproduces this.

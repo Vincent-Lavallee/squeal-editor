@@ -37,16 +37,6 @@ Things that are wrong.
   or duplicating the install. The updater needs to read back and respect
   wherever the app is actually installed.
 
-- **Unquoted mixed-case identifiers in Postgres autocomplete** — Autocomplete
-  suggests Postgres column and table names as-is, so accepting a suggestion for
-  a mixed-case identifier like `createdAt` inserts it unquoted. Postgres folds
-  unquoted identifiers to lowercase, so the resulting query fails with
-  `column "createdat" does not exist` even though the name came straight from
-  the tree. Quote an identifier on insertion whenever it needs quoting to
-  preserve its case. Postgres-only: MySQL column lookups are case-insensitive
-  regardless of quoting, and SQLite is lenient about ASCII case, so neither
-  reproduces this.
-
 ## Features
 
 Things that do not exist yet.

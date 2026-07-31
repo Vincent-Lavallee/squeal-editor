@@ -4269,3 +4269,88 @@ inside `connection.ts` cheaper to write and no less wrong. `LIMIT/OFFSET` and th
 sort wrapper still live there because all three engines spell them identically;
 the first engine that does not makes them `Driver` methods, which is now a method
 on the contract and a line in each of four files — visible, and the point.
+
+---
+
+## Completion quotes an identifier only when it needs it
+
+**The bug.** Accepting a Postgres column suggestion inserted it exactly as
+labelled, so a mixed-case name like `createdAt` landed unquoted and the query
+failed with `column "createdat" does not exist` — Postgres folds an unquoted
+identifier to lowercase before it looks the name up. Every ingredient of that
+failure came out of the catalog: the popup offered the spelling the tree shows,
+and the server was then asked for a different column. It is the filter bar's own
+bug (*Leaving identifiers bare was a bug, reported against a real column*)
+arriving at the one other place the app writes an identifier into SQL.
+
+**Why the fix is not simply `quoteIdentifier`.** That function exists, is right,
+and is used unconditionally everywhere else — the filter bar's `WHERE`, copy-as-
+SQL, and `Driver.quoteIdent` in the extension. Unconditional is correct there
+because **nobody reads that SQL**: `"users"."email"` costs nothing when it is
+assembled, sent and thrown away, and a "does this need quotes" branch would be
+one more thing to get wrong for no gain. Completion is the one place where the
+text is the user's own document. Quoting every suggestion would put quotes
+through every query anyone writes, and that is a worse editor.
+
+So `quoteIdentifierIfNeeded` sits beside it, sharing the quote character and
+differing only in when it fires, and the split is stated as which side reads the
+result rather than as a preference.
+
+**"Needs it" is per dialect and deliberately narrow.** It is one regex per
+dialect: Postgres is the engine that folds, so anything holding an uppercase
+letter needs quotes there; MySQL and SQLite keep the case they are given, so
+only what cannot be spelled bare at all (a space, a leading digit) does. A
+**reserved word** needs quoting too and is not detected — separating the
+reserved words from the many keywords that are ordinary column names (`name`,
+`value`, `text`, `key`) takes a per-dialect list, and a generous guess would
+quote half the columns there are. The narrower rule fixes the reported bug and
+leaves a smaller one open; a list would fix both and make every query noisier.
+
+**A quote the user typed is theirs.** With `SELECT "crea` on screen the name is
+inserted bare, because ours would spell `""createdAt"`. The alternative
+considered was widening the replaced range to swallow the character they typed,
+which is worse: accepting a suggestion would then delete text the user meant,
+and for a lowercase name it would silently unquote a query they were quoting on
+purpose.
+
+**Verification is the query running, not the text.** The UI test accepts the
+suggestion *and presses Run*, asserting no error comes back. The text assertion
+alone is a proxy, and the failure being fixed was a statement that looked
+perfectly reasonable on screen. MySQL carries the paired test — the same column,
+inserted bare — which is what proves the rule branches on the dialect rather
+than happening to look right on whichever engine was tested first. The same
+pairing the filter bar's fix already needed.
+
+---
+
+## `awaitPromise` needs the page-side promise rooted, or the GC takes it
+
+**The symptom.** Adding two UI tests that accept a completion made the Postgres
+block fail *about half the time* — a dozen tests at once, none of them the new
+ones, starting with a stack pointing into the harness (`Promise was collected`)
+and continuing with every test after it finding a screen the aborted one never
+cleaned up. It reproduced on and off with the same bundle, so it read as the new
+tests being wrong and then as the app being wrong.
+
+**The cause.** It is not Bun's GC collecting one of the harness's promises — it
+is CDP error `-32000` from the *page*. `Runtime.evaluate` with `awaitPromise`
+holds the evaluated promise **weakly**, so a page GC while the reply is pending
+takes the value the inspector is waiting on, and the reply comes back as that
+error instead of an answer. Every `REACT_SETTERS` script (`pickOption`,
+`optionsOf`) evaluates to a promise, so those are the ones exposed. The new
+tests never caused it; opening and accepting Monaco's suggest widget produces
+enough garbage to make a GC land in that window.
+
+**The fix is one line of the harness**: the evaluated expression is now
+`window.__squealEval = eval(<the script>)`, so the promise is rooted in the page
+for as long as the reply takes. `eval` rather than a wrapping function because
+these scripts are statement lists whose *completion value* is the answer
+(`foo(); true;`) — there is no `return` for a wrapper to carry out, and `eval`
+is the one construct that hands back a statement list's completion value.
+
+**The lesson worth keeping.** A failure whose stack is in the harness and whose
+victims are a run of unrelated tests is a *lifetime* problem, not a logic one,
+and the first suspect should not be the code under test. Reading the error's
+`code`/`message` off the protocol — rather than the exception the harness
+rethrows — is what named it: the string is the same either way, and only one of
+them is the page's.

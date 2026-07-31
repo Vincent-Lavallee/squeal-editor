@@ -95,6 +95,24 @@ export function scanScope(sql: string): SqlScope {
 }
 
 /**
+ * The `users.`, `u.` or `"Users".` immediately left of the cursor, if there is
+ * one -- unquoted, which is the spelling `resolveQualifier` below answers for.
+ *
+ * A qualifier may itself be schema-qualified -- `reporting.hits.` is a relation
+ * and a dot, not an alias and two dots -- so the pattern takes the longest name
+ * it can before the final dot. The optional quote *after* that dot belongs to
+ * the column being typed (`u."crea`), not to the qualifier: without it the whole
+ * match fails the moment a name is opened with a quote, and the popup falls back
+ * to offering the entire dialect at a dot.
+ */
+const QUALIFIER = new RegExp(String.raw`(${RELATION})\.["\`]?[\w$]*$`);
+
+export function qualifierAt(line: string): string | null {
+  const qualifier = QUALIFIER.exec(line)?.[1];
+  return qualifier === undefined ? null : unquote(qualifier);
+}
+
+/**
  * What `u` in `u.` refers to: an alias, or a table named outright.
  *
  * **It resolves against the scope and never against the catalog**, and that is

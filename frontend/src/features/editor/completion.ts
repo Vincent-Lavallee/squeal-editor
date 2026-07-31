@@ -11,11 +11,12 @@
  * and knows no React. `useSqlCompletion` is what keeps the snapshot current.
  */
 
-import type { ColumnInfo, TableInfo } from '../../../../shared/protocol/index.ts';
-import { relationName, relationOf } from '../../common/db/relation.ts';
+import type { ColumnInfo, SqlDialect, TableInfo } from '../../../../shared/protocol/index.ts';
+import { relationName, relationOf, type Relation } from '../../common/db/relation.ts';
+import { identifierQuote, quoteIdentifierIfNeeded } from '../../common/db/sql.ts';
 import type { Word } from './keywords.ts';
 import { monaco } from './monaco.ts';
-import { resolveQualifier, type SqlScope } from './sqlScope.ts';
+import { qualifierAt, resolveQualifier, type SqlScope } from './sqlScope.ts';
 
 /**
  * Everything the provider reads, as of the keystroke being answered.
@@ -25,6 +26,11 @@ import { resolveQualifier, type SqlScope } from './sqlScope.ts';
  */
 export interface CompletionSnapshot {
   words: Word[];
+  /**
+   * Which engine is being typed at, and therefore how a name has to be spelled
+   * to survive being inserted — see `quoteIdentifierIfNeeded`.
+   */
+  dialect: SqlDialect;
   /** The active tab's database's tables. Empty until they land. */
   tables: TableInfo[];
   /**
@@ -75,53 +81,72 @@ function wordRange(model: monaco.editor.ITextModel, position: monaco.Position): 
   };
 }
 
-/**
- * The `users.` or `u.` immediately left of the cursor, if there is one.
- *
- * A qualifier may itself be schema-qualified -- `reporting.hits.` is a Postgres
- * relation and a dot, not an alias and two dots -- so the pattern takes the
- * longest name it can before the final dot.
- */
-const QUALIFIER = /([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)?)\.[\w$]*$/;
-
-function qualifierAt(model: monaco.editor.ITextModel, position: monaco.Position): string | null {
-  const line = model.getValueInRange({
+/** The text of the line up to the cursor: what the scans below read. */
+function lineToCursor(model: monaco.editor.ITextModel, position: monaco.Position): string {
+  return model.getValueInRange({
     startLineNumber: position.lineNumber,
     endLineNumber: position.lineNumber,
     startColumn: 1,
     endColumn: position.column,
   });
-  return QUALIFIER.exec(line)?.[1] ?? null;
 }
+
+/**
+ * How a name has to be spelled to still name itself once it is in the query.
+ *
+ * **A suggestion is text the server will be asked to resolve, so it carries its
+ * own quoting.** Postgres folds an unquoted identifier to lowercase, so
+ * accepting `createdAt` from the tree's own catalog used to write a query
+ * looking for `createdat` -- a failure whose every ingredient came from the
+ * database. `quoteIdentifierIfNeeded` is conditional where the filter bar's
+ * `quoteIdentifier` is not: this text is read by the person who typed it.
+ *
+ * `quoteAlreadyOpen` is a quote character the user typed themselves, to the left
+ * of the word being completed (`SELECT "crea`). The quoting is then theirs and
+ * the name goes in bare -- adding ours would spell `""createdAt"`, and widening
+ * the range to swallow the one they typed would delete a character they meant.
+ */
+const namer = (dialect: SqlDialect, quoteAlreadyOpen: boolean) => (name: string) =>
+  quoteAlreadyOpen ? name : quoteIdentifierIfNeeded(name, dialect);
 
 const columnItem = (
   column: ColumnInfo,
   range: monaco.IRange,
-  detail: string
+  detail: string,
+  insertName: (name: string) => string
 ): monaco.languages.CompletionItem => ({
   label: column.name,
   kind: KIND.column,
   detail,
-  insertText: column.name,
+  insertText: insertName(column.name),
   sortText: SORT.column + column.name,
   range,
 });
 
-// `name` is passed rather than derived because it differs by caller: the
+// `relation` is passed whole rather than as its printed name because each half
+// quotes itself: `"reporting"."daily_stats"` is one relation, not one quoted
+// name with a dot in it. What it is *labelled* still differs by caller -- the
 // unqualified list writes the schema-qualified label, while `schema.` writes the
 // bare name, the schema being already typed to the left of the dot.
 const tableItem = (
   table: TableInfo,
   range: monaco.IRange,
-  name: string
-): monaco.languages.CompletionItem => ({
-  label: name,
-  kind: table.kind === 'view' ? KIND.view : KIND.table,
-  detail: table.kind,
-  insertText: name,
-  sortText: SORT.table + name,
-  range,
-});
+  relation: Relation,
+  insertName: (name: string) => string
+): monaco.languages.CompletionItem => {
+  const name = relationName(relation);
+  return {
+    label: name,
+    kind: table.kind === 'view' ? KIND.view : KIND.table,
+    detail: table.kind,
+    insertText:
+      relation.schema === undefined
+        ? insertName(relation.table)
+        : `${insertName(relation.schema)}.${insertName(relation.table)}`,
+    sortText: SORT.table + name,
+    range,
+  };
+};
 
 /**
  * Builds the provider. `snapshot` is called per request, never captured.
@@ -136,8 +161,11 @@ export function sqlCompletionProvider(
     triggerCharacters: ['.'],
 
     provideCompletionItems(model, position) {
-      const { words, tables, defaultSchema, scope, columnsFor } = snapshot();
+      const { words, tables, defaultSchema, scope, columnsFor, dialect } = snapshot();
       const range = wordRange(model, position);
+      const line = lineToCursor(model, position);
+      const quoteAlreadyOpen = line[range.startColumn - 2] === identifierQuote(dialect);
+      const insertName = namer(dialect, quoteAlreadyOpen);
 
       /*
        * After a dot, the qualifier is the entire question, and it is one of two:
@@ -147,13 +175,13 @@ export function sqlCompletionProvider(
        * way keywords are suppressed -- they would bury the answer under words the
        * dot has already ruled out.
        */
-      const qualifier = qualifierAt(model, position);
+      const qualifier = qualifierAt(line);
       if (qualifier) {
         const table = resolveQualifier(qualifier, scope);
         const columns = table ? columnsFor(table) : null;
         // A resolved table with its columns in hand: those are the answer.
         if (columns && columns.length > 0) {
-          return { suggestions: columns.map((c) => columnItem(c, range, c.dataType)) };
+          return { suggestions: columns.map((c) => columnItem(c, range, c.dataType, insertName)) };
         }
         // Otherwise the qualifier may be a schema, and `public.` is then asking
         // for the relations in it, named bare because the schema is already
@@ -165,7 +193,7 @@ export function sqlCompletionProvider(
         // non-empty and never reach this branch.
         const inSchema = tables.filter((t) => t.schema !== undefined && t.schema.toLowerCase() === qualifier.toLowerCase());
         if (inSchema.length > 0) {
-          return { suggestions: inSchema.map((t) => tableItem(t, range, t.name)) };
+          return { suggestions: inSchema.map((t) => tableItem(t, range, { table: t.name }, insertName)) };
         }
         // A real table whose columns have not landed yet, or a qualifier that is
         // neither table nor schema: an empty popup that closes on the next key,
@@ -192,14 +220,14 @@ export function sqlCompletionProvider(
           // The table is named in the detail, which the qualified case leaves
           // out: two tables in a join both have an `id`, and here the label is
           // the only thing distinguishing entries that are not the same column.
-          suggestions.push(columnItem(column, range, `${column.dataType} · ${table}`));
+          suggestions.push(columnItem(column, range, `${column.dataType} · ${table}`, insertName));
         }
       }
 
       for (const table of tables) {
         // Every relation is offered fully qualified -- `public.users` reads the
         // same way `reporting.daily_stats` does.
-        suggestions.push(tableItem(table, range, relationName(relationOf(table))));
+        suggestions.push(tableItem(table, range, relationOf(table), insertName));
         // A default-schema relation also resolves unqualified, so the bare name
         // is offered too: `users` and `public.users` are both valid and either
         // may be what you want. A relation in another schema gets only the
@@ -207,7 +235,7 @@ export function sqlCompletionProvider(
         // not resolve. (No-schema engines never enter this branch: the qualified
         // name is already bare, so a second entry would just duplicate it.)
         if (table.schema !== undefined && table.schema === defaultSchema) {
-          suggestions.push(tableItem(table, range, table.name));
+          suggestions.push(tableItem(table, range, { table: table.name }, insertName));
         }
       }
 

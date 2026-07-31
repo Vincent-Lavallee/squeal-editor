@@ -54,7 +54,7 @@ discovers every `*.test.ts` — the script name cannot override it. The UI suite
 would therefore try to launch a window on a bare `bun test`, so it opts out
 behind `SQUEAL_UI=1` (set by `test:ui`, along with a longer timeout, because
 launching the app blows past Bun's 5s default hook timeout). Expect
-`338 pass / 141 skip` from a bare run, and `115 pass` in ~300s from `test:ui`.
+`339 pass / 146 skip` from a bare run, and `120 pass` in ~325s from `test:ui`.
 
 **`test:ui` builds the extension too, and driving the app by hand must as well.**
 `build:ext` compiles `extensions/db/squeal-db-ext.exe`, which is what
@@ -114,8 +114,9 @@ re-runnable; it drops and reseeds.
 past 2^53, a timezone-less DATETIME, NULLs, a BLOB, JSON, a view, (Postgres) a
 table outside the `public` schema, and a mixed-case column name
 (`users."eventType"`) — the filter bar once rendered that unquoted, which
-Postgres folds to lowercase and then cannot find. **Add to it when you find a
-new sharp edge** — that is what it is for.
+Postgres folds to lowercase and then cannot find, and the completion popup later
+inserted it unquoted for the same reason. **Add to it when you find a new sharp
+edge** — that is what it is for.
 
 `events` is the exception that proves the rule: 150 rows, seeded for *shape*
 rather than for a value. The size is chosen, not round — more than one 100-row
@@ -322,6 +323,22 @@ Two things to know:
   detail run together. Its sleep before triggering is not padding: the columns
   are fetched over the bridge off the *text changing*, so the round trip has to
   land before the popup is asked what it knows.
+- **What a suggestion inserts is read off the model, never off the label.** An
+  identifier that needs quoting to survive goes in quoted, so `acceptSuggestion`
+  opens the popup the same way `suggest` does, takes what it has selected
+  (`acceptSelectedSuggestion`, one of Monaco's *commands* — triggered, not
+  fetched) and reads the editor text back. The Postgres half then presses Run:
+  the text being right is a proxy, and the bug it pins was a statement that
+  looked perfectly reasonable on screen.
+- **`Runtime.evaluate` roots its value on `window`, and that is load-bearing.**
+  `awaitPromise` holds the page's promise weakly, so a page GC while a reply is
+  in flight answers with CDP `-32000 Promise was collected` instead of a value —
+  which fails whichever test was running when the reply landed and strands every
+  test after it. Every `REACT_SETTERS` script evaluates to a promise, so they are
+  the exposed ones. `app.ts` wraps each script as
+  `window.__squealEval = eval(<script>)`; do not unwrap it, and do not read the
+  rethrown message and conclude the *harness* collected something. See
+  `docs/decisions.md`.
 - **The suggest list is virtualised**, so only the rows on screen are in the DOM.
   Assert against a query whose typed prefix narrows the list — `toContain` on a
   list of a hundred keywords proves nothing about what is in the widget.

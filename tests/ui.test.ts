@@ -195,6 +195,24 @@ async function suggest(sql: string): Promise<string[]> {
       .map(e => e.textContent)`);
 }
 
+/**
+ * Opens the popup the same way, takes the item it has selected, and reads back
+ * what landed in the editor.
+ *
+ * What a suggestion *inserts* is not what it is labelled -- an identifier the
+ * server would not resolve bare goes in quoted -- so reading the model is the
+ * only way to see the difference. `acceptSelectedSuggestion` is one of Monaco's
+ * commands rather than an action (the `closeFindWidget` distinction again), so
+ * it is triggered and not fetched; its precondition is the popup being visible
+ * and the editor focused, both of which `suggest` has just arranged.
+ */
+async function acceptSuggestion(sql: string): Promise<string> {
+  await suggest(sql);
+  await app.evaluate(`window.squealEditor.trigger('test', 'acceptSelectedSuggestion', {}); true;`);
+  await Bun.sleep(300);
+  return app.evaluate<string>(editorText);
+}
+
 /** The results bar's label: which table, and which rows of it are on screen. */
 const barText = `document.querySelector('[data-testid="results-bar"]').textContent`;
 
@@ -1528,6 +1546,31 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(rows).not.toContain('zzz_bait');
     });
 
+    /*
+     * The bug this replaced had every ingredient come from the database:
+     * `users."eventType"` is stored mixed-case, so a suggestion inserted as it
+     * is labelled leaves Postgres folding it to `eventtype` and refusing a query
+     * whose column name came straight out of the catalog.
+     *
+     * It is asserted by *running* the query, not only by reading the text back.
+     * The text is a proxy for the claim, and the failure being fixed was a
+     * statement that looked perfectly reasonable on screen.
+     */
+    test('a mixed-case column is inserted quoted, and the query it makes runs', async () => {
+      expect(await acceptSuggestion('SELECT eventT| FROM users')).toBe('SELECT "eventType" FROM users');
+
+      await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
+      await Bun.sleep(1500);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="note-error"]').length`)).toBe(0);
+    });
+
+    test('a column that needs no quoting is inserted bare', async () => {
+      // The other half, and the reason the rule is conditional: quoting every
+      // name would pass the test above while putting quotes through every query
+      // anyone writes.
+      expect(await acceptSuggestion('SELECT ema| FROM users')).toBe('SELECT email FROM users');
+    });
+
     test('a SQL error is surfaced in the results pane', async () => {
       await app.evaluate(setEditorText('SELECT * FROM does_not_exist'));
       await Bun.sleep(200);
@@ -2061,6 +2104,17 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // `big` exists in MySQL's `users` and not in Postgres', so this is the
       // column list coming from the server actually connected to.
       expect(await suggest('SELECT bi| FROM users')).toContain('big');
+    });
+
+    /*
+     * The pair to the Postgres block's quoted insertion, and the same argument
+     * the ILIKE pair makes: the quoting is the *dialect's* rule, not one spelling
+     * applied everywhere. MySQL does not fold case, so the identical column
+     * needs no backticks -- and a rule written per dialect is the only thing
+     * both assertions can pass at once.
+     */
+    test('a mixed-case column is inserted bare, this engine not folding case', async () => {
+      expect(await acceptSuggestion('SELECT eventT| FROM users')).toBe('SELECT eventType FROM users');
     });
   });
 

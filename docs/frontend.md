@@ -727,7 +727,9 @@ bare, the first cut of this shipped a bug: Postgres folds an unquoted
 identifier to lowercase, so a mixed-case column like `eventType` rendered
 unquoted becomes a lookup for `eventtype`, which does not exist. Quoting is
 unconditional — the same call `quoteIdent` already makes — so there is no
-"needs it or doesn't" judgment call to get wrong.
+"needs it or doesn't" judgment call to get wrong. That holds because nobody
+reads this clause; the completion popup, whose text *is* read, is the one place
+that quotes conditionally instead — see *Completion*.
 
 Seven things are load-bearing, and each was found rather than designed:
 
@@ -1236,6 +1238,41 @@ Five things fall out, each invisible until it bites:
   and never reach the schema branch. On an engine with no schema layer no relation
   carries a schema, so this offers nothing there and a `db.`-style qualifier stays
   the empty popup it was.
+
+**What a suggestion inserts is not always what it is labelled.** An identifier
+the engine would not resolve written bare goes in quoted — Postgres folds an
+unquoted name to lowercase, so accepting `createdAt` used to write a query
+looking for `createdat`, a failure whose every ingredient came out of the
+catalog. The label stays the plain name, since that is what is being typed and
+matched against.
+
+`quoteIdentifierIfNeeded` (`common/db/sql.ts`) is the rule, and it is
+**conditional where `quoteIdentifier` beside it is not** — the same split as
+"who reads the result". SQL this app *assembles* (the filter bar's `WHERE`,
+copy-as-SQL, the extension's own page SQL) is quoted unconditionally, because
+nobody reads it and a judgment call there is one more thing to get wrong. SQL
+the user is *writing* is read by them, so `email` completes as `email` and only
+a name that needs them gains quotes. It is a per-dialect pattern rather than one
+rule: Postgres is the engine that folds, MySQL and SQLite keep the case they are
+given and only quote what could not be spelled bare at all — a space, a leading
+digit. See `docs/decisions.md`.
+
+Two things there are load-bearing:
+
+- **A relation quotes each half.** `"reporting"."daily_stats"` is one relation
+  and not one quoted name with a dot in it, so `tableItem` takes the `Relation`
+  rather than its printed name and quotes the schema and the table separately.
+- **A quote the user opened themselves is theirs.** With a `"` already to the
+  left of the word (`SELECT "crea`), the name goes in bare — adding ours spells
+  `""createdAt"`, and widening the replaced range to swallow theirs would delete
+  a character they meant. `qualifierAt` allows for that quote after the dot for
+  the same reason, or `u."crea` would fall out of the qualified branch entirely
+  and offer the whole dialect at a dot.
+
+A **reserved word** (`order`, `select`) also needs quoting and is deliberately
+not detected: telling the reserved words apart from the many keywords that are
+perfectly good column names takes a per-dialect list, and erring generous would
+put quotes around half the ordinary columns there are.
 
 **Word-based suggestions stay off**, and the reason has not changed: they offer
 the identifiers already in the document, which is a guess about a schema Monaco

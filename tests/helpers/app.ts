@@ -255,7 +255,20 @@ export async function launchApp(
   const page: AppSession = {
     async evaluate<T>(expression: string): Promise<T> {
       const r = await send("Runtime.evaluate", {
-        expression,
+        // **The page's own GC may take a promise this is waiting on.**
+        // `awaitPromise` holds it weakly, so a script whose value is a promise
+        // — every `REACT_SETTERS` one — can answer with CDP error -32000,
+        // `Promise was collected`, instead of a result. It surfaces as whatever
+        // test was running when the reply landed, with a stack in the harness
+        // and no relation to what that test was doing, and every test after it
+        // inherits the screen the aborted one never cleaned up: one collected
+        // promise reads as a dozen unrelated failures. Naming the value on
+        // `window` roots it in the page for as long as the reply takes.
+        //
+        // `eval` rather than a wrapping function because these expressions are
+        // statement lists whose *completion value* is the answer — `foo(); true;`
+        // — and there is no `return` for a wrapper to carry out.
+        expression: `window.__squealEval = eval(${JSON.stringify(expression)})`,
         awaitPromise: true,
         returnByValue: true,
       });

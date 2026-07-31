@@ -67,6 +67,7 @@ export function useSqlCompletion(sql: string, database: string | null): void {
    */
   const snapshot: CompletionSnapshot = {
     words: wordsFor(dialect),
+    dialect,
     tables: listed,
     defaultSchema,
     scope,
