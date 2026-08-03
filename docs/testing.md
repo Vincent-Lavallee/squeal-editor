@@ -208,6 +208,14 @@ asserted **both ways** — `SELECT 'a\'; b'` is one statement on MySQL and two o
 Postgres — because an assertion that only holds for one dialect would pass just
 as well if the dialect were being ignored.
 
+**The second half of it asks which statement the cursor is in** (`statementAt`),
+and its cases are the ones where the cursor is *not* neatly inside a statement —
+just past a terminator, on a blank line, in the comment above the query it is
+about to run. Each has exactly one answer a user would call correct, and the
+failure to guard against is not an error message but a query nobody asked for.
+The cursor is written into each case as a `|` and cut back out, so a case reads
+as the tab on screen rather than as an offset counted by hand.
+
 **Its `DELIMITER` half is only worth anything with a real server behind it**, and
 that half lives in `extension.test.ts` (*mysql compound statements*): this suite
 proves the directive is consumed and the body handed over whole, and only mysqld

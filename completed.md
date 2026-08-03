@@ -639,3 +639,17 @@ This is a record, not a plan. Nothing here is waiting on anything.
   connection, each with its own editor and result grid. Session-only state, same
   as today's sidebar/results resizing; closing either pane's tab collapses back
   to a single view.
+
+- **2026-08-03** — **Run the statement under the cursor** — Running one query out of several in
+  a tab means selecting it by hand, because the run shortcut sends either the
+  whole editor or the selection and has no notion of which query you are
+  standing in. Add Ctrl/⌘+Shift+Enter for the statement holding the cursor: a
+  selection is ignored so the key always means one thing, a cursor in the gap
+  between statements runs the one above it, and a cursor in a comment runs the
+  statement that comment heads — the way statement splitting already reads it.
+  Keybinding only; it gets a visible surface when the command palette and the
+  keyboard shortcuts screen arrive. Two things it needs that do not exist yet:
+  statement splitting has to report where each statement sits in the text and
+  not only what it says, and the key has to be rebound inside the editor as well
+  as at the window level, since Monaco owns Ctrl+Shift+Enter as "insert line
+  above" exactly as it owned Ctrl+Enter.

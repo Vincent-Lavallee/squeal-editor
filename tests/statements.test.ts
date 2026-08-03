@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { splitStatements } from '../frontend/src/common/db/splitStatements.ts';
+import type { SqlDialect } from '../shared/protocol/index.ts';
+import { splitStatements, statementAt } from '../frontend/src/common/db/splitStatements.ts';
 
 /**
  * The one suite here that needs no server, deliberately.
@@ -191,5 +192,62 @@ describe('splitting a tab into statements', () => {
     expect(splitStatements("SELECT 'a; b", 'pgsql')).toEqual(["SELECT 'a; b"]);
     expect(splitStatements('SELECT /* a; b', 'pgsql')).toEqual(['SELECT /* a; b']);
     expect(splitStatements('SELECT $$ a; b', 'pgsql')).toEqual(['SELECT $$ a; b']);
+  });
+});
+
+/**
+ * Which statement the cursor is standing in — what Ctrl+Shift+Enter sends.
+ *
+ * The cases that matter are the ones where the cursor is *not* neatly inside a
+ * statement, because that is where it usually is: just past the semicolon it
+ * typed, on a blank line, or in the comment above the query it is about to run.
+ * Each of those has exactly one answer a user would call correct, and getting it
+ * wrong runs a query they did not ask for — which is worse than running nothing.
+ */
+describe('the statement under the cursor', () => {
+  // The cursor is written in as `|` and cut back out, so each case reads as the
+  // tab the user is looking at rather than as an offset counted by hand.
+  const at = (marked: string, dialect: SqlDialect = 'pgsql'): string | null =>
+    statementAt(marked.replace('|', ''), dialect, marked.indexOf('|'));
+
+  test('the statement holding the cursor is the one that runs', () => {
+    expect(at('SELECT 1;\nSEL|ECT 2;\nSELECT 3')).toBe('SELECT 2');
+  });
+
+  test('its first and last character count as inside it', () => {
+    expect(at('SELECT 1;\n|SELECT 2;\nSELECT 3')).toBe('SELECT 2');
+    expect(at('SELECT 1;\nSELECT 2|;\nSELECT 3')).toBe('SELECT 2');
+  });
+
+  test('just past the terminator is still the statement it ended', () => {
+    // The common case by far: type a query, end it, run it without selecting.
+    expect(at('SELECT 1;|')).toBe('SELECT 1');
+    expect(at('SELECT 1;\n|\nSELECT 2')).toBe('SELECT 1');
+  });
+
+  test('a comment above a statement belongs to it, not to the one before', () => {
+    expect(at('SELECT 1;\n\n-- fetch the |users\nSELECT 2')).toBe('-- fetch the users\nSELECT 2');
+  });
+
+  test('a cursor with nothing behind it reaches forward instead', () => {
+    // Otherwise a blank first line above the tab's only query is a shortcut
+    // that does nothing at all.
+    expect(at('|\nSELECT 1')).toBe('SELECT 1');
+    expect(at('  |  \nSELECT 1;\nSELECT 2')).toBe('SELECT 1');
+  });
+
+  test('text with no statement in it runs nothing', () => {
+    expect(at('|')).toBeNull();
+    expect(at('  |  \n\n')).toBeNull();
+    expect(at('-- just a not|e')).toBeNull();
+  });
+
+  test('the cut is the lexer\'s, so a semicolon inside a literal is not a boundary', () => {
+    expect(at("SELECT 'a;|b' FROM t; SELECT 2")).toBe("SELECT 'a;b' FROM t");
+  });
+
+  test('a routine body is one statement to stand in, on the engine that says so', () => {
+    const routine = 'DELIMITER //\nCREATE FUNCTION f() RETURNS INT DETERMINISTIC\nBEGIN\n  RETURN 1;|\nEND//\nDELIMITER ;\nSELECT f()';
+    expect(at(routine, 'mysql')).toBe('CREATE FUNCTION f() RETURNS INT DETERMINISTIC\nBEGIN\n  RETURN 1;\nEND');
   });
 });

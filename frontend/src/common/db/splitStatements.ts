@@ -1,8 +1,26 @@
 import type { SqlDialect } from '../../../../shared/protocol/index.ts';
 
+/** The statements a tab holds, in order — see `statementSpans` for the rules. */
+export function splitStatements(sql: string, dialect: SqlDialect): string[] {
+  return statementSpans(sql, dialect).map((statement) => statement.text);
+}
+
+interface StatementSpan {
+  text: string;
+  /** Where `text` sits in the original SQL, trimmed exactly as `text` is. */
+  start: number;
+  end: number;
+}
+
 /**
  * Cuts a tab's text into the statements it actually holds, on the semicolons
- * that really end one.
+ * that really end one, and says where each one sits.
+ *
+ * **The offsets are here rather than recovered afterwards** because there is
+ * nothing to recover them from: the same statement can appear twice in a tab,
+ * so searching the text for one that came back as a string finds a position
+ * rather than *its* position. Running the statement under the cursor asks
+ * exactly that question, and only the pass that did the cutting can answer it.
  *
  * **This decides what runs, so it is a lexer and never a guess.** `sqlScope.ts`
  * is allowed to be a loose regex scan because a miss there costs an absent
@@ -31,9 +49,9 @@ import type { SqlDialect } from '../../../../shared/protocol/index.ts';
  * first fragment fails to parse; with it the whole body arrives as the one
  * statement the server always thought it was.
  */
-export function splitStatements(sql: string, dialect: SqlDialect): string[] {
+function statementSpans(sql: string, dialect: SqlDialect): StatementSpan[] {
   const lexis = LEXIS[dialect];
-  const statements: string[] = [];
+  const statements: StatementSpan[] = [];
   let start = 0;
   let significant = false;
   let i = 0;
@@ -43,7 +61,16 @@ export function splitStatements(sql: string, dialect: SqlDialect): string[] {
   let terminator = ';';
 
   const take = (end: number): void => {
-    if (significant) statements.push(sql.slice(start, end).trim());
+    if (significant) {
+      // Trimmed by walking the ends in rather than by `trim()`, because the
+      // offsets have to describe the text that comes back: a `text` that had
+      // been trimmed away from its own `start` would point at whitespace.
+      let from = start;
+      let to = end;
+      while (from < to && isBlank(sql[from])) from += 1;
+      while (to > from && isBlank(sql[to - 1])) to -= 1;
+      statements.push({ text: sql.slice(from, to), start: from, end: to });
+    }
     significant = false;
   };
 
@@ -112,6 +139,35 @@ export function splitStatements(sql: string, dialect: SqlDialect): string[] {
   take(sql.length);
 
   return statements;
+}
+
+/**
+ * The statement the cursor is standing in, or null when the text holds none.
+ *
+ * **The gap between two statements belongs to the one above it.** A cursor sits
+ * just past the `;` it typed far more often than inside the text it means to
+ * run, so reaching backwards is what makes "write a query, end it, run it" work
+ * without selecting anything first. Only a cursor with no statement behind it
+ * at all reaches forward instead — a blank line above the tab's only query is
+ * otherwise a shortcut that does nothing.
+ *
+ * **A comment above a statement needs no rule of its own here**, and that is
+ * the reason these spans are the splitter's rather than a second reading of the
+ * text: it already keeps a leading comment with the statement it heads, so a
+ * cursor parked in `-- fetch the users` is *inside* that statement's span and
+ * never reaches the rule above. Two readings would have disagreed there.
+ */
+export function statementAt(sql: string, dialect: SqlDialect, offset: number): string | null {
+  const statements = statementSpans(sql, dialect);
+
+  let preceding: StatementSpan | undefined;
+  for (const statement of statements) {
+    const holdsCursor = offset >= statement.start && offset <= statement.end;
+    if (holdsCursor) return statement.text;
+    if (statement.end < offset) preceding = statement;
+  }
+
+  return (preceding ?? statements[0])?.text ?? null;
 }
 
 /**

@@ -1253,6 +1253,77 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     /*
+     * Running the statement under the cursor, and the three tests below are one
+     * arrangement over the same two-statement tab. The strip is again what tells
+     * the runs apart -- sending the whole tab would draw a tab per statement --
+     * and each test asserts a grid the one before it did not leave, so a
+     * shortcut that quietly did nothing could not pass.
+     *
+     * Dispatched at the document, which is the window listener rather than
+     * Monaco's own binding: `e.key` is `Enter` with or without Shift, so this is
+     * where the two runs would have collided.
+     */
+    const putCursor = (lineNumber: number, column: number) =>
+      `window.squealEditor.setPosition({ lineNumber: ${lineNumber}, column: ${column} }); true;`;
+    const putCursorAtEndOfLine = (line: number) => `(() => {
+      const model = window.squealEditor.getModel();
+      window.squealEditor.setPosition({ lineNumber: ${line}, column: model.getLineMaxColumn(${line}) });
+      return true;
+    })()`;
+    const runStatement =
+      `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, shiftKey: true, bubbles: true })); true;`;
+
+    test('Ctrl+Shift+Enter runs only the statement the cursor is in', async () => {
+      await app.evaluate(setEditorText(twoStatements));
+      await Bun.sleep(200);
+      await app.evaluate(putCursor(1, 8));
+      await Bun.sleep(100);
+      await app.evaluate(runStatement);
+      await Bun.sleep(1500);
+
+      // The test above left Result 2's grid and a strip of two, so both of
+      // these changing is one statement having gone to the server.
+      expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
+      expect(await app.evaluate<string[]>(statementTabs)).toEqual([]);
+    });
+
+    test('the cursor just past a terminator runs the statement it ended', async () => {
+      // Where the cursor actually is after typing a query and ending it.
+      await app.evaluate(putCursorAtEndOfLine(2));
+      await Bun.sleep(100);
+      await app.evaluate(runStatement);
+      await Bun.sleep(1500);
+
+      expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['email']);
+      expect(await app.evaluate<string[]>(statementTabs)).toEqual([]);
+    });
+
+    test('a selection does not change what the cursor is standing in', async () => {
+      /*
+       * Everything selected, from the bottom up the way Shift+Up leaves it, so
+       * the cursor sits in the *first* statement while the selection covers
+       * both. Ctrl+Enter here would run the pair and draw a strip; this key
+       * answers with the cursor's statement and ignores the selection outright.
+       */
+      await app.evaluate(`(() => {
+        const model = window.squealEditor.getModel();
+        window.squealEditor.setSelection({
+          selectionStartLineNumber: 2, selectionStartColumn: model.getLineMaxColumn(2),
+          positionLineNumber: 1, positionColumn: 1,
+        });
+        return true;
+      })()`);
+      await Bun.sleep(200);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="run-btn"]').textContent`)).toBe('Run selection');
+
+      await app.evaluate(runStatement);
+      await Bun.sleep(1500);
+
+      expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
+      expect(await app.evaluate<string[]>(statementTabs)).toEqual([]);
+    });
+
+    /*
      * The batch stops at the first failure, and the strip is where that is
      * legible: the statements that ran have a tab, the failure is selected, and
      * what never ran is counted rather than silently missing.

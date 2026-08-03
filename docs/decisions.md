@@ -4667,3 +4667,55 @@ does and what stops a column honestly named `delimiter` from swallowing a line.
 It is MySQL-only, since Postgres dollar-quotes a body and SQLite has no routines
 — on either of those the word is ordinary text, and treating it otherwise would
 be discarding someone's SQL to honour a command their engine does not have.
+
+## The cursor's statement, and the gap belonging to the statement above
+
+Running had two modes — the selection, or the whole tab — and neither knew
+*where the user was*. Picking the third query out of five meant highlighting it
+by hand every time. Ctrl/⌘+Shift+Enter is the third mode, and almost all of the
+decision is in the cases where the cursor is not neatly inside a statement,
+because that is where a cursor usually is.
+
+**The gap between two statements belongs to the one above it.** A cursor sits
+just past the `;` it typed far more often than in the middle of the text it
+means to run, so "write a query, end it, run it" has to work with no selection
+and no repositioning — which is only true if the shortcut reaches backwards.
+The one exception is a cursor with nothing behind it at all, which reaches
+forward instead: a blank first line above the tab's only query is a shape people
+actually write, and a shortcut that silently did nothing there would read as
+broken rather than as principled.
+
+**Rejected: letting a selection win.** The obvious reading is that
+Ctrl+Shift+Enter should behave like Ctrl+Enter whenever text is selected, since
+Ctrl+Enter already prefers a selection — one less rule. It is the wrong one: the
+two keys would then be the same key most of the time the second is worth
+pressing, and the moment you want the statement your cursor is in *while*
+something is selected there would be no way to ask for it. Ignoring the
+selection outright leaves each key one meaning. `getPosition` is the cursor
+itself, which is the active end of a selection, so a selection does not even
+have to be reconciled — only disregarded.
+
+**The splitter grew offsets rather than the caller growing a second reading of
+the text.** Finding the statement under a cursor needs to know where each one
+sits, and `splitStatements` returned trimmed strings. Searching the tab for the
+string that came back is not a fix — the same statement can appear twice, so it
+finds *a* position rather than *its* position. Only the pass that did the
+cutting can say. `statementSpans` is that pass and `splitStatements` is now its
+text view, one lexer with two shapes.
+
+**A leading comment is the case that vindicates it.** The splitter keeps a
+comment with the statement it heads, so a cursor parked in `-- fetch the users`
+is *inside* that statement's span and never reaches the gap rule — the answer is
+the query below, with no rule written for it. A second reading of the text would
+have had to be taught the same thing, and the two would have disagreed the first
+time either changed. This is the whole argument for the offsets coming from the
+lexer, in one example.
+
+**Monaco owns Ctrl+Shift+Enter as "insert line above", exactly as it owned
+Ctrl+Enter as "insert line below"**, so it is rebound in both places the run
+shortcut is: the editor's own `addAction`, and the `window` listener that covers
+focus being elsewhere in the pane. The window half has a trap the editor half
+does not — `e.key` is `Enter` whether Shift is down or not, so the existing
+whole-tab branch caught Ctrl+Shift+Enter for free. Left alone, the same keypress
+would have run one statement inside the editor and the entire tab from anywhere
+else in the pane. It reads `shiftKey` and chooses.

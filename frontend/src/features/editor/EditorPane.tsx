@@ -4,6 +4,7 @@ import { useSession } from '../../store/sessionSlice.ts';
 import type { Tab } from '../../store/tabsSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
+import { statementAt } from '../../common/db/splitStatements.ts';
 import * as t from '../../common/tokens';
 import { useEditor } from './useEditor.ts';
 import { defineTheme, monaco, px, THEME, token } from './monaco.ts';
@@ -156,6 +157,32 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
     return model.getValueInRange(selection);
   }, []);
 
+  /*
+   * What Ctrl+Shift+Enter runs: the one statement the cursor is standing in.
+   *
+   * **A selection is ignored, deliberately.** This key means "the statement I am
+   * in" and nothing else, so it stays worth pressing while text happens to be
+   * selected; Ctrl+Enter is the one that honours a selection, and two keys that
+   * do the same thing whenever a selection exists would be one key too many.
+   * `getPosition` is the cursor itself, which is the active end of a selection
+   * rather than some third thing to reconcile.
+   *
+   * The text is read off the model rather than off `latest.current.sql` because
+   * the offset is an index *into that string*: the two agree, since text only
+   * flows out of Monaco, but reading one and indexing the other would be a bet
+   * on that rather than a use of it.
+   *
+   * Nothing to run comes back as `''` and is passed along rather than branched
+   * on -- `runQuery`'s own condition refuses a blank statement, the same no-op
+   * an empty editor and a whitespace-only selection already get.
+   */
+  const statementToRun = useCallback((): string => {
+    const model = editor.current?.getModel();
+    const position = editor.current?.getPosition();
+    if (!model || !position) return '';
+    return statementAt(model.getValue(), latest.current.dialect, model.getOffsetAt(position)) ?? '';
+  }, []);
+
   // The button is the same action the shortcut and the context menu run, not a
   // second path into the formatter: reach for Monaco's registered action rather
   // than calling the provider directly, so the three stay one thing.
@@ -246,16 +273,24 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
      * (verified in Monaco's `standaloneCodeEditor.js`), so each pane's binding
      * fires only when that pane is the focused one.
      *
-     * Ctrl+Enter is already Monaco's "insert line below" and Ctrl+B/Ctrl+S are
-     * the webview's; rebinding them here is what keeps the app's shortcuts
-     * working where they are used most, since Monaco wins inside its own DOM
-     * and the window listener never sees these keydowns.
+     * Ctrl+Enter is already Monaco's "insert line below", Ctrl+Shift+Enter its
+     * "insert line above", and Ctrl+B/Ctrl+S are the webview's; rebinding them
+     * here is what keeps the app's shortcuts working where they are used most,
+     * since Monaco wins inside its own DOM and the window listener never sees
+     * these keydowns.
      */
     instance.addAction({
       id: 'squeal.run',
       label: 'Run query',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
       run: () => latest.current.onRun(sqlToRun()),
+    });
+
+    instance.addAction({
+      id: 'squeal.runStatement',
+      label: 'Run statement under cursor',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter],
+      run: () => latest.current.onRun(statementToRun()),
     });
 
     instance.onDidChangeCursorSelection((e) => setHasSelection(!e.selection.isEmpty()));
@@ -291,7 +326,7 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
     };
     // Mount only. The models flow in through the effect below instead, because
     // re-creating the editor on every keystroke is not a way to keep it in sync.
-  }, [setSql, sqlToRun, exposeGlobal]);
+  }, [setSql, sqlToRun, statementToRun, exposeGlobal]);
 
   /*
    * Show the active tab's model.
@@ -417,10 +452,15 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
         // it -- there is one Monaco and every tab's model hangs off it -- so the
         // listener is live and has to refuse for itself.
         if (!isEditorTab) return;
-        // The selection outlives the focus leaving the editor -- Monaco still
-        // draws it, and running from out here has to mean what running from
-        // inside it does.
-        onRun(sqlToRun());
+        // Shift is read here rather than left to the `Enter` branch it would
+        // otherwise fall into: `e.key` is `Enter` with or without it, so the
+        // whole-tab run would answer Ctrl+Shift+Enter out here while Monaco
+        // ran one statement for the very same keypress inside the editor.
+        //
+        // Either way the cursor and the selection outlive the focus leaving
+        // the editor -- Monaco still draws both -- so running from out here
+        // has to mean what running from inside it does.
+        onRun(e.shiftKey ? statementToRun() : sqlToRun());
       }
       // Prevented whichever tab is in front, unlike Run: a grid tab has nothing
       // to save, but letting the key through there would still hand the webview
@@ -434,7 +474,7 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onRun, onSaveQuery, isEditorTab, sqlToRun, focused]);
+  }, [onRun, onSaveQuery, isEditorTab, sqlToRun, statementToRun, focused]);
 
   return (
     <>

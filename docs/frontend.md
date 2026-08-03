@@ -688,6 +688,14 @@ language map, and for the same reason: how the text on screen is *spelled* is th
 editor's business, while what SQL *means* stays the extension's. Nothing here
 authors SQL — it only says where one statement the user typed ends.
 
+**It reports where each statement sits, not only what it says.**
+`statementSpans` is the pass that cuts, and `splitStatements` is its text view.
+The offsets are produced by that pass because there is nothing to recover them
+from afterwards: the same statement can appear twice in a tab, so searching the
+text for one that came back as a string finds *a* position rather than *its*
+position. `statementAt` is the one caller — see *Running the statement under the
+cursor*.
+
 **MySQL's `DELIMITER` is honoured, and it belongs here precisely because it is
 not SQL.** The server has never heard of it — the `mysql` CLI consumes the line
 and never sends it — so the client is the only thing that can act on it, which
@@ -1512,8 +1520,13 @@ Six things there look incidental and are not:
 - **Ctrl+Enter is rebound in the editor.** It is Monaco's own "insert line
   below", and Monaco wins inside its own DOM — the `window` listener that serves
   the rest of the app never sees the key. That listener is live on a grid tab
-  too — the pane is mounted, just hidden — so it refuses for itself. Ctrl+B and
-  Ctrl+S are the same arrangement; Ctrl+S has one extra reason to be bound at all,
+  too — the pane is mounted, just hidden — so it refuses for itself.
+  Ctrl+Shift+Enter is the same story one key over: Monaco's "insert line above",
+  rebound to running the statement under the cursor. **The `window` half has to
+  read `shiftKey` for itself**, because `e.key` is `Enter` with or without it —
+  without that branch the whole-tab run answers Ctrl+Shift+Enter outside the
+  editor while Monaco runs one statement for the same keypress inside it. Ctrl+B
+  and Ctrl+S are the same arrangement; Ctrl+S has one extra reason to be bound at all,
   which is that the webview otherwise treats it as *save this page* and opens the
   OS file dialog over the app. With a split view there are two `window`
   listeners alive, one per pane, and only the focused pane's may act on a
@@ -1557,6 +1570,44 @@ Four things there are load-bearing:
 A selection spanning more than one statement needs no case of its own — it is the
 same text going the same way, so it is split and run statement by statement
 exactly as a whole tab of several is. See *Running several statements*.
+
+### Running the statement under the cursor
+
+Ctrl/⌘+Shift+Enter runs the one statement the cursor is standing in, which is the
+third and last thing a run can send. `statementToRun` in `EditorPane` decides it,
+beside `sqlToRun`, and both are bound the same two ways: Monaco's own action and
+the `window` listener behind it.
+
+**A selection is ignored, and that is what makes the key worth having.** It means
+"the statement I am in" always, so it stays predictable while text happens to be
+selected; Ctrl+Enter is the one that honours a selection. Two keys that agreed
+whenever a selection existed would be one key too many. The cursor read is
+`getPosition`, which is the active end of a selection rather than some third
+thing to reconcile.
+
+**The gap between two statements belongs to the one above it.** A cursor sits
+just past the `;` it typed far more often than inside the text it means to run,
+so reaching backwards is what makes "write a query, end it, run it" work without
+selecting anything. Only a cursor with no statement behind it at all reaches
+forward instead — a blank first line above the tab's only query would otherwise
+be a shortcut that does nothing.
+
+**A comment above a statement needed no rule, and that is why the spans are the
+splitter's own rather than a second reading of the text.** The splitter already
+keeps a leading comment with the statement it heads, so a cursor parked in
+`-- fetch the users` is *inside* that statement's span and never reaches the gap
+rule. A second reading would have had to be taught the same thing and would have
+disagreed the first time one of them changed.
+
+Two things it inherits rather than re-decides:
+
+- **Nothing to run is `''`, passed along rather than branched on.** `runQuery`'s
+  own condition refuses a blank statement — the same no-op an empty editor and a
+  whitespace-only selection already get.
+- **The text is read off the model, not off `sqlByTab`.** The offset is an index
+  into that string. The two agree, since text only flows out of Monaco, but
+  reading one and indexing the other would be a bet on that rather than a use
+  of it.
 
 ### Completion
 
@@ -2074,8 +2125,8 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
 - **Browsed rows are numbered from the page's offset**, not from 1. A gutter
   counting 1…100 on every page gives two different rows the same name.
 - Ctrl/⌘+Enter runs, from anywhere in the window (a `window` keydown listener),
-  matching every other SQL tool. On a grid tab it does nothing: there is no query
-  there to run.
+  matching every other SQL tool; Ctrl/⌘+Shift+Enter runs the statement the cursor
+  is in. On a grid tab neither does anything: there is no query there to run.
 - **A tab binds to a connection for life; the database is the connection's, not
   any one tab's.** The connection is fixed at open time and nothing changes it:
   moving the rail switches which tabs you are *looking at*, never what any of
