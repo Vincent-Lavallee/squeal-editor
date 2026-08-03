@@ -3,8 +3,7 @@ import { ThinkingOrb } from 'thinking-orbs';
 
 import type { CellValue } from '../../../../shared/protocol/index.ts';
 import { CopyIcon, ForeignKeyIcon, NextPageIcon, PrevPageIcon, SortAscIcon, SortDescIcon } from '../../common/icons/icons.ts';
-import { useAppSelector } from '../../store/hooks.ts';
-import { selectActiveTab } from '../../store/tabsSlice.ts';
+import type { Tab } from '../../store/tabsSlice.ts';
 import { useResults } from './useResults.ts';
 import { cancelQuery } from '../../store/resultsSlice.ts';
 import Button from '../../common/components/Button.tsx';
@@ -88,9 +87,9 @@ const thStyle: React.CSSProperties = { ...cellBase, position: 'sticky', top: 0, 
 const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 1, background: t.BG, color: t.TEXT_FAINT, textAlign: 'right', userSelect: 'none', fontSize: t.TEXT_BADGE, height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}` };
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
 
-export default function ResultsTable() {
-  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey, sort, toggleSort, canSort } = useResults();
-  const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
+export default function ResultsTable({ tab }: { tab: Tab | null }) {
+  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey, sort, toggleSort, canSort } = useResults(tab);
+  const activeTabId = tab?.id ?? null;
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const anchor = useRef<number | null>(null);
@@ -147,8 +146,8 @@ export default function ResultsTable() {
    */
   const tabBars = (
     <>
-      <StatementTabs />
-      <FilterBar />
+      <StatementTabs tab={tab} />
+      <FilterBar tab={tab} />
     </>
   );
 

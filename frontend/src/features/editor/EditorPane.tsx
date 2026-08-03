@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useSession } from '../../store/sessionSlice.ts';
+import type { Tab } from '../../store/tabsSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import * as t from '../../common/tokens';
 import { useEditor } from './useEditor.ts';
 import { defineTheme, monaco, px, THEME, token } from './monaco.ts';
-import { useSqlCompletion } from './useSqlCompletion.ts';
-import { useSqlFormatter } from './useSqlFormatter.ts';
+import { useSqlPrefetch } from './useSqlCompletion.ts';
 
 const toolbar: React.CSSProperties = {
   display: 'flex',
@@ -32,6 +32,14 @@ const editorBox: React.CSSProperties = {
 
 interface Props {
   /**
+   * Which tab this pane shows -- explicit rather than read off "the" active
+   * tab, because a split view has two of these live at once. The primary
+   * pane's caller still passes the connection's active tab; the secondary
+   * pane's passes its own. `null` is the ordinary empty state (nothing open),
+   * unchanged from before there were two of these.
+   */
+  tab: Tab | null;
+  /**
    * Running belongs to the results feature, so the shell supplies both. The text
    * is this pane's to decide -- see `sqlToRun`, which is what makes running a
    * selection the same action as running the tab.
@@ -46,6 +54,22 @@ interface Props {
    * active tab's off the store, the same rule a thunk reads its own target by.
    */
   onSaveQuery?: () => void;
+  /**
+   * Whether *this* pane is the one the window-level Ctrl+Enter/Ctrl+S fallback
+   * should act on -- Monaco's own instance-level bindings need no such gate,
+   * they only ever fire when that instance has DOM focus, but the fallback
+   * (for when focus is on the Run button, say) is a `window` listener and two
+   * mounted panes would otherwise both answer one keypress. Always `true` when
+   * there is only one pane.
+   */
+  focused: boolean;
+  /**
+   * Whether this instance owns `window.squealEditor`, the UI suite's seam.
+   * Default `true`; the secondary pane passes `false` so the seam keeps
+   * meaning "the one editor" rather than whichever pane rendered last. See
+   * `docs/decisions.md`.
+   */
+  exposeGlobal?: boolean;
 }
 
 declare global {
@@ -64,26 +88,29 @@ declare global {
   }
 }
 
-export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuery }: Props) {
+export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSaveQuery, focused, exposeGlobal = true }: Props) {
   const { dialect } = useSession();
-  const { tabs, activeTab, database } = useTabs();
+  // `connectionTabs` -- every tab of the connection, **both panes** -- is only
+  // used below to garbage-collect models of tabs that are gone entirely. It is
+  // deliberately not `tabs`, which is the primary pane's alone: a tab dragged
+  // into the other pane has not gone anywhere, and disposing its model because
+  // it left *this* strip is exactly the bug that shipped a blank secondary
+  // editor. Both panes reading the full list is harmless -- each owns its own
+  // model map, and a tab that really closed leaves both.
+  const { connectionTabs, database } = useTabs();
   const { sqlByTab, setSql, peekSql } = useEditor();
 
-  const activeTabId = activeTab?.id ?? null;
-  const isEditorTab = activeTab?.kind === 'editor';
+  const activeTabId = tab?.id ?? null;
+  const isEditorTab = tab?.kind === 'editor';
   const sql = activeTabId ? (sqlByTab[activeTabId] ?? '') : '';
 
-  // Completion follows the active tab's text for which tables are in play, and
-  // the connection's current database for which catalog they are in. A grid
-  // tab has no text and needs no popup, but the pane is only hidden there,
+  // Prefetches the columns this pane's own text mentions, ahead of a `.`. A
+  // grid tab has no text and needs nothing, but the pane is only hidden there,
   // never unmounted, so this is called unconditionally -- the empty text
-  // simply puts nothing in scope.
-  useSqlCompletion(sql, database);
-
-  // Format Document, over the whole document, in the session's dialect. This is
-  // what backs the toolbar button, Shift+Alt+F and the context-menu entry --
-  // one action, not three.
-  useSqlFormatter(dialect);
+  // simply puts nothing in scope. The completion provider itself and the
+  // formatter are registered once, by `ShellLayout`, not per pane -- see the
+  // file comment in `useSqlCompletion.ts`.
+  useSqlPrefetch(sql, database);
 
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -208,32 +235,49 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
     });
 
     /*
-     * Ctrl+Enter is already Monaco's "insert line below", and it wins inside
-     * the editor -- the window listener never sees the keydown. Rebinding it
-     * here is what keeps the app's one shortcut working where it is used most.
+     * The editor's own keybindings, and they are `addAction` rather than
+     * `addCommand` for one reason that only shows up once a second editor
+     * exists: **`addCommand` registers its keybinding with no `when` clause at
+     * all**, so it is global to the window rather than scoped to the editor it
+     * was called on. With two panes both binding Ctrl+Enter that way, one
+     * registration shadows the other and every run went to the same pane --
+     * whichever mounted last -- no matter which editor had the cursor.
+     * `addAction` scopes its keybinding with `editorId == <this editor>`
+     * (verified in Monaco's `standaloneCodeEditor.js`), so each pane's binding
+     * fires only when that pane is the focused one.
+     *
+     * Ctrl+Enter is already Monaco's "insert line below" and Ctrl+B/Ctrl+S are
+     * the webview's; rebinding them here is what keeps the app's shortcuts
+     * working where they are used most, since Monaco wins inside its own DOM
+     * and the window listener never sees these keydowns.
      */
-    instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-      latest.current.onRun(sqlToRun());
+    instance.addAction({
+      id: 'squeal.run',
+      label: 'Run query',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+      run: () => latest.current.onRun(sqlToRun()),
     });
 
     instance.onDidChangeCursorSelection((e) => setHasSelection(!e.selection.isEmpty()));
 
-    // Ctrl+B toggles the sidebar. Monaco wins inside its own DOM, so without
-    // this the window listener never sees the key — the same pattern as
-    // Ctrl+Enter above.
-    instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyB, () => {
-      latest.current.onToggleSidebar?.();
+    instance.addAction({
+      id: 'squeal.toggleSidebar',
+      label: 'Toggle sidebar',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyB],
+      run: () => latest.current.onToggleSidebar?.(),
     });
 
-    // Ctrl+S saves the query. Same pattern again, with one extra reason to be
-    // here rather than only on the window: unhandled, the webview treats Ctrl+S
-    // as "save this page" and opens the OS file dialog over the app.
-    instance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      latest.current.onSaveQuery?.();
+    // Ctrl+S has one extra reason to be bound at all: unhandled, the webview
+    // treats it as "save this page" and opens the OS file dialog over the app.
+    instance.addAction({
+      id: 'squeal.saveQuery',
+      label: 'Save query',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+      run: () => latest.current.onSaveQuery?.(),
     });
 
     editor.current = instance;
-    window.squealEditor = instance;
+    if (exposeGlobal) window.squealEditor = instance;
 
     const open = models.current;
     return () => {
@@ -243,11 +287,11 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
       open.forEach((m) => m.dispose());
       open.clear();
       editor.current = null;
-      delete window.squealEditor;
+      if (exposeGlobal) delete window.squealEditor;
     };
     // Mount only. The models flow in through the effect below instead, because
     // re-creating the editor on every keystroke is not a way to keep it in sync.
-  }, [setSql, sqlToRun]);
+  }, [setSql, sqlToRun, exposeGlobal]);
 
   /*
    * Show the active tab's model.
@@ -344,23 +388,31 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
    * receiving its database list once already; see `docs/decisions.md`.
    */
   useEffect(() => {
-    const live = new Set(tabs.map((t) => t.id));
+    const live = new Set(connectionTabs.map((t) => t.id));
     for (const [id, model] of models.current) {
       if (live.has(id)) continue;
       model.dispose();
       models.current.delete(id);
       viewStates.current.delete(id);
     }
-  }, [tabs]);
+  }, [connectionTabs]);
 
   // Ctrl/Cmd+Enter runs from anywhere in the window, matching every other SQL
   // tool. Inside the editor, Monaco's own binding above handles it and stops
   // the event here -- this covers the rest of the window.
+  //
+  // With a split view there are two of these listeners alive at once, one per
+  // pane, and only one pane's Run/Save should answer a keypress that landed
+  // outside either Monaco instance -- `focused` is that gate. `preventDefault`
+  // still runs regardless: the OS save dialog Ctrl+S would otherwise summon is
+  // a webview-wide problem, not a per-pane one, so both listeners stopping it
+  // is correct, even harmless twice over.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       const chord = e.ctrlKey || e.metaKey;
       if (chord && e.key === 'Enter') {
         e.preventDefault();
+        if (!focused) return;
         // A grid tab has no query to run. This pane is still mounted underneath
         // it -- there is one Monaco and every tab's model hangs off it -- so the
         // listener is live and has to refuse for itself.
@@ -375,13 +427,14 @@ export default function EditorPane({ onRun, running, onToggleSidebar, onSaveQuer
       // its own "save this page" dialog.
       if (chord && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
+        if (!focused) return;
         if (!isEditorTab) return;
         onSaveQuery?.();
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onRun, onSaveQuery, isEditorTab, sqlToRun]);
+  }, [onRun, onSaveQuery, isEditorTab, sqlToRun, focused]);
 
   return (
     <>

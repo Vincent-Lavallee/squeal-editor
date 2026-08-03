@@ -15,7 +15,7 @@ import { quoteIdentifier, sqlLiteral } from '../../common/db/sql.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { activePart, browseTable, runQuery, runStatements, saveEdits, statementSelected, type ResultsState } from '../../store/resultsSlice.ts';
 import { useSession } from '../../store/sessionSlice.ts';
-import { selectActiveTab, useTabs } from '../../store/tabsSlice.ts';
+import { useTabs, type Tab } from '../../store/tabsSlice.ts';
 import { EMPTY_PENDING, useResultsView, type FilterDraft } from './ResultsContext.tsx';
 
 /**
@@ -35,17 +35,19 @@ import { EMPTY_PENDING, useResultsView, type FilterDraft } from './ResultsContex
  * result happens to carry that table's key columns (`editTarget`, set by
  * `runQuery` in `resultsSlice.ts`). `readOnlyReason` is what tells the second
  * case apart from the first when the key is real but simply was not selected.
+ *
+ * `tab` is which tab this is the results surface *for*, explicit rather than
+ * read off "the" active tab -- a split view calls this once per pane, each
+ * with its own tab. Every fact below was already keyed off a bare tab id
+ * (`resultsSlice`, `ResultsContext`), so this is the one seam that used to
+ * assume there was only ever one tab in front at a time.
  */
-export function useResults() {
+export function useResults(tab: Tab | null) {
   const dispatch = useAppDispatch();
   const view = useResultsView();
   const { readOnly, dialect, defaultSchema } = useSession();
   const { openGridTab } = useTabs();
-  // Through the selector rather than off `tabs.activeTabId`, which is a pointer
-  // per connection now: the grid on screen belongs to the tab in front of the
-  // connection in front, and that is the one question the selector answers.
-  const activeTab = useAppSelector(selectActiveTab);
-  const activeTabId = activeTab?.id ?? null;
+  const activeTabId = tab?.id ?? null;
   /*
    * The table a grid tab is pointed at, read off the *tab* rather than off
    * `browse`. That distinction is what keeps the filter bar usable after a
@@ -55,7 +57,7 @@ export function useResults() {
    * which table it is, so the bar stays, the draft stays, and the fix is one
    * edit away instead of a re-open.
    */
-  const gridTable = activeTab?.kind === 'grid' ? (activeTab.table ?? null) : null;
+  const gridTable = tab?.kind === 'grid' ? (tab.table ?? null) : null;
 
   /*
    * A tab holds a list of results now -- one per statement the last run held --
@@ -463,10 +465,10 @@ export function useResults() {
     (rowIndices: number[]) => {
       if (!result || !browse || rowIndices.length === 0) return;
       const rows = rowIndices.map((r) => result.rows[r] ?? []);
-      const sql = insertStatement(browse.table, activeTab?.schema, result.columns, rows, dialect);
+      const sql = insertStatement(browse.table, tab?.schema, result.columns, rows, dialect);
       void Neutralino.clipboard.writeText(sql);
     },
-    [result, browse, activeTab, dialect]
+    [result, browse, tab, dialect]
   );
 
   return {

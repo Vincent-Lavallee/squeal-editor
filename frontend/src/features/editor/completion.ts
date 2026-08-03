@@ -16,7 +16,7 @@ import { relationName, relationOf, type Relation } from '../../common/db/relatio
 import { identifierQuote, quoteIdentifierIfNeeded } from '../../common/db/sql.ts';
 import type { Word } from './keywords.ts';
 import { monaco } from './monaco.ts';
-import { qualifierAt, resolveQualifier, type SqlScope } from './sqlScope.ts';
+import { qualifierAt, resolveQualifier, scanScope } from './sqlScope.ts';
 
 /**
  * Everything the provider reads, as of the keystroke being answered.
@@ -40,7 +40,6 @@ export interface CompletionSnapshot {
    * schema layer, or no connection yet.
    */
   defaultSchema?: string;
-  scope: SqlScope;
   /** `null` while the fetch is in flight, or if it failed. */
   columnsFor: (table: string) => ColumnInfo[] | null;
 }
@@ -161,7 +160,14 @@ export function sqlCompletionProvider(
     triggerCharacters: ['.'],
 
     provideCompletionItems(model, position) {
-      const { words, tables, defaultSchema, scope, columnsFor, dialect } = snapshot();
+      const { words, tables, defaultSchema, columnsFor, dialect } = snapshot();
+      // Scanned from the model Monaco is actually asking about, not from
+      // whichever pane's hook last rendered: the provider is registered once
+      // per dialect and every open editor answers through it, so a snapshot
+      // fact that varies *per tab* has to be read off the request itself, not
+      // closed over. Split panes are exactly the case that would otherwise
+      // cross-contaminate -- see `docs/decisions.md`.
+      const scope = scanScope(model.getValue());
       const range = wordRange(model, position);
       const line = lineToCursor(model, position);
       const quoteAlreadyOpen = line[range.startColumn - 2] === identifierQuote(dialect);

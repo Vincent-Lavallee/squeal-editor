@@ -3,6 +3,7 @@ import Button from '../../common/components/Button.tsx';
 import Input from '../../common/components/Input.tsx';
 import Select from '../../common/components/Select.tsx';
 import { quoteIdentifier, sqlLiteral } from '../../common/db/sql.ts';
+import type { Tab } from '../../store/tabsSlice.ts';
 import * as t from '../../common/tokens';
 import { isCompleteCondition, operatorTakesValue, useResults } from './useResults.ts';
 
@@ -24,7 +25,29 @@ const OPERATORS: FilterOperator[] = ['=', '<>', '>', '<', '>=', '<=', 'LIKE', 'I
  * *beneath* the conditions would double the height of the bar to say things that
  * fit on the line already there.
  */
-const GRID_COLUMNS = '52px minmax(90px, 150px) minmax(72px, 104px) 1fr 26px auto';
+/**
+ * The tracks, and the two minimums that are load-bearing.
+ *
+ * **The value box has a floor of its own** (`minmax(120px, 1fr)`, not a bare
+ * `1fr`): a `1fr` track is free to shrink to nothing once everything beside it
+ * has claimed its minimum, which is what a split pane does -- half the width,
+ * the same fixed lead, column, operator, remove and action cells, and whatever
+ * is left over goes to the one control you actually type into. It went to a
+ * few pixels. A floor means the bar overflows instead, which the container
+ * below scrolls.
+ *
+ * **120px and not more**, because the floor is also what pushes *Apply* off
+ * the end: every pixel the value box is guaranteed is one the actions cell
+ * cannot have, and the action that runs the filter is worth more on screen
+ * than a wider box. At 120 both fit across a pane down to about 500px -- half
+ * of the smallest window this app is used in -- and below that the bar
+ * scrolls rather than either one being crushed.
+ *
+ * The column and operator minimums are lower than they look because they are
+ * `<Select>`s: they show a truncated value at 70px and stay usable, while the
+ * value box at 70px does not.
+ */
+const GRID_COLUMNS = '52px minmax(70px, 150px) minmax(64px, 104px) minmax(120px, 1fr) 26px auto';
 
 const CONTROL_H = 22;
 const controlStyle: React.CSSProperties = { height: CONTROL_H, fontSize: t.TEXT_BADGE };
@@ -123,8 +146,8 @@ function conditionsToWhere(conditions: FilterCondition[], conjunction: 'AND' | '
     .join(` ${conjunction} `);
 }
 
-export default function FilterBar() {
-  const { gridTable, filterColumns, filterDraft, setFilterDraft, filterDirty, applyFilter, running, dialect } = useResults();
+export default function FilterBar({ tab }: { tab: Tab | null }) {
+  const { gridTable, filterColumns, filterDraft, setFilterDraft, filterDirty, applyFilter, running, dialect } = useResults(tab);
 
   // Filtering rides on the SQL the extension authored, so it is offered only
   // where that SQL exists -- the same boundary as the pager and the editable
@@ -226,6 +249,12 @@ export default function FilterBar() {
     borderBottom: `1px solid ${t.BORDER}`,
     fontSize: t.TEXT_BADGE,
     color: t.TEXT_MUTED,
+    // Narrower than its own tracks want to be -- a split pane -- and the bar
+    // scrolls sideways rather than crushing the value box to nothing. It is
+    // still one line per condition: this is the same refusal to grow a second
+    // row of buttons, answered for the width instead of the height.
+    overflowX: 'auto',
+    scrollbarWidth: 'none',
   };
 
   if (isRaw) {

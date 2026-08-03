@@ -631,3 +631,11 @@ This is a record, not a plan. Nothing here is waiting on anything.
   independently. The statement splitter has to be quote- and comment-safe — a
   semicolon inside a string literal or a comment must not end a statement
   early.
+
+- **2026-07-31** — **Split the editor** — Working two queries means constantly switching tabs and
+  losing your place, whether comparing two results, referencing one query while
+  writing another, or copying between them. Let a tab be dragged to the side to
+  dock it into a second pane beside the current one — two tabs of the same
+  connection, each with its own editor and result grid. Session-only state, same
+  as today's sidebar/results resizing; closing either pane's tab collapses back
+  to a single view.

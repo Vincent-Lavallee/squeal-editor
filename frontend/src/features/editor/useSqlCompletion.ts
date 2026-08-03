@@ -4,6 +4,19 @@
  * Internal to `features/editor` -- `useEditor` is still the feature's public
  * surface. This exists so that `EditorPane` stays a component that touches no
  * `dispatch`: the fetching lives here, the drawing lives there.
+ *
+ * Split into two hooks on purpose. `useSqlCompletion` *registers* the
+ * provider, and everything it closes over -- the words, the dialect, the
+ * catalog -- is connection-level, the same regardless of which pane asked.
+ * Registration is therefore called once, from `ShellLayout`, regardless of how
+ * many `EditorPane`s are mounted: Monaco's registration is global per
+ * language, so two calls would register two providers for one dialect, and
+ * both would answer every request -- the exact failure this file already
+ * guards against on a dialect change (see the comment at the registration
+ * below), now reachable through pane count instead. `useSqlPrefetch` is the
+ * other half, pane-scoped on purpose: it reads *this* editor's own text to
+ * warm the column cache ahead of a `.`, and is meant to be called once per
+ * `EditorPane` instance.
  */
 
 import { useEffect, useMemo, useRef } from 'react';
@@ -22,42 +35,21 @@ import { scanScope } from './sqlScope.ts';
 const EMPTY: TableInfo[] = [];
 
 /**
- * `sql` and `database` are the active tab's.
+ * Registers the completion provider for the session's dialect. Called once,
+ * regardless of how many panes are open -- see the file comment above.
  *
- * They are passed in rather than read here because the text is the editor
- * context's and the database is the tab's, and `EditorPane` already holds both.
+ * `database` is the connection's, not any one tab's or pane's (see *The
+ * database is the connection's, not any one tab's* in `docs/frontend.md`), so
+ * there is nothing pane-specific left to take here: the provider itself scans
+ * the model Monaco hands it for the query-scoped part (`completion.ts`).
  */
-export function useSqlCompletion(sql: string, database: string | null): void {
-  const dispatch = useAppDispatch();
+export function useSqlCompletion(database: string | null): void {
   const { connectionId, dialect, defaultSchema } = useSession();
   const { tables, columns } = useAppSelector((s) => s.explorer);
 
-  // A tab pointed at nothing, or a database whose tables have not landed yet:
-  // both are "no tables to offer", which is not the same as a bug. Both caches
-  // name the connection now, so an identically-named database on another server
-  // cannot answer for this one.
+  // A connection pointed at nothing, or a database whose tables have not
+  // landed yet: both are "no tables to offer", which is not the same as a bug.
   const listed = (connectionId && database ? tables[connectionId]?.[database] : undefined) ?? EMPTY;
-
-  const scope = useMemo(() => scanScope(sql), [sql]);
-
-  /*
-   * Fetch the columns of every table the query mentions, as it is mentioned.
-   *
-   * Keyed on the scan and not on a keystroke, a `.`, or the popup opening: by
-   * the time a dot is typed after `users`, the columns have to be *there*, and a
-   * fetch started at the dot means an empty popup and a round trip. Typing the
-   * table's name is the event that says which table matters, so that is the
-   * event this hangs off.
-   *
-   * This runs on every keystroke and is meant to: `loadColumns` carries the
-   * cache in its `condition` and marks a table asked before its first await, so
-   * a table already asked for never reaches the bridge a second time. The
-   * `scope.tables` identity is what keeps it from even iterating, most keys.
-   */
-  useEffect(() => {
-    if (!database) return;
-    for (const table of scope.tables) void dispatch(loadColumns({ database, table }));
-  }, [scope, database, dispatch]);
 
   /*
    * The provider is registered once per dialect and lives across every
@@ -70,7 +62,6 @@ export function useSqlCompletion(sql: string, database: string | null): void {
     dialect,
     tables: listed,
     defaultSchema,
-    scope,
     // Resolved the same way `loadColumns` resolved it before filing the answer,
     // so the read and the write agree on the key. Read it raw and a table whose
     // columns are sitting in the cache under `public.users` looks unfetched to
@@ -95,4 +86,35 @@ export function useSqlCompletion(sql: string, database: string | null): void {
     );
     return () => registration.dispose();
   }, [dialect]);
+}
+
+/**
+ * Fetches the columns of every table *this* editor's text mentions, ahead of
+ * a `.`. Pane-scoped: called once per `EditorPane` instance, each with its own
+ * `sql`. Safe to call from more than one pane at once -- `loadColumns` dedupes
+ * by its own `condition`, so a table both panes mention is only ever fetched
+ * once.
+ */
+export function useSqlPrefetch(sql: string, database: string | null): void {
+  const dispatch = useAppDispatch();
+  const scope = useMemo(() => scanScope(sql), [sql]);
+
+  /*
+   * Fetch the columns of every table the query mentions, as it is mentioned.
+   *
+   * Keyed on the scan and not on a keystroke, a `.`, or the popup opening: by
+   * the time a dot is typed after `users`, the columns have to be *there*, and a
+   * fetch started at the dot means an empty popup and a round trip. Typing the
+   * table's name is the event that says which table matters, so that is the
+   * event this hangs off.
+   *
+   * This runs on every keystroke and is meant to: `loadColumns` carries the
+   * cache in its `condition` and marks a table asked before its first await, so
+   * a table already asked for never reaches the bridge a second time. The
+   * `scope.tables` identity is what keeps it from even iterating, most keys.
+   */
+  useEffect(() => {
+    if (!database) return;
+    for (const table of scope.tables) void dispatch(loadColumns({ database, table }));
+  }, [scope, database, dispatch]);
 }

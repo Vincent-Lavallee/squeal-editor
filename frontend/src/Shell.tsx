@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { FunctionInfo, SavedQuery, TableInfo, TriggerInfo } from '../../shared/protocol/index.ts';
 import { relationLabel, relationOf } from './common/db/relation.ts';
 import { useAppSelector } from './store/hooks.ts';
 import { useSavedQueries } from './store/savedQueriesSlice.ts';
-import { useTabs } from './store/tabsSlice.ts';
-import { EditorPane, useEditor } from './features/editor/index.ts';
+import { useSession } from './store/sessionSlice.ts';
+import { useTabs, type Tab } from './store/tabsSlice.ts';
+import { EditorPane, useEditor, useSqlCompletion, useSqlFormatter } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
 import { SaveQueryDialog, SavedQueriesButton } from './features/queries/index.ts';
 import { ConnectionRail } from './features/rail/index.ts';
@@ -20,6 +21,8 @@ const SIDEBAR_MIN = 160;
 const SIDEBAR_MAX = 480;
 const RESULTS_MIN = 120;
 const EDITOR_MIN = 120;
+/** The narrowest either half of a split may be dragged to. */
+const SPLIT_MIN = 280;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -36,14 +39,31 @@ export default function Shell({ onAddConnection }: Props) {
 }
 
 function ShellLayout({ onAddConnection }: Props) {
-  const { tabs, activeTab, openGridTab, openEditorTab, openSavedQueryTab, setDatabase, markTabSaved } = useTabs();
+  const {
+    tabs, activeTab, activeTabId, secondaryTabs, secondaryActiveTab, secondaryActiveTabId,
+    openGridTab, openEditorTab, openSavedQueryTab, setDatabase, markTabSaved, database,
+    activateTab, closeTab, closeOtherTabs, closeTabsToTheRight, closeAllTabs, moveTab, renameTab,
+  } = useTabs();
+  const { dialect } = useSession();
   // `tabRunning`, not the shown result's own `running`: a batch of several
   // statements leaves the pane showing a finished one while a later one is still
   // going, and Run must stay busy until the whole batch is done.
-  const { run, tabRunning, browseIn } = useResults();
+  //
+  // Called once per pane rather than once for "the" active tab: a split view has
+  // two tabs in front at once, each with its own run/browse/running. See `useResults`.
+  const { run: runPrimary, tabRunning: primaryRunning, browseIn: browseInPrimary } = useResults(activeTab);
+  const { run: runSecondary, tabRunning: secondaryRunning, browseIn: browseInSecondary } = useResults(secondaryActiveTab);
   const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema } = useExplorer();
   const { setSql, peekSql } = useEditor();
   const { queries, save: saveQuery } = useSavedQueries();
+
+  // The SQL completion provider and the formatter are registered once here,
+  // regardless of how many panes are open -- Monaco's registration is global
+  // per language, so an `EditorPane` per pane calling these itself would
+  // register the same provider twice and cross-contaminate suggestions
+  // between panes. See the file comment in `useSqlCompletion.ts`.
+  useSqlCompletion(database);
+  useSqlFormatter(dialect);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const toggleSidebar = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
@@ -62,6 +82,83 @@ function ShellLayout({ onAddConnection }: Props) {
     const max = window.innerHeight - t.STATUSBAR_H - chromeAbove - EDITOR_MIN;
     setResultsHeight((prev) => clamp(prev - deltaPx, RESULTS_MIN, Math.max(RESULTS_MIN, max)));
   }, []);
+
+  // The secondary pane's own editor/results split -- independent of the
+  // primary's, the same way each pane's grid and editor are independent.
+  const [secondaryResultsHeight, setSecondaryResultsHeight] = useState(280);
+  const dragSecondaryResults = useCallback((deltaPx: number) => {
+    const chromeAbove = t.RAIL_H + t.TAB_H + t.TAB_H;
+    const max = window.innerHeight - t.STATUSBAR_H - chromeAbove - EDITOR_MIN;
+    setSecondaryResultsHeight((prev) => clamp(prev - deltaPx, RESULTS_MIN, Math.max(RESULTS_MIN, max)));
+  }, []);
+
+  // The split's own width, as the primary pane's px. Session-only, the same
+  // footing as the sidebar's and the results pane's -- it is never a fact about
+  // a tab, only about how the window is currently carved up, so nothing here
+  // crosses the bridge.
+  const showSplit = secondaryActiveTab !== null;
+  const panes = useRef<HTMLDivElement>(null);
+
+  /*
+   * How the split is divided, as the primary pane's **share** rather than its
+   * pixels -- the two panes are `flex-grow: fraction` against a zero basis, so
+   * the ratio is what the layout is told and the pixels fall out of it.
+   *
+   * A px width was the first cut and it is wrong twice over. It defaults badly:
+   * one constant is about half of a small window and a quarter of a wide one,
+   * so "even" depended on the machine it was written on. And it does not
+   * survive a resize: the primary pane keeps its pixels while the secondary,
+   * taking whatever is left, absorbs every pixel the window gains -- maximise
+   * a 50/50 split and it lands somewhere near 25/75. A fraction is both fixed
+   * at once, and 0.5 needs no measuring to mean half.
+   */
+  const [splitFraction, setSplitFraction] = useState(0.5);
+  const dragSplit = useCallback((deltaPx: number) => {
+    const available = panes.current?.getBoundingClientRect().width ?? 0;
+    if (available <= 0) return;
+    // The minimum is expressed as a share of the room actually available, so a
+    // narrow window clamps to the same pane width a wide one does.
+    const floor = Math.min(SPLIT_MIN / available, 0.5);
+    setSplitFraction((prev) => clamp(prev + deltaPx / available, floor, 1 - floor));
+  }, []);
+
+  // Which tab is being dragged, from either strip -- a value the composition
+  // root holds so a strip can accept a drop that started in the *other* one
+  // (each strip's own local drag state could never see that), and so the
+  // dock-to-split zone below knows when to appear. Both `TabStrip`s and the
+  // zone read this; only a strip's own `onDragStart`/`onDragEnd` write it.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  /**
+   * Which pane the dragged tab is currently in, so a pane can refuse a drop of
+   * a tab it already holds -- "move it here" where it already is would only
+   * shuffle it to the end of its own strip.
+   */
+  const draggedPane: Tab['pane'] | null =
+    draggingId === null
+      ? null
+      : tabs.some((tab) => tab.id === draggingId)
+        ? 'primary'
+        : secondaryTabs.some((tab) => tab.id === draggingId)
+          ? 'secondary'
+          : null;
+
+  /*
+   * Which pane the user is working in. `EditorPane`'s window-level
+   * Ctrl+Enter/Ctrl+S fallback -- the one that covers focus being anywhere
+   * outside Monaco -- is gated on this, or both panes answer one keypress.
+   *
+   * **Tracked on pointer-down as well as focus, and the pointer half is what
+   * makes it right.** Focus alone looks sufficient and is not: most of a pane
+   * is not focusable, so clicking its result grid, its filter bar's blank
+   * space or its own divider fires no focus event at all and leaves this
+   * pointing at whichever pane was last *focused* -- which, after working in
+   * one pane and then clicking into the other, is the wrong one. A run then
+   * lands in the pane the user is not looking at, which is exactly the shape
+   * of "I ran a query in one tab and got results in the other". Capture
+   * phase, so a handler inside the pane cannot swallow it first.
+   */
+  const [focusedPane, setFocusedPane] = useState<'primary' | 'secondary'>('primary');
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
@@ -87,15 +184,28 @@ function ShellLayout({ onAddConnection }: Props) {
   );
   useEffect(() => {
     if (activeTab?.kind === 'grid' && activeTab.table && activeNeedsBrowse) {
-      browseIn(activeTab.id, activeTab.table, 0, activeTab.filter);
+      browseInPrimary(activeTab.id, activeTab.table, 0, activeTab.filter);
     }
-  }, [activeTab, activeNeedsBrowse, browseIn]);
+  }, [activeTab, activeNeedsBrowse, browseInPrimary]);
+
+  // The same rule, for the secondary pane. A tab can reach it by being dragged
+  // there directly, without ever having been "active" in primary long enough
+  // to trigger its own first browse -- so this cannot be folded into the
+  // effect above, which only ever watches the primary tab.
+  const secondaryNeedsBrowse = useAppSelector((s) =>
+    secondaryActiveTab?.kind === 'grid' && secondaryActiveTab.table ? s.results[secondaryActiveTab.id] === undefined : false
+  );
+  useEffect(() => {
+    if (secondaryActiveTab?.kind === 'grid' && secondaryActiveTab.table && secondaryNeedsBrowse) {
+      browseInSecondary(secondaryActiveTab.id, secondaryActiveTab.table, 0, secondaryActiveTab.filter);
+    }
+  }, [secondaryActiveTab, secondaryNeedsBrowse, browseInSecondary]);
 
   const openTable = useCallback((table: TableInfo) => {
     const relation = relationOf(table);
     const tabId = openGridTab(relation, relationLabel(relation, defaultSchema));
-    if (tabId) browseIn(tabId, relation.table, 0);
-  }, [openGridTab, browseIn, defaultSchema]);
+    if (tabId) browseInPrimary(tabId, relation.table, 0);
+  }, [openGridTab, browseInPrimary, defaultSchema]);
 
   const showDefinition = useCallback(async (database: string, table: TableInfo) => {
     const relation = relationOf(table);
@@ -134,14 +244,18 @@ function ShellLayout({ onAddConnection }: Props) {
    * The copy takes the next `Query N` rather than the original's name, which is
    * the same answer the tree gives when a table is opened twice: two tabs, and
    * you can tell them apart.
+   *
+   * Only wired to the primary strip's context menu today, but looks the id up
+   * across both panes regardless -- cheap, and it means nothing has to change
+   * here the day the secondary strip grows the same menu item.
    */
   const duplicateTab = useCallback((tabId: string) => {
-    const tab = tabs.find((candidate) => candidate.id === tabId);
+    const tab = tabs.find((candidate) => candidate.id === tabId) ?? secondaryTabs.find((candidate) => candidate.id === tabId);
     if (!tab) return;
 
     if (tab.kind === 'grid' && tab.table) {
       const id = openGridTab({ table: tab.table, schema: tab.schema }, tab.title);
-      if (id) browseIn(id, tab.table, 0);
+      if (id) browseInPrimary(id, tab.table, 0);
       return;
     }
     const id = openEditorTab();
@@ -149,7 +263,7 @@ function ShellLayout({ onAddConnection }: Props) {
     // when it is created, so writing the text now is not a write into a live
     // editor. Text still only flows out.
     if (id) setSql(id, peekSql(tabId) ?? '');
-  }, [tabs, openGridTab, openEditorTab, browseIn, setSql, peekSql]);
+  }, [tabs, secondaryTabs, openGridTab, openEditorTab, browseInPrimary, setSql, peekSql]);
 
   /*
    * Saved queries span the tabs, the editor's text and the queries slice, so both
@@ -159,14 +273,15 @@ function ShellLayout({ onAddConnection }: Props) {
    * follows: reopening the same query beside itself is how you compare an edit
    * against what is stored. It is born named, linked and already holding its
    * text -- one action rather than an open and a `setSql`, since a `setSql` is
-   * what marks a tab edited.
+   * what marks a tab edited. Always opens into the primary pane, the same as
+   * every other new tab -- the secondary pane is populated only by dragging.
    */
   const openSavedQuery = useCallback((query: SavedQuery) => {
     openSavedQueryTab(query.id, query.name, query.sql);
   }, [openSavedQueryTab]);
 
   /*
-   * Ctrl+S. Which of the two things it does is whether this tab already knows
+   * Ctrl+S. Which of the two things it does is whether the tab already knows
    * which saved query it is:
    *
    * - it does -- write over that row, no dialog. The strip's unsaved mark
@@ -177,14 +292,18 @@ function ShellLayout({ onAddConnection }: Props) {
    * A link whose query has since been deleted falls to the second case rather
    * than re-creating the row under its old id: the extension refuses that, and
    * the honest reading of a deleted query is that this tab is unsaved again.
+   *
+   * Parameterized by which tab, not pinned to "the" active one: a split view
+   * has two editors, and Ctrl+S from either has to save *that* pane's query,
+   * not always the primary pane's.
    */
   const [namingTab, setNamingTab] = useState<{ id: string; title: string; sql: string } | null>(null);
 
-  const saveActiveQuery = useCallback(() => {
-    if (activeTab?.kind !== 'editor') return;
-    const tabId = activeTab.id;
+  const saveQueryForTab = useCallback((tab: Tab | null) => {
+    if (tab?.kind !== 'editor') return;
+    const tabId = tab.id;
     const sql = peekSql(tabId) ?? '';
-    const linked = queries.find((query) => query.id === activeTab.savedQueryId);
+    const linked = queries.find((query) => query.id === tab.savedQueryId);
     if (linked) {
       // The mark is cleared by the *save landing*, not by pressing the key: a
       // write that the extension refuses must leave the tab saying it still
@@ -194,19 +313,26 @@ function ShellLayout({ onAddConnection }: Props) {
         .catch(() => undefined);
       return;
     }
-    setNamingTab({ id: tabId, title: activeTab.title, sql });
-  }, [activeTab, peekSql, queries, saveQuery, markTabSaved]);
+    setNamingTab({ id: tabId, title: tab.title, sql });
+  }, [peekSql, queries, saveQuery, markTabSaved]);
 
-  // The picker moved. It re-browses the active grid tab so what is on screen
-  // follows the database that is now selected -- if the table it was showing
-  // is not there, that surfaces as this tab's own error, not as the picker
-  // being talked out of the move.
+  const saveActiveQuery = useCallback(() => saveQueryForTab(activeTab), [saveQueryForTab, activeTab]);
+  const saveSecondaryQuery = useCallback(() => saveQueryForTab(secondaryActiveTab), [saveQueryForTab, secondaryActiveTab]);
+
+  // The picker moved. It re-browses every grid tab currently on screen so what
+  // is on screen follows the database that is now selected -- both panes',
+  // not just the primary's, since the picker is one control for the whole
+  // connection and a stale secondary pane would disagree with it. If the
+  // table a pane was showing is not there, that surfaces as that pane's own
+  // error, not as the picker being talked out of the move.
   const changeDatabase = useCallback((database: string) => {
     setDatabase(database);
-    if (activeTab?.kind === 'grid' && activeTab.table) browseIn(activeTab.id, activeTab.table, 0);
-  }, [activeTab, setDatabase, browseIn]);
+    if (activeTab?.kind === 'grid' && activeTab.table) browseInPrimary(activeTab.id, activeTab.table, 0);
+    if (secondaryActiveTab?.kind === 'grid' && secondaryActiveTab.table) browseInSecondary(secondaryActiveTab.id, secondaryActiveTab.table, 0);
+  }, [activeTab, secondaryActiveTab, setDatabase, browseInPrimary, browseInSecondary]);
 
-  const showEditor = activeTab?.kind === 'editor';
+  const primaryShowEditor = activeTab?.kind === 'editor';
+  const secondaryShowEditor = secondaryActiveTab?.kind === 'editor';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -217,20 +343,69 @@ function ShellLayout({ onAddConnection }: Props) {
           collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
         {!sidebarCollapsed && <ResizeHandle orientation="vertical" onDrag={dragSidebar} />}
 
-        <main data-testid={showEditor ? undefined : 'main-grid'} className={showEditor ? '' : 'main--grid'} style={{ display: 'grid', gridTemplateRows: showEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(${EDITOR_MIN}px, 1fr) auto ${resultsHeight}px` : `${t.TAB_H}px 1fr`, minWidth: 0, minHeight: 0 }}>
-          {/* The button is beside the strip, not inside it: the strip scrolls
-              once there are more tabs than fit, and a control inside it would
-              scroll away with them. */}
-          <div style={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
-            <TabStrip onDuplicateTab={duplicateTab} />
-            <SavedQueriesButton onOpen={openSavedQuery} />
-          </div>
-          <EditorPane onRun={run} running={tabRunning} onToggleSidebar={toggleSidebar} onSaveQuery={saveActiveQuery} />
-          {showEditor && <ResizeHandle orientation="horizontal" onDrag={dragResults} />}
-          <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: showEditor ? undefined : `1px solid ${t.BORDER}` }}>
-            {activeTab ? <ResultsTable /> : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}
-          </div>
-        </main>
+        <div ref={panes} style={{ display: 'flex', minWidth: 0, minHeight: 0 }}>
+          <main data-testid={primaryShowEditor ? undefined : 'main-grid'} className={primaryShowEditor ? '' : 'main--grid'}
+            style={{ position: 'relative', display: 'grid', gridTemplateRows: primaryShowEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(${EDITOR_MIN}px, 1fr) auto ${resultsHeight}px` : `${t.TAB_H}px 1fr`, flex: showSplit ? `${splitFraction} 1 0` : 1, minWidth: 0, minHeight: 0 }}
+            onFocusCapture={() => setFocusedPane('primary')} onPointerDownCapture={() => setFocusedPane('primary')}>
+            {/* The button is beside the strip, not inside it: the strip scrolls
+                once there are more tabs than fit, and a control inside it would
+                scroll away with them. */}
+            <div style={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
+              <TabStrip tabs={tabs} activeTabId={activeTabId} onActivate={activateTab} onClose={closeTab}
+                onCloseOthers={closeOtherTabs} onCloseToTheRight={closeTabsToTheRight} onCloseAll={() => closeAllTabs('primary')}
+                onMove={(id, beforeId) => moveTab(id, beforeId, 'primary')} onRename={renameTab}
+                onNewTab={() => openEditorTab()} onDuplicateTab={duplicateTab}
+                draggingId={draggingId} onDragTab={setDraggingId} />
+              <SavedQueriesButton onOpen={openSavedQuery} />
+            </div>
+            <EditorPane tab={activeTab} onRun={runPrimary} running={primaryRunning} onToggleSidebar={toggleSidebar} onSaveQuery={saveActiveQuery}
+              focused={!showSplit || focusedPane === 'primary'} />
+            {primaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragResults} />}
+            <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: primaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
+              {activeTab ? <ResultsTable tab={activeTab} /> : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}
+            </div>
+
+            {/*
+             * Dropping a tab in the pane's *body* moves it here -- the strip
+             * is not the only target, because the strip is a 32px ribbon and
+             * the thing the user is aiming at is the pane. While there is no
+             * split yet the right half is the dock zone that opens one; once
+             * there is, the whole body of each pane accepts a tab from the
+             * other one.
+             */}
+            {!showSplit && draggingId && (
+              <TabDropZone testId="dock-zone" half onDropTab={() => { moveTab(draggingId, null, 'secondary'); setDraggingId(null); }} />
+            )}
+            {showSplit && draggedPane === 'secondary' && (
+              <TabDropZone testId="pane-drop-primary" onDropTab={() => { moveTab(draggingId!, null, 'primary'); setDraggingId(null); }} />
+            )}
+          </main>
+
+          {showSplit && <ResizeHandle orientation="vertical" onDrag={dragSplit} />}
+
+          {showSplit && (
+            <main data-testid={secondaryShowEditor ? undefined : 'main-grid-secondary'} className={secondaryShowEditor ? '' : 'main--grid'}
+              style={{ position: 'relative', display: 'grid', gridTemplateRows: secondaryShowEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(${EDITOR_MIN}px, 1fr) auto ${secondaryResultsHeight}px` : `${t.TAB_H}px 1fr`, flex: `${1 - splitFraction} 1 0`, minWidth: 0, minHeight: 0 }}
+              onFocusCapture={() => setFocusedPane('secondary')} onPointerDownCapture={() => setFocusedPane('secondary')}>
+              <div style={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
+                <TabStrip tabs={secondaryTabs} activeTabId={secondaryActiveTabId} onActivate={activateTab} onClose={closeTab}
+                  onCloseOthers={closeOtherTabs} onCloseToTheRight={closeTabsToTheRight} onCloseAll={() => closeAllTabs('secondary')}
+                  onMove={(id, beforeId) => moveTab(id, beforeId, 'secondary')} onRename={renameTab}
+                  draggingId={draggingId} onDragTab={setDraggingId} />
+              </div>
+              <EditorPane tab={secondaryActiveTab} onRun={runSecondary} running={secondaryRunning} onToggleSidebar={toggleSidebar} onSaveQuery={saveSecondaryQuery}
+                focused={focusedPane === 'secondary'} exposeGlobal={false} />
+              {secondaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragSecondaryResults} />}
+              <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: secondaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
+                <ResultsTable tab={secondaryActiveTab} />
+              </div>
+
+              {draggedPane === 'primary' && (
+                <TabDropZone testId="pane-drop-secondary" onDropTab={() => { moveTab(draggingId!, null, 'secondary'); setDraggingId(null); }} />
+              )}
+            </main>
+          )}
+        </div>
       </div>
 
       <StatusBar />
@@ -244,5 +419,62 @@ function ShellLayout({ onAddConnection }: Props) {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Where a dragged tab may be dropped inside a pane, over the pane's body.
+ *
+ * It starts below the tab strip (`top: TAB_H`) rather than covering the pane
+ * whole: the strip runs its own drag, and swallowing its `dragover` would take
+ * away the insertion mark that says *where* among the tabs it lands.
+ *
+ * `half` is the pane that has no split yet, where only the trailing half means
+ * "open a second pane" -- the leading half is where the tab already is. It
+ * carries an edge at rest, because a target that appears only once you are
+ * already over it is one nobody finds; a whole-pane zone needs no such hint,
+ * since by then there are two panes on screen and the gesture is to drop on
+ * the other one.
+ *
+ * **Dashed, and grayscale until it is the one being dropped on.** A solid
+ * accent edge standing by through every drag reads as a thing that is already
+ * happening; dashed says *provisional*, which is what a drop target is, and
+ * `--border-strong` keeps it in the chrome's grayscale until hovering earns it
+ * the accent. The fill it takes then is `--selected`, the system's existing
+ * word for "this one", and nothing louder.
+ *
+ * **It sits above the grid's own sticky chrome** (`zIndex`), which the first
+ * cut did not: a sticky header or row gutter carries `z-index: 1`/`2`, and a
+ * positioned element with no z-index of its own paints *below* those however
+ * late it comes in the DOM -- so the zone was live over the rows and dead over
+ * the header and the gutter. Well below the 50-tier floating layer (menus,
+ * select popups), which must still cover it.
+ */
+function TabDropZone({ testId, half, onDropTab }: { testId: string; half?: boolean; onDropTab: () => void }) {
+  const [over, setOver] = useState(false);
+  const edge = `1px dashed ${over ? t.ACCENT : t.BORDER_STRONG}`;
+  return (
+    <div
+      data-testid={testId}
+      onDragEnter={() => setOver(true)}
+      onDragLeave={() => setOver(false)}
+      // Without this the drop never fires: the default for a dragover is to
+      // refuse the drop.
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); setOver(false); onDropTab(); }}
+      style={{
+        position: 'absolute',
+        zIndex: 20,
+        top: t.TAB_H,
+        bottom: 0,
+        right: 0,
+        left: half ? undefined : 0,
+        width: half ? '50%' : undefined,
+        background: over ? t.SELECTED : 'transparent',
+        borderLeft: half ? edge : undefined,
+        outline: over && !half ? edge : undefined,
+        outlineOffset: -1,
+      }}
+    />
   );
 }

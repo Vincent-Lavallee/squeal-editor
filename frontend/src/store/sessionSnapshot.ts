@@ -15,6 +15,9 @@ import type { TableFilter } from '../../../shared/protocol/index.ts';
  * front by position, since the ids will not survive. `database` is the
  * connection's, not any one tab's -- see `docs/decisions.md`.
  *
+ * The split rides along too (`pane`, `secondaryActiveIndex`), which reverses
+ * the call that shipped it as session-only; see `docs/decisions.md`.
+ *
  * `savedQueryId` is the exception to "runtime ids are left out", and only looks
  * like one: it is a *stored* query's id, minted by the extension and outliving
  * every session, which is exactly why the link can be written down at all.
@@ -30,8 +33,20 @@ export interface SessionSnapshot {
     savedQueryId?: string;
     /** Whether this tab held edits it had not saved back to its query. */
     unsaved?: boolean;
+    /**
+     * Which pane this tab was docked in. Absent on a snapshot written before
+     * the split existed, which reads as `'primary'` -- the whole of what makes
+     * an older stored session reopen unchanged.
+     */
+    pane?: 'primary' | 'secondary';
   }>;
   activeIndex: number | null;
+  /**
+   * Which tab the *secondary* pane had in front, by position, or null/absent
+   * when there was no split. Its own field for the reason `activeIndex` is
+   * one: a pane's front tab is not derivable from the tab list.
+   */
+  secondaryActiveIndex?: number | null;
   nextQueryNo: number;
   database: string | null;
 }

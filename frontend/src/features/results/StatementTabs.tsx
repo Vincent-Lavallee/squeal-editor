@@ -1,8 +1,7 @@
 import { ThinkingOrb } from 'thinking-orbs';
 
-import { useAppSelector } from '../../store/hooks.ts';
 import { cancelQuery } from '../../store/resultsSlice.ts';
-import { selectActiveTab } from '../../store/tabsSlice.ts';
+import type { Tab } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import * as t from '../../common/tokens';
 import { useResults } from './useResults.ts';
@@ -26,9 +25,9 @@ import { useResults } from './useResults.ts';
  * screen while Result 2 is still going, and the pane showing a grid has no
  * running state to hang a Cancel off.
  */
-export default function StatementTabs() {
-  const { statements, statementCount, activeStatement, selectStatement, tabRunning } = useResults();
-  const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
+export default function StatementTabs({ tab }: { tab: Tab | null }) {
+  const { statements, statementCount, activeStatement, selectStatement, tabRunning } = useResults(tab);
+  const activeTabId = tab?.id ?? null;
 
   if (statementCount <= 1) return null;
 

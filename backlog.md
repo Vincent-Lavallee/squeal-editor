@@ -97,14 +97,6 @@ Things that do not exist yet.
 
 - **Preferences menu** — Add a Preferences menu next to About in the title bar with two items: Settings (a shell screen with placeholders that Light theme and French/English UI populate later) and Keyboard shortcuts (a visual editor for remapping keys).
 
-- **Split the editor** — Working two queries means constantly switching tabs and
-  losing your place, whether comparing two results, referencing one query while
-  writing another, or copying between them. Let a tab be dragged to the side to
-  dock it into a second pane beside the current one — two tabs of the same
-  connection, each with its own editor and result grid. Session-only state, same
-  as today's sidebar/results resizing; closing either pane's tab collapses back
-  to a single view.
-
 - **Command palette** — Every action is reachable exactly one way: a menu, a
   button, or a keybinding you already have to know. Put the common ones behind a
   palette — run, format, switch connection or database, toggle read-only,

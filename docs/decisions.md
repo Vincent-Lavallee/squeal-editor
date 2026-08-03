@@ -641,6 +641,55 @@ else in the app has.
 It holds no model while a grid tab is showing, so the UI suite's reads guard —
 which is itself the assertion that a grid tab really has no editor on it.
 
+**Split the editor (`backlog.md`) is the day a second `EditorPane` actually
+mounted, and "one Monaco, one model per tab" survived it unchanged — because
+it was never a rule about how many `EditorPane`s the app may render.** Read
+literally against "Rejected: an editor per tab" above, a second instance looks
+like the same mistake with extra steps. It is not: that rejection is about one
+*tab* never getting its own Monaco (which is what throws away undo history and
+pays for a construction per switch); a second instance for a second *pane*,
+each still holding exactly one model per tab of its own, breaks neither
+promise. The JSON cell drawer already established the general point —
+"not a ban on Monaco appearing twice in the app" — for a transient,
+single-purpose second editor; a split pane's is long-lived and full-featured
+(completion, formatting, the same toolbar), but the same reasoning holds: two
+*tabs* never share one editor, and two *editors* were never forbidden.
+
+**`window.squealEditor` now needs a line of code to stay singular, where it
+used to need none.** `EditorPane` takes an `exposeGlobal` prop, `true` by
+default, `false` on the secondary pane's instance — the seam names "the"
+editor on purpose, and letting whichever pane mounted last overwrite it would
+make the UI suite's one seam point at a moving target. A second seam for the
+secondary pane was considered and deferred: nothing in the UI suite drives a
+split yet, so there was nothing to name it for.
+
+**`addCommand` is global; `addAction` is the editor's. This only had a wrong
+answer once there were two editors.** `editor.addCommand(keybinding, handler)`
+registers a *dynamic keybinding with no `when` clause* — window-wide, not
+scoped to the editor it was called on. With one editor that distinction has no
+observable consequence, so the app bound Ctrl+Enter, Ctrl+B and Ctrl+S that way
+for its whole life. With two, both panes registered the same global binding,
+one shadowed the other, and every Ctrl+Enter ran the pane that mounted last
+regardless of where the cursor was. `addAction` builds its keybinding's `when`
+as `editorId == <this editor's id>` and is the sanctioned per-editor route; the
+`id`/`label` it additionally requires put the actions in Monaco's own command
+palette, which the palette item in `backlog.md` will want to turn off along
+with the rest of it. **Read from Monaco's source rather than inferred from the
+symptom** — the symptom equally fits a dozen wrong theories about React state,
+and three of them were checked first.
+
+**The SQL completion provider was the one place two instances were briefly
+unsafe, and the fix reads as a correction to `useSqlCompletion`, not as
+anything about Monaco.** See *Completion: the grammar's words and the
+server's catalog, and nothing guessed*, below, and `docs/frontend.md`'s
+*Split the editor* for the shape of the fix — in short,
+the provider used to trust a `scope` computed by whichever `EditorPane` last
+rendered, whereas `provideCompletionItems(model, position)` was always handed
+the model actually being asked about and simply was not reading it. One
+registration, model-scanned, answers correctly for any number of editors; nothing
+about that needed a second theme, a second worker, or a second anything else
+Monaco owns.
+
 ---
 
 ## Workspaces group connections, and carry nothing else
@@ -2840,6 +2889,23 @@ its filter across quits.
 **Keyed by the saved connection, like stars, with the same accepted limit.**
 Opening the same saved connection twice shares one snapshot; the runtime id is
 minted fresh each session and could not persist. Not solved, for stars' reasons.
+
+**The split rides in the snapshot too, reversing the call it shipped with.**
+*Split the editor* (`backlog.md`) specified the split as session-only — "same
+as today's sidebar/results resizing" — and that is how it shipped: `pane` was
+deliberately left out of the snapshot and every tab reopened in the primary
+pane. Wrong, and only using it shows why. The sidebar's width is a fact about
+how wide you like a panel; **which tabs are beside each other is a fact about
+what you had open**, and it belongs with the tab list it is a property of, not
+with the pixels. A reopened connection that silently merged two panes threw
+away an arrangement the user built on purpose. So `pane` joins each tab in the
+snapshot and `secondaryActiveIndex` joins `activeIndex`.
+
+**It cost no migration, which is the shape to copy.** The snapshot is an opaque
+blob only the UI reads (above), so widening it is a frontend-only change; and
+both new fields are *optional*, so a session stored before the split existed
+carries neither, reads as "all primary", and reopens exactly as it used to.
+Nothing in the store, the protocol or the extension knew this happened.
 
 ---
 

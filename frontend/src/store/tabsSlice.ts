@@ -74,6 +74,13 @@ export interface Tab {
    * what carries it. See `docs/decisions.md`.
    */
   unsaved?: boolean;
+  /**
+   * Which pane this tab is docked in. Always `'primary'` at birth -- dragging
+   * is the only way into `'secondary'` -- and it rides in the session
+   * snapshot, so a connection reopens split the way it was left. See *Split
+   * the editor* in `docs/frontend.md`.
+   */
+  pane: 'primary' | 'secondary';
 }
 
 interface TabsState {
@@ -93,6 +100,13 @@ interface TabsState {
    * were" this feature is about, one level down.
    */
   activeTabId: Record<string, string | null>;
+  /**
+   * The secondary pane's active tab, per connection -- `null` (or absent)
+   * means there is no secondary pane, which is how "is there a split" is
+   * asked. Restored from the snapshot along with each tab's `pane`; see
+   * *Split the editor* in `docs/frontend.md`.
+   */
+  secondaryActiveTabId: Record<string, string | null>;
   /**
    * The database each connection is "on", one value shared by every tab of it
    * and changed only through the picker.
@@ -126,6 +140,7 @@ interface TabsState {
 const initialState: TabsState = {
   tabs: [],
   activeTabId: {},
+  secondaryActiveTabId: {},
   database: {},
   nextQueryNo: {},
   sqlByTab: {},
@@ -144,12 +159,36 @@ const initialState: TabsState = {
  * same fact as `tabs` being flat: `results` is keyed by a bare tab id, so two
  * connections each minting a "1" would put one's rows under the other's tab.
  */
-function mint(state: TabsState, tab: Omit<Tab, 'id'>): string {
-  const created = { ...tab, id: String(state.nextId) };
+function mint(state: TabsState, tab: Omit<Tab, 'id' | 'pane'>): string {
+  const created = { ...tab, pane: 'primary' as const, id: String(state.nextId) };
   state.nextId += 1;
   state.tabs.push(created);
   state.activeTabId[tab.connectionId] = created.id;
   return created.id;
+}
+
+/**
+ * The primary pane just lost its active tab while the secondary pane still
+ * holds one -- a split with nothing left on one side to compare, so the
+ * survivor takes over the whole view rather than leaving primary's empty
+ * state beside a populated secondary pane. Relabelling the secondary tabs
+ * back to `'primary'` is what makes the promoted pane the ordinary, undocked
+ * view again -- not a secondary pane wearing the primary label.
+ *
+ * A no-op whenever primary still has a tab, which is the common case after
+ * every close and move -- cheap to call unconditionally rather than worked
+ * out separately at each call site.
+ */
+function promoteIfPrimaryEmpty(state: TabsState, connectionId: string): void {
+  const active = state.activeTabId[connectionId];
+  if (active !== null && active !== undefined) return;
+  const secondaryId = state.secondaryActiveTabId[connectionId];
+  if (!secondaryId) return;
+  for (const tab of state.tabs) {
+    if (tab.connectionId === connectionId && tab.pane === 'secondary') tab.pane = 'primary';
+  }
+  state.activeTabId[connectionId] = secondaryId;
+  state.secondaryActiveTabId[connectionId] = null;
 }
 
 const tabsSlice = createSlice({
@@ -221,18 +260,24 @@ const tabsSlice = createSlice({
       const closing = new Set(action.payload.ids);
 
       /*
-       * Per connection, how many of its tabs survive *before* the first one it
-       * is losing -- the index the active tab falls to once the gaps close.
+       * Per connection *and pane*, how many of its tabs survive *before* the
+       * first one it is losing -- the index the active tab falls to once the
+       * gaps close. Scoped by pane, not just connection, so a tab closing in
+       * the secondary pane can never hand the primary pane a new active tab
+       * or the other way round -- each pane picks its own landing tab from its
+       * own survivors, same as before this had two panes to be about.
        *
        * Counted against the list as it stands, because after the filter below
        * there is no way to ask where the hole was.
        */
+      const paneKey = (connectionId: string, pane: Tab['pane']): string => `${connectionId}:${pane}`;
       const landingIndex = new Map<string, number>();
       const survivorsSeen = new Map<string, number>();
       for (const tab of state.tabs) {
-        const seen = survivorsSeen.get(tab.connectionId) ?? 0;
-        if (!closing.has(tab.id)) survivorsSeen.set(tab.connectionId, seen + 1);
-        else if (!landingIndex.has(tab.connectionId)) landingIndex.set(tab.connectionId, seen);
+        const k = paneKey(tab.connectionId, tab.pane);
+        const seen = survivorsSeen.get(k) ?? 0;
+        if (!closing.has(tab.id)) survivorsSeen.set(k, seen + 1);
+        else if (!landingIndex.has(k)) landingIndex.set(k, seen);
       }
       if (landingIndex.size === 0) return;
 
@@ -248,33 +293,75 @@ const tabsSlice = createSlice({
       // else the left, else nothing -- and nothing is a real answer: the last tab
       // closing shows the empty state rather than conjuring a tab back.
       //
-      // The neighbours are this connection's, not the flat list's: the tab to
-      // the right in `tabs` may belong to a server you are not looking at.
-      for (const [connectionId, index] of landingIndex) {
-        const active = state.activeTabId[connectionId];
+      // The neighbours are this connection-and-pane's, not the flat list's: the
+      // tab to the right in `tabs` may belong to a server, or a pane, you are
+      // not looking at.
+      const touchedConnections = new Set<string>();
+      for (const [k, index] of landingIndex) {
+        const sep = k.lastIndexOf(':');
+        const connectionId = k.slice(0, sep);
+        const pane = k.slice(sep + 1) as Tab['pane'];
+        touchedConnections.add(connectionId);
+        const activeMap = pane === 'secondary' ? state.secondaryActiveTabId : state.activeTabId;
+        const active = activeMap[connectionId];
         if (active === null || active === undefined || !closing.has(active)) continue;
-        const mine = state.tabs.filter((t) => t.connectionId === connectionId);
-        state.activeTabId[connectionId] = mine[index]?.id ?? mine[index - 1]?.id ?? null;
+        const mine = state.tabs.filter((t) => t.connectionId === connectionId && t.pane === pane);
+        activeMap[connectionId] = mine[index]?.id ?? mine[index - 1]?.id ?? null;
       }
+
+      // The tab that closed was the one open in the primary pane, and the
+      // secondary pane still has one: nothing is left to compare it against,
+      // so it takes over the whole view instead of sitting beside an empty one.
+      for (const connectionId of touchedConnections) promoteIfPrimaryEmpty(state, connectionId);
     },
 
     /**
-     * Move a tab in front of another of its own connection, or to the end.
+     * Move a tab in front of another of its own connection and pane, or to the
+     * end. `pane`, given, also *docks* the tab there first -- moving it out of
+     * an already-open secondary pane, or creating one by moving the first tab
+     * into it. Omitted, this is the plain same-pane reorder it always was.
      *
-     * The reorder is computed over that connection's tabs alone and written back
-     * into **the very slots they already occupied** in the flat list. Splicing
-     * the flat array directly would slide another connection's tabs past each
-     * other whenever one sits between two of these -- invisible until you switch
-     * to that server and find its tabs shuffled by a drag you did elsewhere.
+     * The reorder is computed over that connection-and-pane's tabs alone and
+     * written back into **the very slots they already occupied** in the flat
+     * list. Splicing the flat array directly would slide another connection's
+     * (or pane's) tabs past each other whenever one sits between two of these --
+     * invisible until you switch to that server, or that pane, and find its
+     * tabs shuffled by a drag you did elsewhere.
      */
-    tabMoved(state, action: PayloadAction<{ id: string; beforeId: string | null }>) {
-      const { id, beforeId } = action.payload;
+    tabMoved(state, action: PayloadAction<{ id: string; beforeId: string | null; pane?: Tab['pane'] }>) {
+      const { id, beforeId, pane: targetPane } = action.payload;
       if (id === beforeId) return;
       const moving = state.tabs.find((t) => t.id === id);
       if (!moving) return;
 
+      const fromPane = moving.pane;
+      const toPane = targetPane ?? fromPane;
+
+      if (toPane !== fromPane) {
+        const connectionId = moving.connectionId;
+        const activeMap = fromPane === 'secondary' ? state.secondaryActiveTabId : state.activeTabId;
+        // Leaving the pane it was the active tab of: the same neighbour rule
+        // `tabsClosed` picks a landing tab with, since as far as that pane is
+        // concerned this tab just left it.
+        if (activeMap[connectionId] === moving.id) {
+          const siblings = state.tabs.filter((t) => t.connectionId === connectionId && t.pane === fromPane);
+          const at = siblings.findIndex((t) => t.id === moving.id);
+          const survivors = siblings.filter((t) => t.id !== moving.id);
+          activeMap[connectionId] = survivors[at]?.id ?? survivors[at - 1]?.id ?? null;
+        }
+        moving.pane = toPane;
+        // Docking a tab into a pane brings it to front there -- you dragged it
+        // to look at it, the same reason a freshly opened tab (`mint`) does.
+        const targetMap = toPane === 'secondary' ? state.secondaryActiveTabId : state.activeTabId;
+        targetMap[connectionId] = moving.id;
+        // The pane just left may now be empty of a primary tab to show, with
+        // the secondary one still holding content -- the survivor takes over
+        // the whole view rather than leaving primary's empty state beside it.
+        promoteIfPrimaryEmpty(state, connectionId);
+      }
+
       const slots: number[] = [];
-      state.tabs.forEach((tab, i) => { if (tab.connectionId === moving.connectionId) slots.push(i); });
+      state.tabs.forEach((tab, i) => { if (tab.connectionId === moving.connectionId && tab.pane === moving.pane) slots.push(i); });
 
       const reordered = slots.map((i) => state.tabs[i]!).filter((tab) => tab.id !== id);
       const to = beforeId === null ? reordered.length : reordered.findIndex((tab) => tab.id === beforeId);
@@ -286,7 +373,9 @@ const tabsSlice = createSlice({
 
     tabActivated(state, action: PayloadAction<{ id: string }>) {
       const tab = state.tabs.find((t) => t.id === action.payload.id);
-      if (tab) state.activeTabId[tab.connectionId] = tab.id;
+      if (!tab) return;
+      if (tab.pane === 'secondary') state.secondaryActiveTabId[tab.connectionId] = tab.id;
+      else state.activeTabId[tab.connectionId] = tab.id;
     },
 
     /**
@@ -394,6 +483,7 @@ const tabsSlice = createSlice({
         }
         state.tabs = state.tabs.filter((t) => t.connectionId !== connectionId);
         delete state.activeTabId[connectionId];
+        delete state.secondaryActiveTabId[connectionId];
         delete state.database[connectionId];
         delete state.nextQueryNo[connectionId];
         // `nextId` deliberately survives, and now for two reasons. A query still
@@ -408,6 +498,10 @@ const tabsSlice = createSlice({
         // Nothing is cleared. The tabs already open belong to other connections,
         // and this event now means "one more server", not "a new session".
         const fallbackDatabase = config.database ?? databases[0] ?? null;
+        // Cleared up front, so a connection with nothing stored -- or a
+        // snapshot written before the split existed -- opens unsplit. The
+        // restore below is what puts a split back.
+        state.secondaryActiveTabId[connectionId] = null;
 
         // A saved connection reopening with tabs it had before. Fresh ids all
         // round -- the stored ones are last session's -- so `sqlByTab` and
@@ -429,13 +523,32 @@ const tabsSlice = createSlice({
           );
           session.tabs.forEach((tab, i) => {
             if (tab.kind === 'editor' && tab.sql !== undefined) state.sqlByTab[ids[i]!] = tab.sql;
+            // `mint` puts every tab in the primary pane; the snapshot is what
+            // moves the ones that were docked. Absent on a session stored
+            // before the split existed, which is exactly "it was all primary".
+            if (tab.pane === 'secondary') {
+              const restored = state.tabs.find((t) => t.id === ids[i]);
+              if (restored) restored.pane = 'secondary';
+            }
           });
           state.nextQueryNo[connectionId] = session.nextQueryNo;
-          const { activeIndex } = session;
-          state.activeTabId[connectionId] =
-            activeIndex !== null && activeIndex >= 0 && activeIndex < ids.length
-              ? ids[activeIndex]!
-              : (ids[ids.length - 1] ?? null);
+
+          // Each pane's front tab is resolved against *its own* tabs: an index
+          // that names a tab in the other pane is a snapshot disagreeing with
+          // itself, and the last tab of the right pane is a better answer than
+          // pointing a pane at something it does not contain.
+          const frontOf = (pane: Tab['pane'], index: number | null | undefined): string | null => {
+            const mine = ids.filter((id) => state.tabs.find((t) => t.id === id)?.pane === pane);
+            if (mine.length === 0) return null;
+            const named = index !== null && index !== undefined && index >= 0 && index < ids.length ? ids[index]! : null;
+            return named !== null && mine.includes(named) ? named : (mine[mine.length - 1] ?? null);
+          };
+          state.activeTabId[connectionId] = frontOf('primary', session.activeIndex);
+          state.secondaryActiveTabId[connectionId] = frontOf('secondary', session.secondaryActiveIndex);
+          // A snapshot whose primary pane is empty -- every tab docked, however
+          // that came about -- reopens as one pane rather than as an empty half
+          // beside a full one.
+          promoteIfPrimaryEmpty(state, connectionId);
           return;
         }
 
@@ -453,18 +566,51 @@ export const { tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, s
   tabsSlice.actions;
 export const tabsReducer = tabsSlice.reducer;
 
-/** The active connection's tabs, in order. The strip draws these and no others. */
+/** The active connection's primary-pane tabs, in order. The main strip draws these and no others. */
 export const selectTabs = (s: RootState): Tab[] =>
   s.session.activeConnectionId === null
     ? []
-    : s.tabs.tabs.filter((t) => t.connectionId === s.session.activeConnectionId);
+    : s.tabs.tabs.filter((t) => t.connectionId === s.session.activeConnectionId && t.pane === 'primary');
 
-/** The active tab of the active connection, or null when that one has none open. */
+/** The active tab of the active connection's primary pane, or null when that one has none open. */
 export const selectActiveTab = (s: RootState): Tab | null => {
   const connectionId = s.session.activeConnectionId;
   if (!connectionId) return null;
   const id = s.tabs.activeTabId[connectionId];
   return s.tabs.tabs.find((t) => t.id === id) ?? null;
+};
+
+/**
+ * Every tab of the active connection, **both panes**, in order.
+ *
+ * The one thing that must not be confused with `selectTabs`: that one is a
+ * *strip's* list and is the primary pane's alone. This is "does this tab still
+ * exist at all", which is what anything cleaning up per-tab resources has to
+ * ask -- a tab dragged into the other pane has not gone anywhere. `EditorPane`
+ * disposing Monaco models is the caller that found this out: keyed on the
+ * primary list, the secondary pane disposed the model it had just created for
+ * the tab it was showing, and came up blank.
+ */
+export const selectConnectionTabs = (s: RootState): Tab[] =>
+  s.session.activeConnectionId === null
+    ? []
+    : s.tabs.tabs.filter((t) => t.connectionId === s.session.activeConnectionId);
+
+/**
+ * The active connection's secondary-pane tabs, in order -- empty whenever
+ * there is no split. See *Split the editor* in `docs/frontend.md`.
+ */
+export const selectSecondaryTabs = (s: RootState): Tab[] =>
+  s.session.activeConnectionId === null
+    ? []
+    : s.tabs.tabs.filter((t) => t.connectionId === s.session.activeConnectionId && t.pane === 'secondary');
+
+/** The secondary pane's active tab, or null when there is no split. */
+export const selectSecondaryActiveTab = (s: RootState): Tab | null => {
+  const connectionId = s.session.activeConnectionId;
+  if (!connectionId) return null;
+  const id = s.tabs.secondaryActiveTabId[connectionId];
+  return id ? (s.tabs.tabs.find((t) => t.id === id) ?? null) : null;
 };
 
 /** The active connection's database -- one value, whether or not a tab is open to ask on its behalf. */
@@ -479,6 +625,10 @@ export function useTabs() {
   const tabs = useAppSelector(selectTabs);
   const activeTab = useAppSelector(selectActiveTab);
   const activeTabId = activeTab?.id ?? null;
+  const secondaryTabs = useAppSelector(selectSecondaryTabs);
+  const secondaryActiveTab = useAppSelector(selectSecondaryActiveTab);
+  const secondaryActiveTabId = secondaryActiveTab?.id ?? null;
+  const connectionTabs = useAppSelector(selectConnectionTabs);
   const database = useAppSelector(selectDatabase);
 
   /*
@@ -502,6 +652,19 @@ export function useTabs() {
     tabs,
     activeTabId,
     activeTab,
+    /**
+     * The secondary pane -- empty/`null` whenever there is no split. See
+     * *Split the editor* in `docs/frontend.md`.
+     */
+    secondaryTabs,
+    secondaryActiveTabId,
+    secondaryActiveTab,
+    /**
+     * Every tab of the connection, both panes -- for anything asking "does
+     * this tab still exist", never for drawing a strip. See
+     * `selectConnectionTabs`.
+     */
+    connectionTabs,
     /** The active connection's database -- one value, shared by every tab of it. */
     database,
     /**
@@ -546,29 +709,47 @@ export function useTabs() {
     closeTab: useCallback((id: string) => dispatch(tabsClosed({ ids: [id] })), [dispatch]),
     /*
      * Which tabs each of these means is worked out here and not in the strip,
-     * for the same reason a thunk reads its own target: `tabs` is already the
-     * active connection's, in order, so there is nothing for a caller to get
-     * wrong -- and a caller that got it wrong would close another server's tabs.
+     * for the same reason a thunk reads its own target: there is nothing for a
+     * caller to get wrong -- and a caller that got it wrong would close another
+     * server's tabs, or the other pane's.
+     *
+     * `id`'s own pane is read off the full tab list rather than off `tabs`
+     * (which is the primary pane's alone now that there are two): "others" and
+     * "to the right" mean *this tab's own strip*, whichever one that is, so a
+     * TabStrip instance never has to say which pane it is for these to behave.
      */
     closeOtherTabs: useCallback(
-      (id: string) => dispatch(tabsClosed({ ids: tabs.filter((t) => t.id !== id).map((t) => t.id) })),
-      [dispatch, tabs]
+      (id: string) => {
+        const anchor = store.getState().tabs.tabs.find((t) => t.id === id);
+        if (!anchor) return;
+        const siblings = store.getState().tabs.tabs.filter((t) => t.connectionId === anchor.connectionId && t.pane === anchor.pane);
+        dispatch(tabsClosed({ ids: siblings.filter((t) => t.id !== id).map((t) => t.id) }));
+      },
+      [dispatch, store]
     ),
     closeTabsToTheRight: useCallback(
       (id: string) => {
-        const from = tabs.findIndex((t) => t.id === id);
+        const anchor = store.getState().tabs.tabs.find((t) => t.id === id);
+        if (!anchor) return;
+        const siblings = store.getState().tabs.tabs.filter((t) => t.connectionId === anchor.connectionId && t.pane === anchor.pane);
+        const from = siblings.findIndex((t) => t.id === id);
         if (from === -1) return;
-        dispatch(tabsClosed({ ids: tabs.slice(from + 1).map((t) => t.id) }));
+        dispatch(tabsClosed({ ids: siblings.slice(from + 1).map((t) => t.id) }));
       },
-      [dispatch, tabs]
+      [dispatch, store]
     ),
+    /** Every tab of the given pane -- primary unless told otherwise. */
     closeAllTabs: useCallback(
-      () => dispatch(tabsClosed({ ids: tabs.map((t) => t.id) })),
-      [dispatch, tabs]
+      (pane: Tab['pane'] = 'primary') =>
+        dispatch(tabsClosed({ ids: (pane === 'secondary' ? secondaryTabs : tabs).map((t) => t.id) })),
+      [dispatch, tabs, secondaryTabs]
     ),
-    /** Drop `id` in front of `beforeId`, or at the end when that is null. */
+    /**
+     * Drop `id` in front of `beforeId`, or at the end when that is null.
+     * `pane`, given, docks `id` there first -- see `tabMoved`.
+     */
     moveTab: useCallback(
-      (id: string, beforeId: string | null) => dispatch(tabMoved({ id, beforeId })),
+      (id: string, beforeId: string | null, pane?: Tab['pane']) => dispatch(tabMoved({ id, beforeId, pane })),
       [dispatch]
     ),
     activateTab: useCallback((id: string) => dispatch(tabActivated({ id })), [dispatch]),

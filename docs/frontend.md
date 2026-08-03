@@ -81,7 +81,7 @@ that lives apart from its values is two sources for one fact.
 | `order`, `activeConnectionId` | `session` slice | never left, but see above |
 | a tab's `connectionId`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
 | `database`, per connection | `tabs` slice | crossed |
-| `tabs`, `activeTabId`, `kind`, `title`, a grid tab's `filter` seed, an editor tab's `savedQueryId` | `tabs` slice | never left, but see above |
+| `tabs`, `activeTabId`, `secondaryActiveTabId`, `kind`, `pane`, `title`, a grid tab's `filter` seed, an editor tab's `savedQueryId` | `tabs` slice | never left, but see above |
 | `databases`, `tables`, `columns`, `stars` | `explorer` slice | crossed |
 | `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), the `sql` the result came from, per statement, per tab | `results` slice | crossed |
 | which of a tab's statements is on screen, and how many the run held | `results` slice | never left, but it is the key its results are held under |
@@ -100,7 +100,8 @@ that lives apart from its values is two sources for one fact.
 | which connect screen is showing, and which workspace it is inside | `ConnectScreen` local state | never left |
 | `maximized`, the open menu | `titlebar` local state | never left |
 | which tree rows are expanded, which schema groups are collapsed, and the tree's filter text | `Sidebar` local state | never left |
-| the sidebar's width and the results panel's height | `Shell` local state | never left |
+| the sidebar's width and the results panel's height, per pane | `Shell` local state | never left |
+| the split's own width, which tab is being dragged, and which pane last held focus | `Shell` local state | never left |
 | whether the colour picker is expanded, and whether a submit has already looked for missing fields | `ConnectionForm` local state | never left |
 | whether a `<Select>` is open, and its search text | `Select` local state | never left |
 
@@ -286,6 +287,245 @@ the whole field on every render meant the next keystroke replaced everything
 typed so far, the way typing over a selected word does. `useEffect(..., [renaming?.id])`
 runs once when rename mode is entered for a given tab and not again while its
 draft changes, which is the fix.
+
+**The strip scrolls to whatever tab is now in front.** A tab arriving — `+`, a
+table, a definition, a duplicate, a saved query, a tab docked from the other
+pane — is appended and made active, so on a strip that already overflows it is
+born off screen and the gesture opens something nobody can see. A layout effect
+on `(activeTabId, tabs.length)` reveals it; the count sits beside the id because
+a tab can arrive without changing which one is active. **Revealing the *last*
+tab means the strip's very end, not `scrollIntoView`**, which stops as soon as
+the tab fits and so parks it against the right edge with the `+` beyond it still
+hidden — a strip that visibly stopped short of the end it was asked for.
+`scrollLeft = scrollWidth` is the whole of it, and it clamps itself on a strip
+that does not overflow. A reorder changes neither the active tab nor the count,
+which is why a drop reveals its tab through a separate keyed effect — see *Split
+the editor*.
+
+## Split the editor
+
+A tab dragged to the right edge of the content area docks into a second pane —
+its own strip, editor and result grid, independent of the first. VS Code's
+split-editor shape: **exactly two panes**, horizontal only, and a pane
+disappears the moment its last tab leaves it, the survivor taking over the
+whole view.
+
+**The split rides in the session snapshot**, so a connection reopens divided
+the way it was left — `pane` per tab and `secondaryActiveIndex` beside
+`activeIndex`. It shipped session-only, on the reading that a split is a view
+preference like the sidebar's width; that was wrong in a way only using it
+shows, because which tabs are *beside* each other is part of what you had
+open, not part of how wide it was. See `docs/decisions.md`. A snapshot written
+before the split existed carries no `pane` at all, which reads as "all
+primary" and reopens exactly as it used to — the whole of what makes the
+change backwards-compatible. Each pane's front tab is resolved against its own
+tabs, so an index naming a tab in the other pane falls back to that pane's
+last rather than pointing it at something it does not contain.
+
+**`Tab.pane` is the whole of where a tab lives, and `tabsSlice` gained one more
+pointer to match it.** `activeTabId` keeps its exact pre-split meaning — the
+primary pane's active tab, which is still what every existing reader (session
+restore, Ctrl+S, the database-change re-browse) means by "the" active tab —
+and `secondaryActiveTabId` is the same shape for the second pane, `null`
+whenever there is none. **Whether a split exists is derived, never stored**:
+it is `secondaryActiveTabId[connectionId] !== null`, not a flag that could
+disagree with the tabs actually carrying `pane: 'secondary'`. New tabs (`+`,
+opening a table, a definition, duplicate, a saved query) always mint into the
+primary pane — dragging is the only way into the secondary one, which is also
+why the secondary strip has no `+` or bookmark button of its own.
+
+**`tabMoved` docks as well as reorders**, on one more optional field: `pane`,
+given, reassigns `Tab.pane` before the reorder runs; omitted, it is the exact
+same-pane reorder it always was, scoped to `moving.pane` rather than to the
+whole connection now that a connection can have two strips. Dropping a tab
+onto *either* strip — the one it came from or the other one — goes through
+this single action: dropping "before" a tab in the other pane's strip is what
+both docks a fresh tab into an unsplit view (`beforeId: null` onto a strip
+with nothing in the second pane yet) and moves a tab back out again (dragging
+the secondary pane's only tab onto the primary strip empties the secondary
+pane, which is the collapse). No separate "undock" action exists because
+none is needed.
+
+**Losing the active tab of a pane picks its own neighbour**, the same
+left-else-right-else-nothing rule `tabsClosed` already used, just scoped by
+`(connectionId, pane)` instead of by connection alone — a tab closing in the
+secondary pane must never hand the primary pane a new active tab. **A helper,
+`promoteIfPrimaryEmpty`, runs after every close and every move**: if the
+primary pane is left with nothing while the secondary pane still holds a tab,
+every `pane: 'secondary'` tab of that connection is relabelled `'primary'` and
+the pointers swap. This is what makes "close the tab you were comparing
+against" read as *the split ending*, not as an empty pane sitting beside a
+full one — and it is one pass, not a case duplicated at every call site that
+could leave primary empty.
+
+**"Which tabs are there" split into two questions, and conflating them shipped
+a blank editor.** `selectTabs` is a *strip's* list and is the primary pane's
+alone; `selectConnectionTabs` is every tab of the connection, both panes, and
+is what anything cleaning up per-tab resources has to ask. `EditorPane`'s
+model GC is the caller that found it out: keyed on the primary list, the
+secondary pane's brand-new Monaco instance disposed the model it had just
+created — the tab it was showing was not in the *other* pane's strip — and the
+pane came up blank with a live editor over a dead model. **A tab dragged into
+the other pane has not gone anywhere**, and only a tab that has left the
+connection entirely may take its model with it. The cost of the wider list,
+accepted: a pane keeps a model for a tab that has moved away, which the
+inbound-write effect goes on keeping in sync for nothing. It is one model per
+tab per pane it has ever shown, and it is freed when the tab really closes.
+
+**A tab's drag payload is a custom MIME type, not `text/plain`.** Nothing ever
+reads it back — the dragged id travels as React state, which is what lets the
+UI suite drive a drag with plain `MouseEvent`s carrying no `dataTransfer` at
+all — but something has to be set for the browser to start a drag, and the type
+it is set *under* turned out to matter: **Monaco accepts a `text/plain` drop
+and inserts it**, so dragging a tab across the editor pasted the tab's id into
+the query. `application/x-squeal-tab` is a type nothing else claims, so every
+text surface in the app — Monaco, every `<input>` — is offered nothing it knows
+how to take. Fixing it at the payload rather than at Monaco's `dropIntoEditor`
+option is what makes it true of the whole app instead of the one place it was
+noticed.
+
+**The split is stored as the primary pane's *share*, not its pixels.** The two
+panes are `flex-grow: fraction` against a zero basis, so the ratio is what the
+layout is told and the pixels fall out of it; `dragSplit` converts a drag's px
+delta into a fraction of the measured container. A px width was the first cut
+and it was wrong twice over. It defaults badly — one constant is about half of
+a small window and a quarter of a wide one, so "even" depended on the machine
+it was written on — and, the half that survived a first fix, **it does not
+survive a resize**: the primary pane keeps its pixels while the secondary,
+taking whatever is left, absorbs every pixel the window gains, so maximising a
+50/50 split lands near 25/75. A fraction fixes both at once, and `0.5` needs no
+measuring to mean half.
+
+**A pane's whole body is a drop target, not just its 32px strip.** The strip is
+a ribbon and the thing being aimed at is the pane, so each pane draws a
+`TabDropZone` over its body while a tab from the *other* pane is in flight —
+and while there is no split yet, the primary pane's trailing half is the zone
+that opens one. Every one of them lands in the same `moveTab(id, null, pane)`
+the strips already use. Three things they deliberately do: they start below the
+strip (`top: TAB_H`), or they would swallow the `dragover` that draws the
+insertion mark saying *where among the tabs* it lands; a pane offers none for a
+tab it already holds, since "move it here" where it already is would only
+shuffle it to the end of its own strip; and **they carry a `z-index`**, because
+the result grid's sticky header and row gutter carry `z-index: 1`/`2` and a
+positioned element with none of its own paints *below* those however late it
+comes in the DOM — which shipped as a zone that was live over the rows and dead
+over the header, the exact strip of the pane a tab is most likely dragged onto.
+
+**The tab strip scrolls itself while a tab is dragged near either end.**
+Without it a strip holding more tabs than fit cannot be dragged *into* the part
+scrolled out of view, and a tab dropped past the right edge lands somewhere
+nobody can see — the drag ends with the tab apparently gone. `dragover` fires
+repeatedly for as long as the pointer is over the strip, so holding still at
+the edge keeps it moving and there is no interval to start or to clear. The
+moved tab is then scrolled back into view in a layout effect keyed on its id —
+not in the drop handler, where the tab is not yet where it is going, since the
+move is the store's and the strip re-renders from it.
+
+**Aiming at the end of the strip jumps it all the way there**, rather than
+stepping like the edge scroll. The mark that says "this lands last" is drawn
+*past* the final tab, so on an overflowing strip it is off screen exactly when
+it is the thing being decided; the end position is the only one that shows it.
+The edge auto-scroll cannot serve this — it moves a step per event, so the mark
+would arrive several events after the intent did.
+
+**Where a drop would land is the strip's question, worked out from geometry —
+not a `dragover` on each tab.** `dropTargetAt(clientX)` walks the tab elements
+and returns the first whose midpoint the pointer has not reached, else `null`
+for the end. Per-tab handlers were the first cut and they answer for the tabs
+only: **the strip is more than its tabs** — the `+`, and the empty space past
+the last one, are most of what you cross on the way to "drop it last" — so all
+of that kept whatever the last tab the pointer happened to touch had said. That
+is an insertion mark pointing at a slot the drop is not aiming for, and a `drop`
+that then honours it. One handler on the strip has no gaps to leave uncovered.
+
+**The mark is cleared by two things `dragend` cannot cover.** It goes when the
+pointer *leaves* the strip, or the strip a tab was dragged out of goes on
+advertising a slot while the drop is being aimed at the other pane — and
+`dragleave` bubbles from every tab, so crossing from one tab to its neighbour
+fires it on the strip too and the **coordinates, not the event, are what say
+whether the pointer really left**. And it goes when `draggingId` falls to
+`null`, which is the ending `dragend` genuinely misses: a tab dragged into the
+other pane is re-rendered by the *other* strip, so the element this one would
+have heard `dragend` on is unmounted before it fires, and the mark stayed drawn
+until the next drag. Watching the composition root's id catches every ending,
+including that one; drawing the mark is gated on it for the same reason.
+
+**`EditorPane` and `useResults` stopped assuming there is one active tab.**
+Both used to read `selectActiveTab` (or `useTabs().activeTab`) internally;
+both now take the tab they are for as an explicit prop/argument, and
+`ShellLayout` calls each twice — once bound to the primary tab, once to the
+secondary — the same way it always called them once. `ResultsTable`,
+`StatementTabs` and `FilterBar` take the same `tab` prop and pass it straight
+through to `useResults(tab)`. `TabStrip` went the same way for the same
+reason: `tabs`, `activeTabId` and every handler are props now, not a
+`useTabs()` call, because two mounted instances need two different subsets.
+Its `draggingId` is a **controlled** prop rather than local state for a
+sharper reason than the others — a drop has to be accepted by whichever strip
+it lands on even when the drag started in the *other* one, and only
+`ShellLayout`, which mounts both, can see both; each strip still owns
+`dropAt` (where *it* would insert) locally, since that really is per-strip.
+
+**Two Monaco instances broke an assumption `useSqlCompletion` never had to
+question with one.** The completion provider is registered once per dialect
+and reads a live snapshot through a ref — `docs/decisions.md` already warned
+that two registrations on one language both answer and the popup holds every
+suggestion twice, for the dialect-change case. A second `EditorPane` calling
+the same hook is the identical failure wearing a different trigger: two
+providers, one per pane, each closing over *that pane's* scanned tables, both
+answering every request regardless of which editor asked. The fix is not a
+guard, it is that the provider never needed the calling pane's scan at all —
+`provideCompletionItems(model, position)` already receives the model Monaco is
+asking about, so `completion.ts` scans **that** model directly instead of
+trusting an outside snapshot. That makes the registration itself pane-independent,
+so `useSqlCompletion` (registration) and `useSqlFormatter` are now called once,
+in `ShellLayout`, regardless of split state; `EditorPane` keeps only
+`useSqlPrefetch`, the per-pane half that warms the column cache ahead of a
+`.` for *that* editor's own text — safe to call from both panes, since
+`loadColumns`'s own cache dedupes a table either one already asked for.
+
+**`window.squealEditor` stays singular on purpose, not by accident of there
+being one instance any more.** It is the primary pane's, always — `EditorPane`
+takes an `exposeGlobal` prop, `true` by default, `false` on the secondary
+instance. The UI suite's existing seam is untouched; a second seam for driving
+the secondary editor is future work, not something this shipped needing.
+
+**The editor's own keybindings are `addAction`, not `addCommand`, and with two
+panes that is the difference between working and not.** `addCommand` registers
+its keybinding with **no `when` clause at all** — global to the window, not
+scoped to the editor it was called on (it is right there in Monaco's
+`standaloneCodeEditor.js`: `addDynamicKeybinding(id, kb, handler, undefined)`).
+One editor never noticed. Two both bound Ctrl+Enter globally, one shadowed the
+other, and every run went to whichever pane mounted last no matter where the
+cursor was — reported as *Ctrl+Enter always runs tab 2*. `addAction` scopes its
+keybinding with `editorId == <this editor>`, so each pane's binding fires only
+when that pane is focused. It costs an `id` and a `label`, which also puts the
+actions in Monaco's own command palette; that is a gain, not a cost.
+
+**The window-level Ctrl+Enter/Ctrl+S fallback gained a `focused` gate.**
+Monaco's own instance-level bindings need none — with `addAction` they only
+fire for the focused editor, which is exactly right. The
+`window` listener exists for focus that has left Monaco but is still in that
+pane (the Run button, say), and without the gate both panes' listeners would
+answer one keypress. `ShellLayout` tracks `focusedPane` and passes `focused`
+down; `preventDefault` still runs in both listeners regardless of the gate,
+since the OS save dialog Ctrl+S would otherwise summon is a webview-wide
+problem, not a per-pane one.
+
+**`focusedPane` is tracked on pointer-down as well as focus, and the pointer
+half is what makes it right.** Focus alone looks sufficient and is not: most of
+a pane is not focusable, so clicking its result grid, the blank part of its
+filter bar or its own divider fires no focus event at all and leaves the gate
+pointing at whichever pane was last *focused*. After working in one pane and
+then clicking into the other, a Ctrl+Enter from outside Monaco then ran the
+pane the user was no longer looking at — which is what "I ran a query in one
+tab and got the results in the other" turned out to be. Both handlers are
+capture-phase, so nothing inside a pane can swallow the signal first.
+
+**The dock gesture is a drop zone, not a third drag action.** `TabStrip`'s
+`onDragTab` reports the dragged id up to `ShellLayout`, which is what tells the
+zones above when to appear; dropping on one calls `moveTab(id, null, pane)`,
+the same action a strip drop uses. There is no separate "split" verb anywhere —
+a split is what it looks like when a tab is in the pane that had none.
 
 ## Saved queries
 
@@ -1223,8 +1463,13 @@ component — its worker, and a theme built by reading `tokens.css` — and
 the box; Monaco owns everything inside it.
 
 **One editor, one model per tab.** The model is what makes the text per tab;
-switching a tab is `saveViewState` → `setModel` → `restoreViewState`. There is
-never a second editor — which is why `window.squealEditor` is still singular.
+switching a tab is `saveViewState` → `setModel` → `restoreViewState`. A split
+view mounts a second `EditorPane`, each still holding one model per tab within
+its own pane — "one editor" is about a tab never getting a second instance to
+itself, not a ban on the component appearing twice, the same distinction the
+JSON cell drawer already drew (see `docs/decisions.md`). `window.squealEditor`
+stays singular by choice, not by there being only one instance any more: only
+the primary pane's `EditorPane` exposes it. See *Split the editor*, above.
 
 Six things there look incidental and are not:
 
@@ -1270,7 +1515,10 @@ Six things there look incidental and are not:
   too — the pane is mounted, just hidden — so it refuses for itself. Ctrl+B and
   Ctrl+S are the same arrangement; Ctrl+S has one extra reason to be bound at all,
   which is that the webview otherwise treats it as *save this page* and opens the
-  OS file dialog over the app.
+  OS file dialog over the app. With a split view there are two `window`
+  listeners alive, one per pane, and only the focused pane's may act on a
+  keypress that landed outside either Monaco instance — see *Split the
+  editor*'s `focused` prop.
 - **`window.squealEditor` is the UI suite's seam.** Monaco's text lives in a
   model, so there is no `.value` to read and nothing to type into. It holds no
   model at all while a grid tab is showing, so reads of it must guard.
@@ -1319,7 +1567,7 @@ Four files, and the split is the app's own boundary drawn through one feature:
 | `keywords.ts` | the dialect's words, read out of Monaco's own grammar |
 | `sqlScope.ts` | a regex scan for the tables and aliases in a `FROM`/`JOIN` |
 | `completion.ts` | the provider: what to offer, in what order, with which mark |
-| `useSqlCompletion.ts` | the wiring — fetches columns, keeps the snapshot live |
+| `useSqlCompletion.ts` | `useSqlCompletion` registers the provider (once, in `ShellLayout`); `useSqlPrefetch` fetches columns for one editor's own text (per pane, in `EditorPane`) |
 
 **The words never cross the bridge and the catalog always does.** That is the
 same test as everywhere else, applied inside one popup: `SELECT` is the grammar's
@@ -1345,7 +1593,7 @@ runs.
 
 Five things fall out, each invisible until it bites:
 
-- **Columns are fetched off the text, not off the dot.** `useSqlCompletion`
+- **Columns are fetched off the text, not off the dot.** `useSqlPrefetch`
   scans on every keystroke and dispatches `loadColumns` for whatever is in the
   `FROM`. By the time a `.` is typed after `users`, the columns have to already
   be there — start the fetch at the dot and you get an empty popup and a round
@@ -1354,11 +1602,19 @@ Five things fall out, each invisible until it bites:
   free.** Its `condition` carries the cache, and the thunk marks a table asked
   *before its first await* — without that, two keystrokes in a row both pass the
   condition and both fetch.
-- **The provider is registered once and cannot close over anything.** It reads a
-  ref, exactly like the Ctrl+Enter command and for the same reason: capture the
-  catalog and it answers with the catalog as it was at registration, forever.
+- **The provider is registered once, in `ShellLayout`, regardless of how many
+  panes are open, and cannot close over anything pane-specific.** It reads a
+  ref for the connection-level facts (words, dialect, catalog), exactly like
+  the Ctrl+Enter command and for the same reason — capture the catalog and it
+  answers with the catalog as it was at registration, forever. What tables are
+  *in scope* is not on that ref at all: `provideCompletionItems` scans the
+  `model` Monaco hands it directly, which is what lets one registration answer
+  correctly for either pane's editor. See *Split the editor*.
 - **One provider per language, disposed on dialect change.** Two providers on one
-  language both answer and the popup holds every suggestion twice.
+  language both answer and the popup holds every suggestion twice — the failure
+  a second `EditorPane` calling this hook itself would have reintroduced one
+  pane at a time instead of one dialect change at a time, which is why the
+  registration lives above the panes instead.
 - **After a dot: columns, or a schema's relations — never keywords.** The
   qualifier is the whole question, and it is one of two things. A table or alias
   answers with its columns (`u.`). A *schema* answers with the relations in it
