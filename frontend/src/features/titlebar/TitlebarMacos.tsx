@@ -3,6 +3,7 @@ import { useSession } from '../../store/sessionSlice.ts';
 import * as t from '../../common/tokens';
 import AboutDialog from './AboutDialog.tsx';
 import EnvironmentsDialog from './EnvironmentsDialog.tsx';
+import ShortcutsDialog from './ShortcutsDialog.tsx';
 import { useAbout } from './useAbout.ts';
 import { useWindowChrome } from './useWindowChrome.ts';
 import { useUpdater } from '../updater/index.ts';
@@ -53,12 +54,14 @@ export default function TitlebarMacos() {
   const [hovered, setHovered] = useState<string | null>(null);
   const [showingAbout, setShowingAbout] = useState(false);
   const [showingEnvironments, setShowingEnvironments] = useState(false);
+  const [showingShortcuts, setShowingShortcuts] = useState(false);
 
   useEffect(() => {
     function onNativeMenu(e: Event): void {
       switch ((e as CustomEvent<string>).detail) {
         case 'exit': close(); break;
         case 'environments': setShowingEnvironments(true); break;
+        case 'shortcuts': setShowingShortcuts(true); break;
         case 'checkForUpdates': check(true); break;
         case 'about': setShowingAbout(true); break;
         case 'openDataDir': openDataDir(); break;
@@ -118,6 +121,7 @@ export default function TitlebarMacos() {
     }}>
       {showingAbout && <AboutDialog version={version} onClose={() => setShowingAbout(false)} />}
       {showingEnvironments && <EnvironmentsDialog onClose={() => setShowingEnvironments(false)} />}
+      {showingShortcuts && <ShortcutsDialog onClose={() => setShowingShortcuts(false)} />}
       {/* Traffic-light buttons */}
       <div style={{ display: 'flex', alignItems: 'center', gap: DOT_GAP, flex: 'none', paddingLeft: DOT_LEFT }}>
         {dot(RED, RED_HOVER, 'close', closeSymbol)}

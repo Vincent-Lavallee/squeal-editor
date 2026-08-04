@@ -1,7 +1,11 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { call } from '../common/bridge/bridge.ts';
+import {
+  parseOverrides, resolveBindings,
+  type Bindings, type ShortcutId,
+} from '../common/shortcuts.ts';
 import { useAppDispatch, useAppSelector } from './hooks.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
@@ -97,4 +101,51 @@ export function useBooleanSetting(key: string, fallback: boolean): [boolean, (va
   const stored = useAppSelector((s) => s.settings.values[key]);
   const set = useCallback((value: boolean) => void dispatch(saveSetting({ key, value: String(value) })), [dispatch, key]);
   return [stored === undefined ? fallback : stored === 'true', set];
+}
+
+const KEYBINDINGS = 'keybindings';
+
+export interface ShortcutSettings {
+  bindings: Bindings;
+  /** Only what the user actually changed, so a row can say it is no longer the default. */
+  overrides: Partial<Bindings>;
+  rebind: (id: ShortcutId, chord: string) => void;
+  reset: (id: ShortcutId) => void;
+  resetAll: () => void;
+}
+
+/**
+ * The keyboard shortcuts, as they currently stand and as they are changed.
+ *
+ * All of them live under **one** settings key holding a JSON map of the
+ * overrides, not a key per shortcut. Two things fall out of that and both are
+ * the reason: resetting is *removing* an entry, which a key-per-shortcut store
+ * could not express (`settings.set` writes, it does not delete, so a reset would
+ * have to pin today's default as a value and quietly outlive a change to it);
+ * and a rebind is one round trip regardless. The store has never parsed it --
+ * the same opaque-text rule the session snapshot already rides on.
+ *
+ * The identity of `bindings` is stable while the stored text is, because
+ * `EditorPane` re-registers Monaco's actions whenever it changes.
+ */
+export function useShortcuts(): ShortcutSettings {
+  const dispatch = useAppDispatch();
+  const stored = useAppSelector((s) => s.settings.values[KEYBINDINGS]);
+
+  const overrides = useMemo(() => parseOverrides(stored), [stored]);
+  const bindings = useMemo(() => resolveBindings(overrides), [overrides]);
+
+  const write = useCallback(
+    (next: Partial<Bindings>) => void dispatch(saveSetting({ key: KEYBINDINGS, value: JSON.stringify(next) })),
+    [dispatch]
+  );
+
+  const rebind = useCallback((id: ShortcutId, chord: string) => write({ ...overrides, [id]: chord }), [overrides, write]);
+  const reset = useCallback((id: ShortcutId) => {
+    const { [id]: _removed, ...rest } = overrides;
+    write(rest);
+  }, [overrides, write]);
+  const resetAll = useCallback(() => write({}), [write]);
+
+  return { bindings, overrides, rebind, reset, resetAll };
 }

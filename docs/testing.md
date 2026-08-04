@@ -54,7 +54,7 @@ discovers every `*.test.ts` — the script name cannot override it. The UI suite
 would therefore try to launch a window on a bare `bun test`, so it opts out
 behind `SQUEAL_UI=1` (set by `test:ui`, along with a longer timeout, because
 launching the app blows past Bun's 5s default hook timeout). Expect
-`367 pass / 151 skip` from a bare run, and `125 pass` in ~325s from `test:ui`.
+`391 pass / 154 skip` from a bare run, and `129 pass` in ~340s from `test:ui`.
 
 **`test:ui` builds the extension too, and driving the app by hand must as well.**
 `build:ext` compiles `extensions/db/squeal-db-ext.exe`, which is what
@@ -223,6 +223,30 @@ can say whether it accepts the body as one statement. Both are needed, and the
 second one carries a companion assertion that `SELECT 1; SELECT 2` on the same
 connection is *still* refused — otherwise "the body was accepted" would pass just
 as well if stacking had quietly become legal.
+
+## `tests/shortcuts.test.ts` — the other suite with no server in it
+
+It asks what a keypress *means* (`chordFromEvent`, `matchesChord`), and it needs
+no database for `statements.test.ts`' reason one layer up: nothing has been sent
+yet. The failure it guards against is a shortcut that records one chord and then
+answers a different one — which no server can be asked about, because a key that
+does nothing never reaches one.
+
+Two of its cases are the bugs, not the happy path. **Modifiers match exactly**,
+because `e.key` is `Enter` with or without Shift and a hand-rolled `Ctrl+Enter`
+check answered `Ctrl+Shift+Enter` for free. And **unreadable stored text and
+unknown ids are dropped rather than thrown over**, because that value comes off
+disk and may have been written by a newer version — a preference must not be able
+to blank the screen.
+
+It takes a `KeyPress` structural type rather than a real `KeyboardEvent`, which
+is what lets a case be a literal in a suite with no DOM. A `KeyboardEvent` is
+assignable to it, so the app passes the real thing.
+
+The screen those functions sit behind is asserted in `ui.test.ts`, under
+*titlebar*: it rebinds Run, refuses a chord the sidebar already owns, presses the
+new key and requires the query to have run. It resets before it leaves, or every
+test after it is running under a keyboard it changed.
 
 ## `tests/saved.test.ts`
 

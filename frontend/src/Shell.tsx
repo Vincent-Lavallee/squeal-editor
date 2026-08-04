@@ -5,6 +5,7 @@ import { relationLabel, relationOf } from './common/db/relation.ts';
 import { useAppSelector } from './store/hooks.ts';
 import { useSavedQueries } from './store/savedQueriesSlice.ts';
 import { useSession } from './store/sessionSlice.ts';
+import { useShortcuts } from './store/settingsSlice.ts';
 import { useTabs, type Tab } from './store/tabsSlice.ts';
 import { EditorPane, useEditor, useSqlCompletion, useSqlFormatter } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
@@ -15,6 +16,7 @@ import { StatusBar } from './features/statusbar/index.ts';
 import { TabStrip } from './features/tabs/index.ts';
 import Note from './common/components/Note.tsx';
 import ResizeHandle from './common/components/ResizeHandle.tsx';
+import { matchesChord } from './common/shortcuts.ts';
 import * as t from './common/tokens';
 
 const SIDEBAR_MIN = 160;
@@ -56,6 +58,7 @@ function ShellLayout({ onAddConnection }: Props) {
   const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema } = useExplorer();
   const { setSql, peekSql } = useEditor();
   const { queries, save: saveQuery } = useSavedQueries();
+  const toggleSidebarChord = useShortcuts().bindings.toggleSidebar;
 
   // The SQL completion provider and the formatter are registered once here,
   // regardless of how many panes are open -- Monaco's registration is global
@@ -160,13 +163,17 @@ function ShellLayout({ onAddConnection }: Props) {
    */
   const [focusedPane, setFocusedPane] = useState<'primary' | 'secondary'>('primary');
 
+  // The other half of the sidebar's shortcut. Monaco binds it too, since it wins
+  // inside its own DOM; this is the rest of the window.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); setSidebarCollapsed((prev) => !prev); }
+      if (!matchesChord(e, toggleSidebarChord)) return;
+      e.preventDefault();
+      setSidebarCollapsed((prev) => !prev);
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [toggleSidebarChord]);
 
   /*
    * Lazily browse a restored grid tab the first time it is in front.

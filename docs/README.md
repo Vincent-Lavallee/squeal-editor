@@ -13,6 +13,7 @@ reading the others first, except `architecture.md`, which is the map.
 | touching saved connections, workspaces, the store, passwords or the keychain | `extension.md` + `decisions.md` |
 | changing the store's schema, or anything a store on disk already holds | `extension.md` + `testing.md` |
 | adding or reading a user preference that has to be remembered | `extension.md` + `frontend.md` |
+| adding a keyboard shortcut, or changing what a key does | `frontend.md` + `decisions.md` |
 | touching the connect screen, workspaces or environments in the UI | `frontend.md` + `decisions.md` |
 | touching the rail, or anything that must hold for every open connection | `frontend.md` + `decisions.md` |
 | adding a new way to connect (IAM, SSH, …) | `frontend.md` + `decisions.md` |

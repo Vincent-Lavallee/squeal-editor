@@ -51,6 +51,11 @@ the date they were finished.
   the 80% downscale into the macOS packaging script that already generates the
   .icns, so each platform gets the artwork it needs from the same source.
 
+- **2026-08-03** — **Preferences menu** — Add a Preferences menu next to About in the title bar with two items: Settings (a shell screen with placeholders that Light theme and French/English UI populate later) and Keyboard shortcuts (a visual editor for remapping keys).
+  *Shipped as the Keyboard shortcuts half. Settings went back to `backlog.md` as
+  its own item: it would have been a screen of placeholders for preferences that
+  do not exist yet.*
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

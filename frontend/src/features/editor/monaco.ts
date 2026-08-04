@@ -14,6 +14,8 @@ import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 
+import { parseChord } from '../../common/shortcuts.ts';
+
 /*
  * Monaco loads its worker itself, and left alone it resolves one from a CDN.
  * A desktop app that blocks on a CDN is a bug -- the same reason the font is
@@ -162,6 +164,60 @@ export function defineTheme(): void {
       'scrollbarSlider.activeBackground': token('--border-strong'),
     },
   });
+}
+
+/*
+ * A chord as Monaco's own keybinding, for `addAction`.
+ *
+ * The DOM and Monaco disagree about what the arrow keys are called, and about
+ * nothing else that matters here -- so this is a map of the exceptions plus a
+ * rule for the letters, digits and function keys, rather than a table of every
+ * key twice.
+ */
+const NAMED_KEYS: Record<string, monaco.KeyCode> = {
+  Enter: monaco.KeyCode.Enter,
+  Space: monaco.KeyCode.Space,
+  Tab: monaco.KeyCode.Tab,
+  Escape: monaco.KeyCode.Escape,
+  Backspace: monaco.KeyCode.Backspace,
+  Delete: monaco.KeyCode.Delete,
+  Insert: monaco.KeyCode.Insert,
+  Home: monaco.KeyCode.Home,
+  End: monaco.KeyCode.End,
+  PageUp: monaco.KeyCode.PageUp,
+  PageDown: monaco.KeyCode.PageDown,
+  ArrowUp: monaco.KeyCode.UpArrow,
+  ArrowDown: monaco.KeyCode.DownArrow,
+  ArrowLeft: monaco.KeyCode.LeftArrow,
+  ArrowRight: monaco.KeyCode.RightArrow,
+};
+
+function keyCodeFor(key: string): monaco.KeyCode | null {
+  if (NAMED_KEYS[key] !== undefined) return NAMED_KEYS[key];
+  if (/^[A-Z]$/.test(key)) return monaco.KeyCode[`Key${key}` as 'KeyA'];
+  if (/^[0-9]$/.test(key)) return monaco.KeyCode[`Digit${key}` as 'Digit0'];
+  if (/^F([1-9]|1[0-9])$/.test(key)) return monaco.KeyCode[key as 'F1'];
+  return null;
+}
+
+/**
+ * An empty list for a chord Monaco has no key code for, and for an unbound
+ * shortcut. That leaves Monaco's *own* default for those keys in place inside
+ * the editor, which is the honest outcome -- the alternative is registering an
+ * action under a keybinding nothing can trigger, and the window-level listener
+ * still answers the chord everywhere else.
+ */
+export function keybindingFor(chord: string): number[] {
+  const parts = parseChord(chord);
+  if (!parts) return [];
+  const code = keyCodeFor(parts.key);
+  if (code === null) return [];
+
+  let binding = code;
+  if (parts.ctrl) binding |= monaco.KeyMod.CtrlCmd;
+  if (parts.shift) binding |= monaco.KeyMod.Shift;
+  if (parts.alt) binding |= monaco.KeyMod.Alt;
+  return [binding];
 }
 
 export { monaco };

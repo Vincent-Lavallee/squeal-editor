@@ -15,6 +15,7 @@ src/common/             shared infrastructure, no components
   bridge/bridge.ts      typed request/response over the extension channel
   icons/                icon bindings, workspace glyphs, the connection colour palette
   db/                   the UI's engine table
+  shortcuts.ts          every keyboard shortcut, and the one spelling of a chord
 src/store/              every slice; bridge-crossed state and the keys it is held under
   index.ts              configureStore + RootState/AppDispatch
   hooks.ts              useAppDispatch / useAppSelector
@@ -36,7 +37,8 @@ src/features/
                         WorkspacePicker, WorkspaceForm, PasswordPrompt,
                         AwsSignIn (AwsSignInButton + AwsSignInStatus),
                         useSavedConnections, useWorkspaces
-  titlebar/             Titlebar, Menu, AboutDialog, EnvironmentsDialog, useAbout, useWindowChrome
+  titlebar/             Titlebar, Menu, AboutDialog, EnvironmentsDialog, ShortcutsDialog,
+                        useAbout, useWindowChrome
   rail/                 ConnectionRail: the open connections, and the way between
   tabs/                 TabStrip: the strip, its menu, and its drag
   explorer/             Sidebar, DropTableConfirm, useExplorer
@@ -96,6 +98,8 @@ that lives apart from its values is two sources for one fact.
 | environments (the picklist, not any connection's own) | `environments` slice | crossed |
 | the release check, download `progress`, banner `dismissed` | `updater` slice | crossed |
 | every stored preference, and whether the launch read has landed | `settings` slice | crossed |
+| the keyboard shortcut overrides (one JSON value in `settings`) | `settings` slice | crossed |
+| which shortcut is being recorded, and the chord that was refused | `ShortcutsDialog` local state | never left |
 | `adding` (the connect screen, with connections open) | `App` local state | never left |
 | which connect screen is showing, and which workspace it is inside | `ConnectScreen` local state | never left |
 | `maximized`, the open menu | `titlebar` local state | never left |
@@ -621,11 +625,12 @@ Two smaller things, and each was found by looking:
   scrolls horizontally once there are more tabs than fit, and a control inside it
   would scroll away with them — so `Shell` puts the two in one flex row and the
   strip takes `flex: 1`.
-- **Ctrl+S is bound twice, like Ctrl+Enter, and the window half prevents the key
-  on *every* tab kind.** A grid tab has nothing to save, but letting the key
-  through there hands the webview its own "save this page" dialog over the app.
-  Monaco's own binding covers the case where the editor has focus, which is most
-  of them.
+- **Save is bound twice, like Run, and the window half prevents Ctrl+S on *every*
+  tab kind — and whatever Save is currently bound to.** A grid tab has nothing to
+  save, but letting the key through there hands the webview its own "save this
+  page" dialog over the app, and that dialog belongs to the key rather than to
+  this shortcut. Monaco's own binding covers the case where the editor has focus,
+  which is most of them.
 
 ## The database is the connection's, not any one tab's
 
@@ -1463,6 +1468,75 @@ be wrong:
   first cut submitted the form as well as testing, which on an *edit* saved the
   row and navigated away before the result could render. See `docs/decisions.md`.
 
+## Keyboard shortcuts
+
+Every shortcut the app owns is one row of `SHORTCUTS` in `common/shortcuts.ts`
+— an id, a label, a group and a default chord — and the Preferences menu's
+*Keyboard shortcuts* screen (`features/titlebar/ShortcutsDialog.tsx`) is that
+list with a way to change one. Adding a shortcut is a row plus a listener that
+reads its binding; nothing else has to be told.
+
+**A chord is a string**, `Ctrl+Shift+Enter`, because it is written to the
+settings store, which keeps text and no vocabulary of its own. `Ctrl` covers
+Command as well — the `e.ctrlKey || e.metaKey` reading this app already had
+everywhere and the one Monaco's `CtrlCmd` gives it — so one stored binding means
+the platform's own modifier on both platforms, and `formatChord` is the only
+thing that is per-platform, spelling it `Cmd`/`Option` on macOS.
+
+**`chordFromEvent` produces a chord and `matchesChord` is that same function
+compared against a stored one.** Recording a key and recognising it are
+therefore one rule, which is what makes it impossible to record a chord that
+then fails to match: the normalisations (a printable key uppercased so `b` and
+`Shift+B` name one key, the space bar named rather than left as the character it
+produces) are applied by the one function both sides go through. It also
+replaced a real bug — `e.key` is `Enter` with or without Shift, so a hand-rolled
+`e.key === 'Enter'` answered `Ctrl+Shift+Enter` as well as its own key.
+
+**The overrides are one settings value, `keybindings`, holding a JSON map.** Not
+a key per shortcut, and the reason is *reset*: `settings.set` writes and does not
+delete, so a key per shortcut could only reset by pinning today's default as a
+value — which would then quietly outlive a change to it. Removing an entry from
+a map is the reset, and an id nobody has overridden simply is not in it. The
+extension has never parsed it, the same opaque-text rule the session snapshot
+rides on. `useShortcuts()` (in `settingsSlice.ts`, beside `useBooleanSetting` —
+a hook per preference *shape*) is the whole surface: the resolved bindings, the
+raw overrides so a row can say it is no longer the default, and rebind/reset.
+
+**Every shortcut is bound twice, and both halves are needed.** Monaco wins inside
+its own DOM and the window listener never sees those keydowns, so `EditorPane`
+registers each as an `addAction` — and it registers them in *their own effect,
+keyed on the bindings*, because an action's keybinding cannot be rewritten: a
+rebind disposes the four and adds them again. The window listeners (`EditorPane`
+for run/save, `Shell` for the sidebar) are what answer when focus has left Monaco
+but is still in that pane. `keybindingFor` in `monaco.ts` is the conversion, and
+it returns an empty list for a chord Monaco has no key code for — which leaves
+Monaco's own default in place there rather than registering an action nothing can
+trigger.
+
+**Ctrl+S is prevented whatever Save is bound to.** The dialog the webview would
+otherwise open over the app is that key's doing, not this shortcut's, so
+rebinding or unbinding the shortcut must not hand it back.
+
+**Recording listens on the window in the capture phase.** That is the whole of
+how a key being *named* is not also obeyed: every listener in the app — Monaco's
+included, since its DOM is a descendant — sits below that one, and
+`stopPropagation` means none of them sees the keydown. A modifier held on its own
+is not a chord yet, so the recorder waits rather than committing the instant Ctrl
+goes down, and Escape cancels.
+
+**A chord another shortcut already answers is refused, never stolen**, with the
+clash named in the line that otherwise holds the instruction — the `<Field>` hint
+idiom, so the rows below it do not move — and recording stays open so the next
+press is the correction. Two shortcuts on one chord is a screen that cannot say
+which one wins.
+
+**The grid's keys are not in the registry, and that is the line.** Ctrl+C,
+Delete, Ctrl+Delete and the arrows in `ResultsTable` are the *control's* own keys
+— what a data grid does, the same way the arrows are navigation rather than a
+command — where these four are the app's own commands, each of which had to be
+bound at all because Monaco or the webview already claimed the key. See
+`docs/decisions.md`.
+
 ## The editor
 
 `features/editor` is Monaco. `monaco.ts` owns the two things that are not the
@@ -1517,18 +1591,17 @@ Six things there look incidental and are not:
   tab, so `automaticLayout`'s observer has not fired when the switch effect runs
   and the editor still believes it is 0 tall. A scroll offset restored against a
   0-height viewport is silently lost.
-- **Ctrl+Enter is rebound in the editor.** It is Monaco's own "insert line
-  below", and Monaco wins inside its own DOM — the `window` listener that serves
-  the rest of the app never sees the key. That listener is live on a grid tab
-  too — the pane is mounted, just hidden — so it refuses for itself.
-  Ctrl+Shift+Enter is the same story one key over: Monaco's "insert line above",
-  rebound to running the statement under the cursor. **The `window` half has to
-  read `shiftKey` for itself**, because `e.key` is `Enter` with or without it —
-  without that branch the whole-tab run answers Ctrl+Shift+Enter outside the
-  editor while Monaco runs one statement for the same keypress inside it. Ctrl+B
-  and Ctrl+S are the same arrangement; Ctrl+S has one extra reason to be bound at all,
-  which is that the webview otherwise treats it as *save this page* and opens the
-  OS file dialog over the app. With a split view there are two `window`
+- **Every shortcut is rebound in the editor.** Run's default is Monaco's own
+  "insert line below", Run-statement's its "insert line above", and Ctrl+B/Ctrl+S
+  are the webview's — and Monaco wins inside its own DOM, so the `window`
+  listener that serves the rest of the app never sees those keys. That listener
+  is live on a grid tab too — the pane is mounted, just hidden — so it refuses
+  for itself. The chords come from the shortcut registry rather than being
+  written here (see *Keyboard shortcuts*), which is also why the four
+  `addAction`s live in an effect of their own: a rebind disposes and re-registers
+  them. Ctrl+S has one extra reason to be prevented at all, whatever Save is
+  bound to, which is that the webview otherwise treats it as *save this page* and
+  opens the OS file dialog over the app. With a split view there are two `window`
   listeners alive, one per pane, and only the focused pane's may act on a
   keypress that landed outside either Monaco instance — see *Split the
   editor*'s `focused` prop.

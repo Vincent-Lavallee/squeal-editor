@@ -78,6 +78,7 @@ static void restyle(NSWindow *window) {
 
 - (void)exit:(id)sender { [SquealMenuHandler dispatchEvent:@"exit"]; }
 - (void)environments:(id)sender { [SquealMenuHandler dispatchEvent:@"environments"]; }
+- (void)shortcuts:(id)sender { [SquealMenuHandler dispatchEvent:@"shortcuts"]; }
 - (void)checkForUpdates:(id)sender { [SquealMenuHandler dispatchEvent:@"checkForUpdates"]; }
 - (void)about:(id)sender { [SquealMenuHandler dispatchEvent:@"about"]; }
 - (void)openDataDir:(id)sender { [SquealMenuHandler dispatchEvent:@"openDataDir"]; }
@@ -111,6 +112,15 @@ static void installMenuBar(void) {
   NSMenuItem *exitItem = [[NSMenuItem alloc] initWithTitle:@"Exit" action:@selector(exit:) keyEquivalent:@""];
   exitItem.target = handler;
   [fileMenu addItem:exitItem];
+
+  NSMenuItem *preferencesMenuItem = [NSMenuItem new];
+  [mainMenu addItem:preferencesMenuItem];
+  NSMenu *preferencesMenu = [[NSMenu alloc] initWithTitle:@"Preferences"];
+  preferencesMenuItem.submenu = preferencesMenu;
+
+  NSMenuItem *shortcutsItem = [[NSMenuItem alloc] initWithTitle:@"Keyboard shortcuts…" action:@selector(shortcuts:) keyEquivalent:@""];
+  shortcutsItem.target = handler;
+  [preferencesMenu addItem:shortcutsItem];
 
   NSMenuItem *aboutMenuItem = [NSMenuItem new];
   [mainMenu addItem:aboutMenuItem];

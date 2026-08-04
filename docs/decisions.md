@@ -4719,3 +4719,95 @@ does not — `e.key` is `Enter` whether Shift is down or not, so the existing
 whole-tab branch caught Ctrl+Shift+Enter for free. Left alone, the same keypress
 would have run one statement inside the editor and the entire tab from anywhere
 else in the pane. It reads `shiftKey` and chooses.
+
+---
+
+## Shortcuts are a registry with one spelling of a chord, and the grid's keys are not in it
+
+**Why.** The app's four shortcuts were four hardcoded conditions in three files —
+`e.key === 'Enter'` in a window listener, `KeyMod.CtrlCmd | KeyCode.Enter` in a
+Monaco `addAction`, and the same again for the sidebar and for save. Nothing
+enumerated them, so nothing could show them to the user, and remapping one meant
+finding every place it was written down.
+
+**A chord is a string, and one function both writes and reads it.**
+`chordFromEvent` turns a keypress into `Ctrl+Shift+Enter`; `matchesChord` is that
+same function compared against a stored value. Recording and recognising are one
+rule, so a chord the user pressed cannot fail to match the chord that press
+produced — the normalisations (uppercasing a printable key so `b` and `Shift+B`
+are one key, naming the space bar) apply to both sides because there is only one
+side. *Rejected: parsing the stored chord and comparing fields against the
+event.* Two readings of one format is exactly the pair that disagrees the first
+time either is edited, and this format already had a live example of that
+failure: `e.key` is `Enter` with or without Shift, so the whole-tab run answered
+Ctrl+Shift+Enter as well as its own key until it was taught to read `shiftKey`
+by hand. Exact matching deletes that rule rather than fixing it.
+
+**`Ctrl` means Command too, in the stored value.** Not a per-platform chord: the
+app has read `e.ctrlKey || e.metaKey` everywhere since the first shortcut, Monaco
+spells the same idea `CtrlCmd`, and a binding that travels between machines is
+worth more than one that names the exact physical key. `formatChord` is where it
+becomes `Cmd`/`Option` for a macOS reader, which is the only per-platform thing
+in the whole feature.
+
+**One settings value, `keybindings`, holding a JSON map of the overrides.**
+*Rejected: a key per shortcut* (`shortcut.run`, …), which reads like the
+key/value store's natural shape and cannot express a **reset**: `settings.set`
+writes and does not delete, so resetting would mean writing today's default in as
+a value — a stored copy that then silently outlives any change to the default.
+Removing an entry from a map is the reset, and an id nobody has touched is simply
+absent, which is the same "unwritten means the reader's own default" rule the
+settings table already runs on. The extension still parses nothing; this is the
+session snapshot's opaque-string arrangement applied to a second thing. *Also
+rejected: adding `settings.unset` to the protocol* to make the key-per-shortcut
+form work — a new command in the shared contract to buy back a property the map
+has for free.
+
+**A shortcut is bound twice, and the Monaco half needs its own effect.** Monaco
+wins inside its own DOM and the window listener never sees those keydowns, which
+is why both halves existed before this and still do. What changed is that an
+action's keybinding cannot be rewritten, so the four `addAction`s moved out of
+the mount-only layout effect into one keyed on the bindings, disposing and
+re-adding on a rebind. Its cleanup checks `editor.current` first: on unmount the
+layout effect's cleanup has already run and nulled it, and disposing an action
+belonging to an editor that is gone is not a no-op.
+
+**Ctrl+S is prevented whatever Save is bound to.** The "save this page" dialog
+the webview would otherwise open over the app belongs to that key, not to this
+shortcut, so unbinding or rebinding the shortcut must not hand it back. It is the
+one place the listener still names a literal key.
+
+**Recording listens on the window in the capture phase.** A screen where a key is
+being *named* must not also obey it, and capture is the whole of how: every
+listener in the app, Monaco's included, is on a descendant or on the window's
+bubble phase, so one `stopPropagation` up there means none of them sees the
+keydown. The UI test dispatches its chords at an element rather than at `window`
+for the same reason — an event targeting `window` reaches both phases there and
+would be answered twice, proving nothing about the ordering.
+
+**A clash is refused, not stolen.** VS Code allows two commands on one chord and
+resolves it with `when` clauses; this app has no such vocabulary, so two
+shortcuts on one chord would be a screen that cannot say which one wins.
+Recording stays open with the owner named, so the next press is the correction
+rather than a second trip through the menu. The message lands in the line that
+otherwise holds the instruction — the `<Field>` hint idiom — so a refusal never
+moves the rows below it.
+
+**The grid's keys are deliberately out of the registry.** Ctrl+C, Delete,
+Ctrl+Delete and the arrow keys in `ResultsTable` stayed hardcoded. The line is
+not "which keys are important": these four are the *app's own commands*, each of
+which had to be bound at all because Monaco or the webview already claimed the
+key, while the grid's are what a data grid **is** — the arrows are navigation
+rather than a command, and copy-with-Ctrl+C is the platform. Drawing it there
+also kept a regression out: Delete-or-Backspace deletes a row, and a registry
+where a command has exactly one chord would have had to drop one of them or grow
+a list-of-chords editor for a case nobody asked to rebind. One chord per command
+is the simpler contract, and it is honest as long as the multi-chord cases stay
+outside it.
+
+**The Preferences menu ships with one item.** The backlog item named two —
+Settings and Keyboard shortcuts — and Settings is a shell screen with
+placeholders for preferences that do not exist yet (Light theme, French/English
+UI each bring their own). An empty screen offering nothing is worse than a menu
+that does not claim to have one, so it arrives with whichever of those lands
+first.

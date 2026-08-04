@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useSession } from '../../store/sessionSlice.ts';
+import { useShortcuts } from '../../store/settingsSlice.ts';
 import type { Tab } from '../../store/tabsSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import { statementAt } from '../../common/db/splitStatements.ts';
+import { chordFromEvent, formatChord } from '../../common/shortcuts.ts';
 import * as t from '../../common/tokens';
 import { useEditor } from './useEditor.ts';
-import { defineTheme, monaco, px, THEME, token } from './monaco.ts';
+import { defineTheme, keybindingFor, monaco, px, THEME, token } from './monaco.ts';
 import { useSqlPrefetch } from './useSqlCompletion.ts';
 
 const toolbar: React.CSSProperties = {
@@ -100,6 +102,7 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
   // model map, and a tab that really closed leaves both.
   const { connectionTabs, database } = useTabs();
   const { sqlByTab, setSql, peekSql } = useEditor();
+  const { bindings } = useShortcuts();
 
   const activeTabId = tab?.id ?? null;
   const isEditorTab = tab?.kind === 'editor';
@@ -261,55 +264,7 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
       if (id) setSql(id, instance.getValue());
     });
 
-    /*
-     * The editor's own keybindings, and they are `addAction` rather than
-     * `addCommand` for one reason that only shows up once a second editor
-     * exists: **`addCommand` registers its keybinding with no `when` clause at
-     * all**, so it is global to the window rather than scoped to the editor it
-     * was called on. With two panes both binding Ctrl+Enter that way, one
-     * registration shadows the other and every run went to the same pane --
-     * whichever mounted last -- no matter which editor had the cursor.
-     * `addAction` scopes its keybinding with `editorId == <this editor>`
-     * (verified in Monaco's `standaloneCodeEditor.js`), so each pane's binding
-     * fires only when that pane is the focused one.
-     *
-     * Ctrl+Enter is already Monaco's "insert line below", Ctrl+Shift+Enter its
-     * "insert line above", and Ctrl+B/Ctrl+S are the webview's; rebinding them
-     * here is what keeps the app's shortcuts working where they are used most,
-     * since Monaco wins inside its own DOM and the window listener never sees
-     * these keydowns.
-     */
-    instance.addAction({
-      id: 'squeal.run',
-      label: 'Run query',
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
-      run: () => latest.current.onRun(sqlToRun()),
-    });
-
-    instance.addAction({
-      id: 'squeal.runStatement',
-      label: 'Run statement under cursor',
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter],
-      run: () => latest.current.onRun(statementToRun()),
-    });
-
     instance.onDidChangeCursorSelection((e) => setHasSelection(!e.selection.isEmpty()));
-
-    instance.addAction({
-      id: 'squeal.toggleSidebar',
-      label: 'Toggle sidebar',
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyB],
-      run: () => latest.current.onToggleSidebar?.(),
-    });
-
-    // Ctrl+S has one extra reason to be bound at all: unhandled, the webview
-    // treats it as "save this page" and opens the OS file dialog over the app.
-    instance.addAction({
-      id: 'squeal.saveQuery',
-      label: 'Save query',
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-      run: () => latest.current.onSaveQuery?.(),
-    });
 
     editor.current = instance;
     if (exposeGlobal) window.squealEditor = instance;
@@ -327,6 +282,71 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
     // Mount only. The models flow in through the effect below instead, because
     // re-creating the editor on every keystroke is not a way to keep it in sync.
   }, [setSql, sqlToRun, statementToRun, exposeGlobal]);
+
+  /*
+   * The editor's own keybindings.
+   *
+   * **`addAction`, not `addCommand`**, for a reason that only shows up once a
+   * second editor exists: `addCommand` registers its keybinding with no `when`
+   * clause at all, so it is global to the window rather than scoped to the
+   * editor it was called on. With two panes both binding Ctrl+Enter that way,
+   * one registration shadows the other and every run went to the same pane --
+   * whichever mounted last -- no matter which editor had the cursor.
+   * `addAction` scopes its keybinding with `editorId == <this editor>`
+   * (verified in Monaco's `standaloneCodeEditor.js`), so each pane's binding
+   * fires only when that pane is the focused one.
+   *
+   * They are bound at all because Monaco already claims these keys: Ctrl+Enter
+   * is its "insert line below", Ctrl+Shift+Enter its "insert line above", and
+   * Ctrl+B/Ctrl+S are the webview's. Monaco wins inside its own DOM and the
+   * window listener below never sees these keydowns, so what is registered here
+   * is what the shortcut means where it is used most.
+   *
+   * **Its own effect, keyed on the bindings**, because they are a preference now
+   * and change while this is mounted -- an action's keybinding cannot be
+   * rewritten, so the four are disposed and registered again. A plain effect
+   * runs after the layout effect above on mount, so the instance is always
+   * there; on unmount that layout effect's cleanup has already run and nulled
+   * `editor.current`, which is what the guard below reads -- disposing an action
+   * belonging to an editor that is gone is not a no-op.
+   */
+  useEffect(() => {
+    const instance = editor.current;
+    if (!instance) return;
+
+    const actions = [
+      instance.addAction({
+        id: 'squeal.run',
+        label: 'Run query',
+        keybindings: keybindingFor(bindings.run),
+        run: () => latest.current.onRun(sqlToRun()),
+      }),
+      instance.addAction({
+        id: 'squeal.runStatement',
+        label: 'Run statement under cursor',
+        keybindings: keybindingFor(bindings.runStatement),
+        run: () => latest.current.onRun(statementToRun()),
+      }),
+      instance.addAction({
+        id: 'squeal.toggleSidebar',
+        label: 'Toggle sidebar',
+        keybindings: keybindingFor(bindings.toggleSidebar),
+        run: () => latest.current.onToggleSidebar?.(),
+      }),
+      // Save has one extra reason to be bound at all: unhandled, the webview
+      // treats Ctrl+S as "save this page" and opens the OS file dialog over the
+      // app -- which is why the window listener below prevents that key whatever
+      // this shortcut has been rebound to.
+      instance.addAction({
+        id: 'squeal.saveQuery',
+        label: 'Save query',
+        keybindings: keybindingFor(bindings.saveQuery),
+        run: () => latest.current.onSaveQuery?.(),
+      }),
+    ];
+
+    return () => { if (editor.current) actions.forEach((action) => action.dispose()); };
+  }, [bindings, sqlToRun, statementToRun]);
 
   /*
    * Show the active tab's model.
@@ -432,49 +452,49 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
     }
   }, [connectionTabs]);
 
-  // Ctrl/Cmd+Enter runs from anywhere in the window, matching every other SQL
-  // tool. Inside the editor, Monaco's own binding above handles it and stops
+  // Run and Save answer from anywhere in the window, matching every other SQL
+  // tool. Inside the editor, Monaco's own bindings above handle them and stop
   // the event here -- this covers the rest of the window.
   //
   // With a split view there are two of these listeners alive at once, one per
   // pane, and only one pane's Run/Save should answer a keypress that landed
-  // outside either Monaco instance -- `focused` is that gate. `preventDefault`
-  // still runs regardless: the OS save dialog Ctrl+S would otherwise summon is
-  // a webview-wide problem, not a per-pane one, so both listeners stopping it
-  // is correct, even harmless twice over.
+  // outside either Monaco instance -- `focused` is that gate. The Ctrl+S
+  // `preventDefault` runs regardless: the OS save dialog is a webview-wide
+  // problem, not a per-pane one, so both listeners stopping it is correct,
+  // even harmless twice over.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
-      const chord = e.ctrlKey || e.metaKey;
-      if (chord && e.key === 'Enter') {
-        e.preventDefault();
-        if (!focused) return;
-        // A grid tab has no query to run. This pane is still mounted underneath
-        // it -- there is one Monaco and every tab's model hangs off it -- so the
-        // listener is live and has to refuse for itself.
-        if (!isEditorTab) return;
-        // Shift is read here rather than left to the `Enter` branch it would
-        // otherwise fall into: `e.key` is `Enter` with or without it, so the
-        // whole-tab run would answer Ctrl+Shift+Enter out here while Monaco
-        // ran one statement for the very same keypress inside the editor.
-        //
-        // Either way the cursor and the selection outlive the focus leaving
-        // the editor -- Monaco still draws both -- so running from out here
-        // has to mean what running from inside it does.
-        onRun(e.shiftKey ? statementToRun() : sqlToRun());
-      }
-      // Prevented whichever tab is in front, unlike Run: a grid tab has nothing
-      // to save, but letting the key through there would still hand the webview
-      // its own "save this page" dialog.
-      if (chord && (e.key === 's' || e.key === 'S')) {
-        e.preventDefault();
-        if (!focused) return;
-        if (!isEditorTab) return;
-        onSaveQuery?.();
-      }
+      // Prevented whatever Save is currently bound to, and whichever tab is in
+      // front: the dialog the webview would otherwise open over the app is
+      // Ctrl+S's doing, not this shortcut's, so unbinding or rebinding the
+      // shortcut must not hand it back.
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) e.preventDefault();
+
+      const chord = chordFromEvent(e);
+      if (chord === null) return;
+
+      const saves = chord === bindings.saveQuery;
+      const runsStatement = chord === bindings.runStatement;
+      const runsTab = chord === bindings.run;
+      if (!saves && !runsStatement && !runsTab) return;
+
+      e.preventDefault();
+      if (!focused) return;
+      // A grid tab has neither a query to run nor one to save. This pane is
+      // still mounted underneath it -- there is one Monaco per pane and every
+      // tab's model hangs off it -- so the listener is live and has to refuse
+      // for itself.
+      if (!isEditorTab) return;
+
+      // The cursor and the selection outlive focus leaving the editor -- Monaco
+      // still draws both -- so running from out here means what running from
+      // inside it does.
+      if (saves) onSaveQuery?.();
+      else onRun(runsStatement ? statementToRun() : sqlToRun());
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onRun, onSaveQuery, isEditorTab, sqlToRun, statementToRun, focused]);
+  }, [onRun, onSaveQuery, isEditorTab, sqlToRun, statementToRun, focused, bindings]);
 
   return (
     <>
@@ -487,7 +507,7 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
           <Button style={barButton} onClick={format}>
             Format
           </Button>
-          <Button style={barButton} data-testid="run-btn" variant="primary" onClick={() => onRun(sqlToRun())} disabled={running}>
+          <Button style={barButton} data-testid="run-btn" variant="primary" title={formatChord(bindings.run)} onClick={() => onRun(sqlToRun())} disabled={running}>
             {running ? 'Running…' : hasSelection ? 'Run selection' : 'Run'}
           </Button>
         </div>

@@ -2464,6 +2464,77 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(200);
       expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="modal"]').length`)).toBe(0);
     });
+
+    /*
+     * The whole path, not the screen: what a rebind is worth is the *new* key
+     * running the query, which nothing but the running app can say.
+     *
+     * Every chord here is dispatched at an element and left to bubble, never
+     * fired straight at `window`. The recorder listens on the window in the
+     * capture phase precisely so a key being *named* is not also obeyed, and an
+     * event whose target is `window` reaches both phases there -- so it would
+     * be answered twice and prove nothing about the ordering that matters.
+     */
+    test('Preferences rebinds Run, and the new key is what runs the query', async () => {
+      const chordOf = (id: string) => `document.querySelector('[data-shortcut="${id}"]').textContent`;
+      const hint = `document.querySelector('[data-testid="shortcut-hint"]').textContent`;
+      const modalButton = (label: string) =>
+        `[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === ${JSON.stringify(label)}).click(); true;`;
+      const recordKey = (init: string) =>
+        `document.querySelector('[data-testid="modal"]').dispatchEvent(new KeyboardEvent('keydown', { ${init}, bubbles: true })); true;`;
+
+      const openShortcuts = async (): Promise<void> => {
+        await app.evaluate(openMenu('Preferences'));
+        await Bun.sleep(200);
+        await app.evaluate(clickMenuItem('Keyboard shortcuts…'));
+        await app.waitFor(`document.querySelector('[data-shortcut="run"]') ? true : null`);
+      };
+
+      await app.evaluate(openMenu('Preferences'));
+      await Bun.sleep(200);
+      expect(await app.evaluate<string[]>(openMenuItems)).toEqual(['Keyboard shortcuts…']);
+
+      await app.evaluate(clickMenuItem('Keyboard shortcuts…'));
+      await app.waitFor(`document.querySelector('[data-shortcut="run"]') ? true : null`);
+      expect(await app.evaluate<string>(chordOf('run'))).toBe('Ctrl+Enter');
+
+      // A chord another shortcut already answers is refused rather than stolen,
+      // and recording stays open so the next press is the correction.
+      await app.evaluate(`document.querySelector('[data-shortcut="run"]').click(); true;`);
+      await Bun.sleep(150);
+      await app.evaluate(recordKey(`key: 'b', ctrlKey: true`));
+      await Bun.sleep(250);
+      expect(await app.evaluate<string>(hint)).toBe('Ctrl+B is already Toggle sidebar.');
+      expect(await app.evaluate<string>(chordOf('run'))).toBe('Press a key…');
+
+      await app.evaluate(recordKey(`key: 'F8'`));
+      await app.waitFor(`document.querySelector('[data-shortcut="run"]').textContent === 'F8' ? true : null`);
+
+      await app.evaluate(modalButton('Close'));
+      await Bun.sleep(200);
+
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      const opened = await app.evaluate<string>(activeTabLabel);
+      await app.evaluate(setEditorText('select 7 as rebound'));
+      await Bun.sleep(400);
+
+      await app.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F8', bubbles: true })); true;`);
+      await app.waitFor(
+        `document.querySelector('.grid thead [data-testid="grid-col-name"]')?.textContent === 'rebound' ? true : null`
+      );
+
+      // Put it back, or every test after this one is running under a keyboard
+      // this one changed.
+      await openShortcuts();
+      await app.evaluate(modalButton('Reset all'));
+      await app.waitFor(`document.querySelector('[data-shortcut="run"]').textContent === 'Ctrl+Enter' ? true : null`);
+      await app.evaluate(modalButton('Close'));
+      await Bun.sleep(200);
+
+      await app.evaluate(closeTab(opened));
+      await Bun.sleep(300);
+    });
   });
 
   // The point of the feature: reach yesterday's database without retyping it.

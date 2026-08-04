@@ -95,7 +95,12 @@ Things that do not exist yet.
 
 - **GitHub sync** — Authenticate via browser-based OAuth (no hosted backend) and sync workspaces, connections, and user settings to a private gist automatically on change. Connection passwords are never included in the synced data.
 
-- **Preferences menu** — Add a Preferences menu next to About in the title bar with two items: Settings (a shell screen with placeholders that Light theme and French/English UI populate later) and Keyboard shortcuts (a visual editor for remapping keys).
+- **Preferences: Settings screen** — The Preferences menu ships with Keyboard
+  shortcuts and nothing else, because the Settings item it was meant to sit beside
+  would be a screen of placeholders: theme and language are the preferences it
+  exists to hold, and neither exists yet. It arrives with whichever of Light theme
+  or French/English UI lands first, as that feature's own screen rather than as an
+  empty shell waiting for one.
 
 - **Command palette** — Every action is reachable exactly one way: a menu, a
   button, or a keybinding you already have to know. Put the common ones behind a
