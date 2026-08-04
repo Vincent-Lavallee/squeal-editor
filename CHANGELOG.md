@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.13.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.12.1...v0.13.0) (2026-08-04)
+
+
+### Features
+
+* Keep scroll position when switching tabs ([56dc3ef](https://github.com/Vincent-Lavallee/squeal-editor/commit/56dc3efa14569bc55ae3c219060507ac69417f26))
+* Multi tab support ([501c29c](https://github.com/Vincent-Lavallee/squeal-editor/commit/501c29c12d866afd4a50b950fb878c0d1fa47a02))
+* Run only selection ([287df03](https://github.com/Vincent-Lavallee/squeal-editor/commit/287df03e1101dcb4611aa76d3013582d36cd2315))
+* Shortcut editor ([0b326b6](https://github.com/Vincent-Lavallee/squeal-editor/commit/0b326b67feb28cfd5d11bfe9cc4150de06e1ad44))
+* Tab shortcuts ([af6f4db](https://github.com/Vincent-Lavallee/squeal-editor/commit/af6f4dbbe6c1f897e1cd836e07f64cd1009344f5))
+
 ## [0.12.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.12.0...v0.12.1) (2026-07-31)
 
 
