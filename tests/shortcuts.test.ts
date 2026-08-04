@@ -35,6 +35,14 @@ describe('the chord a keypress spells', () => {
     expect(chordFromEvent(press(' ', { ctrlKey: true }))).toBe('Ctrl+Space');
   });
 
+  test('a named key keeps the name the DOM gives it', () => {
+    expect(chordFromEvent(press('PageDown', { ctrlKey: true }))).toBe('Ctrl+PageDown');
+  });
+
+  test('punctuation is the character, not the key that produced it', () => {
+    expect(chordFromEvent(press('\\', { ctrlKey: true }))).toBe('Ctrl+\\');
+  });
+
   test('a modifier held on its own is not a chord yet', () => {
     for (const key of ['Control', 'Shift', 'Alt', 'Meta']) {
       expect(chordFromEvent(press(key, { ctrlKey: true }))).toBeNull();
@@ -68,6 +76,18 @@ describe('reading a chord back', () => {
 
   test('a key that is itself a plus survives the split', () => {
     expect(parseChord('Ctrl++')).toEqual({ ctrl: true, shift: false, alt: false, key: '+' });
+  });
+
+  // A default nothing can read back is one the editor cannot spell and Monaco
+  // cannot be given, and it would ship looking perfectly reasonable in the list.
+  test('every shipped default reads back as the chord it is', () => {
+    for (const shortcut of SHORTCUTS) {
+      const parts = parseChord(shortcut.defaultChord);
+      expect(parts).not.toBeNull();
+      const rebuilt = [parts!.ctrl && 'Ctrl', parts!.shift && 'Shift', parts!.alt && 'Alt', parts!.key]
+        .filter(Boolean).join('+');
+      expect(rebuilt).toBe(shortcut.defaultChord);
+    }
   });
 });
 

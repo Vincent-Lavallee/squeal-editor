@@ -169,12 +169,14 @@ export function defineTheme(): void {
 /*
  * A chord as Monaco's own keybinding, for `addAction`.
  *
- * The DOM and Monaco disagree about what the arrow keys are called, and about
- * nothing else that matters here -- so this is a map of the exceptions plus a
- * rule for the letters, digits and function keys, rather than a table of every
- * key twice.
+ * The letters, digits and function keys follow a rule, so this is only what
+ * does not: the arrow keys, which the DOM and Monaco name differently, and the
+ * punctuation, which the DOM names by the character it produces and Monaco by
+ * the key that produces it. Punctuation matters more than it looks -- Monaco
+ * binds Ctrl+/ to toggle-line-comment, so a shortcut rebound there and *not*
+ * registered would comment the line instead.
  */
-const NAMED_KEYS: Record<string, monaco.KeyCode> = {
+const KEY_CODES: Record<string, monaco.KeyCode> = {
   Enter: monaco.KeyCode.Enter,
   Space: monaco.KeyCode.Space,
   Tab: monaco.KeyCode.Tab,
@@ -190,10 +192,21 @@ const NAMED_KEYS: Record<string, monaco.KeyCode> = {
   ArrowDown: monaco.KeyCode.DownArrow,
   ArrowLeft: monaco.KeyCode.LeftArrow,
   ArrowRight: monaco.KeyCode.RightArrow,
+  ';': monaco.KeyCode.Semicolon,
+  '=': monaco.KeyCode.Equal,
+  ',': monaco.KeyCode.Comma,
+  '-': monaco.KeyCode.Minus,
+  '.': monaco.KeyCode.Period,
+  '/': monaco.KeyCode.Slash,
+  '`': monaco.KeyCode.Backquote,
+  '[': monaco.KeyCode.BracketLeft,
+  '\\': monaco.KeyCode.Backslash,
+  ']': monaco.KeyCode.BracketRight,
+  "'": monaco.KeyCode.Quote,
 };
 
 function keyCodeFor(key: string): monaco.KeyCode | null {
-  if (NAMED_KEYS[key] !== undefined) return NAMED_KEYS[key];
+  if (KEY_CODES[key] !== undefined) return KEY_CODES[key];
   if (/^[A-Z]$/.test(key)) return monaco.KeyCode[`Key${key}` as 'KeyA'];
   if (/^[0-9]$/.test(key)) return monaco.KeyCode[`Digit${key}` as 'Digit0'];
   if (/^F([1-9]|1[0-9])$/.test(key)) return monaco.KeyCode[key as 'F1'];

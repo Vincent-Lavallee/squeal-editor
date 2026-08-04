@@ -54,7 +54,7 @@ discovers every `*.test.ts` — the script name cannot override it. The UI suite
 would therefore try to launch a window on a bare `bun test`, so it opts out
 behind `SQUEAL_UI=1` (set by `test:ui`, along with a longer timeout, because
 launching the app blows past Bun's 5s default hook timeout). Expect
-`391 pass / 154 skip` from a bare run, and `129 pass` in ~340s from `test:ui`.
+`394 pass / 156 skip` from a bare run, and `130 pass` in ~345s from `test:ui`.
 
 **`test:ui` builds the extension too, and driving the app by hand must as well.**
 `build:ext` compiles `extensions/db/squeal-db-ext.exe`, which is what
@@ -232,12 +232,16 @@ yet. The failure it guards against is a shortcut that records one chord and then
 answers a different one — which no server can be asked about, because a key that
 does nothing never reaches one.
 
-Two of its cases are the bugs, not the happy path. **Modifiers match exactly**,
+Three of its cases are the bugs, not the happy path. **Modifiers match exactly**,
 because `e.key` is `Enter` with or without Shift and a hand-rolled `Ctrl+Enter`
-check answered `Ctrl+Shift+Enter` for free. And **unreadable stored text and
-unknown ids are dropped rather than thrown over**, because that value comes off
-disk and may have been written by a newer version — a preference must not be able
-to blank the screen.
+check answered `Ctrl+Shift+Enter` for free. **Unreadable stored text and unknown
+ids are dropped rather than thrown over**, because that value comes off disk and
+may have been written by a newer version — a preference must not be able to blank
+the screen. And **every shipped default round-trips through `parseChord`**: a
+default nothing can read back is one the screen cannot spell and Monaco cannot be
+given, and it would ship looking perfectly reasonable in the list. Two more hold
+the registry itself honest — no two shortcuts on one chord, and a shortcut is not
+a clash with itself.
 
 It takes a `KeyPress` structural type rather than a real `KeyboardEvent`, which
 is what lets a case be a literal in a suite with no DOM. A `KeyboardEvent` is
@@ -246,7 +250,17 @@ assignable to it, so the app passes the real thing.
 The screen those functions sit behind is asserted in `ui.test.ts`, under
 *titlebar*: it rebinds Run, refuses a chord the sidebar already owns, presses the
 new key and requires the query to have run. It resets before it leaves, or every
-test after it is running under a keyboard it changed.
+test after it is running under a keyboard it changed. The tab shortcuts have
+their own test in the postgres block, starting from the empty state the *Close
+All* test leaves — and **it counts `.editor` divs to see the split**, because
+there is no split flag to read and the tab labels span both strips, so the tab
+count cannot tell a docked tab from a second tab.
+
+**Both dispatch their chords at an element, never at `window`.** These listeners
+are on the window, and an event fired straight at it skips the propagation that
+decides whether Monaco or the recorder gets there first — so it would be answered
+by everything at once and prove nothing about the ordering that is the whole
+design.
 
 ## `tests/saved.test.ts`
 

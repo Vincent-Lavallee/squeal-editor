@@ -6,7 +6,7 @@ import type { Tab } from '../../store/tabsSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import { statementAt } from '../../common/db/splitStatements.ts';
-import { chordFromEvent, formatChord } from '../../common/shortcuts.ts';
+import { chordFromEvent, formatChord, SHORTCUTS, type ShortcutId } from '../../common/shortcuts.ts';
 import * as t from '../../common/tokens';
 import { useEditor } from './useEditor.ts';
 import { defineTheme, keybindingFor, monaco, px, THEME, token } from './monaco.ts';
@@ -49,8 +49,16 @@ interface Props {
    */
   onRun: (sql: string) => void;
   running: boolean;
-  /** Toggling the sidebar is a shell concern; Monaco would otherwise swallow Ctrl+B. */
-  onToggleSidebar?: () => void;
+  /**
+   * The shortcuts the *shell* owns — the sidebar, the tabs — keyed by id.
+   *
+   * They are handed down rather than left to `Shell`'s own window listener
+   * because Monaco wins inside its own DOM: a chord it has a binding for never
+   * reaches the window at all, and one it has no binding for still lands on
+   * whatever the webview does with it. Registering them here is what makes them
+   * mean the same thing with the cursor in the editor as anywhere else.
+   */
+  commands?: Partial<Record<ShortcutId, () => void>>;
   /**
    * Ctrl+S. Saving spans the tabs and the saved-queries slice, so the shell owns
    * what it does and this only says when. It takes no text: the handler reads the
@@ -91,7 +99,7 @@ declare global {
   }
 }
 
-export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSaveQuery, focused, exposeGlobal = true }: Props) {
+export default function EditorPane({ tab, onRun, running, commands, onSaveQuery, focused, exposeGlobal = true }: Props) {
   const { dialect } = useSession();
   // `connectionTabs` -- every tab of the connection, **both panes** -- is only
   // used below to garbage-collect models of tabs that are gone entirely. It is
@@ -139,8 +147,8 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
    * has to run whatever the *current* handler, text and tab are -- capturing
    * them would pin it to the first render and run the empty query forever.
    */
-  const latest = useRef({ sql, onRun, dialect, activeTabId, peekSql, onToggleSidebar, onSaveQuery });
-  latest.current = { sql, onRun, dialect, activeTabId, peekSql, onToggleSidebar, onSaveQuery };
+  const latest = useRef({ sql, onRun, dialect, activeTabId, peekSql, commands, onSaveQuery });
+  latest.current = { sql, onRun, dialect, activeTabId, peekSql, commands, onSaveQuery };
 
   /*
    * What every way of running runs: the selection when there is one, the whole
@@ -185,6 +193,23 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
     if (!model || !position) return '';
     return statementAt(model.getValue(), latest.current.dialect, model.getOffsetAt(position)) ?? '';
   }, []);
+
+  /*
+   * What a shortcut does, whichever way it arrived. The three the editor owns
+   * are answered here because only this pane can say what its own text and
+   * cursor are; everything else is the shell's, and is passed through.
+   *
+   * Read off `latest.current` rather than closed over, so this stays stable
+   * while the handlers behind it change every render -- the Monaco actions
+   * below are registered against it and must not be re-registered per keystroke.
+   */
+  const runShortcut = useCallback((id: ShortcutId): void => {
+    const { onRun, onSaveQuery, commands } = latest.current;
+    if (id === 'run') { onRun(sqlToRun()); return; }
+    if (id === 'runStatement') { onRun(statementToRun()); return; }
+    if (id === 'saveQuery') { onSaveQuery?.(); return; }
+    commands?.[id]?.();
+  }, [sqlToRun, statementToRun]);
 
   // The button is the same action the shortcut and the context menu run, not a
   // second path into the formatter: reach for Monaco's registered action rather
@@ -296,17 +321,24 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
    * (verified in Monaco's `standaloneCodeEditor.js`), so each pane's binding
    * fires only when that pane is the focused one.
    *
-   * They are bound at all because Monaco already claims these keys: Ctrl+Enter
-   * is its "insert line below", Ctrl+Shift+Enter its "insert line above", and
-   * Ctrl+B/Ctrl+S are the webview's. Monaco wins inside its own DOM and the
-   * window listener below never sees these keydowns, so what is registered here
-   * is what the shortcut means where it is used most.
+   * They are bound at all because Monaco or the webview already claims these
+   * keys: Run's default is Monaco's "insert line below", Run-statement's its
+   * "insert line above", and Ctrl+S is the webview's "save this page". Monaco
+   * wins inside its own DOM and the window listener below never sees those
+   * keydowns, so what is registered here is what a shortcut means where it is
+   * used most.
+   *
+   * **Every shortcut in the registry, not a hand-written list.** A row that only
+   * had a `window` listener would be a shortcut that stops working the moment
+   * the cursor is in the editor -- an outcome nobody adding one would think to
+   * check for. Registering the lot means adding a shortcut is a registry row and
+   * a handler, and nothing here.
    *
    * **Its own effect, keyed on the bindings**, because they are a preference now
    * and change while this is mounted -- an action's keybinding cannot be
-   * rewritten, so the four are disposed and registered again. A plain effect
-   * runs after the layout effect above on mount, so the instance is always
-   * there; on unmount that layout effect's cleanup has already run and nulled
+   * rewritten, so they are disposed and registered again. A plain effect runs
+   * after the layout effect above on mount, so the instance is always there; on
+   * unmount that layout effect's cleanup has already run and nulled
    * `editor.current`, which is what the guard below reads -- disposing an action
    * belonging to an editor that is gone is not a no-op.
    */
@@ -314,39 +346,15 @@ export default function EditorPane({ tab, onRun, running, onToggleSidebar, onSav
     const instance = editor.current;
     if (!instance) return;
 
-    const actions = [
-      instance.addAction({
-        id: 'squeal.run',
-        label: 'Run query',
-        keybindings: keybindingFor(bindings.run),
-        run: () => latest.current.onRun(sqlToRun()),
-      }),
-      instance.addAction({
-        id: 'squeal.runStatement',
-        label: 'Run statement under cursor',
-        keybindings: keybindingFor(bindings.runStatement),
-        run: () => latest.current.onRun(statementToRun()),
-      }),
-      instance.addAction({
-        id: 'squeal.toggleSidebar',
-        label: 'Toggle sidebar',
-        keybindings: keybindingFor(bindings.toggleSidebar),
-        run: () => latest.current.onToggleSidebar?.(),
-      }),
-      // Save has one extra reason to be bound at all: unhandled, the webview
-      // treats Ctrl+S as "save this page" and opens the OS file dialog over the
-      // app -- which is why the window listener below prevents that key whatever
-      // this shortcut has been rebound to.
-      instance.addAction({
-        id: 'squeal.saveQuery',
-        label: 'Save query',
-        keybindings: keybindingFor(bindings.saveQuery),
-        run: () => latest.current.onSaveQuery?.(),
-      }),
-    ];
+    const actions = SHORTCUTS.map((shortcut) => instance.addAction({
+      id: `squeal.${shortcut.id}`,
+      label: shortcut.label,
+      keybindings: keybindingFor(bindings[shortcut.id]),
+      run: () => runShortcut(shortcut.id),
+    }));
 
     return () => { if (editor.current) actions.forEach((action) => action.dispose()); };
-  }, [bindings, sqlToRun, statementToRun]);
+  }, [bindings, runShortcut]);
 
   /*
    * Show the active tab's model.

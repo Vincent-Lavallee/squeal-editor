@@ -21,6 +21,13 @@ export const SHORTCUTS = [
   { id: 'run', group: 'Editor', label: 'Run', defaultChord: 'Ctrl+Enter' },
   { id: 'runStatement', group: 'Editor', label: 'Run statement under cursor', defaultChord: 'Ctrl+Shift+Enter' },
   { id: 'saveQuery', group: 'Editor', label: 'Save query', defaultChord: 'Ctrl+S' },
+  { id: 'newTab', group: 'Tabs', label: 'New tab', defaultChord: 'Ctrl+T' },
+  { id: 'nextTab', group: 'Tabs', label: 'Next tab', defaultChord: 'Ctrl+PageDown' },
+  { id: 'previousTab', group: 'Tabs', label: 'Previous tab', defaultChord: 'Ctrl+PageUp' },
+  // "Split" is what this looks like, never what it is called: the app has no
+  // split verb -- a split is a tab being in the pane that had none, which is
+  // exactly what moving one there does. See `docs/frontend.md`.
+  { id: 'dockTab', group: 'Tabs', label: 'Move tab to the other pane', defaultChord: 'Ctrl+\\' },
   { id: 'toggleSidebar', group: 'View', label: 'Toggle sidebar', defaultChord: 'Ctrl+B' },
 ] as const;
 

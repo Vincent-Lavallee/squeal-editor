@@ -335,8 +335,10 @@ whenever there is none. **Whether a split exists is derived, never stored**:
 it is `secondaryActiveTabId[connectionId] !== null`, not a flag that could
 disagree with the tabs actually carrying `pane: 'secondary'`. New tabs (`+`,
 opening a table, a definition, duplicate, a saved query) always mint into the
-primary pane — dragging is the only way into the secondary one, which is also
-why the secondary strip has no `+` or bookmark button of its own.
+primary pane — a tab only ever reaches the secondary one by being *moved* there,
+which is also why the secondary strip has no `+` or bookmark button of its own.
+There are two gestures for that move and one action behind them: dragging, and
+the *Move tab to the other pane* shortcut (see *Keyboard shortcuts*).
 
 **`tabMoved` docks as well as reorders**, on one more optional field: `pane`,
 given, reassigns `Tab.pane` before the reorder runs; omitted, it is the exact
@@ -529,7 +531,12 @@ capture-phase, so nothing inside a pane can swallow the signal first.
 `onDragTab` reports the dragged id up to `ShellLayout`, which is what tells the
 zones above when to appear; dropping on one calls `moveTab(id, null, pane)`,
 the same action a strip drop uses. There is no separate "split" verb anywhere —
-a split is what it looks like when a tab is in the pane that had none.
+a split is what it looks like when a tab is in the pane that had none. The
+keyboard's *Move tab to the other pane* is a third way into that same one
+action, and it is why it is named for the move rather than for the split: with
+one tab open it moves the tab out of a pane that then has nothing left, so
+`promoteIfPrimaryEmpty` hands it straight back and nothing appears to happen —
+which is exactly what dragging that same lone tab already does.
 
 ## Saved queries
 
@@ -1473,8 +1480,32 @@ be wrong:
 Every shortcut the app owns is one row of `SHORTCUTS` in `common/shortcuts.ts`
 — an id, a label, a group and a default chord — and the Preferences menu's
 *Keyboard shortcuts* screen (`features/titlebar/ShortcutsDialog.tsx`) is that
-list with a way to change one. Adding a shortcut is a row plus a listener that
-reads its binding; nothing else has to be told.
+list with a way to change one.
+
+| Group | | Default |
+|---|---|---|
+| Editor | Run | `Ctrl+Enter` |
+| Editor | Run statement under cursor | `Ctrl+Shift+Enter` |
+| Editor | Save query | `Ctrl+S` |
+| Tabs | New tab | `Ctrl+T` |
+| Tabs | Next tab | `Ctrl+PageDown` |
+| Tabs | Previous tab | `Ctrl+PageUp` |
+| Tabs | Move tab to the other pane | `Ctrl+\` |
+| View | Toggle sidebar | `Ctrl+B` |
+
+**Adding one is a registry row and a handler**, and both listeners pick it up:
+`EditorPane` registers a Monaco action for *every* row rather than a hand-written
+list, and `Shell`'s window listener searches its own command map for whichever id
+holds the chord. A row wired only to the window listener would be a shortcut that
+stops working the moment the cursor is in the editor — which is not something the
+person adding it would think to check.
+
+**Two owners, and which one a shortcut belongs to is what it acts on.** Run,
+Run-statement and Save are the *editor's*: they need this pane's text, cursor and
+selection, so `EditorPane` answers them itself and its window listener is gated
+on `focused` so only one pane of a split responds. The tab and sidebar commands
+are the *shell's*: `ShellLayout` owns them, hands them down as `commands` (keyed
+by id) for Monaco to register, and keeps one window listener over the same map.
 
 **A chord is a string**, `Ctrl+Shift+Enter`, because it is written to the
 settings store, which keeps text and no vocabulary of its own. `Ctrl` covers
@@ -1506,12 +1537,15 @@ raw overrides so a row can say it is no longer the default, and rebind/reset.
 its own DOM and the window listener never sees those keydowns, so `EditorPane`
 registers each as an `addAction` — and it registers them in *their own effect,
 keyed on the bindings*, because an action's keybinding cannot be rewritten: a
-rebind disposes the four and adds them again. The window listeners (`EditorPane`
-for run/save, `Shell` for the sidebar) are what answer when focus has left Monaco
-but is still in that pane. `keybindingFor` in `monaco.ts` is the conversion, and
-it returns an empty list for a chord Monaco has no key code for — which leaves
-Monaco's own default in place there rather than registering an action nothing can
-trigger.
+rebind disposes them and adds them again. The window listeners (`EditorPane` for
+run/save, `Shell` for the tabs and the sidebar) are what answer when focus has
+left Monaco. `keybindingFor` in `monaco.ts` is the conversion, and it returns an
+empty list for a chord Monaco has no key code for — which leaves Monaco's own
+default in place there rather than registering an action nothing can trigger. Its
+table is the arrow keys (which the DOM and Monaco name differently) and the
+punctuation (which the DOM names by the character and Monaco by the key); the
+punctuation is not cosmetic, since Monaco binds `Ctrl+/` to toggle-line-comment
+and a shortcut rebound there without a registration would comment the line.
 
 **Ctrl+S is prevented whatever Save is bound to.** The dialog the webview would
 otherwise open over the app is that key's doing, not this shortcut's, so
@@ -1530,11 +1564,21 @@ idiom, so the rows below it do not move — and recording stays open so the next
 press is the correction. Two shortcuts on one chord is a screen that cannot say
 which one wins.
 
+**There is no "split" command, because there is no split verb.** *Move tab to the
+other pane* dispatches the same `moveTab(id, null, pane)` a drag onto the other
+strip does, and a split is what that looks like when the pane had none — so the
+one shortcut both opens a split and closes it, exactly as dragging does. Which
+pane it acts on is `workingPane`, not `focusedPane` directly: a split that
+collapses unmounts the secondary `<main>` and leaves `focusedPane` pointing at a
+pane that is gone, and every tab command would then act on an empty strip until
+the user clicked something. Stepping between tabs is the same pane's strip,
+wrapping at either end, and a pane holding one tab has nowhere to step to.
+
 **The grid's keys are not in the registry, and that is the line.** Ctrl+C,
 Delete, Ctrl+Delete and the arrows in `ResultsTable` are the *control's* own keys
 — what a data grid does, the same way the arrows are navigation rather than a
-command — where these four are the app's own commands, each of which had to be
-bound at all because Monaco or the webview already claimed the key. See
+command — where these are the app's own commands, each of which had to be bound
+at all because Monaco or the webview already claimed the key. See
 `docs/decisions.md`.
 
 ## The editor

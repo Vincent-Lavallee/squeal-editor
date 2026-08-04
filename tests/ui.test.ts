@@ -2176,6 +2176,64 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     /*
+     * The tab shortcuts, from the empty state the test above leaves.
+     *
+     * Every chord is dispatched at an element and left to bubble, the way a
+     * real keypress travels: `Shell`'s listener is on the window, and firing at
+     * the window directly would skip the propagation that decides whether
+     * Monaco gets there first.
+     *
+     * **Two panes are counted as two `.editor` divs**, which is what a split
+     * *is* here — there is no split flag to read, and `tabLabels` spans both
+     * strips, so the tab count cannot tell a docked tab from a second tab.
+     */
+    test('the tab shortcuts open, step through and dock tabs', async () => {
+      const pressChord = (init: string) =>
+        `document.body.dispatchEvent(new KeyboardEvent('keydown', { ${init}, bubbles: true })); true;`;
+      const panes = `document.querySelectorAll('.editor').length`;
+
+      await app.evaluate(pressChord(`key: 't', ctrlKey: true`));
+      await Bun.sleep(400);
+      await app.evaluate(pressChord(`key: 't', ctrlKey: true`));
+      await Bun.sleep(400);
+
+      const [first, second] = await app.evaluate<string[]>(tabLabels);
+      expect(second).toBeDefined();
+      // A new tab arrives in front, which is what makes the step below a step.
+      expect(await app.evaluate<string>(activeTabLabel)).toBe(second);
+
+      // Next off the end wraps to the first, and previous comes back.
+      await app.evaluate(pressChord(`key: 'PageDown', ctrlKey: true`));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe(first);
+      await app.evaluate(pressChord(`key: 'PageUp', ctrlKey: true`));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe(second);
+
+      // The dock gesture on the keyboard: the tab in front moves to the pane
+      // that had none, which is the whole of what a split is.
+      expect(await app.evaluate<number>(panes)).toBe(1);
+      await app.evaluate(pressChord(`key: '\\\\', ctrlKey: true`));
+      await Bun.sleep(500);
+      expect(await app.evaluate<number>(panes)).toBe(2);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([first, second]);
+
+      // And again ends it: the primary pane's last tab leaves, so the survivors
+      // take the whole view back rather than sitting beside an empty pane.
+      await app.evaluate(pressChord(`key: '\\\\', ctrlKey: true`));
+      await Bun.sleep(500);
+      expect(await app.evaluate<number>(panes)).toBe(1);
+      expect(await app.evaluate<string[]>(tabLabels)).toHaveLength(2);
+
+      // Back to the empty state the test below starts from.
+      await app.evaluate(closeTab(first!));
+      await Bun.sleep(300);
+      await app.evaluate(closeTab(second!));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+    });
+
+    /*
      * Last in this block on purpose: it reconnects, which resets the tabs and
      * the numbering everything above depends on. The block that follows opens
      * its own connection anyway, so ending on one costs nothing.

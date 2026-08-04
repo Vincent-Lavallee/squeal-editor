@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { FunctionInfo, SavedQuery, TableInfo, TriggerInfo } from '../../shared/protocol/index.ts';
 import { relationLabel, relationOf } from './common/db/relation.ts';
@@ -16,7 +16,7 @@ import { StatusBar } from './features/statusbar/index.ts';
 import { TabStrip } from './features/tabs/index.ts';
 import Note from './common/components/Note.tsx';
 import ResizeHandle from './common/components/ResizeHandle.tsx';
-import { matchesChord } from './common/shortcuts.ts';
+import { chordFromEvent, type ShortcutId } from './common/shortcuts.ts';
 import * as t from './common/tokens';
 
 const SIDEBAR_MIN = 160;
@@ -58,7 +58,7 @@ function ShellLayout({ onAddConnection }: Props) {
   const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema } = useExplorer();
   const { setSql, peekSql } = useEditor();
   const { queries, save: saveQuery } = useSavedQueries();
-  const toggleSidebarChord = useShortcuts().bindings.toggleSidebar;
+  const { bindings } = useShortcuts();
 
   // The SQL completion provider and the formatter are registered once here,
   // regardless of how many panes are open -- Monaco's registration is global
@@ -163,17 +163,74 @@ function ShellLayout({ onAddConnection }: Props) {
    */
   const [focusedPane, setFocusedPane] = useState<'primary' | 'secondary'>('primary');
 
-  // The other half of the sidebar's shortcut. Monaco binds it too, since it wins
-  // inside its own DOM; this is the rest of the window.
+  /*
+   * Which pane a keyboard command acts on. Not `focusedPane` directly: a split
+   * that collapses leaves that pointing at a pane which no longer exists (its
+   * `<main>` is unmounted, so nothing sets it back), and every tab command
+   * would then quietly act on an empty strip until the user clicked something.
+   */
+  const workingPane: Tab['pane'] = showSplit && focusedPane === 'secondary' ? 'secondary' : 'primary';
+
+  /**
+   * The next or previous tab of the pane being worked in, wrapping at either
+   * end. A pane holding one tab has nowhere to step to, and re-activating the
+   * tab already in front is not a step.
+   */
+  const stepTab = useCallback((delta: number) => {
+    const strip = workingPane === 'secondary' ? secondaryTabs : tabs;
+    const frontId = workingPane === 'secondary' ? secondaryActiveTabId : activeTabId;
+    if (strip.length < 2) return;
+    const at = strip.findIndex((tab) => tab.id === frontId);
+    if (at === -1) return;
+    activateTab(strip[(at + delta + strip.length) % strip.length]!.id);
+  }, [workingPane, tabs, secondaryTabs, activeTabId, secondaryActiveTabId, activateTab]);
+
+  /*
+   * The dock gesture on the keyboard: the tab in front moves to the other pane,
+   * the same single action a drag onto the other strip dispatches. There is no
+   * separate "split" verb to reach for -- a split is what it looks like when a
+   * tab is in the pane that had none, so moving one there opens it and moving
+   * the last one back closes it.
+   *
+   * With one tab open and no split, that means nothing visible happens: the
+   * pane it left is empty, so `promoteIfPrimaryEmpty` hands it straight back.
+   * Dragging that same tab does exactly the same thing.
+   */
+  const dockActiveTab = useCallback(() => {
+    const id = workingPane === 'secondary' ? secondaryActiveTabId : activeTabId;
+    if (!id) return;
+    moveTab(id, null, workingPane === 'secondary' ? 'primary' : 'secondary');
+  }, [workingPane, activeTabId, secondaryActiveTabId, moveTab]);
+
+  const shellCommands: Partial<Record<ShortcutId, () => void>> = useMemo(() => ({
+    newTab: () => { openEditorTab(); },
+    nextTab: () => stepTab(1),
+    previousTab: () => stepTab(-1),
+    dockTab: dockActiveTab,
+    toggleSidebar,
+  }), [openEditorTab, stepTab, dockActiveTab, toggleSidebar]);
+
+  /*
+   * The shortcuts the shell owns, and the half of each that answers from
+   * anywhere in the window. The other half is Monaco's, which is handed
+   * `shellCommands` and registers the same handler as an action of its own --
+   * a chord Monaco binds never reaches the window at all.
+   *
+   * One listener over the whole map rather than one per command: adding a
+   * shortcut is a registry row and an entry below, and nothing else.
+   */
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
-      if (!matchesChord(e, toggleSidebarChord)) return;
+      const chord = chordFromEvent(e);
+      if (chord === null) return;
+      const id = (Object.keys(shellCommands) as ShortcutId[]).find((key) => bindings[key] === chord);
+      if (!id) return;
       e.preventDefault();
-      setSidebarCollapsed((prev) => !prev);
+      shellCommands[id]?.();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [toggleSidebarChord]);
+  }, [bindings, shellCommands]);
 
   /*
    * Lazily browse a restored grid tab the first time it is in front.
@@ -365,7 +422,7 @@ function ShellLayout({ onAddConnection }: Props) {
                 draggingId={draggingId} onDragTab={setDraggingId} />
               <SavedQueriesButton onOpen={openSavedQuery} />
             </div>
-            <EditorPane tab={activeTab} onRun={runPrimary} running={primaryRunning} onToggleSidebar={toggleSidebar} onSaveQuery={saveActiveQuery}
+            <EditorPane tab={activeTab} onRun={runPrimary} running={primaryRunning} commands={shellCommands} onSaveQuery={saveActiveQuery}
               focused={!showSplit || focusedPane === 'primary'} />
             {primaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragResults} />}
             <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: primaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
@@ -400,7 +457,7 @@ function ShellLayout({ onAddConnection }: Props) {
                   onMove={(id, beforeId) => moveTab(id, beforeId, 'secondary')} onRename={renameTab}
                   draggingId={draggingId} onDragTab={setDraggingId} />
               </div>
-              <EditorPane tab={secondaryActiveTab} onRun={runSecondary} running={secondaryRunning} onToggleSidebar={toggleSidebar} onSaveQuery={saveSecondaryQuery}
+              <EditorPane tab={secondaryActiveTab} onRun={runSecondary} running={secondaryRunning} commands={shellCommands} onSaveQuery={saveSecondaryQuery}
                 focused={focusedPane === 'secondary'} exposeGlobal={false} />
               {secondaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragSecondaryResults} />}
               <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: secondaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>

@@ -4811,3 +4811,53 @@ placeholders for preferences that do not exist yet (Light theme, French/English
 UI each bring their own). An empty screen offering nothing is worse than a menu
 that does not claim to have one, so it arrives with whichever of those lands
 first.
+
+---
+
+## The tab shortcuts, and why "split" is spelled "move to the other pane"
+
+**Why.** The registry made a shortcut cheap, and the three things a tabbed editor
+is expected to do from the keyboard — open a tab, step between them, put two side
+by side — had no keys at all. `Ctrl+T`, `Ctrl+PageDown`/`Ctrl+PageUp` and
+`Ctrl+\` are VS Code's, which is the app's reference idiom throughout.
+
+**They are the shell's commands, not the editor's, and that distinction is the
+wiring.** Run and Save need *this pane's* text and cursor, so `EditorPane`
+answers them itself and its window listener is gated on `focused`. Opening a tab
+or stepping between them needs none of that, so `ShellLayout` owns them — but
+they still have to be registered with Monaco, because a chord Monaco binds never
+reaches the window and one it does not bind still lands on whatever the webview
+does with it. `EditorPane` therefore takes a `commands` map keyed by shortcut id
+and registers an action for **every row in the registry**, its own three answered
+locally and the rest passed through. *Rejected: a prop per command*, which is
+what `onToggleSidebar` was and would have been five of them; and *rejected: a
+capture-phase window listener in `Shell`* that would win over Monaco without any
+registration — it would also win over the shortcut recorder, which is itself a
+capture listener registered later, so the chord being named would be obeyed as
+well as recorded.
+
+**There is no `split` command, because the app has no split verb.** A split here
+is what it looks like when a tab is in the pane that had none, so the shortcut is
+the same `moveTab(id, null, pane)` the drop zones already dispatch, and one key
+both opens a split and closes it. Naming it *Move tab to the other pane* is the
+honest label and it also disarms the one confusing case: with a single tab open,
+moving it leaves its pane empty, `promoteIfPrimaryEmpty` hands it straight back,
+and nothing appears to happen. *Rejected: duplicating the tab* so that "split"
+always produces two panes — VS Code does that, but here it would mint a tab
+nobody asked for and make one gesture mean two different things depending on how
+many tabs were open. Dragging that lone tab already does exactly nothing, and the
+shortcut agreeing with the drag is worth more than a special case.
+
+**Which pane a tab command acts on is `workingPane`, not `focusedPane`.** A split
+that collapses unmounts the secondary `<main>`, so nothing ever sets `focusedPane`
+back — it goes on naming a pane that is gone, and every tab command would then
+read an empty strip and silently do nothing until the user clicked something.
+`workingPane` is `focusedPane` narrowed by whether a split actually exists.
+
+**`keybindingFor` grew the punctuation keys for this.** `Ctrl+\` is a default
+now, and the DOM names that key by the character it produces while Monaco names
+it by the key. Without the mapping the action registers with no keybinding, which
+is survivable here — the window listener still answers — but not in general:
+Monaco binds `Ctrl+/` to toggle-line-comment, so a shortcut rebound there would
+comment the line instead. The table is the exceptions only; letters, digits and
+function keys still follow a rule.
