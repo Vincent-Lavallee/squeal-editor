@@ -112,30 +112,29 @@ export function useResults(tab: Tab | null) {
   const editTable = browse?.table ?? (queryEditable ? editTarget!.table : null);
   const editSchema = browse ? undefined : (queryEditable ? editTarget!.schema : undefined);
 
-  // The page these staged indices are valid for. Null when there is nothing to
-  // edit. A browsed page keys by table/offset/filter/sort; a hand query has none
-  // of those, so it keys by `runSeq` instead -- see `ResultsState.runSeq` for why
-  // re-running the identical SQL still has to count as a different page.
+  // Which rows are on screen, as one string two renders can be compared by. A
+  // browsed page is named by its table, offset, filter and sort; a hand query has
+  // none of those, so it is named by which statement of the batch it is and which
+  // run of the tab produced it -- see `ResultsState.runSeq` for why re-running
+  // the identical SQL still has to count as a different set of rows.
   //
-  // The sort is in the key for the filter's reason exactly: an edit is staged
-  // against a *row index*, and row 3 of a table ordered by name is not row 3 of
-  // the same table in natural order. Leave it out and re-sorting would carry the
-  // staged cells onto whichever rows landed in those positions -- a write to
-  // rows the user never saw, which is the failure the row-identity design exists
-  // to prevent. A hand query needs no such term: sorting one re-runs it, and
-  // `runSeq` has already moved by the time the new rows arrive.
-  //
-  // The statement index joins it for the same reason once more: two statements
-  // of one batch are two different sets of rows under one tab id, so switching
-  // between them has to start the staging fresh rather than carry row 3's edit
-  // onto whatever row 3 is over there. The cost is that clicking away from a
-  // half-edited Result 1 and back discards it -- the same discard paging already
-  // makes, accepted for the same reason.
-  const page = browse
+  // Everything anchored to a *row index* keys off this: the staged edits below,
+  // and the grid's scroll offset. The sort is in it for the filter's reason
+  // exactly -- row 3 of a table ordered by name is not row 3 of the same table in
+  // natural order -- and leaving either out would carry staged cells onto
+  // whichever rows landed in those positions, a write to rows the user never saw,
+  // which is the failure the row-identity design exists to prevent. The statement
+  // index is there once more for the same reason: two statements of one batch are
+  // two different sets of rows under one tab id. The cost is that clicking away
+  // from a half-edited Result 1 and back discards it -- the same discard paging
+  // already makes, accepted for the same reason.
+  const rowsKey = browse
     ? `${browse.table}@${browse.offset}@${filterKey(browse.filter)}@${sortKey(sort)}`
-    : queryEditable
-      ? `${editTable}@query@${activeStatement}@${runSeq}`
-      : null;
+    : `query@${activeStatement}@${runSeq}`;
+
+  // The staging's view of that key: the same string, and null when there is
+  // nothing to stage against at all, which is what the guards below read.
+  const page = browse || queryEditable ? rowsKey : null;
   const pending = activeTabId && page ? view.pendingFor(activeTabId, page) : EMPTY_PENDING;
 
   // A table with no primary or unique key has no row to target, and a
@@ -561,6 +560,21 @@ export function useResults(tab: Tab | null) {
         );
       }
     }, [dispatch, activeTabId, browse, sort]),
+
+    // Where this tab's grid is scrolled to. Remembered against `rowsKey`, so
+    // switching tabs comes back to it and a re-run -- whose rows may no longer
+    // reach that far, or mean the same thing there -- starts at the top.
+    rowsKey,
+    rememberScroll: useCallback(
+      (top: number, left: number) => {
+        if (activeTabId) view.rememberScroll(activeTabId, { key: rowsKey, top, left });
+      },
+      [activeTabId, rowsKey, view]
+    ),
+    recallScroll: useCallback(
+      () => (activeTabId ? view.recallScroll(activeTabId, rowsKey) : null),
+      [activeTabId, rowsKey, view]
+    ),
 
     // The sort surface. `sort` is what the result on screen was fetched with,
     // which is what the header draws its arrow from; `canSort` is which headers

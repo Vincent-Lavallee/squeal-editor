@@ -658,3 +658,10 @@ This is a record, not a plan. Nothing here is waiting on anything.
   not only what it says, and the key has to be rebound inside the editor as well
   as at the window level, since Monaco owns Ctrl+Shift+Enter as "insert line
   above" exactly as it owned Ctrl+Enter.
+
+- **2026-08-04** — **Retain result grid scroll position per tab** — Switching away from a tab
+  and back resets its result grid's scroll position (both horizontal and
+  vertical) to top-left, for both query tabs and table-browse tabs opened
+  from the tree. Each tab should remember and restore its own scroll position
+  on return — reset only when the tab's query is re-run, since a fresh run's
+  rows may no longer match the old position.

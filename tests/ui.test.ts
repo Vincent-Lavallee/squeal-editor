@@ -238,6 +238,8 @@ const pagerBtn = (label: 'Prev' | 'Next') => `
 
 /** How many rows the grid is showing -- what a filter changes. */
 const rowCount = `document.querySelectorAll('.grid tbody tr').length`;
+/** The grid's scrolling box, which is what remembers where a tab was left. */
+const gridScroll = `document.querySelector('[data-testid="grid-scroll"]')`;
 /** Click a column header by name -- the whole header is the sort target. */
 const clickHeader = (name: string) => `
   [...document.querySelectorAll('.grid thead th')]
@@ -808,6 +810,89 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<string>(barText)).toContain('rows 1–100');
 
       await app.evaluate(closeTab('events'));
+      await Bun.sleep(300);
+    });
+
+    /*
+     * One grid node shows whichever tab is in front, so without the offset being
+     * written back a tab returns to wherever the *other* tab's rows left the
+     * scrollbar. A hundred rows is the only fixture tall enough to tell the
+     * difference.
+     */
+    test('a scrolled grid comes back where it was left, until it is re-browsed', async () => {
+      await app.evaluate(clickTable('events'));
+      await Bun.sleep(2000);
+
+      await app.evaluate(`${gridScroll}.scrollTop = 400; true;`);
+      await Bun.sleep(300);
+
+      // Somewhere else entirely, and back. `tags` is two rows, so the grid it
+      // leaves behind cannot itself be scrolled -- the only offset in play is
+      // the one `events` is owed.
+      await app.evaluate(clickTable('tags'));
+      await Bun.sleep(1500);
+
+      await app.evaluate(clickTab('events'));
+      await Bun.sleep(500);
+      expect(await app.evaluate<number>(`${gridScroll}.scrollTop`)).toBe(400);
+
+      // A page is a different set of rows, so the height it was left at names
+      // nothing -- the new page starts at the top.
+      await app.evaluate(`${pagerBtn('Next')}.click(); true;`);
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string>(barText)).toContain('rows 101–150');
+      expect(await app.evaluate<number>(`${gridScroll}.scrollTop`)).toBe(0);
+
+      await app.evaluate(closeTab('events'));
+      await Bun.sleep(300);
+      await app.evaluate(closeTab('tags'));
+      await Bun.sleep(300);
+    });
+
+    /*
+     * A query tab's rows are named by the run that fetched them rather than by a
+     * table and an offset, so it is the other half of the same rule and the only
+     * one that can be scrolled sideways: no fixture table is wide enough, but a
+     * query can ask for columns that are.
+     */
+    test('a query tab keeps its scroll in both directions, and a re-run starts at the top', async () => {
+      await app.evaluate(newTab);
+      await Bun.sleep(600);
+      const queryTab = await app.evaluate<string>(activeTabLabel);
+
+      await app.evaluate(setEditorText(
+        `SELECT g AS n,
+                repeat('a', 200) AS wide_a, repeat('b', 200) AS wide_b, repeat('c', 200) AS wide_c,
+                repeat('d', 200) AS wide_d, repeat('e', 200) AS wide_e, repeat('f', 200) AS wide_f
+         FROM generate_series(1, 200) g`
+      ));
+      await Bun.sleep(300);
+      await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
+      await Bun.sleep(2000);
+
+      await app.evaluate(`${gridScroll}.scrollTop = 400; ${gridScroll}.scrollLeft = 300; true;`);
+      await Bun.sleep(300);
+      // The rows have to actually reach that far, or the assertions below would
+      // hold against a grid that simply cannot scroll.
+      expect(await app.evaluate<number>(`${gridScroll}.scrollLeft`)).toBe(300);
+
+      await app.evaluate(clickTable('tags'));
+      await Bun.sleep(1500);
+      await app.evaluate(clickTab(queryTab));
+      await Bun.sleep(500);
+      expect(await app.evaluate<number>(`${gridScroll}.scrollTop`)).toBe(400);
+      expect(await app.evaluate<number>(`${gridScroll}.scrollLeft`)).toBe(300);
+
+      // The same text run again is still a different set of rows -- the server's
+      // order is not promised -- so the offset it was left at is discarded.
+      await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
+      await Bun.sleep(2000);
+      expect(await app.evaluate<number>(`${gridScroll}.scrollTop`)).toBe(0);
+      expect(await app.evaluate<number>(`${gridScroll}.scrollLeft`)).toBe(0);
+
+      await app.evaluate(closeTab('tags'));
+      await Bun.sleep(300);
+      await app.evaluate(closeTab(queryTab));
       await Bun.sleep(300);
     });
 

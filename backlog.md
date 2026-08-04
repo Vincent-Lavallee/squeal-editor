@@ -13,13 +13,6 @@ Items name features, never files or functions. Files move; the feature doesn't.
 
 Things that already work, but not well enough.
 
-- **Retain result grid scroll position per tab** — Switching away from a tab
-  and back resets its result grid's scroll position (both horizontal and
-  vertical) to top-left, for both query tabs and table-browse tabs opened
-  from the tree. Each tab should remember and restore its own scroll position
-  on return — reset only when the tab's query is re-run, since a fresh run's
-  rows may no longer match the old position.
-
 ## Bugs
 
 Things that are wrong.

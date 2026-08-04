@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ThinkingOrb } from 'thinking-orbs';
 
 import type { CellValue } from '../../../../shared/protocol/index.ts';
@@ -88,8 +88,9 @@ const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
 
 export default function ResultsTable({ tab }: { tab: Tab | null }) {
-  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey, sort, toggleSort, canSort } = useResults(tab);
+  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey, sort, toggleSort, canSort, rowsKey, rememberScroll, recallScroll } = useResults(tab);
   const activeTabId = tab?.id ?? null;
+  const grid = useRef<HTMLDivElement>(null);
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const anchor = useRef<number | null>(null);
@@ -112,6 +113,28 @@ export default function ResultsTable({ tab }: { tab: Tab | null }) {
   }, [result]);
 
   useEffect(() => () => { if (editBlockedTimeout.current) clearTimeout(editBlockedTimeout.current); }, []);
+
+  /*
+   * Put the scroll offset back where this view was left.
+   *
+   * There is one grid per pane and it shows whichever tab is in front, so a tab
+   * switch swaps the rows under a node that keeps whatever offset the *last* tab
+   * had -- clamped to the new content, which is why a short table reads as
+   * "reset to the top" and a long one as "somewhere the user never scrolled to".
+   * Neither is this tab's, so it is written back by hand. A layout effect, not a
+   * plain one: an offset applied after paint is a visible jump.
+   *
+   * Keyed on what is on screen and nothing else. Re-running it whenever
+   * `recallScroll` changed identity would re-apply the remembered offset in the
+   * middle of a wheel gesture -- the app fighting the user for a frame -- since a
+   * scroll event lands after the render that provoked it.
+   */
+  useLayoutEffect(() => {
+    if (!grid.current) return;
+    const remembered = recallScroll();
+    grid.current.scrollTop = remembered?.top ?? 0;
+    grid.current.scrollLeft = remembered?.left ?? 0;
+  }, [activeTabId, rowsKey]);
 
   // On the window, not on the grid: a drag released outside the table -- past
   // its edge, over the sidebar -- has still ended, and a button left armed
@@ -432,7 +455,8 @@ export default function ResultsTable({ tab }: { tab: Tab | null }) {
         </div>
       )}
 
-      <div data-testid="grid-scroll" style={{ flex: 1, overflow: 'auto', minHeight: 0 }} tabIndex={0} onKeyDown={onKeyDown}>
+      <div ref={grid} data-testid="grid-scroll" style={{ flex: 1, overflow: 'auto', minHeight: 0 }} tabIndex={0} onKeyDown={onKeyDown}
+        onScroll={(e) => rememberScroll(e.currentTarget.scrollTop, e.currentTarget.scrollLeft)}>
         <table className="grid" style={gridTable}>
           <thead>
             <tr>

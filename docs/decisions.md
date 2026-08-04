@@ -4861,3 +4861,43 @@ is survivable here — the window listener still answers — but not in general:
 Monaco binds `Ctrl+/` to toggle-line-comment, so a shortcut rebound there would
 comment the line instead. The table is the exceptions only; letters, digits and
 function keys still follow a rule.
+
+---
+
+## The grid's scroll position is remembered against the rows, not against the tab
+
+**Why it needed anything.** There is one scrolling node per pane, and it shows
+whichever tab is in front. Switching tabs swaps the rows under a node that still
+holds the previous tab's offset, and the browser clamps that to the new content —
+which is why the same bug reads as "it jumped back to the top" on a short table
+and "it opened somewhere I never scrolled to" on a long one. Neither position is
+the one the tab was left at, so something has to write it back.
+
+**Keyed by `rowsKey`, which is the string the staged edits were already keyed
+by.** An offset means something only against the rows it was taken over: a
+re-run, a page, a filter or a sort produces rows that may not reach that far or
+may not mean the same thing there. Reusing the staging's key rather than minting
+a second one is what makes a re-run start at the top *by construction* — nothing
+matches, so nothing is restored.
+
+*Rejected: clearing the offset from the run and browse actions.* That is a
+second place that has to agree with the first, and the next thing that replaces a
+tab's rows would have to remember to join it — exactly the "hook the one handler
+and the next case leaks" failure the per-tab cleanup rule already names.
+
+*Rejected: a slice, and riding in the session snapshot.* It has never crossed the
+bridge, and it could not usefully: a restored session refetches its rows, so an
+offset stored beside them would be an offset into a result that no longer exists.
+
+*Rejected: state in the context beside the staging.* A scroll fires once a frame
+and nothing renders from this — the grid puts the offset back on the DOM node it
+already holds — so state would re-render the pane per wheel tick to no effect. It
+is a ref behind two calls, pruned in place by the same diff-the-list effect that
+prunes everything else keyed by tab there.
+
+**The restore is a layout effect keyed on `(tabId, rowsKey)` and on nothing
+else.** Layout, because an offset applied after paint is a visible jump from the
+top. On nothing else, because a scroll event lands *after* the render that
+provoked it, so re-applying the remembered offset on an unrelated re-render would
+put the grid back a frame behind a wheel gesture still in flight — the app
+fighting the user.

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type { CellValue, FilterCondition } from '../../../../shared/protocol/index.ts';
 import { useAppSelector } from '../../store/hooks.ts';
@@ -58,6 +58,20 @@ export interface FilterDraft {
   where: string;
 }
 
+/**
+ * Where a tab's result grid was scrolled to, and which rows it was showing.
+ *
+ * `key` is `useResults`' `rowsKey` -- the same string that names a staging page,
+ * and for the same reason: an offset means something only against the rows it
+ * was taken over. A remembered one whose key no longer matches is dropped rather
+ * than applied to whatever a re-run put at that height.
+ */
+export interface GridScroll {
+  key: string;
+  top: number;
+  left: number;
+}
+
 interface ResultsView {
   /** The staging for a tab's current page, or the empty one when it is stale/absent. */
   pendingFor: (tabId: string, page: string) => Pending;
@@ -84,6 +98,19 @@ interface ResultsView {
   filterDraft: Record<string, FilterDraft>;
   setFilterDraft: (tabId: string, draft: FilterDraft) => void;
   clearFilterDraft: (tabId: string) => void;
+  /**
+   * The grid's scroll offset, per tab, so a tab switched away from comes back
+   * where it was left rather than at the top of a table it has to be found in
+   * again.
+   *
+   * These two sit over a ref, not over state, and that is the whole reason they
+   * are a pair of calls rather than a record like the ones above: a scroll fires
+   * once a frame and nothing *renders* from this -- the grid puts the offset
+   * back on the DOM node it already holds -- so keeping it in state would
+   * re-render a pane for every wheel tick to no effect.
+   */
+  rememberScroll: (tabId: string, scroll: GridScroll) => void;
+  recallScroll: (tabId: string, key: string) => GridScroll | null;
 }
 
 const ResultsViewContext = createContext<ResultsView | null>(null);
@@ -93,6 +120,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const [saving, setSavingState] = useState<Record<string, boolean>>({});
   const [saveError, setSaveErrorState] = useState<Record<string, string | null>>({});
   const [filterDraft, setFilterDraftState] = useState<Record<string, FilterDraft>>({});
+  const scrollByTab = useRef<Record<string, GridScroll>>({});
   const tabs = useAppSelector((s) => s.tabs.tabs);
 
   const pendingFor = useCallback(
@@ -171,6 +199,14 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const rememberScroll = useCallback((tabId: string, scroll: GridScroll) => {
+    scrollByTab.current[tabId] = scroll;
+  }, []);
+  const recallScroll = useCallback((tabId: string, key: string): GridScroll | null => {
+    const remembered = scrollByTab.current[tabId];
+    return remembered && remembered.key === key ? remembered : null;
+  }, []);
+
   /*
    * Forget the staging of tabs that are gone -- the same diff-the-list prune the
    * editor's text uses, so "close others", a disconnect, and whatever closes a
@@ -186,6 +222,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     setSavingState((prev) => prune(prev));
     setSaveErrorState((prev) => prune(prev));
     setFilterDraftState((prev) => prune(prev));
+    // The scroll offsets are a ref, so they are pruned in place rather than
+    // through a setter -- same list, same rule, no render.
+    for (const id of Object.keys(scrollByTab.current)) if (!live.has(id)) delete scrollByTab.current[id];
   }, [tabs]);
 
   const value = useMemo(
@@ -202,6 +241,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       filterDraft,
       setFilterDraft,
       clearFilterDraft,
+      rememberScroll,
+      recallScroll,
     }),
     [
       pendingFor,
@@ -216,6 +257,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       filterDraft,
       setFilterDraft,
       clearFilterDraft,
+      rememberScroll,
+      recallScroll,
     ]
   );
 

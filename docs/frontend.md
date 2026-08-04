@@ -89,6 +89,7 @@ that lives apart from its values is two sources for one fact.
 | which of a tab's statements is on screen, and how many the run held | `results` slice | never left, but it is the key its results are held under |
 | staged cell edits + row deletes, per tab (+ `saving`, `saveError`) | `results` context | never left, until Save |
 | the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Apply |
+| where the result grid is scrolled to, per tab | `results` context (a ref) | never left, and a restored session refetches its rows |
 | saved connections | `saved` slice | crossed |
 | saved queries | `savedQueries` slice | crossed |
 | whether a tab holds edits it has not saved back (`unsaved`) | `tabs` slice | never left, but it is a fact about a tab, and tabs live here |
@@ -766,6 +767,43 @@ the strip: the running pane's own Cancel is unreachable in exactly that case.
 *Result 1* to go back to, and the strip is the way. The two never draw together —
 the filter is a grid tab's and two statements can only be an editor tab's.
 
+## What names the rows on screen
+
+`useResults` builds one string for *which rows these are*, `rowsKey`: a browsed
+page is `table@offset@filter@sort`, and a hand query is
+`query@statement@runSeq` — it has none of the first four, and `runSeq` is what
+tells two runs of the identical text apart. **Its two readers are the two things
+anchored to a row index**: the staged edits, and the grid's scroll offset. Rows
+are positional and the server's order is not guaranteed stable between runs, so
+anything holding a position has to stop meaning something the moment any of those
+terms move.
+
+**The grid comes back to where the tab left it.** There is one scrolling node per
+pane and it shows whichever tab is in front, so a tab switch swaps the rows under
+a node still holding the *other* tab's offset — clamped to the new content, which
+is why a short table reads as "reset to the top" and a long one as a position
+nobody scrolled to. `ResultsTable` writes the offset back itself, in a layout
+effect keyed on `(tabId, rowsKey)`: **layout**, because an offset applied after
+paint is a visible jump, and **keyed on those two alone**, because re-applying a
+remembered offset on any other render would fight a wheel gesture already in
+flight — a scroll event lands after the render that provoked it.
+
+**A re-run starts at the top, and gets there through the key rather than through
+a reset.** Running again, paging, filtering and sorting each mint a new
+`rowsKey`, so what was remembered no longer matches and nothing is restored.
+There is no clear-the-offset action to remember to dispatch, and so no way for
+the two to disagree. Saving a browsed edit re-reads the *same* page and therefore
+keeps its place, which is the whole point of the key naming the rows rather than
+the fetch.
+
+**It is a ref in `ResultsContext`, not state and not a slice.** Not a slice by
+the bridge test — it has never crossed, and cannot: a restored session refetches
+its rows, so there would be nothing for a snapshot to carry the offset against.
+Not state because a scroll fires once a frame and nothing renders from it, so
+state would re-render a pane per wheel tick to no effect. It is keyed by tab like
+everything else there, and pruned in the same diff-the-list effect — in place,
+since a ref has no setter.
+
 ## The editable grid
 
 A browsed grid can be edited: change a cell, delete a row, copy selected rows as
@@ -902,8 +940,10 @@ tab, so `ResultsContext` prunes them by diffing the tab list in an effect, never
 from a close handler — the shape the editor's text held before session restore
 moved it into a slice that prunes in the reducer instead. One twist rows
 force: an edit is keyed by its **row index into the page on screen**, so each entry
-stamps the `table@offset` page it belongs to and a different page starts fresh —
-paging discards staging, switching tabs keeps it. The original key values are read
+stamps the `rowsKey` it was made against (see *What names the rows on screen*)
+and a different one starts fresh — paging discards staging, switching tabs keeps
+it, and the sort, the filter and the statement index are all in that key for the
+same reason. The original key values are read
 from the browsed row at Save time, so editing a key column is just another staged
 cell while the `WHERE` still targets the original.
 
