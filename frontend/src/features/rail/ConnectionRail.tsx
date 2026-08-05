@@ -1,9 +1,12 @@
+import { useState } from 'react';
+
 import type { Workspace } from '../../../../shared/protocol/index.ts';
 import { useAppSelector } from '../../store/hooks.ts';
 import { serverLabel, useSession, type OpenConnection } from '../../store/sessionSlice.ts';
 import { selectWorkspaces } from '../../store/workspacesSlice.ts';
 import { connectionColor } from '../../common/icons/connectionColors.ts';
 import { workspaceGlyph } from '../../common/icons/workspaceIcons.ts';
+import ContextMenu from '../../common/components/ContextMenu.tsx';
 import SrOnly from '../../common/components/SrOnly.tsx';
 import * as t from '../../common/tokens';
 
@@ -41,9 +44,10 @@ function groupByWorkspace(connections: OpenConnection[], workspaces: Workspace[]
 }
 
 export default function ConnectionRail({ onAdd }: Props) {
-  const { connections, activeConnectionId, activate } = useSession();
+  const { connections, activeConnectionId, activate, disconnect } = useSession();
   const workspaces = useAppSelector(selectWorkspaces);
   const grouped = groupByWorkspace(connections, workspaces);
+  const [menu, setMenu] = useState<{ connectionId: string; x: number; y: number } | null>(null);
 
   return (
     <nav data-testid="rail" style={{ display: 'flex', alignItems: 'stretch', flex: 'none', height: t.RAIL_H, padding: `0 ${t.GAP_SM}px`, borderBottom: `1px solid ${t.BORDER}`, overflowX: 'auto' }} aria-label="Open connections">
@@ -71,6 +75,11 @@ export default function ConnectionRail({ onAdd }: Props) {
                         style={{ display: 'inline-flex', alignItems: 'baseline', gap: t.GAP_XS, padding: `4px ${t.GAP_SM}px`, borderRadius: t.RADIUS_PILL, border: `1px solid ${active ? activeFill : chipBorder}`, background: active ? activeFill : wash, color: active ? t.BG : t.TEXT_MUTED, font: 'inherit', lineHeight: 1, whiteSpace: 'nowrap', cursor: 'pointer' }}
                         aria-current={active ? 'true' : undefined}
                         onClick={() => activate(c.connectionId)}
+                        // Deliberately not an `activate` first: the menu acts on
+                        // the chip it was summoned on, the same rule the tab
+                        // strip's menu follows, so a background server can be
+                        // disconnected without being brought to the front.
+                        onContextMenu={(e) => { e.preventDefault(); setMenu({ connectionId: c.connectionId, x: e.clientX, y: e.clientY }); }}
                         title={c.lostReason ? `${c.name} — dropped: ${c.lostReason} The next query will reconnect.` : `${c.name} — ${c.environment} — ${serverLabel(c.config)}`}>
                         {/*
                           A dot, because the chip already spends its colour on
@@ -95,6 +104,14 @@ export default function ConnectionRail({ onAdd }: Props) {
       </ul>
       <button type="button" data-testid="rail-add" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', alignSelf: 'center', width: t.BUTTON_H_BAR, height: t.BUTTON_H_BAR, marginLeft: 'auto', border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, background: 'none', color: t.TEXT_MUTED, fontSize: 16, lineHeight: 1, cursor: 'pointer' }}
         onClick={onAdd} title="Open another connection"><span aria-hidden="true">+</span><SrOnly>Open another connection</SrOnly></button>
+
+      {/* No confirmation, unlike closing a tab: `disconnect.pending` saves the
+          session while the tabs still exist, so reconnecting brings back the
+          tabs, the split and the queries. It parks work; it does not destroy it. */}
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}
+          items={[{ label: 'Disconnect', danger: true, onSelect: () => disconnect(menu.connectionId) }]} />
+      )}
     </nav>
   );
 }

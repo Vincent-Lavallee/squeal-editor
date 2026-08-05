@@ -4983,3 +4983,93 @@ path is named by an OS dialog, which CDP cannot reach — so the UI suite assert
 what it can (the menu reaches both screens, and the passwords box starts off) and
 `saved.test.ts` proves the rest against the real store, the real keychain and a
 real server at the far end: exported, deleted, imported, connected.
+
+---
+
+## Closing a tab, closing a connection, and the mark that decides whether to ask
+
+**Why.** Both existed and neither was where anyone looked. A tab has had a `×`
+since the strip did, but the right-click menu offered *Close others*, *Close Tabs
+to the Right* and *Close All* — every close except the one you were asking for,
+which reads as the tab having no way to close at all. A connection has had a
+Disconnect since the status bar did, bottom-left and red, and the gesture people
+actually reach for is a right-click on the chip, which did nothing. Neither had a
+chord. So the change is one shape twice: put the verb in the menu that was
+already being opened, and give each a key.
+
+**`Ctrl+W` and `Ctrl+Shift+W`**, VS Code's and the browser's respectively, and the
+first of them is the one that needed proving. Ctrl+W is a browser accelerator and
+WebView2 ships with browser accelerator keys enabled, so "does pressing this close
+the window" was a real question with a real answer and no amount of reading
+settles it. **A dispatched `KeyboardEvent` cannot answer it** — it enters at the
+DOM, below the embedder that would have claimed the key, so it passes whether or
+not a physical press does. `Page.press` (`Input.dispatchKeyEvent`) goes in where
+a real key does; WebView2 lets Ctrl+W through, the tab closes and the window is
+still there. That is asserted rather than assumed, because it is the kind of thing
+that would otherwise be discovered by a user losing a window.
+
+**Disconnect does not confirm and closing a tab does, which is the right way
+round even though disconnecting closes more.** `disconnect.pending` fires an
+immediate session save *while the tabs still exist*, so the tabs, the split, the
+queries and the filters ride into the snapshot and come back on the next connect —
+a disconnect parks work. `tabsClosed` deletes the closed tabs' `sqlByTab` entries
+and the session listener then writes a snapshot without them — a close destroys
+it. The asymmetry follows the data, not the size of the gesture.
+
+**`Tab.unsaved` widened from "drifted from a saved query" to "closing this
+destroys text that exists nowhere else".** The narrow reading guarded the wrong
+tab: it lit only for a tab carrying a `savedQueryId`, so an edited saved query —
+whose text is still on disk, and where the loss is the drift — asked before
+closing, while a `Query 1` holding two hundred lines nobody ever saved closed in
+silence. *Rejected: a second flag*, and *rejected: deriving it from "the text is
+non-blank"*. The derivation is the tempting one and it is wrong for a specific
+reason: **a definition tab holds text nobody typed**, so every DDL glanced at from
+the tree would have asked to be saved on the way out, about something the tree
+regenerates on demand. What separates the two is not the text, it is how the text
+arrived — which the existing flag already knew, since it is written by
+`sqlChanged` and generated text does not have to come through one.
+
+**So seeding at birth stopped being tidiness and became the mechanism.**
+`tabOpened` already carried an optional `sql` for the saved-query open, with a
+comment saying exactly why; the three definition tabs and *Duplicate* were still
+doing `openEditorTab()` then `setSql()`, and *Duplicate*'s comment even claimed it
+seeded at birth "the way a definition tab does" when neither of them did. It was
+invisible while the flag was gated on `savedQueryId`. Now all four ride
+`tabOpened`, and the seed is written for an unnamed `Query N` as well as for a
+named tab — writing it only on the named branch shipped a *Duplicate* that came
+up blank, since a copy is precisely the unnamed one carrying text. A side effect
+worth keeping: `Shell` now reads the editor's text and never writes it, leaving
+`setSql` one caller, `EditorPane`, which is the user typing.
+
+**Deleting a saved query now raises the mark on its tabs rather than clearing
+it.** Under the old meaning, losing the stored copy left nothing to have drifted
+from, so the mark went. Under the new one, that is the exact moment the tab's
+text stops being backed by anything — which is what the mark names. The tab keeps
+its title and its text either way; what changed is that it now says so.
+
+**The gate is in `Shell`, not in `TabStrip`, because a close can be refused.**
+`closeIdsFor(intent)` resolves a gesture to a set and `closeTabs(ids)` dispatches
+it, split into two calls so the confirm can sit between them — and so the tabs
+counted are exactly the tabs that go. The `×`, all four menu items and the
+shortcut are one function. *Rejected: wiring the dialog into the strip*, which
+would have left the shortcut destroying text silently; the "close others" lesson
+in `frontend.md` is the same mistake one step earlier.
+
+**One dialog for the gesture, not one per tab**, matching `tabsClosed` taking a
+set — Cancel closes nothing, and there is no sensible answer for what a half-way
+Cancel would mean. Two buttons and not VS Code's three: *Save* here would mean
+Ctrl+S, which for a tab that came from nowhere opens the name dialog, and a
+dialog summoned by a dialog is worse than a save the user can make themselves
+before closing. Most of the tabs this asks about are exactly that kind.
+
+**Rejected: showing the chord beside the menu item.** It is VS Code's idiom and
+it would teach the key, but it costs an accelerator field on the shared
+`ContextMenu` that every other menu in the app would then be inconsistent about,
+and the complaint being answered was "the item is not there", not "I did not know
+the key". The Preferences screen already lists every chord.
+
+**Left undone, on purpose: a browsed grid tab's staged cell edits and row deletes
+are still discarded silently on close.** Same class of loss, different owner —
+they live in `ResultsContext`, a feature context, and `Shell` reaching into it to
+count them is the hub-shaped import the feature split exists to prevent. It is in
+`backlog.md` as its own bug rather than smuggled in here.

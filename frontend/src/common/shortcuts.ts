@@ -22,12 +22,17 @@ export const SHORTCUTS = [
   { id: 'runStatement', group: 'Editor', label: 'Run statement under cursor', defaultChord: 'Ctrl+Shift+Enter' },
   { id: 'saveQuery', group: 'Editor', label: 'Save query', defaultChord: 'Ctrl+S' },
   { id: 'newTab', group: 'Tabs', label: 'New tab', defaultChord: 'Ctrl+T' },
+  { id: 'closeTab', group: 'Tabs', label: 'Close tab', defaultChord: 'Ctrl+W' },
   { id: 'nextTab', group: 'Tabs', label: 'Next tab', defaultChord: 'Ctrl+PageDown' },
   { id: 'previousTab', group: 'Tabs', label: 'Previous tab', defaultChord: 'Ctrl+PageUp' },
   // "Split" is what this looks like, never what it is called: the app has no
   // split verb -- a split is a tab being in the pane that had none, which is
   // exactly what moving one there does. See `docs/frontend.md`.
   { id: 'dockTab', group: 'Tabs', label: 'Move tab to the other pane', defaultChord: 'Ctrl+\\' },
+  // No confirmation, unlike closing a tab: `disconnect.pending` saves the
+  // session while the tabs still exist, so a disconnect parks work rather than
+  // destroying it. See `docs/decisions.md`.
+  { id: 'disconnect', group: 'Connection', label: 'Disconnect', defaultChord: 'Ctrl+Shift+W' },
   { id: 'toggleSidebar', group: 'View', label: 'Toggle sidebar', defaultChord: 'Ctrl+B' },
 ] as const;
 

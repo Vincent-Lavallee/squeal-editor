@@ -63,7 +63,14 @@ export interface Tab {
    */
   savedQueryId?: string;
   /**
-   * Whether *this tab* has been edited since it was opened or last saved.
+   * Whether closing *this tab* would destroy text that exists nowhere else.
+   *
+   * Two shapes of that, and the flag is deliberately one field for both: a tab
+   * linked to a saved query whose text has drifted from it, and a tab linked to
+   * nothing at all that has been typed into. Closing either loses work --
+   * `tabsClosed` deletes the tab's `sqlByTab` entry and the session listener then
+   * writes a snapshot without it -- which is why one flag answers both the dot in
+   * the strip and the confirm on close.
    *
    * A flag rather than a comparison against the stored query's text, and the
    * difference is the whole of what it means. Comparing said "this text is not
@@ -72,6 +79,11 @@ export interface Tab {
    * and deleting the query lit it on all of them at once, in both cases about an
    * edit the user had not made there. The mark is about the tab, so the tab is
    * what carries it. See `docs/decisions.md`.
+   *
+   * It is what makes seeding a tab at birth (`tabOpened`'s `sql`) rather than
+   * through a `sqlChanged` load-bearing: a definition tab is generated text
+   * nobody typed, and marking it would ask about work that is one click away
+   * from being regenerated.
    */
   unsaved?: boolean;
   /**
@@ -82,6 +94,17 @@ export interface Tab {
    */
   pane: 'primary' | 'secondary';
 }
+
+/**
+ * A close gesture, before it is a set of tabs. `closeIdsFor` turns one into the
+ * ids it would take, which is what lets a close be counted and then confirmed
+ * before anything is dispatched.
+ */
+export type CloseIntent =
+  | { kind: 'one'; id: string }
+  | { kind: 'others'; id: string }
+  | { kind: 'right'; id: string }
+  | { kind: 'all'; pane: Tab['pane'] };
 
 interface TabsState {
   /**
@@ -235,15 +258,18 @@ const tabsSlice = createSlice({
         return;
       }
       // A named editor tab keeps its name and leaves the query counter alone; an
-      // unnamed one is the next Query N.
+      // unnamed one is the next Query N. The seed is written for either -- a
+      // duplicate is the unnamed one carrying text, and writing it only on the
+      // named branch is a copy that comes up blank.
+      let id: string;
       if (title) {
-        const id = mint(state, { connectionId, kind, title, savedQueryId });
-        if (sql !== undefined) state.sqlByTab[id] = sql;
-        return;
+        id = mint(state, { connectionId, kind, title, savedQueryId });
+      } else {
+        const no = state.nextQueryNo[connectionId] ?? 1;
+        id = mint(state, { connectionId, kind, title: `Query ${no}` });
+        state.nextQueryNo[connectionId] = no + 1;
       }
-      const no = state.nextQueryNo[connectionId] ?? 1;
-      mint(state, { connectionId, kind, title: `Query ${no}` });
-      state.nextQueryNo[connectionId] = no + 1;
+      if (sql !== undefined) state.sqlByTab[id] = sql;
     },
 
     /**
@@ -393,10 +419,15 @@ const tabsSlice = createSlice({
      */
     sqlChanged(state, action: PayloadAction<{ tabId: string; sql: string }>) {
       state.sqlByTab[action.payload.tabId] = action.payload.sql;
-      // Only a tab that came from a saved query has anything to be unsaved
-      // *against*; a blank Query 1 is not holding edits to something.
       const tab = state.tabs.find((t) => t.id === action.payload.tabId);
-      if (tab?.savedQueryId !== undefined) tab.unsaved = true;
+      if (!tab) return;
+      // A linked tab has a stored copy to have drifted *from*, so any edit marks
+      // it -- including blanking it, which is an edit like any other. A tab
+      // linked to nothing is marked by holding text at all, since there is
+      // nowhere else that text exists; typing and then deleting it back to
+      // nothing therefore leaves the tab clean again.
+      if (tab.savedQueryId !== undefined) tab.unsaved = true;
+      else tab.unsaved = action.payload.sql.trim() !== '';
     },
 
     /**
@@ -465,12 +496,18 @@ const tabsSlice = createSlice({
        * The tab keeps its title and its text -- what was deleted is the stored
        * copy, not the query you are looking at -- and its next Ctrl+S asks for a
        * name, which is the honest reading of a tab that is no longer anywhere.
+       *
+       * That is also why the mark is *raised* here rather than cleared: deleting
+       * the row is the moment this text stops being backed by anything, so the
+       * tab becomes exactly the thing `unsaved` names. It used to be cleared,
+       * back when the mark meant "drifted from a stored copy" and losing the copy
+       * left nothing to have drifted from.
        */
       .addCase(deleteSavedQuery.fulfilled, (state, action) => {
         for (const tab of state.tabs) {
           if (tab.savedQueryId !== action.payload) continue;
           delete tab.savedQueryId;
-          delete tab.unsaved;
+          tab.unsaved = (state.sqlByTab[tab.id] ?? '').trim() !== '';
         }
       })
       .addCase(disconnect.fulfilled, (state, action) => {
@@ -682,11 +719,17 @@ export function useTabs() {
      * definition tab means seeding its editor text right after, and only the
      * reducer knows the id. `title` names a tab opened *for* something.
      */
+    /**
+     * `sql` seeds the tab **at birth**, and generated text has to arrive that
+     * way rather than through a following `setSql`: a `sqlChanged` is what marks
+     * a tab unsaved, so a definition or a duplicate seeded through one would be
+     * born asking to be saved. See `Tab.unsaved`.
+     */
     openEditorTab: useCallback(
-      (title?: string): string | null => {
+      (title?: string, sql?: string): string | null => {
         const id = store.getState().session.activeConnectionId;
         if (!id) return null;
-        dispatch(tabOpened({ connectionId: id, kind: 'editor', title }));
+        dispatch(tabOpened({ connectionId: id, kind: 'editor', title, sql }));
         return store.getState().tabs.activeTabId[id]!;
       },
       [dispatch, store]
@@ -706,10 +749,9 @@ export function useTabs() {
       },
       [dispatch, store]
     ),
-    closeTab: useCallback((id: string) => dispatch(tabsClosed({ ids: [id] })), [dispatch]),
     /*
-     * Which tabs each of these means is worked out here and not in the strip,
-     * for the same reason a thunk reads its own target: there is nothing for a
+     * Which tabs a close *means* is worked out here and not in the strip, for
+     * the same reason a thunk reads its own target: there is nothing for a
      * caller to get wrong -- and a caller that got it wrong would close another
      * server's tabs, or the other pane's.
      *
@@ -717,33 +759,28 @@ export function useTabs() {
      * (which is the primary pane's alone now that there are two): "others" and
      * "to the right" mean *this tab's own strip*, whichever one that is, so a
      * TabStrip instance never has to say which pane it is for these to behave.
+     *
+     * Resolving and closing are two calls rather than one because a close can be
+     * *refused*: `Shell` asks which tabs a gesture would take, and only some way
+     * later -- after the confirm, if the set holds unsaved work -- closes them.
+     * One resolver means the tabs that were counted are exactly the tabs that go.
      */
-    closeOtherTabs: useCallback(
-      (id: string) => {
-        const anchor = store.getState().tabs.tabs.find((t) => t.id === id);
-        if (!anchor) return;
-        const siblings = store.getState().tabs.tabs.filter((t) => t.connectionId === anchor.connectionId && t.pane === anchor.pane);
-        dispatch(tabsClosed({ ids: siblings.filter((t) => t.id !== id).map((t) => t.id) }));
+    closeIdsFor: useCallback(
+      (intent: CloseIntent): string[] => {
+        const all = store.getState().tabs.tabs;
+        if (intent.kind === 'all') return (intent.pane === 'secondary' ? secondaryTabs : tabs).map((t) => t.id);
+        if (intent.kind === 'one') return [intent.id];
+
+        const anchor = all.find((t) => t.id === intent.id);
+        if (!anchor) return [];
+        const siblings = all.filter((t) => t.connectionId === anchor.connectionId && t.pane === anchor.pane);
+        if (intent.kind === 'others') return siblings.filter((t) => t.id !== intent.id).map((t) => t.id);
+        const from = siblings.findIndex((t) => t.id === intent.id);
+        return from === -1 ? [] : siblings.slice(from + 1).map((t) => t.id);
       },
-      [dispatch, store]
+      [store, tabs, secondaryTabs]
     ),
-    closeTabsToTheRight: useCallback(
-      (id: string) => {
-        const anchor = store.getState().tabs.tabs.find((t) => t.id === id);
-        if (!anchor) return;
-        const siblings = store.getState().tabs.tabs.filter((t) => t.connectionId === anchor.connectionId && t.pane === anchor.pane);
-        const from = siblings.findIndex((t) => t.id === id);
-        if (from === -1) return;
-        dispatch(tabsClosed({ ids: siblings.slice(from + 1).map((t) => t.id) }));
-      },
-      [dispatch, store]
-    ),
-    /** Every tab of the given pane -- primary unless told otherwise. */
-    closeAllTabs: useCallback(
-      (pane: Tab['pane'] = 'primary') =>
-        dispatch(tabsClosed({ ids: (pane === 'secondary' ? secondaryTabs : tabs).map((t) => t.id) })),
-      [dispatch, tabs, secondaryTabs]
-    ),
+    closeTabs: useCallback((ids: string[]) => dispatch(tabsClosed({ ids })), [dispatch]),
     /**
      * Drop `id` in front of `beforeId`, or at the end when that is null.
      * `pane`, given, docks `id` there first -- see `tabMoved`.

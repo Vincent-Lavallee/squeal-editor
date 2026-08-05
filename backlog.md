@@ -24,6 +24,16 @@ Things that are wrong.
   still searches the full set on the server side. Autocomplete respects the
   same cap.
 
+- **Closing a grid tab discards its staged edits silently** — A browsed grid can
+  hold cell edits and row deletes that have not been saved yet, and closing the
+  tab throws them away with no warning — while closing an editor tab holding
+  unsaved text now asks first. Same loss, same gesture, different answer. The
+  reason it was left out is where the staging lives: `ResultsContext`, a feature
+  context, where the close is decided in the composition root, so counting them
+  means carrying that state across the boundary the feature split exists to keep.
+  Whatever the shape, the confirm has to end up one dialog for the whole gesture,
+  not one per tab kind.
+
 - **Update ignores custom install path on Windows** — The Windows installer
   lets you choose an install location, but a later update reinstalls to the
   default path instead of the one originally chosen, effectively relocating

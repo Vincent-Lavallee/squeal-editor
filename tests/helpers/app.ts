@@ -22,6 +22,17 @@ export interface Page {
   /** Evaluate in the page and return the value. Throws if the page throws. */
   evaluate<T = unknown>(expression: string): Promise<T>;
   /**
+   * Press a chord as the *host* sees it, not as a synthetic `KeyboardEvent`.
+   *
+   * The difference is the whole reason this exists. A dispatched `KeyboardEvent`
+   * enters at the DOM and can only ever reach DOM listeners; a real keypress is
+   * seen by the embedder first, so a chord the webview claims as a browser
+   * accelerator (Ctrl+W closing the window is the one that matters here) never
+   * reaches the app at all. `Input.dispatchKeyEvent` goes in at the same place
+   * a physical key does, which is the only way a test can tell the two apart.
+   */
+  press(key: string, modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean }): Promise<void>;
+  /**
    * Re-evaluate `expression` until it yields something other than `null` or
    * `undefined`, and return that. Throws when it never does.
    *
@@ -279,6 +290,20 @@ export async function launchApp(
         );
       }
       return r.result.value as T;
+    },
+
+    async press(key, modifiers = {}) {
+      // CDP's bitmask: Alt 1, Ctrl 2, Meta 4, Shift 8.
+      const mask = (modifiers.alt ? 1 : 0) | (modifiers.ctrl ? 2 : 0) | (modifiers.shift ? 8 : 0);
+      const upper = key.length === 1 ? key.toUpperCase() : key;
+      const common = {
+        modifiers: mask,
+        key: upper,
+        code: key.length === 1 ? `Key${upper}` : key,
+        windowsVirtualKeyCode: key.length === 1 ? upper.charCodeAt(0) : 0,
+      };
+      await send('Input.dispatchKeyEvent', { ...common, type: 'rawKeyDown' });
+      await send('Input.dispatchKeyEvent', { ...common, type: 'keyUp' });
     },
 
     async waitFor<T>(expression: string, timeoutMs = 15_000): Promise<T> {

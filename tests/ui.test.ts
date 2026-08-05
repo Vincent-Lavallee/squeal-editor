@@ -93,6 +93,15 @@ const contextItem = (label: string) => `
 const clickContextItem = (label: string) => `${contextItem(label)}.click(); true;`;
 const pressEscape = `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true;`;
 
+/*
+ * A chord, dispatched at an element and left to bubble the way a real keypress
+ * travels: `Shell`'s listener is on the window, and firing at the window
+ * directly would skip the propagation that decides whether Monaco gets there
+ * first.
+ */
+const pressChord = (init: string) =>
+  `document.body.dispatchEvent(new KeyboardEvent('keydown', { ${init}, bubbles: true })); true;`;
+
 /** The database picker is a listbox, so it is opened and one of its rows clicked. */
 const selectDatabase = (name: string) => `${REACT_SETTERS}
   pickOption(document.querySelector('[data-testid="sidebar-db-select"]'), ${JSON.stringify(name)});`;
@@ -105,6 +114,13 @@ const activeRail = `
   [...document.querySelectorAll('[data-testid="rail-item"]')]
     .findIndex(e => e.getAttribute('aria-current') === 'true')`;
 const clickRail = (i: number) => `document.querySelectorAll('[data-testid="rail-item"]')[${i}].click(); true;`;
+const rightClickRail = (i: number) => `(() => {
+  const el = document.querySelectorAll('[data-testid="rail-item"]')[${i}];
+  const r = el.getBoundingClientRect();
+  el.dispatchEvent(new MouseEvent('contextmenu',
+    { bubbles: true, cancelable: true, clientX: r.left + 5, clientY: r.top + 5 }));
+  return true;
+})()`;
 
 /** The tab strip, left to right. */
 const tabLabels = `[...document.querySelectorAll('[data-testid="tab-label"]')].map(e => e.textContent)`;
@@ -116,6 +132,13 @@ const tab = (label: string) => `
     .find(e => e.querySelector('[data-testid="tab-label"]').textContent === ${JSON.stringify(label)})`;
 const clickTab = (label: string) => `${tab(label)}.querySelector('[data-testid="tab-pick"]').click(); true;`;
 const closeTab = (label: string) => `${tab(label)}.querySelector('[data-testid="tab-close"]').click(); true;`;
+/** Is the unsaved-changes dialog up? Its absence is as much a result as its presence. */
+const closeConfirmShowing = `document.querySelector('[data-testid="close-confirm"]') !== null`;
+const answerCloseConfirm = `document.querySelector('[data-testid="close-confirm"] [data-testid="modal-submit"]').click(); true;`;
+// `Modal` closes on an overlay click, not on Escape, so the way out is the button.
+const cancelCloseConfirm = `
+  [...document.querySelectorAll('[data-testid="close-confirm"] button')]
+    .find(b => b.textContent === 'Cancel').click(); true;`;
 const newTab = `document.querySelector('[data-testid="tab-new"]').click(); true;`;
 const rightClickTab = (label: string) => `(() => {
   const el = ${tab(label)};
@@ -419,6 +442,39 @@ async function disconnect(): Promise<void> {
   await Bun.sleep(800);
 }
 
+/**
+ * Close a tab, answering the unsaved-changes dialog when the close raises one.
+ *
+ * Whether it appears is a fact about the tab and not about the gesture -- a grid
+ * tab, an untouched definition tab and an empty query tab all close with no
+ * dialog -- so it is asked rather than assumed. The tests that are *about* the
+ * dialog drive it by hand instead of coming through here.
+ */
+async function closeTabConfirmed(label: string): Promise<void> {
+  await app.evaluate(closeTab(label));
+  await Bun.sleep(250);
+  if (await app.evaluate<boolean>(closeConfirmShowing)) {
+    await app.evaluate(answerCloseConfirm);
+    await Bun.sleep(250);
+  }
+}
+
+/**
+ * One of the strip menu's closes, answering the dialog when the set it takes
+ * holds unsaved work — which for a bulk close is one dialog for the whole set,
+ * not one per tab.
+ */
+async function menuCloseConfirmed(anchor: string, item: string): Promise<void> {
+  await app.evaluate(rightClickTab(anchor));
+  await Bun.sleep(250);
+  await app.evaluate(clickContextItem(item));
+  await Bun.sleep(400);
+  if (await app.evaluate<boolean>(closeConfirmShowing)) {
+    await app.evaluate(answerCloseConfirm);
+    await Bun.sleep(400);
+  }
+}
+
 describe.skipIf(!UI_ENABLED)('the real app', () => {
   beforeAll(async () => {
     app = await launchApp({ SQUEAL_DATA_DIR: DATA_DIR, SQUEAL_KEYCHAIN_SERVICE: KEYCHAIN_SERVICE });
@@ -645,7 +701,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(400);
       expect(await app.evaluate<string | null>(editorText)).toBe('SELECT 2 -- the second tab');
 
-      await app.evaluate(closeTab('Query 2'));
+      await closeTabConfirmed('Query 2');
       await Bun.sleep(400);
       expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'users']);
     });
@@ -679,7 +735,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     test('closing the last tab leaves an empty state', async () => {
       await app.evaluate(closeTab('users'));
       await Bun.sleep(300);
-      await app.evaluate(closeTab('Query 1'));
+      await closeTabConfirmed('Query 1');
       await Bun.sleep(400);
 
       expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
@@ -892,7 +948,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await app.evaluate(closeTab('tags'));
       await Bun.sleep(300);
-      await app.evaluate(closeTab(queryTab));
+      await closeTabConfirmed(queryTab);
       await Bun.sleep(300);
     });
 
@@ -1903,7 +1959,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(1200);
       expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('postgres');
 
-      await app.evaluate(closeTab(second));
+      await closeTabConfirmed(second);
       await Bun.sleep(300);
       // Back to `shop`, where the rest of the block expects to be.
       await app.evaluate(selectDatabase('shop'));
@@ -2081,18 +2137,22 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * make -- the `Query N` counter has been moved by earlier tests, so each tab
      * created here is read back rather than assumed.
      */
-    test('right-clicking a tab offers duplicate and the three closes', async () => {
+    test('right-clicking a tab offers close, duplicate and the three bulk closes', async () => {
       await app.evaluate(rightClickTab('Query 3'));
       await Bun.sleep(200);
 
       // Asserted as one list for the same reason the tree's menu is: the menu
-      // being the whole surface is the point.
+      // being the whole surface is the point. `Close` leads it — it is the item
+      // the menu was reached for, and its absence read as the tab having no way
+      // to be closed at all.
       expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
-        'Duplicate', 'Close others', 'Close Tabs to the Right', 'Close All',
+        'Close', 'Duplicate', 'Close others', 'Close Tabs to the Right', 'Close All',
       ]);
 
       // One tab open: there is nothing to close except it, and nothing to its
-      // right. Both say so rather than being offered and doing nothing.
+      // right. Both say so rather than being offered and doing nothing --
+      // unlike `Close`, which is exactly what one tab open still offers.
+      expect(await app.evaluate<boolean>(`${contextItem('Close')}.disabled`)).toBe(false);
       expect(await app.evaluate<boolean>(`${contextItem('Close others')}.disabled`)).toBe(true);
       expect(await app.evaluate<boolean>(`${contextItem('Close Tabs to the Right')}.disabled`)).toBe(true);
 
@@ -2218,10 +2278,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(500);
       expect(await app.evaluate<string[]>(tabLabels)).toHaveLength(3);
 
-      await app.evaluate(rightClickTab(first!));
-      await Bun.sleep(200);
-      await app.evaluate(clickContextItem('Close Tabs to the Right'));
-      await Bun.sleep(500);
+      // One of the two it takes was typed into by the tests above, so this is
+      // also the bulk confirm: one dialog for the gesture, not one per tab.
+      await menuCloseConfirmed(first!, 'Close Tabs to the Right');
 
       // The active tab was one of the two just closed, so it has to land
       // somewhere -- and the tab the menu was summoned from is the only answer
@@ -2238,10 +2297,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(500);
       expect(await app.evaluate<string[]>(tabLabels)).toHaveLength(3);
 
-      await app.evaluate(rightClickTab(keep));
-      await Bun.sleep(200);
-      await app.evaluate(clickContextItem('Close others'));
-      await Bun.sleep(500);
+      await menuCloseConfirmed(keep, 'Close others');
 
       expect(await app.evaluate<string[]>(tabLabels)).toEqual([keep]);
       expect(await app.evaluate<string>(activeTabLabel)).toBe(keep);
@@ -2250,10 +2306,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     test('"Close All" leaves the empty state, with no tabs', async () => {
       const [only] = await app.evaluate<string[]>(tabLabels);
 
-      await app.evaluate(rightClickTab(only!));
-      await Bun.sleep(200);
-      await app.evaluate(clickContextItem('Close All'));
-      await Bun.sleep(500);
+      await menuCloseConfirmed(only!, 'Close All');
 
       expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
       const note = await app.evaluate<string>(`document.querySelector('[data-testid="note-muted"]')?.textContent ?? ''`);
@@ -2273,8 +2326,6 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * strips, so the tab count cannot tell a docked tab from a second tab.
      */
     test('the tab shortcuts open, step through and dock tabs', async () => {
-      const pressChord = (init: string) =>
-        `document.body.dispatchEvent(new KeyboardEvent('keydown', { ${init}, bubbles: true })); true;`;
       const panes = `document.querySelectorAll('.editor').length`;
 
       await app.evaluate(pressChord(`key: 't', ctrlKey: true`));
@@ -2310,11 +2361,138 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<number>(panes)).toBe(1);
       expect(await app.evaluate<string[]>(tabLabels)).toHaveLength(2);
 
-      // Back to the empty state the test below starts from.
-      await app.evaluate(closeTab(first!));
+      // Back to the empty state the test below starts from — and Ctrl+W is what
+      // gets there, so the cleanup is the assertion. Neither tab was typed into,
+      // so neither raises the unsaved dialog.
+      //
+      // Asserted against whichever tab is *in front* rather than a named one:
+      // the collapse above hands the surviving pane its own active tab, so which
+      // of the two that is belongs to `promoteIfPrimaryEmpty` and not to this
+      // test. What Ctrl+W claims is only ever "the one in front".
+      const survivors = await app.evaluate<string[]>(tabLabels);
+      const front = await app.evaluate<string>(activeTabLabel);
+      await app.evaluate(pressChord(`key: 'w', ctrlKey: true`));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(survivors.filter((label) => label !== front));
+
+      await app.evaluate(pressChord(`key: 'w', ctrlKey: true`));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+
+      // Nothing open is not an error: the shortcut has no tab to act on.
+      await app.evaluate(pressChord(`key: 'w', ctrlKey: true`));
       await Bun.sleep(300);
-      await app.evaluate(closeTab(second!));
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+    });
+
+    /*
+     * Ctrl+W as the *host* sees it, not as a `KeyboardEvent` the DOM was handed.
+     *
+     * Ctrl+W is a browser accelerator, and WebView2 ships with browser
+     * accelerator keys enabled — so the question this shortcut had to answer
+     * before it could ship is whether pressing it closes the window out from
+     * under the app. A dispatched event cannot answer that: it enters below the
+     * embedder and would pass whether or not a real key does. `app.press` goes
+     * in where a physical key does, and the app still being there afterwards is
+     * half of what is asserted.
+     */
+    test('a real Ctrl+W closes the tab and not the window', async () => {
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      const before = await app.evaluate<string[]>(tabLabels);
+      expect(before).toHaveLength(2);
+
+      await app.press('w', { ctrl: true });
+      await Bun.sleep(500);
+
+      // The window is still here to be asked, which is the accelerator question.
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([before[0]]);
+
+      await app.press('w', { ctrl: true });
+      await Bun.sleep(500);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+    });
+
+    /*
+     * The right-click menu is where people look for *Close*, and for most of
+     * this app's life it offered only "close others" — which reads as there
+     * being no way to close the tab you actually right-clicked.
+     */
+    test('the tab menu closes the tab it was summoned on', async () => {
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      const [first, second] = await app.evaluate<string[]>(tabLabels);
+
+      await app.evaluate(rightClickTab(first!));
       await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
+        'Close', 'Duplicate', 'Close others', 'Close Tabs to the Right', 'Close All',
+      ]);
+
+      await app.evaluate(clickContextItem('Close'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([second]);
+
+      await app.evaluate(pressChord(`key: 'w', ctrlKey: true`));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+    });
+
+    /*
+     * Closing deletes the tab's text — `tabsClosed` drops its `sqlByTab` entry
+     * and the session listener then writes a snapshot without it — so a tab
+     * holding a query that exists nowhere else asks before it goes. Cancel has
+     * to leave the tab *and* its text exactly where they were, which is the half
+     * a dialog gets wrong by re-rendering the editor from a stale store.
+     */
+    test('closing a tab holding unsaved text asks first', async () => {
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      const [only] = await app.evaluate<string[]>(tabLabels);
+
+      await app.evaluate(setEditorText('SELECT 1 -- never saved anywhere'));
+      await Bun.sleep(400);
+
+      await app.evaluate(closeTab(only!));
+      await Bun.sleep(400);
+      expect(await app.evaluate<boolean>(closeConfirmShowing)).toBe(true);
+
+      // Cancel closes nothing, and the text is still there to close.
+      await app.evaluate(cancelCloseConfirm);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([only]);
+      expect(await app.evaluate<string | null>(editorText)).toBe('SELECT 1 -- never saved anywhere');
+
+      // The shortcut goes through the same gate as the ×.
+      await app.evaluate(pressChord(`key: 'w', ctrlKey: true`));
+      await Bun.sleep(400);
+      expect(await app.evaluate<boolean>(closeConfirmShowing)).toBe(true);
+
+      await app.evaluate(answerCloseConfirm);
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+    });
+
+    /*
+     * A definition tab is generated text nobody typed, seeded at birth through
+     * `tabOpened` rather than by a `setSql` — which is the whole reason it does
+     * not count as unsaved work. Seed it the other way and every DDL you glance
+     * at asks to be saved on the way out.
+     */
+    test('a table definition closes without being asked about', async () => {
+      await app.evaluate(rightClickTable('users'));
+      await Bun.sleep(300);
+      await app.evaluate(clickContextItem('Open definition'));
+      await Bun.sleep(1200);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['users']);
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<boolean>(closeConfirmShowing)).toBe(false);
       expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
     });
 
@@ -2398,7 +2576,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<string>(`window.squealEditor.getModel().getLanguageId()`)).toBe('mysql');
 
       // Hand the next test back the grid it is about.
-      await app.evaluate(closeTab('Query 2'));
+      await closeTabConfirmed('Query 2');
       await Bun.sleep(300);
       await app.evaluate(clickTab('users'));
       await Bun.sleep(400);
@@ -2711,7 +2889,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(modalButton('Close'));
       await Bun.sleep(200);
 
-      await app.evaluate(closeTab(opened));
+      await closeTabConfirmed(opened);
       await Bun.sleep(300);
     });
   });
@@ -3134,7 +3312,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(800);
       expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
 
-      await app.evaluate(closeTab('ui-saved'));
+      await closeTabConfirmed('ui-saved');
       await Bun.sleep(300);
     });
 
@@ -3157,9 +3335,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
     });
 
-    test('deleting it empties the list and leaves the open tab alone', async () => {
-      // Deleting used to mark every tab that came from the query as unsaved, all
-      // at once. What was deleted is the stored copy, not the query on screen.
+    test('deleting it empties the list and leaves the open tab holding the text', async () => {
+      // Saved a moment ago, so nothing has drifted from anything yet.
       expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
 
       await deleteFirstSavedQuery();
@@ -3168,7 +3345,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<string[]>(pickerNames)).toEqual([]);
       await app.evaluate(pressEscape);
 
-      expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
+      // The mark goes *up*, not away: deleting the row is the moment this text
+      // stops being backed by anything, which is exactly what the mark names.
+      // The tab keeps its title and its text -- what was deleted is the stored
+      // copy, not the query on screen.
+      expect(await app.evaluate<number>(unsavedMarks)).toBe(1);
       expect(await app.evaluate<string[]>(tabLabels)).toEqual(['ui-saved']);
 
       // The tab came from nowhere now, so Ctrl+S has a name to ask for again --
@@ -3396,6 +3577,27 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(pg).toContain('PostgreSQL');
     });
 
+    /*
+     * Right-clicking the chip is where people reach for this: the status bar's
+     * Disconnect is bottom-left and easy to have never noticed. The menu names
+     * the chip it was summoned on and does *not* bring it to the front first —
+     * the same rule the tab strip's menu follows — so a background server can be
+     * closed without leaving the one you are working in.
+     */
+    test('a rail chip offers Disconnect, and summoning it does not switch connections', async () => {
+      // Shop dev (index 0) is in front, from the test above.
+      expect(await app.evaluate<number>(activeRail)).toBe(0);
+
+      await app.evaluate(rightClickRail(1));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(menuItemLabels)).toEqual(['Disconnect']);
+      expect(await app.evaluate<number>(activeRail)).toBe(0);
+
+      await app.evaluate(pressEscape);
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(railNames)).toEqual(['Shop dev', 'Shop prod']);
+    });
+
     test('disconnecting one leaves the other open, and lands you on it', async () => {
       // Disconnect is the titlebar's, and it has always meant the one in front.
       // Shop dev is in front, from the test above.
@@ -3411,9 +3613,15 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         .toBe(`${MYSQL.user}@${MYSQL.host}:${MYSQL.port}`);
     });
 
+    // Through the rail's menu rather than the status bar, so both ways in are
+    // exercised: the bar closed the connection above, and this closes the last
+    // one. There is no confirmation on either — a disconnect saves the session
+    // while the tabs still exist, so reconnecting brings them back.
     test('disconnecting the last one is the way back to the connect screen', async () => {
-      await disconnect();
-      await Bun.sleep(600);
+      await app.evaluate(rightClickRail(0));
+      await Bun.sleep(300);
+      await app.evaluate(clickContextItem('Disconnect'));
+      await Bun.sleep(900);
       expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="rail"]')`)).toBe(false);
       expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="saved-row"], #host')`)).toBe(true);
     });

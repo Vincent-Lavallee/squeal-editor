@@ -372,6 +372,15 @@ Two things to know:
   `setSelect` and surfaces as `Illegal invocation`) and Monaco's tokenizing,
   which passed or failed according to *how many tests ran before it*. Convert the
   next one that bites rather than all of them at once.
+- **A dispatched `KeyboardEvent` cannot prove a chord is *available*, only that
+  the handler works.** It enters at the DOM, below the embedder — so a chord the
+  host claims as an accelerator passes the test and closes the window in real
+  use. `app.press(key, mods)` is `Input.dispatchKeyEvent`, which goes in where a
+  physical key does, and is the only way to tell the two apart. Reach for it
+  whenever a new shortcut takes a key a browser has an opinion about; `Ctrl+W` is
+  why it exists, and that test asserts the window is still there afterwards as
+  much as it asserts the tab closed. Everything else stays on the cheaper
+  synthetic events.
 - **React ignores a synthetic `mouseenter`/`mouseleave`.** It synthesises
   `onMouseEnter` from the delegated `mouseover`/`mouseout` pair at the root, so a
   dispatched `mouseenter` reaches the DOM and no handler at all — which reads as

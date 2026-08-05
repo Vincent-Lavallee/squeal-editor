@@ -41,8 +41,8 @@ src/features/
   titlebar/             Titlebar, Menu, AboutDialog, EnvironmentsDialog, ShortcutsDialog,
                         ExportConnectionsDialog + ImportConnectionsDialog,
                         useAbout, useWindowChrome
-  rail/                 ConnectionRail: the open connections, and the way between
-  tabs/                 TabStrip: the strip, its menu, and its drag
+  rail/                 ConnectionRail: the open connections, the way between, and Disconnect
+  tabs/                 TabStrip: the strip, its menu, and its drag; CloseTabsConfirm
   explorer/             Sidebar, DropTableConfirm, useExplorer
   queries/              SavedQueriesButton (the strip's picker), SaveQueryDialog
   editor/               EditorPane, useEditor (text surface over the tabs slice), monaco (theme + worker),
@@ -94,7 +94,8 @@ that lives apart from its values is two sources for one fact.
 | where the result grid is scrolled to, per tab | `results` context (a ref) | never left, and a restored session refetches its rows |
 | saved connections | `saved` slice | crossed |
 | saved queries | `savedQueries` slice | crossed |
-| whether a tab holds edits it has not saved back (`unsaved`) | `tabs` slice | never left, but it is a fact about a tab, and tabs live here |
+| whether closing a tab would destroy text (`unsaved`) | `tabs` slice | never left, but it is a fact about a tab, and tabs live here |
+| which tabs a close is waiting to be confirmed for | `Shell` local state | never left, and is gone either way the dialog is answered |
 | the version a *Test* reached, and why one failed | `connectionTest` slice | crossed |
 | what the last connections export wrote or import merged, as counts | `transfer` slice | crossed |
 | whether an export was ticked to include passwords | `ExportConnectionsDialog` local state | never left |
@@ -239,6 +240,27 @@ rows, only the shape.
 `features/tabs` owns the strip you click: the tabs of the active connection, a
 `+`, a right-click menu, and drag-to-reorder. What it operates on is the store's,
 which is the split the whole feature exists inside.
+
+**Every close comes through `Shell`, because a close can be refused.**
+`closeIdsFor(intent)` in `useTabs` turns a gesture — `one`, `others`, `right`,
+`all` — into the ids it would take, and `closeTabs(ids)` is what finally
+dispatches. The two are separate calls precisely so something can happen in
+between: `Shell.requestClose` resolves the set, and if any tab in it holds
+unsaved text it puts up `CloseTabsConfirm` instead of closing. One resolver
+means the tabs that were counted are exactly the tabs that go.
+
+The × in the strip, all four menu items and `Ctrl+W` are all wired to that one
+function. Guarding the close inside `TabStrip` instead would leave the shortcut
+destroying text silently, and the two would drift the first time a third way to
+close arrived — which is exactly the history this section already records for
+"close others".
+
+**What the dialog asks about is `Tab.unsaved`, and one dialog covers the whole
+gesture.** Cancel closes nothing at all; a set with nothing unsaved in it closes
+with no dialog, which is every grid tab, every untouched definition tab and every
+empty `Query N`. Two buttons and not three: *Save* would mean Ctrl+S, which for a
+tab that came from nowhere opens the name dialog — a dialog summoned by a dialog,
+and most of the tabs this asks about are exactly that kind.
 
 **Closing takes a set, and closing one is the set of one.** `tabsClosed({ ids })`
 is the only close action there is. "Close others" is not a loop over a
@@ -592,11 +614,38 @@ disk* is a fact about the **query**, so it was true of every tab holding it —
 which, before the tabs shared a save, lit the mark on copies the user had never
 edited. Deleting the query lit it on all of them at once for the same reason.
 
-Three writes and no others: `sqlChanged` sets it (only for a tab that has a
-`savedQueryId` — a blank Query 1 is not holding edits to anything), `tabSaved`
-clears it across the query's tabs, and `deleteSavedQuery.fulfilled` drops it
-along with the link. It rides in the session snapshot as a boolean, so a tab left
-mid-edit comes back saying so.
+**What it names is "closing this would destroy text that exists nowhere else",
+which is wider than the saved queries this section is about.** Two shapes of that
+and one field for both: a linked tab whose text has drifted from its query, and a
+tab linked to nothing that has been typed into. The second is the one that
+matters more and the one the narrower reading missed entirely — a `Query 1`
+holding two hundred lines nobody ever saved is the tab whose close costs the
+most, and it has no `savedQueryId` to have drifted from. `tabsClosed` deletes a
+closed tab's `sqlByTab` entry and the session listener then writes a snapshot
+without it, so that text is genuinely gone. See `docs/decisions.md`.
+
+Four writes and no others: `sqlChanged` sets it — always for a linked tab, since
+blanking a stored query is an edit like any other, and on non-empty text for an
+unlinked one, so typing and deleting back to nothing leaves the tab clean again;
+`tabSaved` clears it across the query's tabs; and `deleteSavedQuery.fulfilled`
+**raises** it while dropping the link, because losing the stored row is the moment
+that text stops being backed by anything. It rides in the session snapshot as a
+boolean, so a tab left mid-edit comes back saying so.
+
+**Which is what makes seeding at birth load-bearing rather than tidy.**
+`tabOpened` carries an optional `sql`, and every tab born holding generated text
+uses it: the three definition tabs and *Duplicate*, alongside the saved-query
+open that had it first. Seeding through a `setSql` instead would mark them —
+every DDL you glance at would ask to be saved on the way out, about text the tree
+regenerates on demand. `openEditorTab(title?, sql?)` is the seam, and it writes
+the seed for a `Query N` as well as for a named tab; writing it only on the named
+branch shipped a *Duplicate* that came up blank, since a copy is the unnamed one
+carrying text.
+
+A consequence worth stating plainly: **`Shell` no longer writes into the editor at
+all.** Every inbound seed rides `tabOpened`, so the composition root reads text
+(`peekSql`) and never sets it. `setSql` has exactly one caller left, `EditorPane`,
+which is the user typing — which is precisely what should mark a tab.
 
 **A save clears the mark when it *lands*, not when the key is pressed.** `Shell`
 clears it in the thunk's `.then`, so a write the extension refuses leaves the tab
@@ -1563,10 +1612,28 @@ list with a way to change one.
 | Editor | Run statement under cursor | `Ctrl+Shift+Enter` |
 | Editor | Save query | `Ctrl+S` |
 | Tabs | New tab | `Ctrl+T` |
+| Tabs | Close tab | `Ctrl+W` |
 | Tabs | Next tab | `Ctrl+PageDown` |
 | Tabs | Previous tab | `Ctrl+PageUp` |
 | Tabs | Move tab to the other pane | `Ctrl+\` |
+| Connection | Disconnect | `Ctrl+Shift+W` |
 | View | Toggle sidebar | `Ctrl+B` |
+
+**`Ctrl+W` is a browser accelerator, and that had to be settled by pressing it.**
+A synthetic `KeyboardEvent` enters at the DOM and would pass whether or not a
+real key does, because an accelerator is claimed by the embedder above it — so
+the suite drives this one through `app.press`, which is `Input.dispatchKeyEvent`
+and goes in where a physical key does. WebView2 lets it through: it closes the
+tab, and the window is still there afterwards, which is half of what that test
+asserts. See `docs/testing.md`.
+
+**Close tab and Disconnect act on what is in front; their menus act on what was
+clicked.** `Ctrl+W` takes `workingPane`'s active tab, the same pointer `nextTab`
+and `dockTab` read; `Ctrl+Shift+W` takes the active connection, which is what
+`useSession().disconnect()` already defaulted to. The tab strip's *Close* and the
+rail's *Disconnect* name the tab or chip the menu was summoned on instead — and
+neither activates it first, so a background server can be closed without leaving
+the one being worked in.
 
 **Adding one is a registry row and a handler**, and both listeners pick it up:
 `EditorPane` registers a Monaco action for *every* row rather than a hand-written
@@ -1977,6 +2044,16 @@ has to reach the connect screen with connections still open, so "there is a
 connection" and "show the shell" became different questions. `adding` lives in
 `App` and is dismissed by watching `activeConnectionId` change — never by hooking
 a connect handler, of which there are already two.
+
+**A rail chip right-clicks to *Disconnect*, and that is the second way out.** The
+first is the status bar's button, bottom-left, which is where it has always
+lived and which is easy to have never noticed; the chip is where the gesture is
+actually reached for. One item, `danger`, naming the chip it was summoned on
+without activating it — so a background server closes without leaving the one
+being worked in. Neither way confirms: `disconnect.pending` saves the session
+while the tabs still exist, so reconnecting brings back the tabs, the split and
+the queries. A disconnect parks work; it does not destroy it, which is the whole
+of why *Close All* asks and this — closing strictly more — does not.
 
 ### Thunks read their target; callers do not pass it
 

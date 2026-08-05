@@ -6,14 +6,14 @@ import { useAppSelector } from './store/hooks.ts';
 import { useSavedQueries } from './store/savedQueriesSlice.ts';
 import { useSession } from './store/sessionSlice.ts';
 import { useShortcuts } from './store/settingsSlice.ts';
-import { useTabs, type Tab } from './store/tabsSlice.ts';
+import { useTabs, type CloseIntent, type Tab } from './store/tabsSlice.ts';
 import { EditorPane, useEditor, useSqlCompletion, useSqlFormatter } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
 import { SaveQueryDialog, SavedQueriesButton } from './features/queries/index.ts';
 import { ConnectionRail } from './features/rail/index.ts';
 import { ResultsProvider, ResultsTable, useResults } from './features/results/index.ts';
 import { StatusBar } from './features/statusbar/index.ts';
-import { TabStrip } from './features/tabs/index.ts';
+import { CloseTabsConfirm, TabStrip } from './features/tabs/index.ts';
 import Note from './common/components/Note.tsx';
 import ResizeHandle from './common/components/ResizeHandle.tsx';
 import { chordFromEvent, type ShortcutId } from './common/shortcuts.ts';
@@ -44,9 +44,9 @@ function ShellLayout({ onAddConnection }: Props) {
   const {
     tabs, activeTab, activeTabId, secondaryTabs, secondaryActiveTab, secondaryActiveTabId,
     openGridTab, openEditorTab, openSavedQueryTab, setDatabase, markTabSaved, database,
-    activateTab, closeTab, closeOtherTabs, closeTabsToTheRight, closeAllTabs, moveTab, renameTab,
+    activateTab, closeIdsFor, closeTabs, connectionTabs, moveTab, renameTab,
   } = useTabs();
-  const { dialect } = useSession();
+  const { dialect, disconnect } = useSession();
   // `tabRunning`, not the shown result's own `running`: a batch of several
   // statements leaves the pane showing a finished one while a later one is still
   // going, and Run must stay busy until the whole batch is done.
@@ -56,7 +56,9 @@ function ShellLayout({ onAddConnection }: Props) {
   const { run: runPrimary, tabRunning: primaryRunning, browseIn: browseInPrimary } = useResults(activeTab);
   const { run: runSecondary, tabRunning: secondaryRunning, browseIn: browseInSecondary } = useResults(secondaryActiveTab);
   const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema } = useExplorer();
-  const { setSql, peekSql } = useEditor();
+  // `peekSql` alone: every seed now rides `tabOpened`, so the composition root
+  // reads the editor's text and never writes it.
+  const { peekSql } = useEditor();
   const { queries, save: saveQuery } = useSavedQueries();
   const { bindings } = useShortcuts();
 
@@ -202,13 +204,41 @@ function ShellLayout({ onAddConnection }: Props) {
     moveTab(id, null, workingPane === 'secondary' ? 'primary' : 'secondary');
   }, [workingPane, activeTabId, secondaryActiveTabId, moveTab]);
 
+  /*
+   * Every way a tab closes comes through here: the × in the strip, all four
+   * context-menu items, and the shortcut. One seam, because the thing being
+   * guarded is the *close* and not any one gesture -- wiring the confirm into
+   * the strip would leave the shortcut destroying text silently, and the two
+   * would drift the first time a third way to close arrived.
+   *
+   * A set with nothing unsaved in it closes with no dialog at all, which is
+   * every grid tab, every untouched definition tab, and every empty Query N.
+   */
+  const [closing, setClosing] = useState<{ ids: string[]; unsaved: Tab[] } | null>(null);
+  const requestClose = useCallback((intent: CloseIntent) => {
+    const ids = closeIdsFor(intent);
+    if (ids.length === 0) return;
+    const unsaved = connectionTabs.filter((tab) => ids.includes(tab.id) && tab.unsaved === true);
+    if (unsaved.length === 0) { closeTabs(ids); return; }
+    setClosing({ ids, unsaved });
+  }, [closeIdsFor, closeTabs, connectionTabs]);
+
+  const closeActiveTab = useCallback(() => {
+    const id = workingPane === 'secondary' ? secondaryActiveTabId : activeTabId;
+    if (id) requestClose({ kind: 'one', id });
+  }, [workingPane, activeTabId, secondaryActiveTabId, requestClose]);
+
   const shellCommands: Partial<Record<ShortcutId, () => void>> = useMemo(() => ({
     newTab: () => { openEditorTab(); },
+    closeTab: closeActiveTab,
     nextTab: () => stepTab(1),
     previousTab: () => stepTab(-1),
     dockTab: dockActiveTab,
+    // The one in front, which is what `useSession().disconnect` already defaults
+    // to. The rail's menu is the other way in, and it names its own chip.
+    disconnect: () => disconnect(),
     toggleSidebar,
-  }), [openEditorTab, stepTab, dockActiveTab, toggleSidebar]);
+  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar]);
 
   /*
    * The shortcuts the shell owns, and the half of each that answers from
@@ -271,33 +301,36 @@ function ShellLayout({ onAddConnection }: Props) {
     if (tabId) browseInPrimary(tabId, relation.table, 0);
   }, [openGridTab, browseInPrimary, defaultSchema]);
 
+  /*
+   * A definition tab is born holding its text rather than being opened empty and
+   * then written into. A `setSql` is a `sqlChanged`, which marks a tab unsaved --
+   * so seeding through one would have every DDL tab asking to be saved on close,
+   * about text nobody typed and the tree can regenerate. See `Tab.unsaved`.
+   */
   const showDefinition = useCallback(async (database: string, table: TableInfo) => {
     const relation = relationOf(table);
     const name = relationLabel(relation, defaultSchema);
     let text: string;
     try { text = await fetchDdl(database, relation, table.kind); }
     catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
-    const tabId = openEditorTab(name);
-    if (tabId) setSql(tabId, text);
-  }, [fetchDdl, openEditorTab, setSql, defaultSchema]);
+    openEditorTab(name, text);
+  }, [fetchDdl, openEditorTab, defaultSchema]);
 
   const showTriggerDefinition = useCallback(async (database: string, table: string, trigger: TriggerInfo, schema?: string) => {
     const name = trigger.name;
     let text: string;
     try { text = await fetchTriggerDdl(database, table, name, schema); }
     catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
-    const tabId = openEditorTab(name);
-    if (tabId) setSql(tabId, text);
-  }, [fetchTriggerDdl, openEditorTab, setSql]);
+    openEditorTab(name, text);
+  }, [fetchTriggerDdl, openEditorTab]);
 
   const showFunctionDefinition = useCallback(async (database: string, func: FunctionInfo) => {
     const name = func.name;
     let text: string;
     try { text = await fetchFunctionDdl(database, name, func.kind, func.schema); }
     catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
-    const tabId = openEditorTab(name);
-    if (tabId) setSql(tabId, text);
-  }, [fetchFunctionDdl, openEditorTab, setSql]);
+    openEditorTab(name, text);
+  }, [fetchFunctionDdl, openEditorTab]);
 
   /*
    * A copy of a tab is a new tab of the same kind, plus whatever the original
@@ -322,12 +355,11 @@ function ShellLayout({ onAddConnection }: Props) {
       if (id) browseInPrimary(id, tab.table, 0);
       return;
     }
-    const id = openEditorTab();
-    // Seeded at birth, the way a definition tab is: the model reads `peekSql`
-    // when it is created, so writing the text now is not a write into a live
-    // editor. Text still only flows out.
-    if (id) setSql(id, peekSql(tabId) ?? '');
-  }, [tabs, secondaryTabs, openGridTab, openEditorTab, browseInPrimary, setSql, peekSql]);
+    // Seeded at birth, the way a definition tab is: the model reads the tab's
+    // text when it is created, so this is not a write into a live editor, and a
+    // copy nobody has touched yet is not a tab holding unsaved work.
+    openEditorTab(undefined, peekSql(tabId) ?? '');
+  }, [tabs, secondaryTabs, openGridTab, openEditorTab, browseInPrimary, peekSql]);
 
   /*
    * Saved queries span the tabs, the editor's text and the queries slice, so both
@@ -415,8 +447,9 @@ function ShellLayout({ onAddConnection }: Props) {
                 once there are more tabs than fit, and a control inside it would
                 scroll away with them. */}
             <div style={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
-              <TabStrip tabs={tabs} activeTabId={activeTabId} onActivate={activateTab} onClose={closeTab}
-                onCloseOthers={closeOtherTabs} onCloseToTheRight={closeTabsToTheRight} onCloseAll={() => closeAllTabs('primary')}
+              <TabStrip tabs={tabs} activeTabId={activeTabId} onActivate={activateTab} onClose={(id) => requestClose({ kind: 'one', id })}
+                onCloseOthers={(id) => requestClose({ kind: 'others', id })} onCloseToTheRight={(id) => requestClose({ kind: 'right', id })}
+                onCloseAll={() => requestClose({ kind: 'all', pane: 'primary' })}
                 onMove={(id, beforeId) => moveTab(id, beforeId, 'primary')} onRename={renameTab}
                 onNewTab={() => openEditorTab()} onDuplicateTab={duplicateTab}
                 draggingId={draggingId} onDragTab={setDraggingId} />
@@ -452,8 +485,9 @@ function ShellLayout({ onAddConnection }: Props) {
               style={{ position: 'relative', display: 'grid', gridTemplateRows: secondaryShowEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(${EDITOR_MIN}px, 1fr) auto ${secondaryResultsHeight}px` : `${t.TAB_H}px 1fr`, flex: `${1 - splitFraction} 1 0`, minWidth: 0, minHeight: 0 }}
               onFocusCapture={() => setFocusedPane('secondary')} onPointerDownCapture={() => setFocusedPane('secondary')}>
               <div style={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
-                <TabStrip tabs={secondaryTabs} activeTabId={secondaryActiveTabId} onActivate={activateTab} onClose={closeTab}
-                  onCloseOthers={closeOtherTabs} onCloseToTheRight={closeTabsToTheRight} onCloseAll={() => closeAllTabs('secondary')}
+                <TabStrip tabs={secondaryTabs} activeTabId={secondaryActiveTabId} onActivate={activateTab} onClose={(id) => requestClose({ kind: 'one', id })}
+                  onCloseOthers={(id) => requestClose({ kind: 'others', id })} onCloseToTheRight={(id) => requestClose({ kind: 'right', id })}
+                  onCloseAll={() => requestClose({ kind: 'all', pane: 'secondary' })}
                   onMove={(id, beforeId) => moveTab(id, beforeId, 'secondary')} onRename={renameTab}
                   draggingId={draggingId} onDragTab={setDraggingId} />
               </div>
@@ -481,6 +515,12 @@ function ShellLayout({ onAddConnection }: Props) {
           onSaved={(query) => { markTabSaved(namingTab.id, query.id, query.name, query.sql); setNamingTab(null); }}
           onClose={() => setNamingTab(null)}
         />
+      )}
+
+      {closing && (
+        <CloseTabsConfirm tabs={closing.unsaved}
+          onConfirm={() => { closeTabs(closing.ids); setClosing(null); }}
+          onCancel={() => setClosing(null)} />
       )}
     </div>
   );

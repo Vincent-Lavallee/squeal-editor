@@ -242,6 +242,10 @@ export default function TabStrip({ tabs: tabList, activeTabId, onActivate, onClo
     const only = tabList.length === 1;
     const last = index === tabList.length - 1;
     return [
+      // First, and the reason the menu grew it: the × is a hover target on the
+      // tab itself, so a right-click that offered only "close others" read as
+      // there being no way to close *this* one.
+      { label: 'Close', onSelect: () => onClose(id) },
       { label: 'Duplicate', disabled: !onDuplicateTab, onSelect: () => onDuplicateTab?.(id) },
       { label: 'Close others', disabled: only, onSelect: () => onCloseOthers(id) },
       { label: 'Close Tabs to the Right', disabled: last, onSelect: () => onCloseToTheRight(id) },

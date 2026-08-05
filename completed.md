@@ -677,3 +677,20 @@ This is a record, not a plan. Nothing here is waiting on anything.
   Import asks for whatever the file does not carry. This stays separate from GitHub
   sync: that one is continuous, personal and needs an account, this one is a file you
   can hand over or keep as a backup with no network at all.
+
+- **2026-08-05** — **Close a tab from the menu, and from the keyboard** — A tab
+  had a `×` and a right-click menu offering every close except *Close* itself,
+  which reads as the tab having no way to close at all, and no chord anywhere.
+  Add the item, and `Ctrl+W` for the tab in front of whichever pane is being
+  worked in. Closing an editor tab deletes its text, so a close that would
+  destroy work asks first — one dialog for the whole gesture, Cancel closing
+  nothing — which widened the unsaved mark from "drifted from a saved query" to
+  "exists nowhere else", and made seeding generated tabs at birth load-bearing
+  rather than tidy.
+
+- **2026-08-05** — **Disconnect from the rail chip, and from the keyboard** —
+  Disconnecting was the status bar's button, bottom-left, and the gesture people
+  reach for is a right-click on the connection. Add that menu, naming the chip it
+  was summoned on rather than the connection in front, and `Ctrl+Shift+W` for the
+  one in front. No confirmation on either: a disconnect saves the session while
+  the tabs still exist, so it parks work rather than destroying it.
