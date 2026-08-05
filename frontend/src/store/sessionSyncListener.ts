@@ -68,10 +68,11 @@ function snapshotFor(state: RootState, connectionId: string): SessionSnapshot {
         // seed it was reopened with is all there is.
         const browsed = activePart(state.results[tab.id])?.browse;
         const filter = browsed ? browsed.filter : (tab.filter ?? null);
-        return { kind: tab.kind, table: tab.table, schema: tab.schema, title: tab.title, filter, pane: tab.pane };
+        return { kind: tab.kind, database: tab.database, table: tab.table, schema: tab.schema, title: tab.title, filter, pane: tab.pane };
       }
       return {
         kind: tab.kind,
+        database: tab.database,
         title: tab.title,
         sql: state.tabs.sqlByTab[tab.id] ?? '',
         savedQueryId: tab.savedQueryId,
@@ -82,7 +83,7 @@ function snapshotFor(state: RootState, connectionId: string): SessionSnapshot {
     activeIndex: activeIndex < 0 ? null : activeIndex,
     secondaryActiveIndex: secondaryActiveIndex < 0 ? null : secondaryActiveIndex,
     nextQueryNo: state.tabs.nextQueryNo[connectionId] ?? tabs.length + 1,
-    database: state.tabs.database[connectionId] ?? null,
+    database: state.tabs.defaultDatabase[connectionId] ?? null,
   };
 }
 

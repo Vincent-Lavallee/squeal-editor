@@ -1939,12 +1939,16 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     /*
-     * The database belongs to the connection, not to any one tab: this is the
-     * assertion the whole `tabsSlice` shape exists for now. Picking one from
-     * any tab moves the picker for every tab -- switching tabs must not make
-     * it jump back to whatever it happened to read before.
+     * The database belongs to the tab, not to the connection: this is the
+     * assertion the whole `tabsSlice` shape exists for now. Pointing one tab
+     * somewhere else leaves every other tab where it was, and the tree follows
+     * whichever tab is in front back to its own database.
+     *
+     * The tab that was never moved is the real subject here. A picker that
+     * "remembered" `postgres` for it would be the connection-scoped shape
+     * wearing a per-tab field.
      */
-    test('the database picker is shared across every tab', async () => {
+    test('the database picker follows the tab, not the connection', async () => {
       await app.evaluate(newTab);
       await Bun.sleep(400);
       const second = await app.evaluate<string>(activeTabLabel);
@@ -1953,15 +1957,17 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await Bun.sleep(1200);
       expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('postgres');
 
-      // Back to the first tab: the picker still reads `postgres`, the database
-      // just picked from the other tab -- it did not stay behind on `shop`.
+      // Back to the first tab, which was never pointed anywhere: it is still on
+      // `shop`, and the tree re-roots to it rather than staying on the database
+      // the *other* tab was moved to.
       await app.evaluate(clickTab('Query 3'));
       await Bun.sleep(1200);
-      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('postgres');
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('shop');
 
       await closeTabConfirmed(second);
       await Bun.sleep(300);
-      // Back to `shop`, where the rest of the block expects to be.
+      // Already on `shop` -- picked again so this reads the same whichever tab
+      // the close landed on, which is where the rest of the block expects to be.
       await app.evaluate(selectDatabase('shop'));
       await Bun.sleep(1200);
       const tables = await app.evaluate<string[]>(

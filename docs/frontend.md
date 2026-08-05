@@ -84,7 +84,9 @@ that lives apart from its values is two sources for one fact.
 | `connectingPhase`, and `awsCredentialsFailed` derived from it at rejection | `session` slice | crossed |
 | `order`, `activeConnectionId` | `session` slice | never left, but see above |
 | a tab's `connectionId`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
-| `database`, per connection | `tabs` slice | crossed |
+| a tab's `database`, and `defaultDatabase` (the seed) per connection | `tabs` slice | crossed |
+| which pane's database list is open (`pickerPane`) | `Shell` local state | never left |
+| the tree's expansion, schema flips and filter text, **per database** | `Sidebar` local state | never left |
 | `tabs`, `activeTabId`, `secondaryActiveTabId`, `kind`, `pane`, `title`, a grid tab's `filter` seed, an editor tab's `savedQueryId` | `tabs` slice | never left, but see above |
 | `databases`, `tables`, `columns`, `stars` | `explorer` slice | crossed |
 | `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), the `sql` the result came from, per statement, per tab | `results` slice | crossed |
@@ -360,12 +362,23 @@ restore, Ctrl+S, the database-change re-browse) means by "the" active tab —
 and `secondaryActiveTabId` is the same shape for the second pane, `null`
 whenever there is none. **Whether a split exists is derived, never stored**:
 it is `secondaryActiveTabId[connectionId] !== null`, not a flag that could
-disagree with the tabs actually carrying `pane: 'secondary'`. New tabs (`+`,
-opening a table, a definition, duplicate, a saved query) always mint into the
-primary pane — a tab only ever reaches the secondary one by being *moved* there,
-which is also why the secondary strip has no `+` or bookmark button of its own.
-There are two gestures for that move and one action behind them: dragging, and
-the *Move tab to the other pane* shortcut (see *Keyboard shortcuts*).
+disagree with the tabs actually carrying `pane: 'secondary'`.
+
+**A tab is born into the pane whose control opened it**, and `mint` takes that
+pane rather than hard-coding `'primary'`. The rule for which pane that is has
+one line: **a control attached to a pane names its own; a control attached to
+none names the one being worked in.** So each strip's `+` and bookmark open
+into their own strip, while the tree, its context menus and `Ctrl+T` open into
+`workingPane`. Duplicate is the third case and it is the first rule again — a
+copy appears beside its original, in that tab's pane, since a copy you have to
+go and find in the other half is not the comparison the gesture is for.
+
+New tabs used to mint into the primary pane always, with dragging the only way
+into the secondary one — which is what left the secondary strip with no `+` and
+no bookmark, and made it a place you could only ever move work *to*. See
+`docs/decisions.md`. Moving a tab between panes is unchanged and still has two
+gestures over one action: dragging, and the *Move tab to the other pane*
+shortcut (see *Keyboard shortcuts*).
 
 **`tabMoved` docks as well as reorders**, on one more optional field: `pane`,
 given, reassigns `Tab.pane` before the reorder runs; omitted, it is the exact
@@ -693,34 +706,76 @@ Two smaller things, and each was found by looking:
   this shortcut. Monaco's own binding covers the case where the editor has focus,
   which is most of them.
 
-## The database is the connection's, not any one tab's
+## The database is the tab's
 
-`tabsSlice.database` is one value per connection — `Record<connectionId, string
-| null>` — set by the sidebar picker and read by every tab of that connection
-alike. A tab used to carry its own `database`, set when it opened and changed
-only while it was the one in front; that gave every tab isolation from a
-database picked to check something else, but it read, in practice, as the
-picker and the tree jumping to a different database every time you switched
-tabs. Being connection-scoped is what makes that stop, and it is also what
-answers the picker and the tree before any tab exists to ask on their behalf —
-`useExplorer`'s `database` is `selectDatabase` alone, no per-tab override to
-fall back from, and the picker's own disabled check has only one reason left to
-grey it out: `databases.length === 0`.
+`Tab.database` is where a tab runs, and it is the **only** thing `runQuery`,
+`browseTable` and `saveEdits` read — the same rule `connectionId` already
+followed, one level down. Two tabs of one connection can sit on two databases,
+and pointing one somewhere else leaves the other exactly where it was.
 
-**Picking a database is one action regardless of whether a tab is open.**
-`Shell`'s `changeDatabase` always calls `setDatabase`, then re-browses the
-active tab if it is a grid one — there is no longer an empty-state branch,
-because `databaseChanged({ connectionId, database })` never needed a tab to
-target. Clicking a table row needed nothing new either: `openGridTab` already
-reads the connection off state rather than off a caller-supplied tab, so it
-mints one whether or not one existed a moment ago.
+**`tabsSlice.defaultDatabase` is a seed, not a target.** It is the last database
+chosen on a connection, and it answers exactly two questions: what a tab born
+with nothing in front starts on, and what the tree shows once every tab is
+closed. Nothing runs against it. That is what keeps it from being a second
+source for "where does this run" — the objection that sank an earlier attempt at
+this (see `docs/decisions.md`).
 
-**The tradeoff, accepted on purpose:** switching the database can now change
-what another open tab's *next* query or browse targets, since there is only
-one database to read at call time. A grid tab whose table does not exist under
-the newly picked database is not protected from that — it re-browses and
-surfaces the failure as its own error, the same as any other missing-table
-browse. See `docs/decisions.md`.
+**A new tab inherits the database of the tab in front**, via `inheritedDatabase`,
+falling back to the seed. So an ordinary single-database session never diverges:
+work in `shop`, open ten tabs, and every one of them is on `shop`. Divergence is
+something you do on purpose, which is what makes the tree following it legible
+rather than surprising. Three callers override the inheritance because they know
+better: a table clicked in the tree (the database it was clicked in), a
+definition tab (the database the DDL was read from), and a duplicate (the
+original's, or "duplicate" would quietly mean "duplicate, elsewhere").
+
+**The tree follows the pane being worked in, and never forgets where it was.**
+`Shell` computes `workingDatabase` from `workingPane`'s tab and hands it to
+`Sidebar` as `shownDatabase`; `useExplorer(shown)` takes it as a parameter
+rather than reading a selector, because with a split there is no single answer
+and only the composition root knows which half is being worked in. Switching
+tabs re-roots the tree — that is inherent, not a defect — so the tree's own
+state (`expandedByDb`, `flippedByDb`, `filterByDb` in `Sidebar`) is **keyed by
+database**, and coming back to a tab finds its tree the way that tab left it.
+Flat state was coherent only while one database was ever shown: it survived a
+switch by *name collision*, so expanding `public.users` in one database opened a
+`public.users` in the next and collapsed everything else.
+
+**Three controls, one value.** The sidebar picker moves the working pane's tab;
+each pane's own picker moves that pane's tab. They are three ways onto
+`Tab.database`, not three values — every one of them lands in `Shell`'s
+`pointTabAt`, which sets the database and re-browses on the spot if the tab is a
+grid one. A grid tab whose table does not exist under the newly picked database
+surfaces that as its own grid's error, the same as any other missing-table
+browse.
+
+**An editor tab says which database it is on; a grid tab does not.** The editor
+states the name as a small muted label at the far left of its toolbar and hangs
+the *control* off the right of the Run button as a caret only — the two halves
+of one answer, split so that neither shouts.
+
+**A grid tab has nothing of its own, on purpose.** It has no Run to hang a
+caret off, and a strip built only to hold the answer is 32px carrying a single
+word above every table you open. The sidebar picker is a grid tab's control —
+it retargets whichever tab is in front and re-browses on the spot — and the
+tree beside it is already drawing that database, so the answer is on screen
+without a row spent stating it. `Ctrl+Shift+D` therefore does nothing on a grid
+tab, the same answer `Ctrl+Enter` gives there. See `docs/decisions.md`.
+
+**The name is deliberately not inside the Run button.** Spelling it out there
+put a second piece of high-contrast content inside the loudest control on
+screen; the caret alone says "there is a list behind this" and the label says
+which one is chosen. See `docs/decisions.md`.
+
+**The status bar deliberately does not say it at all**: that bar is one strip
+for the whole window and the database is a fact about one tab, so with a split
+it could only ever state one of the two and mislead about the other.
+
+**The completion follows the pane, and the split is what forced it.**
+`useSqlPrefetch` takes `tab.database` — this pane's — rather than a connection
+value, so two panes on two databases warm two different column caches instead of
+both warming one. Registration stays single (`useSqlCompletion(workingDatabase)`
+in `ShellLayout`), unchanged.
 
 ## Running several statements
 
@@ -1611,6 +1666,7 @@ list with a way to change one.
 | Editor | Run | `Ctrl+Enter` |
 | Editor | Run statement under cursor | `Ctrl+Shift+Enter` |
 | Editor | Save query | `Ctrl+S` |
+| Editor | Switch this tab's database | `Ctrl+Shift+D` |
 | Tabs | New tab | `Ctrl+T` |
 | Tabs | Close tab | `Ctrl+W` |
 | Tabs | Next tab | `Ctrl+PageDown` |
@@ -1626,6 +1682,15 @@ the suite drives this one through `app.press`, which is `Input.dispatchKeyEvent`
 and goes in where a physical key does. WebView2 lets it through: it closes the
 tab, and the window is still there afterwards, which is half of what that test
 asserts. See `docs/testing.md`.
+
+**`Ctrl+Shift+D` opens a picker rather than doing anything itself**, and it is
+the reason `Select` grew a controlled `open`: a picker that owned its own open
+state could only ever be opened by its own trigger. `Shell` holds `pickerPane`
+— one value, since two lists open at once is not a state worth representing —
+and the command sets it to `workingPane`, so a split answers for the half you
+are in. `Ctrl+Shift+D` and not `Ctrl+D`: shell commands are registered into
+Monaco as actions, and `Ctrl+D` there is *add selection to next find match*,
+which is exactly what would be taken away in the place this is pressed most.
 
 **Close tab and Disconnect act on what is in front; their menus act on what was
 clicked.** `Ctrl+W` takes `workingPane`'s active tab, the same pointer `nextTab`
@@ -2396,14 +2461,14 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
 - Ctrl/⌘+Enter runs, from anywhere in the window (a `window` keydown listener),
   matching every other SQL tool; Ctrl/⌘+Shift+Enter runs the statement the cursor
   is in. On a grid tab neither does anything: there is no query there to run.
-- **A tab binds to a connection for life; the database is the connection's, not
-  any one tab's.** The connection is fixed at open time and nothing changes it:
-  moving the rail switches which tabs you are *looking at*, never what any of
-  them points at. The picker moves the database every tab of that connection
-  reads — see "The database is the connection's, not any one tab's" above. A
-  grid tab is "this table, in the connection's current database", so it
-  re-browses when the picker moves while it is in front, and says so in its
-  own grid when the table does not live there.
+- **A tab binds to a connection for life, and carries its own database.** The
+  connection is fixed at open time and nothing changes it: moving the rail
+  switches which tabs you are *looking at*, never what any of them points at.
+  The database is the tab's too, but unlike the connection it can be moved —
+  see "The database is the tab's" above. A grid tab is "this table, in *this
+  tab's* database", so it re-browses when its own database is moved and says so
+  in its own grid when the table does not live there; another tab being pointed
+  elsewhere never touches it.
 - **Clicking a table always opens a new tab**, deliberately not deduped: opening
   one table twice is how you compare it before and after a write.
 - **A tree row is a chevron plus a name, not one button.** The chevron reveals
@@ -2474,7 +2539,11 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   which are collapsed. A set of collapsed names has to be seeded, and there is
   nothing to seed it from until the tables land — a different moment per
   database, per connection, and always after the first render. Flipping is keyed
-  by schema name and outlives a database change, the same as row expansion.
+  by schema name **within a database** (`flippedByDb`), the same as row
+  expansion (`expandedByDb`) and the filter text (`filterByDb`): the tree
+  re-roots whenever the tab in front is on another database, so what these
+  remember has to be per database or coming back finds a tree nobody left that
+  way. See "The database is the tab's".
 
   **A filter reveals every group it matched in.** The groups are built from the
   filtered list, so a group drawn at all has a hit inside it — and with the other

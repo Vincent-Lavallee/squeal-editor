@@ -55,19 +55,18 @@ function ShellLayout({ onAddConnection }: Props) {
   // two tabs in front at once, each with its own run/browse/running. See `useResults`.
   const { run: runPrimary, tabRunning: primaryRunning, browseIn: browseInPrimary } = useResults(activeTab);
   const { run: runSecondary, tabRunning: secondaryRunning, browseIn: browseInSecondary } = useResults(secondaryActiveTab);
-  const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema } = useExplorer();
+  const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema, databases } = useExplorer();
   // `peekSql` alone: every seed now rides `tabOpened`, so the composition root
   // reads the editor's text and never writes it.
   const { peekSql } = useEditor();
   const { queries, save: saveQuery } = useSavedQueries();
   const { bindings } = useShortcuts();
 
-  // The SQL completion provider and the formatter are registered once here,
-  // regardless of how many panes are open -- Monaco's registration is global
-  // per language, so an `EditorPane` per pane calling these itself would
-  // register the same provider twice and cross-contaminate suggestions
-  // between panes. See the file comment in `useSqlCompletion.ts`.
-  useSqlCompletion(database);
+  // The formatter is registered once here, regardless of how many panes are
+  // open -- Monaco's registration is global per language, so an `EditorPane`
+  // per pane calling it itself would register the same one twice. The
+  // completion provider is the same rule and is registered below, once
+  // `workingDatabase` exists to point it at. See `useSqlCompletion.ts`.
   useSqlFormatter(dialect);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -166,12 +165,38 @@ function ShellLayout({ onAddConnection }: Props) {
   const [focusedPane, setFocusedPane] = useState<'primary' | 'secondary'>('primary');
 
   /*
+   * Which pane's database list is open, if any.
+   *
+   * Held here rather than inside each picker because the keyboard is the other
+   * way in: `selectDatabase` has to open the picker of the pane being *worked
+   * in*, and a picker that owned its own open state could only ever be opened
+   * by its own trigger. One value rather than one per pane, since two lists
+   * open at once is not a state worth being able to represent.
+   */
+  const [pickerPane, setPickerPane] = useState<Tab['pane'] | null>(null);
+
+  /*
    * Which pane a keyboard command acts on. Not `focusedPane` directly: a split
    * that collapses leaves that pointing at a pane which no longer exists (its
    * `<main>` is unmounted, so nothing sets it back), and every tab command
    * would then quietly act on an empty strip until the user clicked something.
    */
   const workingPane: Tab['pane'] = showSplit && focusedPane === 'secondary' ? 'secondary' : 'primary';
+
+  /*
+   * Which database the window is "in": the one the tab in the pane being worked
+   * in is pointed at, falling back to the connection's seed when nothing is
+   * open at all.
+   *
+   * The tree draws this, and the completion answers against it. It follows the
+   * *focused* pane rather than the primary one for the reason `workingPane`
+   * exists at all -- with two panes on two databases, the sidebar has to be
+   * about the half you are actually working in, or it describes the other one.
+   */
+  const workingTab = workingPane === 'secondary' ? secondaryActiveTab : activeTab;
+  const workingDatabase = workingTab?.database ?? database;
+
+  useSqlCompletion(workingDatabase);
 
   /**
    * The next or previous tab of the pane being worked in, wrapping at either
@@ -229,16 +254,28 @@ function ShellLayout({ onAddConnection }: Props) {
   }, [workingPane, activeTabId, secondaryActiveTabId, requestClose]);
 
   const shellCommands: Partial<Record<ShortcutId, () => void>> = useMemo(() => ({
-    newTab: () => { openEditorTab(); },
+    // Into the pane being worked in, like every other tab command here.
+    newTab: () => { openEditorTab(undefined, undefined, undefined, workingPane); },
     closeTab: closeActiveTab,
     nextTab: () => stepTab(1),
     previousTab: () => stepTab(-1),
     dockTab: dockActiveTab,
+    /*
+     * The pane being worked in, not the primary one -- the same rule every
+     * other tab command here follows. Opening it is all this does; the picking
+     * is the picker's, and Escape closes it the way it always did.
+     *
+     * Nothing happens on a grid tab, which has no picker of its own: the same
+     * answer Ctrl+Enter gives there, and for the same reason. Guarded rather
+     * than left to set state nothing renders from, or the next thing to read
+     * `pickerPane` inherits a pointer at a pane with no list in it.
+     */
+    selectDatabase: () => { if (workingTab?.kind === 'editor') setPickerPane(workingPane); },
     // The one in front, which is what `useSession().disconnect` already defaults
     // to. The rail's menu is the other way in, and it names its own chip.
     disconnect: () => disconnect(),
     toggleSidebar,
-  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar]);
+  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar, workingPane, workingTab]);
 
   /*
    * The shortcuts the shell owns, and the half of each that answers from
@@ -295,11 +332,26 @@ function ShellLayout({ onAddConnection }: Props) {
     }
   }, [secondaryActiveTab, secondaryNeedsBrowse, browseInSecondary]);
 
+  /*
+   * A table clicked in the tree opens on **the database the tree is showing**,
+   * not on whatever the tab in front happens to be pointed at. Those are the
+   * same thing whenever the tree is following the primary pane -- and they are
+   * not when it is following the secondary one, since a new tab always mints
+   * into primary. Inheriting there would open `analytics.orders` as a tab
+   * pointed at `shop`, which is a grid that immediately fails to browse.
+   */
+  /*
+   * The tree belongs to no pane, so what it opens goes to the one being worked
+   * in -- the same rule its database already follows. A strip's own `+` and
+   * bookmark name their own pane instead, because those *are* attached to one.
+   */
   const openTable = useCallback((table: TableInfo) => {
     const relation = relationOf(table);
-    const tabId = openGridTab(relation, relationLabel(relation, defaultSchema));
-    if (tabId) browseInPrimary(tabId, relation.table, 0);
-  }, [openGridTab, browseInPrimary, defaultSchema]);
+    const tabId = openGridTab(relation, relationLabel(relation, defaultSchema), workingDatabase, workingPane);
+    if (!tabId) return;
+    if (workingPane === 'secondary') browseInSecondary(tabId, relation.table, 0);
+    else browseInPrimary(tabId, relation.table, 0);
+  }, [openGridTab, browseInPrimary, browseInSecondary, defaultSchema, workingDatabase, workingPane]);
 
   /*
    * A definition tab is born holding its text rather than being opened empty and
@@ -313,7 +365,10 @@ function ShellLayout({ onAddConnection }: Props) {
     let text: string;
     try { text = await fetchDdl(database, relation, table.kind); }
     catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
-    openEditorTab(name, text);
+    // On the database the definition was read from -- the tab is *about* that
+    // relation, so running anything in it anywhere else would be about a
+    // different one, or about nothing.
+    openEditorTab(name, text, database, workingPane);
   }, [fetchDdl, openEditorTab, defaultSchema]);
 
   const showTriggerDefinition = useCallback(async (database: string, table: string, trigger: TriggerInfo, schema?: string) => {
@@ -321,7 +376,7 @@ function ShellLayout({ onAddConnection }: Props) {
     let text: string;
     try { text = await fetchTriggerDdl(database, table, name, schema); }
     catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
-    openEditorTab(name, text);
+    openEditorTab(name, text, database, workingPane);
   }, [fetchTriggerDdl, openEditorTab]);
 
   const showFunctionDefinition = useCallback(async (database: string, func: FunctionInfo) => {
@@ -329,7 +384,7 @@ function ShellLayout({ onAddConnection }: Props) {
     let text: string;
     try { text = await fetchFunctionDdl(database, name, func.kind, func.schema); }
     catch (err) { const reason = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err); text = `-- Could not load the definition of ${name}:\n-- ${reason}\n`; }
-    openEditorTab(name, text);
+    openEditorTab(name, text, database, workingPane);
   }, [fetchFunctionDdl, openEditorTab]);
 
   /*
@@ -350,16 +405,23 @@ function ShellLayout({ onAddConnection }: Props) {
     const tab = tabs.find((candidate) => candidate.id === tabId) ?? secondaryTabs.find((candidate) => candidate.id === tabId);
     if (!tab) return;
 
+    // A copy runs where the original ran. Inheriting from whatever is in front
+    // would make "duplicate" quietly mean "duplicate, somewhere else" for any
+    // tab that is not the one being copied.
     if (tab.kind === 'grid' && tab.table) {
-      const id = openGridTab({ table: tab.table, schema: tab.schema }, tab.title);
-      if (id) browseInPrimary(id, tab.table, 0);
+      // Beside the original, in its own pane -- a copy you have to go and find
+      // in the other half is not the comparison the gesture is for.
+      const id = openGridTab({ table: tab.table, schema: tab.schema }, tab.title, tab.database, tab.pane);
+      if (!id) return;
+      if (tab.pane === 'secondary') browseInSecondary(id, tab.table, 0);
+      else browseInPrimary(id, tab.table, 0);
       return;
     }
     // Seeded at birth, the way a definition tab is: the model reads the tab's
     // text when it is created, so this is not a write into a live editor, and a
     // copy nobody has touched yet is not a tab holding unsaved work.
-    openEditorTab(undefined, peekSql(tabId) ?? '');
-  }, [tabs, secondaryTabs, openGridTab, openEditorTab, browseInPrimary, peekSql]);
+    openEditorTab(undefined, peekSql(tabId) ?? '', tab.database, tab.pane);
+  }, [tabs, secondaryTabs, openGridTab, openEditorTab, browseInPrimary, browseInSecondary, peekSql]);
 
   /*
    * Saved queries span the tabs, the editor's text and the queries slice, so both
@@ -369,11 +431,11 @@ function ShellLayout({ onAddConnection }: Props) {
    * follows: reopening the same query beside itself is how you compare an edit
    * against what is stored. It is born named, linked and already holding its
    * text -- one action rather than an open and a `setSql`, since a `setSql` is
-   * what marks a tab edited. Always opens into the primary pane, the same as
-   * every other new tab -- the secondary pane is populated only by dragging.
+   * what marks a tab edited. It opens into the pane whose bookmark was pressed:
+   * each strip has one, so the button you reach for is the answer.
    */
-  const openSavedQuery = useCallback((query: SavedQuery) => {
-    openSavedQueryTab(query.id, query.name, query.sql);
+  const openSavedQuery = useCallback((query: SavedQuery, pane: Tab['pane']) => {
+    openSavedQueryTab(query.id, query.name, query.sql, pane);
   }, [openSavedQueryTab]);
 
   /*
@@ -415,27 +477,51 @@ function ShellLayout({ onAddConnection }: Props) {
   const saveActiveQuery = useCallback(() => saveQueryForTab(activeTab), [saveQueryForTab, activeTab]);
   const saveSecondaryQuery = useCallback(() => saveQueryForTab(secondaryActiveTab), [saveQueryForTab, secondaryActiveTab]);
 
-  // The picker moved. It re-browses every grid tab currently on screen so what
-  // is on screen follows the database that is now selected -- both panes',
-  // not just the primary's, since the picker is one control for the whole
-  // connection and a stale secondary pane would disagree with it. If the
-  // table a pane was showing is not there, that surfaces as that pane's own
-  // error, not as the picker being talked out of the move.
+  /*
+   * Point one tab at a database -- the whole of what every picker in the app
+   * does, whichever one moved.
+   *
+   * There are three of them now (the tree's, and one in each pane's editor
+   * toolbar) and they are three controls onto one value rather than three
+   * values: each names the tab it is about, and they all land here. A grid tab
+   * re-browses on the spot, so what is on screen never disagrees with what the
+   * tab says it is showing; if the table is not there under the new database
+   * that surfaces as that pane's own error, the same as any missing table.
+   *
+   * `null` for the tab is the connection with nothing open, where the pick
+   * moves only the seed the next tab will be born on.
+   */
+  const pointTabAt = useCallback((target: Tab | null, pane: Tab['pane'], database: string) => {
+    setDatabase(database, target?.id ?? null);
+    if (target?.kind !== 'grid' || !target.table) return;
+    if (pane === 'secondary') browseInSecondary(target.id, target.table, 0);
+    else browseInPrimary(target.id, target.table, 0);
+  }, [setDatabase, browseInPrimary, browseInSecondary]);
+
+  // The tree's picker acts on the pane being worked in, which is the same tab
+  // the tree is already drawing the database of.
   const changeDatabase = useCallback((database: string) => {
-    setDatabase(database);
-    if (activeTab?.kind === 'grid' && activeTab.table) browseInPrimary(activeTab.id, activeTab.table, 0);
-    if (secondaryActiveTab?.kind === 'grid' && secondaryActiveTab.table) browseInSecondary(secondaryActiveTab.id, secondaryActiveTab.table, 0);
-  }, [activeTab, secondaryActiveTab, setDatabase, browseInPrimary, browseInSecondary]);
+    pointTabAt(workingTab, workingPane, database);
+  }, [pointTabAt, workingTab, workingPane]);
 
   const primaryShowEditor = activeTab?.kind === 'editor';
   const secondaryShowEditor = secondaryActiveTab?.kind === 'editor';
+
+  /*
+   * A grid tab draws no database line of its own. It has no Run button to
+   * attach one to, and a bar built just to hold it was a 32px strip carrying a
+   * single word above every table you open. The sidebar picker is a grid tab's
+   * control -- it retargets whichever tab is in front and re-browses on the
+   * spot -- and the tree beside it is already showing that database, so the
+   * answer is on screen without a row spent saying it. See `docs/decisions.md`.
+   */
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <ConnectionRail onAdd={onAddConnection} />
 
       <div style={{ display: 'grid', gridTemplateColumns: sidebarCollapsed ? '28px 1fr' : `${sidebarWidth}px auto 1fr`, flex: 1, minHeight: 0 }}>
-        <Sidebar onSelectTable={openTable} onSelectDatabase={changeDatabase} onShowDefinition={showDefinition} onShowTriggerDefinition={showTriggerDefinition} onShowFunctionDefinition={showFunctionDefinition}
+        <Sidebar shownDatabase={workingDatabase} onSelectTable={openTable} onSelectDatabase={changeDatabase} onShowDefinition={showDefinition} onShowTriggerDefinition={showTriggerDefinition} onShowFunctionDefinition={showFunctionDefinition}
           collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
         {!sidebarCollapsed && <ResizeHandle orientation="vertical" onDrag={dragSidebar} />}
 
@@ -451,12 +537,14 @@ function ShellLayout({ onAddConnection }: Props) {
                 onCloseOthers={(id) => requestClose({ kind: 'others', id })} onCloseToTheRight={(id) => requestClose({ kind: 'right', id })}
                 onCloseAll={() => requestClose({ kind: 'all', pane: 'primary' })}
                 onMove={(id, beforeId) => moveTab(id, beforeId, 'primary')} onRename={renameTab}
-                onNewTab={() => openEditorTab()} onDuplicateTab={duplicateTab}
+                onNewTab={() => openEditorTab(undefined, undefined, undefined, 'primary')} onDuplicateTab={duplicateTab}
                 draggingId={draggingId} onDragTab={setDraggingId} />
-              <SavedQueriesButton onOpen={openSavedQuery} />
+              <SavedQueriesButton onOpen={(query) => openSavedQuery(query, 'primary')} />
             </div>
             <EditorPane tab={activeTab} onRun={runPrimary} running={primaryRunning} commands={shellCommands} onSaveQuery={saveActiveQuery}
-              focused={!showSplit || focusedPane === 'primary'} />
+              focused={!showSplit || focusedPane === 'primary'}
+              databases={databases} onSelectDatabase={(db) => pointTabAt(activeTab, 'primary', db)}
+              pickerOpen={pickerPane === 'primary'} onPickerOpenChange={(open) => setPickerPane(open ? 'primary' : null)} />
             {primaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragResults} />}
             <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: primaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
               {activeTab ? <ResultsTable tab={activeTab} /> : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}
@@ -489,10 +577,14 @@ function ShellLayout({ onAddConnection }: Props) {
                   onCloseOthers={(id) => requestClose({ kind: 'others', id })} onCloseToTheRight={(id) => requestClose({ kind: 'right', id })}
                   onCloseAll={() => requestClose({ kind: 'all', pane: 'secondary' })}
                   onMove={(id, beforeId) => moveTab(id, beforeId, 'secondary')} onRename={renameTab}
+                  onNewTab={() => openEditorTab(undefined, undefined, undefined, 'secondary')} onDuplicateTab={duplicateTab}
                   draggingId={draggingId} onDragTab={setDraggingId} />
+                <SavedQueriesButton onOpen={(query) => openSavedQuery(query, 'secondary')} />
               </div>
               <EditorPane tab={secondaryActiveTab} onRun={runSecondary} running={secondaryRunning} commands={shellCommands} onSaveQuery={saveSecondaryQuery}
-                focused={focusedPane === 'secondary'} exposeGlobal={false} />
+                focused={focusedPane === 'secondary'} exposeGlobal={false}
+                databases={databases} onSelectDatabase={(db) => pointTabAt(secondaryActiveTab, 'secondary', db)}
+                pickerOpen={pickerPane === 'secondary'} onPickerOpenChange={(open) => setPickerPane(open ? 'secondary' : null)} />
               {secondaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragSecondaryResults} />}
               <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: secondaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
                 <ResultsTable tab={secondaryActiveTab} />

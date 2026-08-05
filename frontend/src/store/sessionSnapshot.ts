@@ -25,6 +25,13 @@ import type { TableFilter } from '../../../shared/protocol/index.ts';
 export interface SessionSnapshot {
   tabs: Array<{
     kind: 'editor' | 'grid';
+    /**
+     * Which database this tab was pointed at. Absent on a snapshot written
+     * while the database was the connection's, which reads as "it was on the
+     * connection's" -- the top-level `database` below -- and is exactly what it
+     * was. That is the whole of the backwards compatibility here.
+     */
+    database?: string | null;
     table?: string;
     schema?: string;
     title: string;
@@ -48,6 +55,11 @@ export interface SessionSnapshot {
    */
   secondaryActiveIndex?: number | null;
   nextQueryNo: number;
+  /**
+   * The connection's **seed** -- what the next tab opened with nothing in front
+   * starts on, and what an older snapshot's tabs are all read as having been
+   * on. Not a target: every tab carries its own above.
+   */
   database: string | null;
 }
 

@@ -5,6 +5,7 @@ import { useShortcuts } from '../../store/settingsSlice.ts';
 import type { Tab } from '../../store/tabsSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
+import Select from '../../common/components/Select.tsx';
 import { statementAt } from '../../common/db/splitStatements.ts';
 import { chordFromEvent, formatChord, SHORTCUTS, type ShortcutId } from '../../common/shortcuts.ts';
 import * as t from '../../common/tokens';
@@ -22,6 +23,64 @@ const toolbar: React.CSSProperties = {
 
 const barButton: React.CSSProperties = {
   height: t.BUTTON_H_BAR,
+};
+
+/*
+ * The database this tab runs against, said quietly at the far left of the bar.
+ *
+ * 11px and muted because it is a *label*, read at a glance and rarely acted on
+ * -- the accent-filled Run button already carries all the weight this bar can
+ * afford, and a second thing competing with it is what spelling the database
+ * out inside that button turned into. It is not uppercased or letter-spaced the
+ * way `TEXT_LABEL` usually is: this is a name the server gave us, and casing
+ * anything the server said is the one thing the value rules forbid.
+ */
+const databaseLabel: React.CSSProperties = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  color: t.TEXT_MUTED,
+  fontSize: t.TEXT_LABEL,
+};
+
+/*
+ * Run, and the caret that says where it runs.
+ *
+ * The group carries the accent fill and the rounded ends; the two halves inside
+ * it draw neither, so there is one shape rather than two buttons that happen to
+ * touch. The divider between them is a 1px rule in the accent's own foreground
+ * at low alpha -- the design system's "structure from borders" applied inside a
+ * filled control, where a `--border` grey would read as a gap.
+ *
+ * The caret is the whole of the attached half: the database's *name* is the
+ * label at the left of this bar, not white text on the fill. Spelling it out
+ * here put a second piece of high-contrast content inside the loudest control
+ * on screen, which is what made the button shout. The arrow says "there is a
+ * list behind this"; the label says which one is chosen.
+ */
+const runGroup: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'stretch',
+  height: t.BUTTON_H_BAR,
+  borderRadius: t.RADIUS,
+  background: t.ACCENT,
+  color: t.ON_ACCENT,
+  overflow: 'hidden',
+};
+
+const runHalf: React.CSSProperties = {
+  height: '100%',
+  border: 'none',
+  borderRadius: 0,
+  background: 'none',
+  color: 'inherit',
+};
+
+const runDivider: React.CSSProperties = {
+  flex: 'none',
+  width: 1,
+  background: 'color-mix(in srgb, currentColor 35%, transparent)',
 };
 
 const spacer: React.CSSProperties = {
@@ -81,6 +140,26 @@ interface Props {
    * `docs/decisions.md`.
    */
   exposeGlobal?: boolean;
+  /**
+   * Every database of this pane's connection, and the way to point the tab at
+   * one of them.
+   *
+   * Handed down rather than read from `useExplorer` here: the explorer is a
+   * sibling feature, and the editor importing it would make the two a pair
+   * instead of two things the shell composes. The shell already holds both.
+   */
+  databases: string[];
+  onSelectDatabase: (database: string) => void;
+  /**
+   * Whether this pane's database list is showing.
+   *
+   * Controlled by the shell rather than by the picker itself, because the
+   * keyboard shortcut is what opens it and the shortcut is the shell's -- it has
+   * to reach the pane being worked in, which only the shell knows. Clicking the
+   * caret still works, through `onPickerOpenChange`.
+   */
+  pickerOpen: boolean;
+  onPickerOpenChange: (open: boolean) => void;
 }
 
 declare global {
@@ -99,7 +178,7 @@ declare global {
   }
 }
 
-export default function EditorPane({ tab, onRun, running, commands, onSaveQuery, focused, exposeGlobal = true }: Props) {
+export default function EditorPane({ tab, onRun, running, commands, onSaveQuery, focused, exposeGlobal = true, databases, onSelectDatabase, pickerOpen, onPickerOpenChange }: Props) {
   const { dialect } = useSession();
   // `connectionTabs` -- every tab of the connection, **both panes** -- is only
   // used below to garbage-collect models of tabs that are gone entirely. It is
@@ -108,7 +187,11 @@ export default function EditorPane({ tab, onRun, running, commands, onSaveQuery,
   // it left *this* strip is exactly the bug that shipped a blank secondary
   // editor. Both panes reading the full list is harmless -- each owns its own
   // model map, and a tab that really closed leaves both.
-  const { connectionTabs, database } = useTabs();
+  const { connectionTabs } = useTabs();
+  // *This pane's* tab, not "the" active one. With a split there are two panes
+  // over two databases, and the completion each one warms has to be the one its
+  // own text will actually run against.
+  const database = tab?.database ?? null;
   const { sqlByTab, setSql, peekSql } = useEditor();
   const { bindings } = useShortcuts();
 
@@ -511,13 +594,32 @@ export default function EditorPane({ tab, onRun, running, commands, onSaveQuery,
           `display: flex` would outrank any class rule trying to hide it. */}
       {isEditorTab && (
         <div className="toolbar" style={toolbar}>
+          {database && (
+            <span data-testid="editor-db-label" style={databaseLabel} title={`This tab runs against ${database} (${formatChord(bindings.selectDatabase)} to change it)`}>
+              {database}
+            </span>
+          )}
           <div style={spacer} />
           <Button style={barButton} onClick={format}>
             Format
           </Button>
-          <Button style={barButton} data-testid="run-btn" variant="primary" title={formatChord(bindings.run)} onClick={() => onRun(sqlToRun())} disabled={running}>
-            {running ? 'Running…' : hasSelection ? 'Run selection' : 'Run'}
-          </Button>
+
+          <div style={runGroup} data-testid="run-group">
+            <Button style={{ ...barButton, ...runHalf }} data-testid="run-btn" variant="primary" title={formatChord(bindings.run)} onClick={() => onRun(sqlToRun())} disabled={running}>
+              {running ? 'Running…' : hasSelection ? 'Run selection' : 'Run'}
+            </Button>
+            <div style={runDivider} aria-hidden="true" />
+            {/* `align="end"`: the caret sits at the pane's right edge, so a
+                left-aligned list would grow away from the pane it belongs to --
+                and in a split it unfurls across the other one. */}
+            <Select variant="attached" caretOnly searchable align="end" value={database ?? ''} onSelect={onSelectDatabase}
+              open={pickerOpen} onOpenChange={onPickerOpenChange}
+              options={databases.map((db) => ({ value: db, label: db }))}
+              disabled={databases.length === 0} aria-label="Database this tab runs against"
+              data-testid="editor-db-select"
+              title={`${database ? `Runs against ${database}` : 'Pick a database'} (${formatChord(bindings.selectDatabase)})`}
+              style={{ padding: `0 ${t.GAP_XS}px` }} />
+          </div>
         </div>
       )}
 

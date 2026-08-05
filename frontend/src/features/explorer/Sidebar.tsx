@@ -24,7 +24,19 @@ const iconSvg = { flex: 'none', width: 16, height: 16 };
  */
 const GROUP_BY_SCHEMA = 'tree.groupBySchema';
 
+/** A tree with nothing to show yet. Frozen and shared: a fresh `new Set()` per
+ *  render would be a new identity for every memo downstream of it. */
+const NO_KEYS: ReadonlySet<string> = new Set();
+
 interface Props {
+  /**
+   * Which database the tree is drawing -- the database of the tab in the pane
+   * being worked in, which is a thing only the composition root can know. The
+   * tree follows it, so switching to a tab pointed somewhere else re-roots the
+   * tree; what it does *not* do is forget where you were, which is what keying
+   * the expansion state below by database is for.
+   */
+  shownDatabase: string | null;
   onSelectTable: (table: TableInfo) => void;
   onSelectDatabase: (database: string) => void;
   onShowDefinition: (database: string, table: TableInfo) => void;
@@ -34,11 +46,27 @@ interface Props {
   onToggleCollapse?: () => void;
 }
 
-export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinition, onShowTriggerDefinition, onShowFunctionDefinition, collapsed, onToggleCollapse }: Props) {
-  const { databases, database, tables, columnsFor, loadTableColumns, triggersFor, loadTableTriggers, functionsFor, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, firstLoad, error } = useExplorer();
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
-  const [flippedSchemas, setFlippedSchemas] = useState<ReadonlySet<string>>(() => new Set());
-  const [filter, setFilter] = useState('');
+export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase, onShowDefinition, onShowTriggerDefinition, onShowFunctionDefinition, collapsed, onToggleCollapse }: Props) {
+  const { databases, database, tables, columnsFor, loadTableColumns, triggersFor, loadTableTriggers, functionsFor, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, firstLoad, error } = useExplorer(shownDatabase);
+
+  /*
+   * The shape you left each database's tree in, kept per database.
+   *
+   * This is what turns switching tabs from "the tree reset" into "the tree
+   * switched". Flat state was coherent only while one database was ever shown:
+   * it survived a switch by *name collision*, so expanding `public.users` in
+   * one database silently opened a `public.users` in the next, and everything
+   * else came back collapsed. Coming back to a tab should find its tree the way
+   * that tab left it, which means the key has to be the database.
+   */
+  const treeKey = database ?? '';
+  const [expandedByDb, setExpandedByDb] = useState<Record<string, ReadonlySet<string>>>({});
+  const [flippedByDb, setFlippedByDb] = useState<Record<string, ReadonlySet<string>>>({});
+  const [filterByDb, setFilterByDb] = useState<Record<string, string>>({});
+  const expanded = expandedByDb[treeKey] ?? NO_KEYS;
+  const flippedSchemas = flippedByDb[treeKey] ?? NO_KEYS;
+  const filter = filterByDb[treeKey] ?? '';
+  const setFilter = (value: string) => setFilterByDb((prev) => ({ ...prev, [treeKey]: value }));
   const [menu, setMenu] = useState<
     | { kind: 'table'; table: TableInfo; x: number; y: number }
     | { kind: 'trigger'; trigger: TriggerInfo; table: string; schema?: string; x: number; y: number }
@@ -106,20 +134,20 @@ export default function Sidebar({ onSelectTable, onSelectDatabase, onShowDefinit
   // expanding one of them must not open the other.
   const toggle = (table: TableInfo) => {
     const key = relationName(relationOf(table));
-    setExpanded((prev) => {
-      const next = new Set(prev);
+    setExpandedByDb((prev) => {
+      const next = new Set(prev[treeKey] ?? NO_KEYS);
       if (next.has(key)) next.delete(key);
       else { next.add(key); if (database) loadTableColumns(database, relationOf(table)); }
-      return next;
+      return { ...prev, [treeKey]: next };
     });
   };
 
   const toggleSchema = (schema: string) => {
-    setFlippedSchemas((prev) => {
-      const next = new Set(prev);
+    setFlippedByDb((prev) => {
+      const next = new Set(prev[treeKey] ?? NO_KEYS);
       if (next.has(schema)) next.delete(schema);
       else next.add(schema);
-      return next;
+      return { ...prev, [treeKey]: next };
     });
   };
 

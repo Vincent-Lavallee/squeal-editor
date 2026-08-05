@@ -194,9 +194,9 @@ function slotFor(state: ResultsByTab, tabId: string, index: number): ResultsStat
  * tab rather than off the session, and that is not tidiness: the session's
  * active connection is whatever the rail points at *now*, so reading it here is
  * exactly how a tab opened on dev would run against prod the moment the rail
- * moved. The tab knows which server it belongs to; nothing else does. The
- * database, in turn, is the connection's -- one value shared by every tab of
- * it, not the tab's own. See `docs/decisions.md`.
+ * moved. The tab knows which server it belongs to; nothing else does -- and the
+ * same is now true one level down, of *which database* on that server. See
+ * `docs/decisions.md`.
  *
  * **`part` is the destination, exactly as `tabId` is** -- which slot of the
  * tab's results this answer belongs in, never anything the bridge hears about.
@@ -213,7 +213,7 @@ export const runQuery = createAppThunk(
     // and a `connectionId` one is forbidden for the same reason.
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
     if (!tab) return rejectWithValue('That tab is gone.');
-    const database = getState().tabs.database[tab.connectionId];
+    const database = tab.database;
     const sql = arg.sql.trim();
 
     const controller = new AbortController();
@@ -317,9 +317,9 @@ export const runStatements = createAppThunk(
 );
 
 /**
- * Fetch one page of a table. Reads the database off the connection for the
- * same reason `runQuery` does -- a caller that points the connection at a
- * database and then browses is guaranteed to hit the one it just picked.
+ * Fetch one page of a table. Reads the database off the tab for the same
+ * reason `runQuery` does -- a caller that points a tab at a database and then
+ * browses is guaranteed to hit the one it just picked.
  *
  * `offset` is an argument rather than something this reads off `browse`, so the
  * one thunk serves the first page and every step after it; the hook computes the
@@ -345,7 +345,7 @@ export const browseTable = createAppThunk(
   ) => {
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
     if (!tab) return rejectWithValue('That tab is gone.');
-    const database = getState().tabs.database[tab.connectionId];
+    const database = tab.database;
     if (!database) return rejectWithValue('Select a database first.');
 
     const controller = new AbortController();
@@ -383,8 +383,8 @@ export const browseTable = createAppThunk(
 /**
  * Write the staged edits and deletes of a browsed table back, in one batch.
  *
- * Reads the connection off the tab and the database off the connection, like
- * `runQuery` and `browseTable` -- the target is the tab, never passed. The `edits`/`deletes`
+ * Reads the connection and the database off the tab, like `runQuery` and
+ * `browseTable` -- the target is the tab, never passed. The `edits`/`deletes`
  * *are* passed, though: they are staged in the results feature context (they
  * have not crossed the bridge until now), so they arrive as arguments the way
  * `runQuery`'s `sql` does, not read off a slice.
@@ -402,7 +402,7 @@ export const saveEdits = createAppThunk(
   ) => {
     const tab = getState().tabs.tabs.find((t) => t.id === arg.tabId);
     if (!tab) return rejectWithValue('That tab is gone.');
-    const database = getState().tabs.database[tab.connectionId];
+    const database = tab.database;
     if (!database) return rejectWithValue('Select a database first.');
 
     try {

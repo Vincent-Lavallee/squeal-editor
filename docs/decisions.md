@@ -3152,6 +3152,109 @@ first database the same way a brand-new session does.
 
 ---
 
+## The database moved back onto the tab, once the tree stopped hiding it
+
+**Why.** "The database moved off the tab and onto the connection" (above) is
+reversed. That entry was right about the failure it fixed — a tree that
+re-rooted on every tab switch, for a reason nothing on screen explained — and
+wrong about the cause. The cause was not that a tab owned its database; it was
+that **the database appeared nowhere except the sidebar**, so the sidebar
+looked to be changing on its own. Fix the legibility and the isolation stops
+costing anything.
+
+**What changed.** `Tab.database` is back and is the only thing `runQuery`,
+`browseTable` and `saveEdits` read. `tabsSlice.database` became
+`defaultDatabase`: a **seed**, read at mint time and when no tab is open, and
+never at query time.
+
+**Why this is not the compromise rejected last time.** That entry rejected
+"per-tab database plus a connection-level browse value" as two sources for one
+fact, with no principled answer for which one a fresh query uses. There is no
+second value here. `defaultDatabase` is not consulted by anything that runs, so
+it cannot disagree with `Tab.database` about anything; and a new tab inherits
+from the tab in front rather than from the seed, so the common single-database
+session never diverges at all. Divergence is deliberate, which is the whole
+reason the tree following it reads as consequence rather than as drift.
+
+**Four things carry the legibility, and the change is worthless without them.**
+
+1. **An editor tab splits the answer in two: a small muted label at the left of
+   its toolbar, and a caret-only trigger attached to the Run button.** The
+   control belongs on Run because that is where the decision is acted on; the
+   *name* does not, and that took two passes to get right. *Rejected: a separate
+   `<Select>` in the toolbar* — it states the fact only to someone who thought
+   to look, and reads as one more form field in a bar of them. *Then rejected:
+   spelling the name out inside the Run button* (`Run │ shop ▾`) — one sentence,
+   which was the appeal, but it puts a second piece of high-contrast content
+   inside the loudest control on screen and the button starts shouting. The
+   caret says a list is behind it; the label says which one is chosen; neither
+   competes with the accent fill. `Select` gained `caretOnly` for it.
+2. **A grid tab states nothing of its own, and that was tried the other way
+   first.** It has no Run to hang a caret off, so it briefly grew a `DatabaseBar`
+   under its strip — which turned out to be a 32px row carrying one word above
+   every table you open, for a question the sidebar was already answering: the
+   picker there retargets the tab in front and re-browses, and the tree beside
+   it is drawing that very database. The bar was removed. `Ctrl+Shift+D` does
+   nothing on a grid tab as a result, which is the same answer `Ctrl+Enter`
+   gives there and for the same reason — the shortcut is guarded rather than
+   left to set state nothing renders from.
+3. **The tree's expansion, schema flips and filter are keyed by database.**
+   Without this the tree re-roots *and forgets*, which is the failure the first
+   attempt actually shipped. Flat state survived a switch only by name
+   collision.
+4. **The status bar no longer names the database.** It is one strip for the
+   whole window; the database is a fact about one tab. With a split there are
+   two tabs in front and two answers, so a single segment can only ever state
+   one of them and mislead about the other. Reported as exactly that.
+
+**What this buys back.** The tradeoff the previous entry accepted with gritted
+teeth — a background grid tab re-browsing into a missing table because someone
+moved a picker — is gone by construction: nothing can move a tab's database
+except that tab's own control.
+
+**`Select` grew a controlled `open` and an `attached` variant.** The shortcut is
+what forced the first: a picker owning its own open state can only be opened by
+its own trigger, and `Ctrl+Shift+D` has to reach the pane being worked in, which
+only `Shell` knows. The second is the trigger with no chrome of its own, so it
+can be a segment of the Run button rather than a control beside it — including
+a caret in `currentColor`, because the standalone variants' muted grey is
+illegible on an accent fill.
+
+**`Ctrl+Shift+D`, not `Ctrl+D`.** Shell commands are registered into Monaco as
+actions, so `Ctrl+D` would take *add selection to next find match* away inside
+the editor — the one place this shortcut is pressed most.
+
+---
+
+## Both panes mint tabs, so both strips get a `+` and a bookmark
+
+**Why.** The split shipped with new tabs always minting into the primary pane
+and dragging as the only way into the secondary one — which is why the
+secondary strip had neither `+` nor the saved-queries bookmark. That was
+consistent, and it read as a bug: the button is simply missing from one half of
+a window whose two halves are otherwise equals, and the only way to start work
+in the right-hand pane was to start it on the left and drag it across.
+
+**What changed.** `mint` takes the pane instead of hard-coding `'primary'`, and
+`tabOpened` carries it. One rule decides it everywhere: **a control attached to
+a pane names its own; a control attached to none names the pane being worked
+in.** Each strip's `+` and bookmark are the first kind; the tree, its context
+menus and `Ctrl+T` are the second. Duplicate is the first rule again — the copy
+appears beside its original rather than in the other half.
+
+**What this retires.** "A tab only ever reaches the secondary pane by being
+moved there" is gone as an invariant. Nothing depended on it: `Tab.pane` was
+already the whole of where a tab lives, `promoteIfPrimaryEmpty` already handled
+a pane emptying, and the session snapshot already carried `pane` per tab.
+
+**Rejected: moving the bookmark into each pane's editor toolbar instead.** It
+answers "which pane" by position, with no new concept — but a grid tab has no
+toolbar to put it in, so it would have had to appear in the database bar there,
+which is two homes for one control and a worse asymmetry than the one being
+fixed.
+
+---
+
 ## Environments became a user-managed list, and lost their capitalising along the way
 
 **Why.** `Environment` was a fixed union (`'local' | 'dev' | 'qa' |

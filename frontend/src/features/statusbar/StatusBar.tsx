@@ -16,6 +16,13 @@ export default function StatusBar() {
   const [lockHovered, setLockHovered] = useState(false);
   const [discHovered, setDiscHovered] = useState(false);
   const activeTabId = useAppSelector(selectActiveTab)?.id ?? null;
+  /*
+   * The database is deliberately *not* here. The bar is one strip for the whole
+   * window, and the database is a fact about one tab -- with a split there are
+   * two tabs in front and two answers, so a single segment here can only ever
+   * state one of them and quietly mislead about the other. It is said in each
+   * pane instead, where it is true. See `docs/decisions.md`.
+   */
   // The statement actually in flight, which is not always the one on screen: a
   // run of several statements leaves an earlier result showing while the next one
   // goes. The bar times what the server is doing, so it follows the batch.

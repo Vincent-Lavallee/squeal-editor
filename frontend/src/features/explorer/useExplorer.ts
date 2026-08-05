@@ -26,8 +26,17 @@ import {
  */
 const NO_DATABASES: string[] = [];
 
-/** The explorer's whole public surface. Its components use nothing else. */
-export function useExplorer() {
+/**
+ * The explorer's whole public surface. Its components use nothing else.
+ *
+ * `shown` is which database the tree is drawing, and it is a parameter rather
+ * than a selector read because there is no longer one answer: a database is a
+ * tab's, and a split has two tabs in front. Only the composition root knows
+ * which pane is being worked in, so it is the composition root that says.
+ * Omitted -- every caller that wants the DDL fetchers and nothing else -- it
+ * falls back to the primary pane's, which is what "the" database used to mean.
+ */
+export function useExplorer(shown?: string | null) {
   const dispatch = useAppDispatch();
   const { databases, tables, columns, stars, triggers, functions, loadingTables, error } = useAppSelector((s) => s.explorer);
   const connectionId = useAppSelector((s) => s.session.activeConnectionId);
@@ -38,11 +47,11 @@ export function useExplorer() {
   // The schema this engine treats as implied, so the tree can leave it off a
   // name. It is the extension's answer, not a fact the UI knows about Postgres.
   const defaultSchema = useAppSelector((s) => selectActiveConnection(s)?.defaultSchema);
-  // The connection's database, one value regardless of which tab (if any) is
-  // in front -- there is still a connection with nothing open, and this is
-  // what lets the tree answer, and the picker stay usable, before a first tab
-  // exists at all.
-  const database = useAppSelector(selectDatabase);
+  // The primary pane's tab, or the connection's seed when nothing is open at
+  // all -- which is what keeps the tree and the picker answerable before a
+  // first tab exists. `shown`, given, wins: see the doc above.
+  const primaryDatabase = useAppSelector(selectDatabase);
+  const database = shown === undefined ? primaryDatabase : shown;
 
   /*
    * The tree lists the connection's database, and that changes for reasons

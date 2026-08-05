@@ -21,6 +21,12 @@ export const SHORTCUTS = [
   { id: 'run', group: 'Editor', label: 'Run', defaultChord: 'Ctrl+Enter' },
   { id: 'runStatement', group: 'Editor', label: 'Run statement under cursor', defaultChord: 'Ctrl+Shift+Enter' },
   { id: 'saveQuery', group: 'Editor', label: 'Save query', defaultChord: 'Ctrl+S' },
+  // Ctrl+Shift+D rather than Ctrl+D: shell commands are registered into Monaco
+  // as actions, so binding Ctrl+D here would take "add selection to next find
+  // match" away inside the editor -- which is where this is pressed most.
+  // It acts on the pane being worked in, so a split answers for the half you
+  // are in rather than always for the primary one.
+  { id: 'selectDatabase', group: 'Editor', label: "Switch this tab's database", defaultChord: 'Ctrl+Shift+D' },
   { id: 'newTab', group: 'Tabs', label: 'New tab', defaultChord: 'Ctrl+T' },
   { id: 'closeTab', group: 'Tabs', label: 'Close tab', defaultChord: 'Ctrl+W' },
   { id: 'nextTab', group: 'Tabs', label: 'Next tab', defaultChord: 'Ctrl+PageDown' },
