@@ -25,6 +25,7 @@ not an objection.
 | `connection.ts` | one server connection; per-database clients; the page SQL for browsing |
 | `drivers/` | the engine layer: the contract, the shared assemblers, the dispatch, and one file per engine's SQL and value handling |
 | `store.ts` | workspaces and saved connections: the SQLite file, the rows, and the password encryption |
+| `transfer.ts` | the connections file: what an export writes, what an import reads, and the validation between |
 | `migrations/` | the store's schema, one file per change, plus the runner that brings a file up to it |
 | `chrome.ts` | the window frame's colour and the maximise clamp, over `bun:ffi`. Windows-only, best-effort |
 | `log.ts` | levelled, timestamped logging to a bounded file on disk |
@@ -965,6 +966,68 @@ chose.
 
 The first one is `tree.groupBySchema`. Settings live here rather than in the
 webview for the store's own reason — see `docs/decisions.md`.
+
+### Carrying it to another machine (`transfer.ts`)
+
+`db.saved.export` writes every workspace and every connection to a JSON file;
+`db.saved.import` reads one back and merges it. **The extension writes and reads
+the file itself**, which is the one decision here and looks like a violation of
+the "can the webview do this?" test: it plainly can write a file. The password is
+why it does not — with `includePasswords` the document holds secrets in the
+clear, and *the password never travels toward the UI* is the rule the whole store
+is built on. So the webview owns the dialogs that name the file (`showSaveDialog`
+/ `showOpenDialog`, its own APIs) and this side owns its contents: a path crosses
+in, a tally crosses back, the document never does.
+
+The file is `{ squealConnections: 1, exportedAt, includesPasswords, workspaces,
+connections }`, and the shape is written down in `transfer.ts` and nowhere else —
+**not** in `shared/protocol/`, because the UI never sees a document, the same
+reason a session snapshot is an opaque string there. `squealConnections` both
+identifies the file as ours and versions it: absent means not ours, higher than
+this reader means written by a newer Squeal, and both are refused in words rather
+than half-read. `includesPasswords` states what is *in* the file, so an export
+asked for passwords that found none says false.
+
+Five rules, and the first is the whole of what "merge" means:
+
+- **Identity is the exported id.** A connection or workspace the store already
+  has is written over in place, so importing the same file twice reports every
+  connection *updated* and none added — and a row updated in place keeps the
+  stars and the session already filed under its id. Nothing is ever deleted: a
+  connection this store has and the file does not is left exactly where it is.
+- **A workspace is matched by id, then by name.** Name is the one thing that
+  table is unique on, so a `Work` workspace made on another machine — same name,
+  an id this store has never seen — merges into the existing one instead of
+  failing the constraint. A file naming one workspace twice merges within itself
+  the same way, or it would fail its own UNIQUE. One that is already here is used
+  as it stands and **never renamed**: a rename could collide with a third
+  workspace's name and take the whole import with it.
+- **A password the file does not carry leaves the stored one alone.**
+  `writeConnection`'s `keepExistingPassword` is a `COALESCE(excluded.password,
+  saved_connections.password)` in the `DO UPDATE`, so a passwordless export
+  re-imported over its own store cannot silently clear the secrets it left
+  behind. A connection that ends up with none simply prompts at connect, which is
+  the prompt an unstored password already gets.
+- **The whole file lands or none of it does.** One transaction, so a document
+  that turns out to be wrong halfway through leaves the store as it found it.
+  The passwords are encrypted *before* it opens: the key is behind an `await` and
+  a `bun:sqlite` transaction is synchronous.
+- **A connection claiming an engine this build cannot drive is refused.**
+  `KNOWN_ENGINES` is a `Record<EngineType, true>`, so adding an engine to the
+  protocol stops `transfer.ts` compiling until it is named — an unknown engine
+  would otherwise save perfectly well and fail much later, at connect, saying
+  nothing about where the row came from. An unknown *icon* or *colour* is not
+  refused: those are ids this side carries and never reads, so a strange one
+  costs a glyph, and an absent one takes the store's own default.
+
+`writeConnection` is the single `INSERT ... ON CONFLICT` both writers of
+`saved_connections` go through, for the reason `MIGRATIONS` owns the schema: a
+column added to the save path and forgotten by the import path is two answers to
+what a connection is.
+
+Passwords leaving for a plain-text file is the one thing here with **no other
+trace** — the dialog is dismissed and the store looks untouched — so it is the
+export's one log line, counts only, no path and no names, per the `log.ts` rule.
 
 ### Saved queries
 

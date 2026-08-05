@@ -78,6 +78,8 @@ static void restyle(NSWindow *window) {
 
 - (void)exit:(id)sender { [SquealMenuHandler dispatchEvent:@"exit"]; }
 - (void)environments:(id)sender { [SquealMenuHandler dispatchEvent:@"environments"]; }
+- (void)exportConnections:(id)sender { [SquealMenuHandler dispatchEvent:@"exportConnections"]; }
+- (void)importConnections:(id)sender { [SquealMenuHandler dispatchEvent:@"importConnections"]; }
 - (void)shortcuts:(id)sender { [SquealMenuHandler dispatchEvent:@"shortcuts"]; }
 - (void)checkForUpdates:(id)sender { [SquealMenuHandler dispatchEvent:@"checkForUpdates"]; }
 - (void)about:(id)sender { [SquealMenuHandler dispatchEvent:@"about"]; }
@@ -105,9 +107,17 @@ static void installMenuBar(void) {
   [mainMenu addItem:fileMenuItem];
   NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
   fileMenuItem.submenu = fileMenu;
-  NSMenuItem *environmentsItem = [[NSMenuItem alloc] initWithTitle:@"Environments…" action:@selector(environments:) keyEquivalent:@""];
+  NSMenuItem *environmentsItem = [[NSMenuItem alloc] initWithTitle:@"Environments" action:@selector(environments:) keyEquivalent:@""];
   environmentsItem.target = handler;
   [fileMenu addItem:environmentsItem];
+
+  NSMenuItem *exportItem = [[NSMenuItem alloc] initWithTitle:@"Export connections" action:@selector(exportConnections:) keyEquivalent:@""];
+  exportItem.target = handler;
+  [fileMenu addItem:exportItem];
+
+  NSMenuItem *importItem = [[NSMenuItem alloc] initWithTitle:@"Import connections" action:@selector(importConnections:) keyEquivalent:@""];
+  importItem.target = handler;
+  [fileMenu addItem:importItem];
 
   NSMenuItem *exitItem = [[NSMenuItem alloc] initWithTitle:@"Exit" action:@selector(exit:) keyEquivalent:@""];
   exitItem.target = handler;
@@ -118,7 +128,7 @@ static void installMenuBar(void) {
   NSMenu *preferencesMenu = [[NSMenu alloc] initWithTitle:@"Preferences"];
   preferencesMenuItem.submenu = preferencesMenu;
 
-  NSMenuItem *shortcutsItem = [[NSMenuItem alloc] initWithTitle:@"Keyboard shortcuts…" action:@selector(shortcuts:) keyEquivalent:@""];
+  NSMenuItem *shortcutsItem = [[NSMenuItem alloc] initWithTitle:@"Keyboard shortcuts" action:@selector(shortcuts:) keyEquivalent:@""];
   shortcutsItem.target = handler;
   [preferencesMenu addItem:shortcutsItem];
 
@@ -127,7 +137,7 @@ static void installMenuBar(void) {
   NSMenu *aboutMenu = [[NSMenu alloc] initWithTitle:@"About"];
   aboutMenuItem.submenu = aboutMenu;
 
-  NSMenuItem *checkItem = [[NSMenuItem alloc] initWithTitle:@"Check for updates…" action:@selector(checkForUpdates:) keyEquivalent:@""];
+  NSMenuItem *checkItem = [[NSMenuItem alloc] initWithTitle:@"Check for updates" action:@selector(checkForUpdates:) keyEquivalent:@""];
   checkItem.target = handler;
   [aboutMenu addItem:checkItem];
 

@@ -26,6 +26,7 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
   environmentsSlice.ts  the environment picklist + useEnvironments()
   savedSlice.ts         the stored connection list
   savedQueriesSlice.ts  the kept statements, and which tabs have drifted from theirs + useSavedQueries()
+  transferSlice.ts      exporting and importing the saved connections + useConnectionTransfer()
   connectionTestSlice.ts  what the connect form reached, without keeping it + useConnectionTest()
   awsSignInSlice.ts     what each AWS profile can currently do, and the sign-in that fixes it + useAwsSignIn()
   explorerSlice.ts      the catalog: databases, their tables, their columns
@@ -38,6 +39,7 @@ src/features/
                         AwsSignIn (AwsSignInButton + AwsSignInStatus),
                         useSavedConnections, useWorkspaces
   titlebar/             Titlebar, Menu, AboutDialog, EnvironmentsDialog, ShortcutsDialog,
+                        ExportConnectionsDialog + ImportConnectionsDialog,
                         useAbout, useWindowChrome
   rail/                 ConnectionRail: the open connections, and the way between
   tabs/                 TabStrip: the strip, its menu, and its drag
@@ -94,6 +96,8 @@ that lives apart from its values is two sources for one fact.
 | saved queries | `savedQueries` slice | crossed |
 | whether a tab holds edits it has not saved back (`unsaved`) | `tabs` slice | never left, but it is a fact about a tab, and tabs live here |
 | the version a *Test* reached, and why one failed | `connectionTest` slice | crossed |
+| what the last connections export wrote or import merged, as counts | `transfer` slice | crossed |
+| whether an export was ticked to include passwords | `ExportConnectionsDialog` local state | never left |
 | which AWS profile was signed in, why one failed, the CLI's `prompt`, and what each AWS profile can currently do | `awsSignIn` slice | crossed |
 | workspaces | `workspaces` slice | crossed |
 | environments (the picklist, not any connection's own) | `environments` slice | crossed |
@@ -1514,6 +1518,37 @@ be wrong:
   and a `<button>` in a `<form>` is a submit button unless it says otherwise: the
   first cut submitted the form as well as testing, which on an *edit* saved the
   row and navigated away before the result could render. See `docs/decisions.md`.
+
+## Carrying the connections to another machine
+
+The File menu's *Export connections* and *Import connections* are two dialogs
+over one slice (`transferSlice`), and the shape they share is that **the UI names
+a file and never holds one**: an OS dialog answers with a path, the path goes over
+the bridge, and a tally comes back. The document does not exist up here in either
+direction — see `docs/extension.md` and `docs/decisions.md` for why that is the
+password's doing rather than a capability's.
+
+Four things are load-bearing:
+
+- **The only decision the export screen makes is the checkbox.** *Include
+  passwords* is off, and its hint says what ticking it does — the secrets leave
+  the encrypted store and land in the file as plain text. Everything else about
+  the export is the extension's.
+- **A cancelled dialog resolves rather than rejects.** `showSaveDialog` answers
+  `''` and `showOpenDialog` an empty array, so both handlers check for nothing
+  chosen and return; neither is a `catch`.
+- **An import refetches both lists rather than patching them.** The summary
+  counts rows and names none, so `importConnections` dispatches `loadWorkspaces`
+  and `loadSaved` before it resolves — and the connect screen re-derives from the
+  same data it always reads, with nothing new taught to it.
+- **The slice is cleared when a dialog closes**, so opening it again does not
+  open onto the last run's answer.
+
+**A File-menu item is added in two places or it is Windows-only.** macOS draws
+its own `NSMenu` in `scripts/macos-window-chrome.m`, which mirrors `Titlebar.tsx`'s
+items exactly and dispatches a `squeal:menu` event that `TitlebarMacos` switches
+on. An item added to one and not the other compiles, tests green on Windows, and
+is simply missing on the platform that cannot show it.
 
 ## Keyboard shortcuts
 

@@ -3,6 +3,8 @@ import { useSession } from '../../store/sessionSlice.ts';
 import * as t from '../../common/tokens';
 import AboutDialog from './AboutDialog.tsx';
 import EnvironmentsDialog from './EnvironmentsDialog.tsx';
+import ExportConnectionsDialog from './ExportConnectionsDialog.tsx';
+import ImportConnectionsDialog from './ImportConnectionsDialog.tsx';
 import ShortcutsDialog from './ShortcutsDialog.tsx';
 import { useAbout } from './useAbout.ts';
 import { useWindowChrome } from './useWindowChrome.ts';
@@ -54,6 +56,8 @@ export default function TitlebarMacos() {
   const [hovered, setHovered] = useState<string | null>(null);
   const [showingAbout, setShowingAbout] = useState(false);
   const [showingEnvironments, setShowingEnvironments] = useState(false);
+  const [showingExport, setShowingExport] = useState(false);
+  const [showingImport, setShowingImport] = useState(false);
   const [showingShortcuts, setShowingShortcuts] = useState(false);
 
   useEffect(() => {
@@ -61,6 +65,8 @@ export default function TitlebarMacos() {
       switch ((e as CustomEvent<string>).detail) {
         case 'exit': close(); break;
         case 'environments': setShowingEnvironments(true); break;
+        case 'exportConnections': setShowingExport(true); break;
+        case 'importConnections': setShowingImport(true); break;
         case 'shortcuts': setShowingShortcuts(true); break;
         case 'checkForUpdates': check(true); break;
         case 'about': setShowingAbout(true); break;
@@ -121,6 +127,8 @@ export default function TitlebarMacos() {
     }}>
       {showingAbout && <AboutDialog version={version} onClose={() => setShowingAbout(false)} />}
       {showingEnvironments && <EnvironmentsDialog onClose={() => setShowingEnvironments(false)} />}
+      {showingExport && <ExportConnectionsDialog onClose={() => setShowingExport(false)} />}
+      {showingImport && <ImportConnectionsDialog onClose={() => setShowingImport(false)} />}
       {showingShortcuts && <ShortcutsDialog onClose={() => setShowingShortcuts(false)} />}
       {/* Traffic-light buttons */}
       <div style={{ display: 'flex', alignItems: 'center', gap: DOT_GAP, flex: 'none', paddingLeft: DOT_LEFT }}>

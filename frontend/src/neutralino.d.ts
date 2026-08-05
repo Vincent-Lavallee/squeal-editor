@@ -70,8 +70,14 @@ declare namespace Neutralino {
       filters?: Filter[];
       defaultPath?: string;
     }
+    interface SaveDialogOptions {
+      forceOverwrite?: boolean;
+      filters?: Filter[];
+      defaultPath?: string;
+    }
     /**
-     * The OS's own file picker, for choosing a SQLite database to connect to.
+     * The OS's own file picker, for choosing a SQLite database to connect to or
+     * a connections file to import.
      *
      * A webview API rather than a bridge command, by the extension's own test:
      * the webview can do this itself, so it does not belong in the extension.
@@ -79,6 +85,18 @@ declare namespace Neutralino {
      * which is why the caller checks the length rather than catching.
      */
     function showOpenDialog(title?: string, options?: OpenDialogOptions): Promise<string[]>;
+    /**
+     * The OS's own save dialog, for naming the file an export writes to.
+     *
+     * The webview names the file and the extension writes it -- the split is the
+     * password's, not a capability's: an export may carry secrets, and those may
+     * not cross the bridge toward the UI. Resolves to an **empty string** when
+     * the user cancels, the same shape as `showOpenDialog`'s empty array.
+     *
+     * `forceOverwrite` is left off, so replacing an existing file is the OS's own
+     * confirmation rather than one this app would have to draw.
+     */
+    function showSaveDialog(title?: string, options?: SaveDialogOptions): Promise<string>;
   }
 
   namespace window {

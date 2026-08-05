@@ -54,6 +54,7 @@ import {
   setStar,
   storedPassword,
 } from './store.ts';
+import { exportToFile, importFromFile } from './transfer.ts';
 
 // Killing the app does not reliably close our socket: WebView2 child processes
 // inherit the listening handle, so the connection can sit in ESTABLISHED forever
@@ -265,6 +266,20 @@ const COMMANDS: Handlers = {
       // the connection, the same as the stars below.
       session: getSession(id),
     };
+  },
+
+  /**
+   * The file is written and read here rather than in the webview, and that is
+   * the password's doing: with `includePasswords` it holds secrets in the clear,
+   * and they may not travel toward the UI to be written up there. The webview
+   * owns the dialog that names the file; this side owns its contents.
+   */
+  async 'db.saved.export'({ path, includePasswords }) {
+    return exportToFile(path, includePasswords);
+  },
+
+  async 'db.saved.import'({ path }) {
+    return importFromFile(path);
   },
 
   async 'db.session.save'({ savedConnectionId, session }) {

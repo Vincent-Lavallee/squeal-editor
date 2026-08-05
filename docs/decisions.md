@@ -4901,3 +4901,85 @@ top. On nothing else, because a scroll event lands *after* the render that
 provoked it, so re-applying the remembered offset on an unrelated re-render would
 put the grid back a frame behind a wheel gesture still in flight — the app
 fighting the user.
+
+---
+
+## The connections file is written by the extension, and merged by its ids
+
+**What it is.** *Export connections* in the File menu writes every workspace and
+every connection to one JSON file; *Import connections* reads one back and merges
+it. Both halves shipped together, because an export nothing can read back is a
+backup you find out about on the machine you needed it on.
+
+**The extension writes and reads the file, and that is the only real decision
+here.** It looks like a violation of the extension's own test — *can the webview
+do this itself?* — because the webview can plainly write a file. The password is
+why it does not. With passwords included the document holds secrets in the clear,
+and *the password never travels toward the UI* is the rule the entire store is
+built on: `SavedConnection` carries `hasPassword` and never a secret,
+`ServerConfig` exists so that carrying one is a compile error. Handing a document
+full of plaintext back over the bridge to be written up there would knock that
+over for a feature, which is exactly how such a rule stops being one. So the
+split is by *secret* rather than by capability: the webview owns the dialogs that
+name the file (`showSaveDialog` / `showOpenDialog` are its own APIs, the same as
+the SQLite file picker), the extension owns the contents, and what crosses is a
+path one way and a tally the other.
+
+*Rejected: the extension returning the document and the UI writing it.* One
+command instead of two halves, and it works right up until the checkbox is
+ticked. A design that is correct only while a feature is off is not correct.
+
+**Passwords are opt-in plaintext, and the checkbox says so in those words.** They
+are sealed with a key from the OS keychain, and that key does not travel — so
+including them means decrypting them out of the store and onto disk in the clear.
+*Rejected: encrypting the file under a passphrase.* That is a second
+key-management design (a KDF, a salt, a wrong-passphrase path, a passphrase to
+lose) grafted onto a feature whose whole job is to move a file between two
+machines, and it would let the dialog promise a safety the app would then have to
+be right about. Saying outright what the file holds is smaller and cannot be
+subtly wrong. The export's one log line is the same reasoning: secrets leaving
+for a plain-text file is the one thing here that otherwise leaves no trace at
+all.
+
+**Identity is the exported id, which is what makes it a merge.** Import the same
+file twice and every connection reports *updated*, none added — and a row written
+over in place keeps the stars and the session already filed under its id, which
+is the thing an id is for.
+
+*Rejected: minting new ids on import.* Every re-import would then be a full set
+of copies, and "merging into the store rather than replacing it" would mean
+"appending to it".
+
+*Rejected: matching a connection by name.* A connection's name is a label and not
+a key — that decision is already made, and two rows in one workspace may honestly
+be the same server twice. Matching on one would merge a reader into its writer.
+
+**A workspace is matched by id and then by name**, because name is the one thing
+that table *is* unique on. The common case is precisely the one an id cannot
+catch: a `Work` workspace made on another machine, same name, an id this store
+has never seen. Falling through to the name lands the connections where the user
+plainly meant them and avoids failing a constraint to no one's benefit.
+
+**A password the file does not carry leaves the stored one alone.** The merge
+never clears a secret it was not handed one for — a passwordless export
+re-imported over its own store would otherwise wipe every password in it, which
+is the most plausible way to lose them and the least visible.
+
+**The environment picklist does not travel, deliberately.** A connection stores
+its environment as text and not as that list's id (see *Environments became a
+user-managed list*), so an imported connection keeps its environment whether or
+not the target machine offers the name — the connect screen already groups an
+unlisted one under its own heading. Sending the list too would import names into
+a picklist the user curates, to fix a problem that does not exist.
+
+**A newer format is refused by name rather than half-read.**
+`squealConnections` both marks the file as ours and versions it; a number higher
+than this reader understands is a file written by a Squeal that knew something
+this one does not, and reading what it recognises and dropping the rest would
+import a connection subtly unlike the one exported.
+
+**There is no UI test for the round trip, and that is not an oversight.** The
+path is named by an OS dialog, which CDP cannot reach — so the UI suite asserts
+what it can (the menu reaches both screens, and the passwords box starts off) and
+`saved.test.ts` proves the rest against the real store, the real keychain and a
+real server at the far end: exported, deleted, imported, connected.

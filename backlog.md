@@ -34,18 +34,6 @@ Things that are wrong.
 
 Things that do not exist yet.
 
-- **Export and import connections** — Moving connections to another machine means
-  retyping every one of them. Export all workspaces and their connections from the
-  File menu to a file chosen by a native save dialog, and import one back, merging
-  into the store rather than replacing it — an exported file nothing can read back is
-  not a feature, so both halves are this item. Passwords are excluded by default,
-  because they are sealed with a key from the OS keychain that does not travel;
-  including them is a deliberate opt-in checkbox in the export dialog, which states
-  outright that they leave the encrypted store and land in the file as plaintext.
-  Import asks for whatever the file does not carry. This stays separate from GitHub
-  sync: that one is continuous, personal and needs an account, this one is a file you
-  can hand over or keep as a backup with no network at all.
-
 - **Export a table** — Getting a table out of the app means selecting rows by
   hand or writing the dump query yourself. Add an export that streams a whole
   table — all rows, paged from the server so a large one never has to land in the

@@ -2549,7 +2549,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await app.evaluate(openMenu('File'));
       await Bun.sleep(200);
-      expect(await app.evaluate<string[]>(openMenuItems)).toEqual(['Environments…', 'Exit']);
+      expect(await app.evaluate<string[]>(openMenuItems))
+        .toEqual(['Environments', 'Export connections', 'Import connections', 'Exit']);
 
       await app.evaluate(pressEscape);
       await Bun.sleep(200);
@@ -2559,7 +2560,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     test('Environments manages the picklist the connect form offers', async () => {
       await app.evaluate(openMenu('File'));
       await Bun.sleep(200);
-      await app.evaluate(clickMenuItem('Environments…'));
+      await app.evaluate(clickMenuItem('Environments'));
       await Bun.sleep(300);
 
       const envNames = `[...document.querySelectorAll('[data-testid="env-name"]')].map(e => e.textContent)`;
@@ -2586,11 +2587,46 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="modal"]').length`)).toBe(0);
     });
 
+    /*
+     * The screens, not the transfer. The file is named by an OS dialog CDP
+     * cannot reach and written by the extension, and what lands in the store is
+     * `saved.test.ts`'s to prove against the real one -- so what only the running
+     * app can answer is whether the menu reaches these screens at all, and
+     * whether the box that sends passwords out in plain text starts off.
+     */
+    test('Export and Import connections open their screens, with passwords off', async () => {
+      const heading = `document.querySelector('[data-testid="modal"] h2').textContent`;
+      const closeModal =
+        `[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === 'Close').click(); true;`;
+
+      await app.evaluate(openMenu('File'));
+      await Bun.sleep(200);
+      await app.evaluate(clickMenuItem('Export connections'));
+      await app.waitFor(`document.querySelector('[data-testid="modal"]') ? true : null`);
+      expect(await app.evaluate<string>(heading)).toBe('Export connections');
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="modal"] input[type="checkbox"]').checked`))
+        .toBe(false);
+
+      await app.evaluate(closeModal);
+      await Bun.sleep(200);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="modal"]').length`)).toBe(0);
+
+      await app.evaluate(openMenu('File'));
+      await Bun.sleep(200);
+      await app.evaluate(clickMenuItem('Import connections'));
+      await app.waitFor(`document.querySelector('[data-testid="modal"]') ? true : null`);
+      expect(await app.evaluate<string>(heading)).toBe('Import connections');
+
+      await app.evaluate(closeModal);
+      await Bun.sleep(200);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="modal"]').length`)).toBe(0);
+    });
+
     test('the About menu opens, and Version shows the running version', async () => {
       await app.evaluate(openMenu('About'));
       await Bun.sleep(200);
       expect(await app.evaluate<string[]>(openMenuItems))
-        .toEqual(['Check for updates…', 'Version', 'Open app data']);
+        .toEqual(['Check for updates', 'Version', 'Open app data']);
 
       await app.evaluate(clickMenuItem('Version'));
       await Bun.sleep(200);
@@ -2629,15 +2665,15 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       const openShortcuts = async (): Promise<void> => {
         await app.evaluate(openMenu('Preferences'));
         await Bun.sleep(200);
-        await app.evaluate(clickMenuItem('Keyboard shortcuts…'));
+        await app.evaluate(clickMenuItem('Keyboard shortcuts'));
         await app.waitFor(`document.querySelector('[data-shortcut="run"]') ? true : null`);
       };
 
       await app.evaluate(openMenu('Preferences'));
       await Bun.sleep(200);
-      expect(await app.evaluate<string[]>(openMenuItems)).toEqual(['Keyboard shortcuts…']);
+      expect(await app.evaluate<string[]>(openMenuItems)).toEqual(['Keyboard shortcuts']);
 
-      await app.evaluate(clickMenuItem('Keyboard shortcuts…'));
+      await app.evaluate(clickMenuItem('Keyboard shortcuts'));
       await app.waitFor(`document.querySelector('[data-shortcut="run"]') ? true : null`);
       expect(await app.evaluate<string>(chordOf('run'))).toBe('Ctrl+Enter');
 

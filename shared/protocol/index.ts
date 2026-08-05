@@ -19,6 +19,8 @@ export type {
   AwsIamAuth,
   ConnectionColorId,
   ConnectionConfig,
+  ConnectionExportSummary,
+  ConnectionImportSummary,
   EngineType,
   Environment,
   EnvironmentDef,

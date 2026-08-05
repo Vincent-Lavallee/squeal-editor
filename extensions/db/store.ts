@@ -21,6 +21,7 @@ import { join } from 'node:path';
 
 import type {
   ConnectionColorId,
+  ConnectionImportSummary,
   EngineType,
   Environment,
   EnvironmentDef,
@@ -443,7 +444,24 @@ export async function saveConnection({
     color: color ?? DEFAULT_CONNECTION_COLOR,
   };
 
-  open().run(
+  writeConnection(open(), row);
+
+  return toSaved(row);
+}
+
+/**
+ * The one write of this table, so a column added to it cannot land in the save
+ * path and be forgotten by the import path.
+ *
+ * `keepExistingPassword` is the only thing the two callers differ on: a save is
+ * always told what to do with the secret (`PasswordUpdate`, already resolved by
+ * the time it reaches here), while an import carries one only if the file did --
+ * and a file that carries none must leave the stored one where it is rather than
+ * quietly clearing it.
+ */
+function writeConnection(database: Database, row: Row, keepExistingPassword = false): void {
+  const password = keepExistingPassword ? 'COALESCE(excluded.password, saved_connections.password)' : 'excluded.password';
+  database.run(
     `INSERT INTO saved_connections
        (id, workspace_id, name, engine, host, port, username, default_database, environment, ssl, read_only, aws_profile, aws_region, password, color)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -452,7 +470,8 @@ export async function saveConnection({
        host = excluded.host, port = excluded.port, username = excluded.username,
        default_database = excluded.default_database, environment = excluded.environment,
        ssl = excluded.ssl, read_only = excluded.read_only,
-       aws_profile = excluded.aws_profile, aws_region = excluded.aws_region, password = excluded.password,
+       aws_profile = excluded.aws_profile, aws_region = excluded.aws_region,
+       password = ${password},
        color = excluded.color`,
     [
       row.id,
@@ -472,12 +491,134 @@ export async function saveConnection({
       row.color,
     ]
   );
-
-  return toSaved(row);
 }
 
 export function deleteSaved(id: string): void {
   open().run('DELETE FROM saved_connections WHERE id = ?', [id]);
+}
+
+/* ------------------------------------------------------------------ *
+ * Importing an exported file: the merge
+ * ------------------------------------------------------------------ */
+
+/** A workspace as an exported file describes it. `icon` is optional for the same
+ *  reason `SaveInput.color` is: an absent one takes this file's default. */
+export interface ImportedWorkspace {
+  id: string;
+  name: string;
+  icon?: WorkspaceIconId;
+}
+
+export interface ImportedConnection {
+  id: string;
+  workspaceId: string;
+  name: string;
+  config: ServerConfig;
+  environment: Environment;
+  readOnly: boolean;
+  color?: ConnectionColorId;
+  /** Absent when the file carried none, which leaves an existing row's alone. */
+  password?: string;
+}
+
+/**
+ * Merge an exported set of workspaces and connections into this store.
+ *
+ * **Identity is the exported id**, which is what makes this a merge rather than
+ * an append: importing the same file twice writes the same rows over again
+ * instead of filling the workspace with copies, and a connection updated in
+ * place keeps the stars and the session already filed under its id. Nothing is
+ * ever deleted -- a connection this store has and the file does not is left
+ * exactly where it is.
+ *
+ * A workspace is matched **by id, then by name**, because the name is the one
+ * thing this table is unique on: a file whose `Work` workspace was made on
+ * another machine has an id this store has never seen, and inserting it would
+ * fail the constraint rather than land the connections where the user plainly
+ * meant them to go. A workspace that is already here is then used as it stands
+ * and never renamed -- a rename could collide with a *third* workspace's name
+ * and take the whole import down with it, which is a poor price for a heading.
+ *
+ * The whole thing is one transaction, so a file that turns out to be wrong
+ * halfway through leaves the store as it found it. The passwords are encrypted
+ * *before* it opens: the key is behind an `await` and a `bun:sqlite` transaction
+ * is synchronous, and a batch that could pause in the middle is not one anyway.
+ */
+export async function importAddressBook(
+  workspaces: ImportedWorkspace[],
+  connections: ImportedConnection[]
+): Promise<ConnectionImportSummary> {
+  const database = open();
+
+  const workspaceTarget = new Map<string, string>();
+  const newWorkspaces: ImportedWorkspace[] = [];
+  for (const workspace of workspaces) {
+    const existing =
+      (database.query('SELECT id FROM workspaces WHERE id = ?').get(workspace.id) as { id: string } | null) ??
+      (database.query('SELECT id FROM workspaces WHERE name = ? COLLATE NOCASE').get(workspace.name) as
+        | { id: string }
+        | null) ??
+      // A file naming one workspace twice would otherwise insert it twice and
+      // fail its own UNIQUE constraint -- the same merge, applied within the file.
+      newWorkspaces.find((w) => w.name.toLowerCase() === workspace.name.toLowerCase());
+
+    workspaceTarget.set(workspace.id, existing?.id ?? workspace.id);
+    if (!existing) newWorkspaces.push(workspace);
+  }
+
+  const secrets = new Map<string, Buffer>();
+  for (const connection of connections) {
+    if (connection.password !== undefined) secrets.set(connection.id, await encrypt(connection.password));
+  }
+
+  const known = new Set(
+    (database.query('SELECT id FROM saved_connections').all() as { id: string }[]).map((row) => row.id)
+  );
+
+  database.transaction(() => {
+    for (const workspace of newWorkspaces) {
+      database.run('INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)', [
+        workspace.id,
+        workspace.name,
+        workspace.icon ?? DEFAULT_WORKSPACE_ICON,
+      ]);
+    }
+
+    for (const connection of connections) {
+      const workspaceId = workspaceTarget.get(connection.workspaceId);
+      if (!workspaceId) throw new Error(`"${connection.name}" belongs to a workspace this file does not describe.`);
+
+      const { config } = connection;
+      writeConnection(
+        database,
+        {
+          id: connection.id,
+          workspace_id: workspaceId,
+          name: connection.name,
+          engine: config.type,
+          host: config.host,
+          port: config.port,
+          username: config.user,
+          default_database: config.database ?? null,
+          environment: connection.environment,
+          ssl: config.ssl ? 1 : 0,
+          read_only: connection.readOnly ? 1 : 0,
+          aws_profile: config.iam?.profile ?? null,
+          aws_region: config.iam?.region ?? null,
+          password: secrets.get(connection.id) ?? null,
+          color: connection.color ?? DEFAULT_CONNECTION_COLOR,
+        },
+        true
+      );
+    }
+  })();
+
+  return {
+    workspacesAdded: newWorkspaces.length,
+    connectionsAdded: connections.filter((c) => !known.has(c.id)).length,
+    connectionsUpdated: connections.filter((c) => known.has(c.id)).length,
+    passwords: secrets.size,
+  };
 }
 
 /**

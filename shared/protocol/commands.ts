@@ -10,6 +10,8 @@ import type {
   AwsCredentialStatus,
   ConnectionColorId,
   ConnectionConfig,
+  ConnectionExportSummary,
+  ConnectionImportSummary,
   Environment,
   EnvironmentDef,
   PasswordUpdate,
@@ -363,6 +365,49 @@ export interface Commands {
        */
       session: string | null;
     };
+  };
+
+  /**
+   * Write every workspace and every connection to a file, for carrying to
+   * another machine or keeping as a backup.
+   *
+   * **The extension writes the file; the UI only names it.** That is the one
+   * design decision in this pair and it is the password's doing: with
+   * `includePasswords` the document holds secrets in plain text, and handing it
+   * back over the bridge to be written up there would break the rule the whole
+   * store is built on -- a password travels toward the UI never, not merely
+   * rarely. So `path` comes down (the webview owns the native save dialog, the
+   * same way it owns the file picker that chooses a SQLite database) and only a
+   * tally goes back.
+   *
+   * `includePasswords` is off unless the user ticked a box that says outright
+   * what it does. Passwords are sealed with a key from the OS keychain, which
+   * does not travel with the file, so including them means decrypting them out
+   * of the store and onto disk in the clear -- a deliberate choice, never a
+   * default, and never a silent one.
+   */
+  'db.saved.export': {
+    req: { path: string; includePasswords: boolean };
+    res: ConnectionExportSummary;
+  };
+  /**
+   * Read such a file back and **merge** it into the store: a workspace or a
+   * connection the store already has is written over in place, and everything
+   * else is added. Nothing is deleted, so importing can only ever be additive --
+   * a connection this store has and the file does not is left alone.
+   *
+   * The whole file lands or none of it does. `path` rather than the document for
+   * `db.saved.export`'s reason with the direction reversed: the file may carry
+   * plain-text passwords, so the side that owns the encrypted store is the side
+   * that reads them, and the webview never holds one.
+   *
+   * A password the file does not carry leaves the stored one alone, and a
+   * connection that ends up with none simply asks when it is connected to --
+   * which is the prompt an unsaved password already gets, not a new one.
+   */
+  'db.saved.import': {
+    req: { path: string };
+    res: ConnectionImportSummary;
   };
 
   /**

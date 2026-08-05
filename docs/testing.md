@@ -54,7 +54,7 @@ discovers every `*.test.ts` — the script name cannot override it. The UI suite
 would therefore try to launch a window on a bare `bun test`, so it opts out
 behind `SQUEAL_UI=1` (set by `test:ui`, along with a longer timeout, because
 launching the app blows past Bun's 5s default hook timeout). Expect
-`394 pass / 156 skip` from a bare run, and `130 pass` in ~345s from `test:ui`.
+`404 pass / 158 skip` from a bare run, and `133 pass` in ~365s from `test:ui`.
 
 **`test:ui` builds the extension too, and driving the app by hand must as well.**
 `build:ext` compiles `extensions/db/squeal-db-ext.exe`, which is what
@@ -291,6 +291,14 @@ Three of these tests are the ones that matter:
   real key. That is what makes the last assertion — it still connects afterwards
   — mean anything; a hand-written blob could only ever prove the row moved. These
   are the tests standing between a schema change and someone's real connections.
+
+**The export/import round trip is proven here rather than in the UI**, and it has
+to be: the path is named by an OS dialog CDP cannot reach, so the UI suite can
+only assert that the menu reaches both screens and that the passwords box starts
+off. The test that means something is the whole loop against the real store —
+exported with passwords, the row deleted, imported, and then *connected to a real
+server with the password that came back*. Everything before that last step could
+pass with a secret that survived the trip as mush.
 
 **A new table costs three lines here, and one of them is easy to miss.** A
 migration needs its inverse in `UNDO` (which throws by name rather than skipping,

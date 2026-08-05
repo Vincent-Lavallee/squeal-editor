@@ -14,12 +14,18 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { MIGRATIONS } from '../extensions/db/migrations/index.ts';
-import type { SavedConnection, SavedQuery, Workspace } from '../shared/protocol/index.ts';
+import type {
+  ConnectionExportSummary,
+  ConnectionImportSummary,
+  SavedConnection,
+  SavedQuery,
+  Workspace,
+} from '../shared/protocol/index.ts';
 import { FIXTURE_DB, PG, SQLITE, SQLITE_FILE } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 
@@ -990,6 +996,176 @@ describe('workspaces', () => {
     // A connection hangs off a workspace, so an app with none has nowhere to
     // save one and no way back.
     expect(await workspaces()).toHaveLength(1);
+  });
+});
+
+/**
+ * Carrying the whole address book to another machine and back.
+ *
+ * The file is written and read by the extension, never by the caller, so these
+ * tests assert against what actually landed on disk -- a password in the clear
+ * is the entire risk of the feature, and the only way to be sure it is there
+ * (or absent) is to read the bytes rather than the summary.
+ */
+describe('exporting and importing', () => {
+  const FILE = join(DATA_DIR, 'connections.json');
+  const RENAMED = join(DATA_DIR, 'connections-elsewhere.json');
+  const NONSENSE = join(DATA_DIR, 'not-ours.json');
+
+  interface Document {
+    squealConnections: number;
+    includesPasswords: boolean;
+    workspaces: { id: string; name: string; icon: string }[];
+    connections: { id: string; workspaceId: string; name: string; password?: string }[];
+  }
+
+  const exportTo = async (path: string, includePasswords: boolean): Promise<ConnectionExportSummary> =>
+    (await h.ok('db.saved.export', { path, includePasswords })) as ConnectionExportSummary;
+
+  const importFrom = async (path: string): Promise<ConnectionImportSummary> =>
+    (await h.ok('db.saved.import', { path })) as ConnectionImportSummary;
+
+  const documentIn = (path: string): Document => JSON.parse(readFileSync(path, 'utf8')) as Document;
+
+  /** The row every test here follows: it stores a password, so it is the one
+   *  that can be got wrong in both directions. */
+  let carried: SavedConnection;
+
+  beforeAll(async () => {
+    carried = await save({
+      name: 'carried',
+      config: PG_SERVER,
+      password: { mode: 'store', password: PG_PASSWORD },
+    });
+  });
+
+  test('an export leaves the passwords in the store unless it is asked for them', async () => {
+    const summary = await exportTo(FILE, false);
+    expect(summary.connections).toBeGreaterThan(0);
+    expect(summary.passwords).toBe(0);
+
+    // Read as text, not through the shape: a secret that leaked into some other
+    // field would pass every structural assertion here.
+    expect(readFileSync(FILE, 'utf8')).not.toContain(PG_PASSWORD);
+
+    const doc = documentIn(FILE);
+    expect(doc.includesPasswords).toBe(false);
+    expect(doc.connections.find((c) => c.id === carried.id)).not.toHaveProperty('password');
+    expect(doc.workspaces.some((w) => w.id === DEFAULT_WS)).toBe(true);
+  });
+
+  test('an export that was asked for passwords carries them, and says so', async () => {
+    const summary = await exportTo(FILE, true);
+    expect(summary.passwords).toBeGreaterThan(0);
+
+    const doc = documentIn(FILE);
+    expect(doc.includesPasswords).toBe(true);
+    expect(doc.connections.find((c) => c.id === carried.id)?.password).toBe(PG_PASSWORD);
+  });
+
+  test('importing puts a deleted connection back, and it still reaches the server', async () => {
+    await h.ok('db.saved.delete', { id: carried.id });
+    expect((await list()).some((c) => c.id === carried.id)).toBe(false);
+
+    const summary = await importFrom(FILE);
+    expect(summary.connectionsAdded).toBe(1);
+    expect(summary.workspacesAdded).toBe(0);
+
+    // The id is the identity, so the row comes back as itself rather than as a
+    // copy -- which is what lets stars and sessions filed under it still mean
+    // something after a round trip.
+    const back = (await list()).find((c) => c.id === carried.id)!;
+    expect(back.name).toBe('carried');
+    expect(back.config).toEqual({ ...PG_SERVER, ssl: false });
+    expect(back.hasPassword).toBe(true);
+
+    // The password survived the trip through plain text and back into the
+    // encrypted store, which no assertion about the file alone can show.
+    const res = (await h.ok('db.saved.connect', { id: carried.id })) as { connectionId: string };
+    await h.ok('db.disconnect', { connectionId: res.connectionId });
+  });
+
+  test('importing the same file again updates in place rather than duplicating', async () => {
+    const before = await list();
+    const summary = await importFrom(FILE);
+
+    expect(summary.connectionsAdded).toBe(0);
+    expect(summary.connectionsUpdated).toBe(documentIn(FILE).connections.length);
+    expect(await list()).toHaveLength(before.length);
+  });
+
+  test('a file carrying no password leaves the stored one alone', async () => {
+    await exportTo(RENAMED, false);
+    await importFrom(RENAMED);
+
+    const after = (await list()).find((c) => c.id === carried.id)!;
+    expect(after.hasPassword).toBe(true);
+    const res = (await h.ok('db.saved.connect', { id: carried.id })) as { connectionId: string };
+    await h.ok('db.disconnect', { connectionId: res.connectionId });
+  });
+
+  test('a workspace this store already has by name is merged into, not added beside', async () => {
+    const doc = documentIn(FILE);
+    const elsewhere = new Map(doc.workspaces.map((w) => [w.id, Bun.randomUUIDv7()]));
+    const rewritten = {
+      ...doc,
+      // The same workspaces and connections as another machine would describe
+      // them: identical names, ids this store has never seen.
+      workspaces: doc.workspaces.map((w) => ({ ...w, id: elsewhere.get(w.id)! })),
+      connections: doc.connections.map((c) => ({
+        ...c,
+        id: Bun.randomUUIDv7(),
+        workspaceId: elsewhere.get(c.workspaceId)!,
+      })),
+    };
+    writeFileSync(RENAMED, JSON.stringify(rewritten));
+
+    const summary = await importFrom(RENAMED);
+    expect(summary.workspacesAdded).toBe(0);
+    expect(summary.connectionsAdded).toBe(rewritten.connections.length);
+    expect(await workspaces()).toHaveLength(1);
+
+    const landed = rewritten.connections.find((c) => c.name === 'carried')!;
+    expect((await list()).find((c) => c.id === landed.id)!.workspaceId).toBe(DEFAULT_WS);
+
+    // Swept up: the describes below assert against the whole list.
+    for (const conn of rewritten.connections) await h.ok('db.saved.delete', { id: conn.id });
+  });
+
+  test('a file that is not ours is refused, in words', async () => {
+    writeFileSync(NONSENSE, '{ "hello": true }');
+    const res = await h.dispatch('db.saved.import', { path: NONSENSE });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/not a squeal connections file/i);
+  });
+
+  test('a file written by a newer format says so rather than being half-read', async () => {
+    writeFileSync(NONSENSE, JSON.stringify({ squealConnections: 99, workspaces: [], connections: [] }));
+    const res = await h.dispatch('db.saved.import', { path: NONSENSE });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/newer version/i);
+  });
+
+  test('a connection naming a workspace the file does not describe lands nothing at all', async () => {
+    const doc = documentIn(FILE);
+    writeFileSync(
+      NONSENSE,
+      JSON.stringify({ ...doc, workspaces: [], connections: doc.connections.map((c) => ({ ...c, id: Bun.randomUUIDv7() })) })
+    );
+
+    const before = await list();
+    const res = await h.dispatch('db.saved.import', { path: NONSENSE });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/workspace/i);
+    // The merge is one transaction, so a file that goes wrong partway through
+    // leaves the store exactly as it found it.
+    expect(await list()).toHaveLength(before.length);
+  });
+
+  test('a missing file is a failed import, not a crash', async () => {
+    const res = await h.dispatch('db.saved.import', { path: join(DATA_DIR, 'no-such-file.json') });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/could not read/i);
   });
 });
 

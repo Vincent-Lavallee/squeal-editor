@@ -3,6 +3,8 @@ import { useSession } from '../../store/sessionSlice.ts';
 import * as t from '../../common/tokens';
 import AboutDialog from './AboutDialog.tsx';
 import EnvironmentsDialog from './EnvironmentsDialog.tsx';
+import ExportConnectionsDialog from './ExportConnectionsDialog.tsx';
+import ImportConnectionsDialog from './ImportConnectionsDialog.tsx';
 import Menu from './Menu.tsx';
 import ShortcutsDialog from './ShortcutsDialog.tsx';
 import { useAbout } from './useAbout.ts';
@@ -17,19 +19,23 @@ export default function Titlebar({ onCheckForUpdates }: Props) {
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
   const [showingAbout, setShowingAbout] = useState(false);
   const [showingEnvironments, setShowingEnvironments] = useState(false);
+  const [showingExport, setShowingExport] = useState(false);
+  const [showingImport, setShowingImport] = useState(false);
   const [showingShortcuts, setShowingShortcuts] = useState(false);
 
   const fileItems = [
-    { label: 'Environments…', onSelect: () => setShowingEnvironments(true) },
+    { label: 'Environments', onSelect: () => setShowingEnvironments(true) },
+    { label: 'Export connections', onSelect: () => setShowingExport(true) },
+    { label: 'Import connections', onSelect: () => setShowingImport(true) },
     { label: 'Exit', onSelect: close },
   ];
 
   const preferencesItems = [
-    { label: 'Keyboard shortcuts…', onSelect: () => setShowingShortcuts(true) },
+    { label: 'Keyboard shortcuts', onSelect: () => setShowingShortcuts(true) },
   ];
 
   const aboutItems = [
-    { label: 'Check for updates…', onSelect: onCheckForUpdates },
+    { label: 'Check for updates', onSelect: onCheckForUpdates },
     { label: 'Version', onSelect: () => setShowingAbout(true) },
     { label: 'Open app data', onSelect: openDataDir },
   ];
@@ -48,6 +54,8 @@ export default function Titlebar({ onCheckForUpdates }: Props) {
       <Menu label="About" items={aboutItems} />
       {showingAbout && <AboutDialog version={version} onClose={() => setShowingAbout(false)} />}
       {showingEnvironments && <EnvironmentsDialog onClose={() => setShowingEnvironments(false)} />}
+      {showingExport && <ExportConnectionsDialog onClose={() => setShowingExport(false)} />}
+      {showingImport && <ImportConnectionsDialog onClose={() => setShowingImport(false)} />}
       {showingShortcuts && <ShortcutsDialog onClose={() => setShowingShortcuts(false)} />}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 0, height: '100%' }} {...dragProps}>
         <span data-testid="titlebar-title" style={{ overflow: 'hidden', color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

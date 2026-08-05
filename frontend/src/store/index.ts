@@ -11,6 +11,7 @@ import { sessionReducer } from './sessionSlice.ts';
 import { sessionSyncMiddleware } from './sessionSyncListener.ts';
 import { settingsReducer } from './settingsSlice.ts';
 import { tabsReducer } from './tabsSlice.ts';
+import { transferReducer } from './transferSlice.ts';
 import { updaterReducer } from './updaterSlice.ts';
 import { workspacesReducer } from './workspacesSlice.ts';
 
@@ -39,6 +40,7 @@ export const store = configureStore({
     environments: environmentsReducer,
     saved: savedReducer,
     savedQueries: savedQueriesReducer,
+    transfer: transferReducer,
     connectionTest: connectionTestReducer,
     awsSignIn: awsSignInReducer,
     explorer: explorerReducer,

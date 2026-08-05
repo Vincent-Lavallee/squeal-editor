@@ -272,6 +272,37 @@ export interface SavedConnection {
 }
 
 /**
+ * What an export wrote, so the screen that asked for it can say what it did.
+ *
+ * Counts and nothing else -- no names, no path. The file itself never crosses
+ * the bridge in either direction (see `db.saved.export`), so what comes back is
+ * a tally rather than a document, and `passwords` is how many secrets actually
+ * left the encrypted store: zero whenever they were not asked for, and lower
+ * than `connections` whenever some of them store none.
+ */
+export interface ConnectionExportSummary {
+  workspaces: number;
+  connections: number;
+  passwords: number;
+}
+
+/**
+ * What an import merged, in the same tally.
+ *
+ * Added and updated are counted apart because that is the whole claim the merge
+ * makes: a connection the store already had is written over in place, so
+ * importing the same file twice reports every connection *updated* and none
+ * added. A file with nothing new in it is all zeroes, which is an outcome and
+ * not a failure.
+ */
+export interface ConnectionImportSummary {
+  workspacesAdded: number;
+  connectionsAdded: number;
+  connectionsUpdated: number;
+  passwords: number;
+}
+
+/**
  * What to do with the password when saving. Three cases, all of them real, and
  * `keep` is why this is a union rather than a `string | null`: the edit form is
  * never sent the password it is editing, so "leave it alone" cannot be spelled

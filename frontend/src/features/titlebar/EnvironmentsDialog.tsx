@@ -13,7 +13,7 @@ const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: t
 interface Props { onClose: () => void; }
 
 /**
- * The File menu's "Environments…" screen: the whole surface for the picklist
+ * The File menu's "Environments" screen: the whole surface for the picklist
  * `ConnectionForm`'s "Environment" select offers and `SavedConnectionList`
  * groups by. Add and remove only, deliberately -- renaming is a different
  * feature (it would mean deciding what happens to connections already using
