@@ -694,3 +694,19 @@ This is a record, not a plan. Nothing here is waiting on anything.
   was summoned on rather than the connection in front, and `Ctrl+Shift+W` for the
   one in front. No confirmation on either: a disconnect saves the session while
   the tabs still exist, so it parks work rather than destroying it.
+
+- **2026-08-05** — **The database tree followed whichever tab was in front** —
+  A tab carries its own database, so a strip holding tabs on two of them
+  re-rooted the tree on every switch: the tree moved out from under whatever was
+  being read, for a gesture that was about the tabs. The tree is browsed on its
+  own now, one database per connection, and the sidebar's picker moves it and the
+  seed a first tab is born on — not anything already open. The cost taken
+  knowingly: a grid tab has no database control any more, and the first pick
+  after connecting leaves the tab that was already open behind.
+
+- **2026-08-05** — **The tab's database list opened off the edge of the window** —
+  The picker fused to the Run button sits at the right edge of its pane, so its
+  list opened leftward — except it was positioned from a measurement taken before
+  its own minimum width applied, hanging it off the trigger by a number too small
+  and then widening it past the window. Roughly 19px of the list was clipped
+  whenever the window was not maximised, on every fresh open.

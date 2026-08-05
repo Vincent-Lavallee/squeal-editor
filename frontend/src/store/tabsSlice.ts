@@ -461,15 +461,12 @@ const tabsSlice = createSlice({
     },
 
     /**
-     * A picker moved -- the tree's, or the one in an editor's own toolbar.
-     *
-     * Both write the same field, because they are two controls onto one value
-     * rather than two values. `tabId` names the tab being pointed somewhere
-     * else; `null` is the connection with no tabs open at all, where there is
-     * nothing to point and only the seed to move.
+     * A picker moved. `tabId` names the tab being pointed somewhere else; `null`
+     * moves the seed alone, which is what the sidebar's picker sends -- browsing
+     * the tree somewhere else must not drag an open tab along with it.
      *
      * The seed is written either way, so the *next* tab opened on a connection
-     * with nothing in front starts where this one was left.
+     * with nothing in front starts where the last pick left it.
      */
     databaseChanged(state, action: PayloadAction<{ connectionId: string; tabId: string | null; database: string }>) {
       const { connectionId, tabId, database } = action.payload;

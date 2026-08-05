@@ -102,9 +102,23 @@ const pressEscape = `document.dispatchEvent(new KeyboardEvent('keydown', { key: 
 const pressChord = (init: string) =>
   `document.body.dispatchEvent(new KeyboardEvent('keydown', { ${init}, bubbles: true })); true;`;
 
-/** The database picker is a listbox, so it is opened and one of its rows clicked. */
+/**
+ * The sidebar's picker: which database the *tree* is browsing. It moves nothing
+ * else -- a tab already open keeps running where it runs.
+ */
 const selectDatabase = (name: string) => `${REACT_SETTERS}
   pickOption(document.querySelector('[data-testid="sidebar-db-select"]'), ${JSON.stringify(name)});`;
+/** What the tree is browsing, read off that picker. */
+const treeDatabase = `document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`;
+
+/**
+ * The editor toolbar's picker: which database *this tab* runs against. The
+ * caret hangs off the Run button and the name is the label at the bar's left,
+ * which is what `editorDatabase` reads back.
+ */
+const selectTabDatabase = (name: string) => `${REACT_SETTERS}
+  pickOption(document.querySelector('[data-testid="editor-db-select"]'), ${JSON.stringify(name)});`;
+const editorDatabase = `document.querySelector('[data-testid="editor-db-label"]')?.textContent ?? ''`;
 
 /** The rail, top to bottom: one chip per open connection, named. */
 const railNames = `[...document.querySelectorAll('[data-testid="rail-name"]')].map(e => e.textContent)`;
@@ -457,6 +471,23 @@ async function closeTabConfirmed(label: string): Promise<void> {
     await app.evaluate(answerCloseConfirm);
     await Bun.sleep(250);
   }
+}
+
+/**
+ * Work *in* a database: point the tree at it, and the tab in front too when it
+ * is an editor tab and so has a picker of its own.
+ *
+ * Two gestures, because they are two controls onto two facts -- the sidebar
+ * browses, and a tab's own caret moves where it runs. Most of this suite means
+ * the pair, and reaches for this; the tests that are *about* the two being
+ * separate drive each picker by hand instead.
+ */
+async function useDatabase(name: string): Promise<void> {
+  await app.evaluate(selectDatabase(name));
+  await Bun.sleep(1500);
+  if (!(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="editor-db-select"]')`))) return;
+  await app.evaluate(selectTabDatabase(name));
+  await Bun.sleep(800);
 }
 
 /**
@@ -1941,64 +1972,118 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     /*
      * The database belongs to the tab, not to the connection: this is the
      * assertion the whole `tabsSlice` shape exists for now. Pointing one tab
-     * somewhere else leaves every other tab where it was, and the tree follows
-     * whichever tab is in front back to its own database.
+     * somewhere else leaves every other tab where it was.
      *
      * The tab that was never moved is the real subject here. A picker that
      * "remembered" `postgres` for it would be the connection-scoped shape
      * wearing a per-tab field.
+     *
+     * And the tree does not come along, in either direction: not when a tab is
+     * pointed elsewhere, and not when the tab in front is swapped for one that
+     * runs elsewhere. A tree that re-rooted on a tab switch moved out from
+     * under whatever was being read, for a gesture that was about the tabs.
      */
-    test('the database picker follows the tab, not the connection', async () => {
+    test('a tab moves database on its own, and the tree stays where it was put', async () => {
       await app.evaluate(newTab);
       await Bun.sleep(400);
       const second = await app.evaluate<string>(activeTabLabel);
 
-      await app.evaluate(selectDatabase('postgres'));
+      await app.evaluate(selectTabDatabase('postgres'));
       await Bun.sleep(1200);
-      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('postgres');
+      expect(await app.evaluate<string>(editorDatabase)).toBe('postgres');
+      expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
 
       // Back to the first tab, which was never pointed anywhere: it is still on
-      // `shop`, and the tree re-roots to it rather than staying on the database
-      // the *other* tab was moved to.
+      // `shop`, and the tree -- already on `shop` -- was never asked to move.
       await app.evaluate(clickTab('Query 3'));
       await Bun.sleep(1200);
-      expect(await app.evaluate<string>(`document.querySelector('[data-testid="sidebar-db-select"]').getAttribute('data-value')`)).toBe('shop');
+      expect(await app.evaluate<string>(editorDatabase)).toBe('shop');
+      expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
 
       await closeTabConfirmed(second);
       await Bun.sleep(300);
-      // Already on `shop` -- picked again so this reads the same whichever tab
-      // the close landed on, which is where the rest of the block expects to be.
-      await app.evaluate(selectDatabase('shop'));
-      await Bun.sleep(1200);
-      const tables = await app.evaluate<string[]>(
-        `[...document.querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`
-      );
-      expect(tables).toContain('users');
+      expect(await app.evaluate<string[]>(treeLabels)).toContain('users');
     });
 
     /*
-     * A grid tab always shows "this table, in the connection's current
-     * database" -- so when the picker moves while one is in front, it
-     * re-browses under the newly picked database, and when the table does not
-     * live there, the error lands in this tab's own grid, which is where the
-     * action was taken.
+     * The other half of the same split, and the one that says which control
+     * owns which fact: the sidebar's picker browses, and browsing moves nothing
+     * that is already running. It is put back on `shop` at the end because the
+     * rest of this block reads `shop`'s tree.
      */
-    test('moving a grid tab to a database without that table errors in that tab', async () => {
+    test('the sidebar picker moves the tree, not the tab in front', async () => {
+      await app.evaluate(selectDatabase('postgres'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string>(treeDatabase)).toBe('postgres');
+      expect(await app.evaluate<string>(editorDatabase)).toBe('shop');
+
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string[]>(treeLabels)).toContain('users');
+    });
+
+    /*
+     * A table clicked in the tree opens on **the tree's** database, never on
+     * the one the tab in front happens to run against. This is the assertion
+     * the two facts being separate is paid for by: with the tab pointed at
+     * `postgres` and the tree still on `shop`, inheriting would open a grid
+     * that fails to browse the instant it appears -- so rows, not an error, is
+     * what says the right database was used.
+     */
+    test('a table opens on the database the tree is browsing', async () => {
+      await app.evaluate(selectTabDatabase('postgres'));
+      await Bun.sleep(1200);
+      expect(await app.evaluate<string>(editorDatabase)).toBe('postgres');
+
       await app.evaluate(clickTable('users'));
       await Bun.sleep(2000);
-      // Browsed here first: the results bar no longer names the table (the tab
-      // and the filter bar above both do), so the rows are what says it worked.
       expect(await app.evaluate<number>(rowCount)).toBe(2);
-
-      await app.evaluate(selectDatabase('postgres'));
-      await Bun.sleep(2000);
-      const err = await app.evaluate<string>(`document.querySelector('[data-testid="note-error"]')?.textContent ?? ''`);
-      expect(err).toMatch(/users/);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="note-error"]')?.textContent ?? ''`)).toBe('');
 
       await app.evaluate(closeTab('users'));
       await Bun.sleep(300);
-      await app.evaluate(selectDatabase('shop'));
+      // The tab goes back where the rest of this block expects to run. The tree
+      // never left `shop`, so there is nothing to put back there.
+      await app.evaluate(selectTabDatabase('shop'));
       await Bun.sleep(1200);
+    });
+
+    /*
+     * The caret picker fused to the Run button sits at the right edge of its
+     * pane, which unmaximised is the right edge of the window -- so it is the
+     * one control where a popup placed a few pixels too far right is clipped
+     * rather than merely off-centre. It was: placement measures the popup
+     * before its own `minWidth` has ever reached it, and a list narrower than
+     * that floor was hung off the trigger's right edge by the content's width
+     * and then widened past it.
+     *
+     * Driven on a *fresh mount*, which is the state that shipped it and is one
+     * click away in ordinary use: the toolbar is unmounted while a grid tab is
+     * in front, so coming back from one hands the picker its initial, unplaced
+     * position again. Asserted on the geometry rather than on a screenshot,
+     * because the claim is "inside the window" and that is a number.
+     */
+    test('the tab\'s database list opens inside the window', async () => {
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(1500);
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(600);
+
+      const box = await app.evaluate<{ left: number; right: number; innerWidth: number }>(`${REACT_SETTERS}
+        (async () => {
+          const trigger = document.querySelector('[data-testid="editor-db-select"]');
+          trigger.click();
+          await waitForNode('[data-testid="editor-db-select-popup"]');
+          await new Promise((r) => setTimeout(r, 150));
+          const r = document.querySelector('[data-testid="editor-db-select-popup"]').getBoundingClientRect();
+          // The trigger toggles, so a second click shuts it -- no keypress
+          // needed, and none would land while focus is where a script left it.
+          trigger.click();
+          return { left: r.left, right: r.right, innerWidth: window.innerWidth };
+        })()`);
+
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(box.innerWidth);
     });
 
     /*
@@ -2553,8 +2638,10 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * matters here: clicking a table fills the grid on this engine too.
      */
     test('clicking a table browses it', async () => {
-      await app.evaluate(selectDatabase('shop'));
-      await Bun.sleep(1500);
+      // Both pickers: this connection names no database, so the tab in front
+      // opened on whatever the server listed first, and the completion tests
+      // further down this block run against `shop`'s catalog through it.
+      await useDatabase('shop');
       await app.evaluate(clickTable('users'));
       await Bun.sleep(2000);
 

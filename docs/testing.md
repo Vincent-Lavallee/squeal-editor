@@ -472,6 +472,14 @@ Two things to know:
   bounced the user into the survivor's connection form. It only failed because
   the test kept clicking after the delete. Assert what is on screen *after* an
   action, not only that the action landed.
+- **"Be in `shop`" is two gestures, not one.** The sidebar's picker browses the
+  tree; a tab's own caret moves where that tab runs. `useDatabase(name)` drives
+  both (skipping the second when a grid tab is in front and there is no picker to
+  drive), and is what most of this suite means. `selectDatabase` /
+  `selectTabDatabase` are each half of it, for the tests that are *about* the two
+  being separate. A connection that names no database — MySQL's fixture — opens
+  its first tab on whatever the server listed first, so a block whose completion
+  tests run against `shop` needs the pair rather than the tree alone.
 - **Clicking a table opens a tab, so a test that clicks one owes a close.** The
   grid, the pager and the results bar are the *active tab's*, so a test that
   leaves a tab behind hands the next one a screen it was not written for. Tab

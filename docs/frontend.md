@@ -86,6 +86,7 @@ that lives apart from its values is two sources for one fact.
 | a tab's `connectionId`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
 | a tab's `database`, and `defaultDatabase` (the seed) per connection | `tabs` slice | crossed |
 | which pane's database list is open (`pickerPane`) | `Shell` local state | never left |
+| which database the tree is browsing, **per connection** (`treeDatabases`) | `Shell` local state | never left |
 | the tree's expansion, schema flips and filter text, **per database** | `Sidebar` local state | never left |
 | `tabs`, `activeTabId`, `secondaryActiveTabId`, `kind`, `pane`, `title`, a grid tab's `filter` seed, an editor tab's `savedQueryId` | `tabs` slice | never left, but see above |
 | `databases`, `tables`, `columns`, `stars` | `explorer` slice | crossed |
@@ -729,38 +730,64 @@ better: a table clicked in the tree (the database it was clicked in), a
 definition tab (the database the DDL was read from), and a duplicate (the
 original's, or "duplicate" would quietly mean "duplicate, elsewhere").
 
-**The tree follows the pane being worked in, and never forgets where it was.**
-`Shell` computes `workingDatabase` from `workingPane`'s tab and hands it to
+**The tree does not follow the tab. It is browsed on its own.** `Shell` holds
+`treeDatabases`, one database per connection, and hands the active one to
 `Sidebar` as `shownDatabase`; `useExplorer(shown)` takes it as a parameter
-rather than reading a selector, because with a split there is no single answer
-and only the composition root knows which half is being worked in. Switching
-tabs re-roots the tree — that is inherent, not a defect — so the tree's own
-state (`expandedByDb`, `flippedByDb`, `filterByDb` in `Sidebar`) is **keyed by
-database**, and coming back to a tab finds its tree the way that tab left it.
-Flat state was coherent only while one database was ever shown: it survived a
-switch by *name collision*, so expanding `public.users` in one database opened a
-`public.users` in the next and collapsed everything else.
+rather than reading a selector, because the tree's database is no longer
+anything the store knows. It is *seeded* from the connection's own database the
+first time that is known — an effect keyed on `(activeConnectionId,
+workingDatabase)` that writes once and never again — and moved after that only
+by the sidebar's picker. Session-local by the bridge test: it has never crossed,
+so a reopened connection starts by showing whatever its tabs are on. The map is
+pruned by diffing the open connections, the same rule everything else keyed by a
+runtime id follows here.
 
-**Three controls, one value.** The sidebar picker moves the working pane's tab;
-each pane's own picker moves that pane's tab. They are three ways onto
-`Tab.database`, not three values — every one of them lands in `Shell`'s
-`pointTabAt`, which sets the database and re-browses on the spot if the tab is a
-grid one. A grid tab whose table does not exist under the newly picked database
-surfaces that as its own grid's error, the same as any other missing-table
-browse.
+Following the tab was the first design and using it is what ended it: a strip
+holding tabs on two databases re-rooted the tree on every switch, so the tree
+moved out from under whatever was being read for a gesture that was about the
+tabs. See `docs/decisions.md`. The tree's own state (`expandedByDb`,
+`flippedByDb`, `filterByDb` in `Sidebar`) stays **keyed by database** — that was
+right for a different reason and is still right: coming back to a database finds
+its tree the way it was left. Flat state was coherent only while one database
+was ever shown, surviving a switch by *name collision*, so expanding
+`public.users` in one database opened a `public.users` in the next and collapsed
+everything else.
+
+**Two controls onto `Tab.database`, and one that is not.** Each pane's own
+picker moves that pane's tab; both land in `Shell`'s `pointTabAt`, which sets
+the database and re-browses on the spot if the tab is a grid one. The sidebar's
+picker is the one that is not: `browseDatabase` moves the tree and the
+connection's *seed*, and nothing that is already open. Retargeting a tab from
+there would re-couple the two facts at the one gesture the decoupling exists
+for. It still moves the seed because with nothing open the tree's database is
+the only one on screen, and is what a first tab should be born on.
+
+**A table clicked in the tree opens on the tree's database**, which is the whole
+of what makes browsing elsewhere useful: inheriting from the tab in front would
+open `analytics.orders` as a tab pointed at `shop`, a grid that fails the
+instant it appears.
+
+*The cost, accepted, and it is the reason this was a choice rather than a fix:*
+a tab already open is left where it runs. Picking a database in the sidebar
+right after connecting moves the tree but not the `Query 1` that was minted on
+the connection's initial database, so that tab has to be moved by its own caret
+— visible (its toolbar names the database it is on) and one click away, but a
+click that used to be free. DBeaver's navigator draws the same line for the same
+reason; TablePlus draws the other one. See `docs/decisions.md`.
 
 **An editor tab says which database it is on; a grid tab does not.** The editor
 states the name as a small muted label at the far left of its toolbar and hangs
 the *control* off the right of the Run button as a caret only — the two halves
 of one answer, split so that neither shouts.
 
-**A grid tab has nothing of its own, on purpose.** It has no Run to hang a
-caret off, and a strip built only to hold the answer is 32px carrying a single
-word above every table you open. The sidebar picker is a grid tab's control —
-it retargets whichever tab is in front and re-browses on the spot — and the
-tree beside it is already drawing that database, so the answer is on screen
-without a row spent stating it. `Ctrl+Shift+D` therefore does nothing on a grid
-tab, the same answer `Ctrl+Enter` gives there. See `docs/decisions.md`.
+**A grid tab has nothing of its own, on purpose, and now has no picker at all.**
+It has no Run to hang a caret off, and a strip built only to hold the answer is
+32px carrying a single word above every table you open. It runs where the tree
+was pointed when it was opened, for as long as it is open: reaching the same
+table under another database is pointing the tree there and clicking it again,
+which gives a second tab rather than changing the first one underneath the rows
+already on screen. `Ctrl+Shift+D` therefore does nothing on a grid tab, the same
+answer `Ctrl+Enter` gives there. See `docs/decisions.md`.
 
 **The name is deliberately not inside the Run button.** Spelling it out there
 put a second piece of high-contrast content inside the loudest control on

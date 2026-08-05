@@ -30,11 +30,12 @@ const NO_KEYS: ReadonlySet<string> = new Set();
 
 interface Props {
   /**
-   * Which database the tree is drawing -- the database of the tab in the pane
-   * being worked in, which is a thing only the composition root can know. The
-   * tree follows it, so switching to a tab pointed somewhere else re-roots the
-   * tree; what it does *not* do is forget where you were, which is what keying
-   * the expansion state below by database is for.
+   * Which database the tree is drawing. It is the composition root's, and it is
+   * **not** the database of the tab in front: the tree is browsed on its own,
+   * so switching to a tab pointed somewhere else leaves it exactly where it
+   * was. `onSelectDatabase` is the only thing that moves it. Keying the
+   * expansion state below by database is what makes coming back to one find the
+   * tree the way it was left.
    */
   shownDatabase: string | null;
   onSelectTable: (table: TableInfo) => void;
@@ -52,12 +53,13 @@ export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase
   /*
    * The shape you left each database's tree in, kept per database.
    *
-   * This is what turns switching tabs from "the tree reset" into "the tree
-   * switched". Flat state was coherent only while one database was ever shown:
-   * it survived a switch by *name collision*, so expanding `public.users` in
-   * one database silently opened a `public.users` in the next, and everything
-   * else came back collapsed. Coming back to a tab should find its tree the way
-   * that tab left it, which means the key has to be the database.
+   * This is what turns picking another database from "the tree reset" into
+   * "the tree switched". Flat state was coherent only while one database was
+   * ever shown: it survived a switch by *name collision*, so expanding
+   * `public.users` in one database silently opened a `public.users` in the
+   * next, and everything else came back collapsed. Coming back to a database
+   * should find its tree the way it was left, which means the key has to be
+   * the database.
    */
   const treeKey = database ?? '';
   const [expandedByDb, setExpandedByDb] = useState<Record<string, ReadonlySet<string>>>({});

@@ -212,6 +212,9 @@ const popupSearchStyle: CSSProperties = {
 /** How long a typeahead buffer survives between keystrokes, as a native select does. */
 const TYPEAHEAD_MS = 700;
 
+/** The floor a caret-only trigger's popup takes, having no width to inherit. */
+const CARET_MIN_W = 200;
+
 export default function Select({
   options,
   value,
@@ -291,20 +294,34 @@ export default function Select({
     const anchor = trigger.current?.getBoundingClientRect();
     const el = popup.current;
     if (!anchor || !el) return;
-    const { width, height } = el.getBoundingClientRect();
+    // A caret is a ~20px anchor, so matching it would make a sliver. The list
+    // needs a floor of its own; every other trigger is as wide as the thing it
+    // names and matching it is exactly right.
+    const minWidth = caretOnly ? CARET_MIN_W : anchor.width;
+    const measured = el.getBoundingClientRect();
+    /*
+     * The width it will *render* at, which is not the width it measures at.
+     * Placement runs on the frame before `minWidth` has ever reached the popup
+     * -- the first open of a mount measures it at `0` -- so a list whose
+     * content is narrower than its floor measures narrow and then widens. Hung
+     * off the trigger's right edge by that smaller number, it grows rightward
+     * past the window when it does, and the clamp below is computed from the
+     * same too-small number so it cannot save it. That is a right-aligned
+     * picker clipped by exactly the difference: the database caret fused to
+     * the Run button at a pane's right edge. `min-width` beats `max-width` in
+     * CSS, so the floor is the answer whenever it is the larger of the two.
+     */
+    const width = Math.max(measured.width, minWidth);
     const below = anchor.bottom + 2;
-    const fitsBelow = below + height <= window.innerHeight - 4;
+    const fitsBelow = below + measured.height <= window.innerHeight - 4;
     // `end` hangs the popup off the trigger's right edge, so it grows leftward
     // into the pane it belongs to instead of away from it. The clamp is the
     // same either way -- alignment is a preference, staying on screen is not.
     const edge = align === 'end' ? anchor.right - width : anchor.left;
     setPos({
-      top: fitsBelow ? below : Math.max(4, anchor.top - height - 2),
+      top: fitsBelow ? below : Math.max(4, anchor.top - measured.height - 2),
       left: Math.max(4, Math.min(edge, window.innerWidth - width - 4)),
-      // A caret is a ~20px anchor, so matching it would make a sliver. The list
-      // needs a floor of its own; every other trigger is as wide as the thing it
-      // names and matching it is exactly right.
-      minWidth: caretOnly ? 200 : anchor.width,
+      minWidth,
     });
   }, [align, caretOnly]);
 

@@ -46,7 +46,7 @@ function ShellLayout({ onAddConnection }: Props) {
     openGridTab, openEditorTab, openSavedQueryTab, setDatabase, markTabSaved, database,
     activateTab, closeIdsFor, closeTabs, connectionTabs, moveTab, renameTab,
   } = useTabs();
-  const { dialect, disconnect } = useSession();
+  const { dialect, disconnect, activeConnectionId } = useSession();
   // `tabRunning`, not the shown result's own `running`: a batch of several
   // statements leaves the pane showing a finished one while a later one is still
   // going, and Run must stay busy until the whole batch is done.
@@ -184,19 +184,58 @@ function ShellLayout({ onAddConnection }: Props) {
   const workingPane: Tab['pane'] = showSplit && focusedPane === 'secondary' ? 'secondary' : 'primary';
 
   /*
-   * Which database the window is "in": the one the tab in the pane being worked
-   * in is pointed at, falling back to the connection's seed when nothing is
-   * open at all.
+   * Where the pane being worked in runs: the database its tab is pointed at,
+   * falling back to the connection's seed when nothing is open at all.
    *
-   * The tree draws this, and the completion answers against it. It follows the
-   * *focused* pane rather than the primary one for the reason `workingPane`
-   * exists at all -- with two panes on two databases, the sidebar has to be
-   * about the half you are actually working in, or it describes the other one.
+   * The completion answers against it, which is why it follows the *focused*
+   * pane rather than the primary one -- with two panes on two databases,
+   * suggesting the other half's tables is suggesting the wrong ones. The tree
+   * is deliberately not drawn from this; see `treeDatabase` below.
    */
   const workingTab = workingPane === 'secondary' ? secondaryActiveTab : activeTab;
   const workingDatabase = workingTab?.database ?? database;
 
   useSqlCompletion(workingDatabase);
+
+  /*
+   * Which database the tree is browsing, per connection.
+   *
+   * **Pinned, not read off the tab in front.** The tree is where you look
+   * around a server, and following the tab re-rooted it on every switch --
+   * so a strip holding tabs on two databases moved the tree out from under
+   * whatever was being read, for a gesture that was about the tabs. It is
+   * seeded from the connection's own database the first time that is known,
+   * and after that only the sidebar's picker moves it: a tab pointed
+   * somewhere else now leaves the tree exactly where it was put.
+   *
+   * Session-local by the bridge test -- it has never crossed -- and held here
+   * for the same reason `pickerPane` is: the sidebar belongs to no pane, and
+   * the composition root is the only thing that can see the connection it is
+   * about. See `docs/decisions.md`.
+   */
+  const [treeDatabases, setTreeDatabases] = useState<Record<string, string>>({});
+  const treeDatabase = (activeConnectionId ? treeDatabases[activeConnectionId] : undefined) ?? workingDatabase;
+
+  // Pinned the first time this connection's database is known and not again.
+  // The `??` above is what covers the frames before that -- a fallback rather
+  // than a default, so a connection still opening shows a tree rather than none.
+  useEffect(() => {
+    if (!activeConnectionId || !workingDatabase) return;
+    setTreeDatabases((prev) => (prev[activeConnectionId] ? prev : { ...prev, [activeConnectionId]: workingDatabase }));
+  }, [activeConnectionId, workingDatabase]);
+
+  // Dropped by diffing the open connections rather than by hooking Disconnect,
+  // the same rule everything else keyed by a runtime id follows here.
+  const openConnections = useAppSelector((s) => s.session.connections);
+  useEffect(() => {
+    setTreeDatabases((prev) => {
+      const stale = Object.keys(prev).filter((id) => openConnections[id] === undefined);
+      if (stale.length === 0) return prev;
+      const next = { ...prev };
+      for (const id of stale) delete next[id];
+      return next;
+    });
+  }, [openConnections]);
 
   /**
    * The next or previous tab of the pane being worked in, wrapping at either
@@ -334,24 +373,23 @@ function ShellLayout({ onAddConnection }: Props) {
 
   /*
    * A table clicked in the tree opens on **the database the tree is showing**,
-   * not on whatever the tab in front happens to be pointed at. Those are the
-   * same thing whenever the tree is following the primary pane -- and they are
-   * not when it is following the secondary one, since a new tab always mints
-   * into primary. Inheriting there would open `analytics.orders` as a tab
-   * pointed at `shop`, which is a grid that immediately fails to browse.
-   */
-  /*
+   * never on whatever the tab in front happens to be pointed at. The two are
+   * now separate facts by design, so this is the whole of how a table reached
+   * by browsing elsewhere opens somewhere it exists -- inheriting would open
+   * `analytics.orders` as a tab pointed at `shop`, a grid that fails to browse
+   * the instant it appears.
+   *
    * The tree belongs to no pane, so what it opens goes to the one being worked
-   * in -- the same rule its database already follows. A strip's own `+` and
-   * bookmark name their own pane instead, because those *are* attached to one.
+   * in. A strip's own `+` and bookmark name their own pane instead, because
+   * those *are* attached to one.
    */
   const openTable = useCallback((table: TableInfo) => {
     const relation = relationOf(table);
-    const tabId = openGridTab(relation, relationLabel(relation, defaultSchema), workingDatabase, workingPane);
+    const tabId = openGridTab(relation, relationLabel(relation, defaultSchema), treeDatabase, workingPane);
     if (!tabId) return;
     if (workingPane === 'secondary') browseInSecondary(tabId, relation.table, 0);
     else browseInPrimary(tabId, relation.table, 0);
-  }, [openGridTab, browseInPrimary, browseInSecondary, defaultSchema, workingDatabase, workingPane]);
+  }, [openGridTab, browseInPrimary, browseInSecondary, defaultSchema, treeDatabase, workingPane]);
 
   /*
    * A definition tab is born holding its text rather than being opened empty and
@@ -478,18 +516,18 @@ function ShellLayout({ onAddConnection }: Props) {
   const saveSecondaryQuery = useCallback(() => saveQueryForTab(secondaryActiveTab), [saveQueryForTab, secondaryActiveTab]);
 
   /*
-   * Point one tab at a database -- the whole of what every picker in the app
-   * does, whichever one moved.
+   * Point one tab at a database -- the whole of what a *tab's* picker does,
+   * whichever pane's moved.
    *
-   * There are three of them now (the tree's, and one in each pane's editor
-   * toolbar) and they are three controls onto one value rather than three
-   * values: each names the tab it is about, and they all land here. A grid tab
-   * re-browses on the spot, so what is on screen never disagrees with what the
-   * tab says it is showing; if the table is not there under the new database
-   * that surfaces as that pane's own error, the same as any missing table.
+   * There is one per pane's editor toolbar, and they are two controls onto one
+   * value rather than two values: each names the tab it is about, and both land
+   * here. A grid tab re-browses on the spot, so what is on screen never
+   * disagrees with what the tab says it is showing; if the table is not there
+   * under the new database that surfaces as that pane's own error, the same as
+   * any missing table.
    *
-   * `null` for the tab is the connection with nothing open, where the pick
-   * moves only the seed the next tab will be born on.
+   * The sidebar's picker is deliberately **not** one of these -- see
+   * `browseDatabase`.
    */
   const pointTabAt = useCallback((target: Tab | null, pane: Tab['pane'], database: string) => {
     setDatabase(database, target?.id ?? null);
@@ -498,22 +536,34 @@ function ShellLayout({ onAddConnection }: Props) {
     else browseInPrimary(target.id, target.table, 0);
   }, [setDatabase, browseInPrimary, browseInSecondary]);
 
-  // The tree's picker acts on the pane being worked in, which is the same tab
-  // the tree is already drawing the database of.
-  const changeDatabase = useCallback((database: string) => {
-    pointTabAt(workingTab, workingPane, database);
-  }, [pointTabAt, workingTab, workingPane]);
+  /*
+   * The sidebar's picker moves the *tree*, and nothing that is already open.
+   * It answers "which database am I looking at", which stopped being the same
+   * question as "where does this tab run" the moment the tree stopped
+   * following the tab -- retargeting a tab from here would re-couple the two
+   * at the one gesture the decoupling exists for.
+   *
+   * It still moves the connection's seed, because with nothing open the tree's
+   * database is the only one on screen and is what a first tab should be born
+   * on. A tab already open keeps running where it runs; its own picker is what
+   * moves it.
+   */
+  const browseDatabase = useCallback((database: string) => {
+    if (!activeConnectionId) return;
+    setTreeDatabases((prev) => ({ ...prev, [activeConnectionId]: database }));
+    setDatabase(database, null);
+  }, [activeConnectionId, setDatabase]);
 
   const primaryShowEditor = activeTab?.kind === 'editor';
   const secondaryShowEditor = secondaryActiveTab?.kind === 'editor';
 
   /*
-   * A grid tab draws no database line of its own. It has no Run button to
-   * attach one to, and a bar built just to hold it was a 32px strip carrying a
-   * single word above every table you open. The sidebar picker is a grid tab's
-   * control -- it retargets whichever tab is in front and re-browses on the
-   * spot -- and the tree beside it is already showing that database, so the
-   * answer is on screen without a row spent saying it. See `docs/decisions.md`.
+   * A grid tab draws no database line of its own, and now has no picker
+   * anywhere: it runs where the tree was pointed when it was opened, for as
+   * long as it is open. Reaching the same table under another database is
+   * pointing the tree there and clicking it again, which is a second tab
+   * rather than the first one changing underneath the rows already on screen.
+   * See `docs/decisions.md`.
    */
 
   return (
@@ -521,7 +571,7 @@ function ShellLayout({ onAddConnection }: Props) {
       <ConnectionRail onAdd={onAddConnection} />
 
       <div style={{ display: 'grid', gridTemplateColumns: sidebarCollapsed ? '28px 1fr' : `${sidebarWidth}px auto 1fr`, flex: 1, minHeight: 0 }}>
-        <Sidebar shownDatabase={workingDatabase} onSelectTable={openTable} onSelectDatabase={changeDatabase} onShowDefinition={showDefinition} onShowTriggerDefinition={showTriggerDefinition} onShowFunctionDefinition={showFunctionDefinition}
+        <Sidebar shownDatabase={treeDatabase} onSelectTable={openTable} onSelectDatabase={browseDatabase} onShowDefinition={showDefinition} onShowTriggerDefinition={showTriggerDefinition} onShowFunctionDefinition={showFunctionDefinition}
           collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
         {!sidebarCollapsed && <ResizeHandle orientation="vertical" onDrag={dragSidebar} />}
 

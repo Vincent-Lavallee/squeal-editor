@@ -5176,3 +5176,97 @@ are still discarded silently on close.** Same class of loss, different owner —
 they live in `ResultsContext`, a feature context, and `Shell` reaching into it to
 count them is the hub-shaped import the feature split exists to prevent. It is in
 `backlog.md` as its own bug rather than smuggled in here.
+
+---
+
+## The tree stopped following the tab, and the sidebar picker stopped moving it
+
+**Why.** "The database moved back onto the tab, once the tree stopped hiding it"
+(above) argued that a tree re-rooting on a tab switch reads as *consequence*
+rather than as drift, once the tab says which database it is on. Using it says
+otherwise. The label does explain *why* the tree moved — that part held — but
+explaining it does not make it wanted: the tree is where you look around a
+server, and a strip holding tabs on two databases moved it out from under
+whatever was being read, for a gesture that was about the tabs. Reported as
+"can you avoid the database tree changing with the tab".
+
+**What changed.** `Shell` holds `treeDatabases`, one database per connection,
+seeded once from the connection's own database and moved after that only by the
+sidebar's picker. `Sidebar`'s `shownDatabase` is that, not `workingDatabase`.
+`workingDatabase` survives for the one thing that genuinely follows the tab —
+`useSqlCompletion`, which answers about where the query will run.
+
+**The sidebar's picker moves the tree and the seed, and nothing already open.**
+This is the half that was a *choice*, taken deliberately over the smaller
+change. *Rejected: the picker keeps retargeting the tab in front.* It is one
+line and it keeps every capability, but it re-couples the two facts at the one
+gesture the decoupling exists for — the state "tree on `analytics`, tab on
+`shop`" would be reachable only by tab-switching, never by asking for it. The
+picker still writes `defaultDatabase`, because with nothing open the tree's
+database is the only one on screen and is what a first tab should be born on;
+`databaseChanged` already took a `null` tabId meaning exactly that.
+
+**What it costs, stated because it is a real loss and not a rounding error:**
+
+1. **A grid tab has no database control at all any more.** Point 2 of the entry
+   above rested on the sidebar picker being a grid tab's control; that is now
+   false, and no bar came back to replace it — the 32px row carrying one word
+   above every table you open is no better an idea than it was. A grid tab runs
+   where the tree was pointed when it was opened, for as long as it is open, and
+   the same table under another database is the tree plus a click: a second tab,
+   which is the comparison the split exists for rather than the first tab
+   changing underneath rows already on screen.
+2. **A tab already open is left behind by the first pick after connecting.**
+   `Query 1` is minted on the connection's initial database; pointing the tree
+   at `shop` no longer takes it along, so it has to be moved by its own caret.
+   Visible — its toolbar names the database it is on — and one click, but a
+   click that used to be free.
+
+DBeaver's navigator draws this line and its editors carry their own database
+dropdown; TablePlus draws the other one and moves everything together. Both
+ship. This is the DBeaver reading, chosen with the costs above on the table.
+
+**A table clicked in the tree opens on the tree's database.** It always did —
+what changed is that this stopped being the same value as the tab in front's, so
+it went from a line nobody could have got wrong to the load-bearing one. Point
+it at the tab and browsing another database opens `analytics.orders` as a tab
+pointed at `shop`, a grid that fails the instant it appears. There is a UI test
+on exactly that, asserting *rows* rather than an error.
+
+**The UI suite gained `useDatabase(name)`.** Most of it was written when "be in
+`shop`" was one gesture and is now two, so the helper drives both pickers — and
+only the tests that are *about* the two being separate drive each by hand. Two
+tests changed meaning rather than being deleted: the tree not moving is now the
+assertion, in both directions.
+
+---
+
+## A popup is placed at the width it will render at, not the width it measures at
+
+**Why.** Reported as the database dropdown under the Run button being "a tiny
+bit truncated" when the window is not maximised. It was, by 19px, and the cause
+is one line in `Select.place()`.
+
+`place()` measures the popup and then positions it. But `minWidth` is part of
+what `place()` *returns*, so on the frame it measures, the popup has whatever
+`minWidth` the last placement left — `0` on a fresh mount. A caret-only trigger
+has no width to inherit and so takes a floor of 200px, which is wider than a
+short list of database names actually needs; `align: 'end'` then hangs the popup
+off the trigger's right edge by the measured (narrow) number, the popup widens
+to its floor, and it grows rightward past where it was aimed. The clamp cannot
+save it, being computed from the same too-small number.
+
+**The fix is `Math.max(measured.width, minWidth)`** — the width it will render
+at. `min-width` beats `max-width` in CSS, so the floor is the answer whenever it
+is the larger of the two, and no clamp to `maxWidth` belongs in it.
+
+**Why it looked intermittent, and why "not maximised" was the tell.** The
+toolbar is unmounted while a grid tab is in front, so the picker remounts —
+fresh, unplaced — every time you come back to an editor tab, which is how the
+first-open case is reachable over and over rather than once per launch. And it
+only *clips* when the trigger's right edge is near the window's, which is where
+this picker always is; maximised, the 19px lands on screen more often than not.
+
+**Tested on the geometry, not on a screenshot.** The claim is "inside the
+window" and that is a number. The test forces the fresh mount deliberately, and
+it was confirmed to fail against the old line before being kept.
