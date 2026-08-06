@@ -7,7 +7,7 @@ import { useSavedQueries } from './store/savedQueriesSlice.ts';
 import { useSession } from './store/sessionSlice.ts';
 import { useShortcuts } from './store/settingsSlice.ts';
 import { useTabs, type CloseIntent, type Tab } from './store/tabsSlice.ts';
-import { EditorPane, useEditor, useSqlCompletion, useSqlFormatter } from './features/editor/index.ts';
+import { EditorPane, useEditor, useEditorKeybindings, useSqlCompletion, useSqlFormatter } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
 import { SaveQueryDialog, SavedQueriesButton } from './features/queries/index.ts';
 import { ConnectionRail } from './features/rail/index.ts';
@@ -68,9 +68,26 @@ function ShellLayout({ onAddConnection }: Props) {
   // completion provider is the same rule and is registered below, once
   // `workingDatabase` exists to point it at. See `useSqlCompletion.ts`.
   useSqlFormatter(dialect);
+  // The third of them, and the same rule: keybinding rules belong to the
+  // standalone keybinding service, which there is one of. See the file comment.
+  useEditorKeybindings(bindings);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const toggleSidebar = useCallback(() => setSidebarCollapsed((prev) => !prev), []);
+
+  /*
+   * Focus the tree's filter, revealing the sidebar first if it is folded away.
+   *
+   * A counter rather than a flag, because focusing is an event: there is no
+   * "off" state for a boolean to return to, and pressing the key twice has to
+   * mean two requests. The un-collapse rides in the same update so `Sidebar`'s
+   * effect finds the field on screen -- focus cannot enter `display: none`.
+   */
+  const [filterFocusRequest, setFilterFocusRequest] = useState(0);
+  const focusTableFilter = useCallback(() => {
+    setSidebarCollapsed(false);
+    setFilterFocusRequest((request) => request + 1);
+  }, []);
 
   const [sidebarWidth, setSidebarWidth] = useState(240);
   const dragSidebar = useCallback((deltaPx: number) => {
@@ -295,6 +312,15 @@ function ShellLayout({ onAddConnection }: Props) {
   const shellCommands: Partial<Record<ShortcutId, () => void>> = useMemo(() => ({
     // Into the pane being worked in, like every other tab command here.
     newTab: () => { openEditorTab(undefined, undefined, undefined, workingPane); },
+    /*
+     * Into the *other* pane, which with no split yet is what opens one.
+     *
+     * The one command that produces a split by minting rather than by moving,
+     * and it is allowed to where `dockTab` is not: the objection to a `split`
+     * verb was that overloading the move gesture would mint a tab nobody asked
+     * for. Asking for a tab is the whole of what this is. See `docs/decisions.md`.
+     */
+    newTabOtherPane: () => { openEditorTab(undefined, undefined, undefined, workingPane === 'secondary' ? 'primary' : 'secondary'); },
     closeTab: closeActiveTab,
     nextTab: () => stepTab(1),
     previousTab: () => stepTab(-1),
@@ -314,7 +340,8 @@ function ShellLayout({ onAddConnection }: Props) {
     // to. The rail's menu is the other way in, and it names its own chip.
     disconnect: () => disconnect(),
     toggleSidebar,
-  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar, workingPane, workingTab]);
+    filterTables: focusTableFilter,
+  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar, focusTableFilter, workingPane, workingTab]);
 
   /*
    * The shortcuts the shell owns, and the half of each that answers from
@@ -572,7 +599,7 @@ function ShellLayout({ onAddConnection }: Props) {
 
       <div style={{ display: 'grid', gridTemplateColumns: sidebarCollapsed ? '28px 1fr' : `${sidebarWidth}px auto 1fr`, flex: 1, minHeight: 0 }}>
         <Sidebar shownDatabase={treeDatabase} onSelectTable={openTable} onSelectDatabase={browseDatabase} onShowDefinition={showDefinition} onShowTriggerDefinition={showTriggerDefinition} onShowFunctionDefinition={showFunctionDefinition}
-          collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
+          collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} focusFilter={filterFocusRequest} />
         {!sidebarCollapsed && <ResizeHandle orientation="vertical" onDrag={dragSidebar} />}
 
         <div ref={panes} style={{ display: 'flex', minWidth: 0, minHeight: 0 }}>

@@ -45,9 +45,20 @@ interface Props {
   onShowFunctionDefinition: (database: string, func: FunctionInfo) => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  /**
+   * A counter the shell bumps to put focus in the filter, rather than a
+   * boolean: focusing is an event and has no "off" for a flag to return to.
+   *
+   * It arrives from the shell because the shell is what un-collapses the
+   * sidebar in the same gesture, and a field inside `display: none` cannot
+   * take focus. Both are one batched update, so by the time the effect below
+   * runs the bar is on screen. `0` is the launch value and is deliberately
+   * skipped -- nothing should steal focus before the user has asked for it.
+   */
+  focusFilter?: number;
 }
 
-export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase, onShowDefinition, onShowTriggerDefinition, onShowFunctionDefinition, collapsed, onToggleCollapse }: Props) {
+export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase, onShowDefinition, onShowTriggerDefinition, onShowFunctionDefinition, collapsed, onToggleCollapse, focusFilter }: Props) {
   const { databases, database, tables, columnsFor, loadTableColumns, triggersFor, loadTableTriggers, functionsFor, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, firstLoad, error } = useExplorer(shownDatabase);
 
   /*
@@ -69,6 +80,16 @@ export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase
   const flippedSchemas = flippedByDb[treeKey] ?? NO_KEYS;
   const filter = filterByDb[treeKey] ?? '';
   const setFilter = (value: string) => setFilterByDb((prev) => ({ ...prev, [treeKey]: value }));
+
+  // Selected as well as focused, so pressing the key again over a filter you
+  // have already typed replaces it rather than appending to it.
+  const filterInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!focusFilter) return;
+    filterInput.current?.focus();
+    filterInput.current?.select();
+  }, [focusFilter]);
+
   const [menu, setMenu] = useState<
     | { kind: 'table'; table: TableInfo; x: number; y: number }
     | { kind: 'trigger'; trigger: TriggerInfo; table: string; schema?: string; x: number; y: number }
@@ -358,7 +379,7 @@ export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase
       </div>
 
       <div data-testid="sidebar-filter-bar" style={{ display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: t.GAP_XS, height: t.TAB_H, padding: '0 6px', borderBottom: `1px solid ${t.BORDER}`, flex: 'none' }}>
-        <Input variant="bare" value={filter} onChange={(e) => setFilter(e.target.value)}
+        <Input ref={filterInput} variant="bare" value={filter} onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter tables…" aria-label="Filter tables"
           data-testid="sidebar-filter" style={{ flex: 1, minWidth: 0 }} />
 

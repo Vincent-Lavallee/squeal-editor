@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  chordFromEvent, chordOwner, matchesChord, parseChord, parseOverrides, resolveBindings,
-  SHORTCUTS, type KeyPress,
+  APP_SHORTCUTS, chordFromEvent, chordOwner, EDITOR_COMMANDS, matchesChord, parseChord,
+  parseOverrides, resolveBindings, SHORTCUTS, type KeyPress,
 } from '../frontend/src/common/shortcuts.ts';
 
 /**
@@ -126,5 +126,53 @@ describe('which shortcut already owns a chord', () => {
   test('no two shortcuts ship on the same chord', () => {
     const chords = SHORTCUTS.map((shortcut) => shortcut.defaultChord);
     expect(new Set(chords).size).toBe(chords.length);
+  });
+
+  // The reason the editor's own commands are in the registry at all: Ctrl+D
+  // looked free while only the app's rows were written down, and it was not.
+  test('the app and the editor are checked against each other, not separately', () => {
+    const bindings = resolveBindings({});
+    expect(chordOwner('Ctrl+F', bindings, 'run')?.id).toBe('find');
+    expect(chordOwner('Ctrl+D', bindings, 'find')?.id).toBe('selectDatabase');
+  });
+});
+
+describe("the editor's own commands", () => {
+  test('every row is either the app\'s or Monaco\'s, and the two lists are the whole registry', () => {
+    expect(APP_SHORTCUTS.length + EDITOR_COMMANDS.length).toBe(SHORTCUTS.length);
+    const editorIds = new Set(EDITOR_COMMANDS.map((command) => command.id));
+    expect(APP_SHORTCUTS.some((shortcut) => editorIds.has(shortcut.id))).toBe(false);
+  });
+
+  // Two rows onto one Monaco action would fight over the same removal, and
+  // whichever ran second would take the other's binding away.
+  test('no two rows name the same Monaco action', () => {
+    const commands = EDITOR_COMMANDS.map((command) => command.command);
+    expect(new Set(commands).size).toBe(commands.length);
+  });
+
+  /*
+   * `monacoChord` is what gets *removed*, so a row that quietly defaulted it to
+   * the wrong chord would leave Monaco's own binding in place and add a second
+   * one beside it -- the action answering two keys, one of them the key some
+   * other shortcut now claims.
+   */
+  test("a row states Monaco's own chord only where this app ships a different one", () => {
+    const moved = EDITOR_COMMANDS.filter((command) => {
+      const shortcut = SHORTCUTS.find((candidate) => candidate.id === command.id)!;
+      return command.monacoChord !== shortcut.defaultChord;
+    });
+    expect(moved.map((command) => [command.id, command.monacoChord, resolveBindings({})[command.id]]))
+      .toEqual([['addSelectionToNextMatch', 'Ctrl+D', 'Ctrl+Shift+D']]);
+  });
+
+  // A chord Monaco cannot be given is a rebind that silently does nothing, and
+  // the `when` is what keeps a moved key scoped as its default was.
+  test('every row reads back as a chord, and carries the context Monaco gave it', () => {
+    for (const command of EDITOR_COMMANDS) {
+      expect(parseChord(command.monacoChord)).not.toBeNull();
+      expect(command.command.length).toBeGreaterThan(0);
+      expect(command.when === null || command.when.length > 0).toBe(true);
+    }
   });
 });

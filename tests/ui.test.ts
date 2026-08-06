@@ -2477,6 +2477,69 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     /*
+     * Ctrl+Shift+T, the Shift-pair of Ctrl+T: a tab minted in the *other* pane,
+     * which with no split yet is what opens one. It is the only command that
+     * produces a split by creating rather than by moving — `Ctrl+\` above still
+     * only ever moves the tab in front.
+     *
+     * **The close at the end is the assertion that the tab really landed over
+     * there.** Nothing focused the new pane, so `workingPane` is still primary
+     * and Ctrl+W takes the *first* tab; the survivor being the second one is
+     * only possible if the second was never in the primary strip.
+     */
+    test('the split-tab shortcut opens a tab in the other pane', async () => {
+      const panes = `document.querySelectorAll('.editor').length`;
+
+      await app.evaluate(pressChord(`key: 't', ctrlKey: true`));
+      await Bun.sleep(400);
+      expect(await app.evaluate<number>(panes)).toBe(1);
+      const [first] = await app.evaluate<string[]>(tabLabels);
+
+      await app.evaluate(pressChord(`key: 'T', ctrlKey: true, shiftKey: true`));
+      await Bun.sleep(500);
+
+      expect(await app.evaluate<number>(panes)).toBe(2);
+      expect(await app.evaluate<string[]>(tabLabels)).toHaveLength(2);
+
+      await app.evaluate(pressChord(`key: 'w', ctrlKey: true`));
+      await Bun.sleep(500);
+      const survivors = await app.evaluate<string[]>(tabLabels);
+      expect(survivors).toHaveLength(1);
+      expect(survivors[0]).not.toBe(first);
+      // The pane it was alone in went with it: one tab left is one pane.
+      expect(await app.evaluate<number>(panes)).toBe(1);
+
+      await app.evaluate(pressChord(`key: 'w', ctrlKey: true`));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual([]);
+    });
+
+    /*
+     * Ctrl+Shift+F puts focus in the tree's filter, and unfolds the sidebar
+     * first when it is folded away — focus cannot enter `display: none`, so a
+     * shortcut that only focused would silently do nothing exactly when the
+     * field is hardest to reach with the mouse.
+     */
+    test('the filter shortcut reveals the sidebar and puts the caret in it', async () => {
+      const filterFocused = `document.activeElement === document.querySelector('[data-testid="sidebar-filter"]')`;
+      const filterBarShown = `getComputedStyle(document.querySelector('[data-testid="sidebar-filter-bar"]')).display !== 'none'`;
+
+      await app.evaluate(pressChord(`key: 'F', ctrlKey: true, shiftKey: true`));
+      await Bun.sleep(300);
+      expect(await app.evaluate<boolean>(filterFocused)).toBe(true);
+
+      await app.evaluate(setFilter(''));
+      await app.evaluate(pressChord(`key: 'b', ctrlKey: true`));
+      await Bun.sleep(300);
+      expect(await app.evaluate<boolean>(filterBarShown)).toBe(false);
+
+      await app.evaluate(pressChord(`key: 'F', ctrlKey: true, shiftKey: true`));
+      await Bun.sleep(400);
+      expect(await app.evaluate<boolean>(filterBarShown)).toBe(true);
+      expect(await app.evaluate<boolean>(filterFocused)).toBe(true);
+    });
+
+    /*
      * Ctrl+W as the *host* sees it, not as a `KeyboardEvent` the DOM was handed.
      *
      * Ctrl+W is a browser accelerator, and WebView2 ships with browser

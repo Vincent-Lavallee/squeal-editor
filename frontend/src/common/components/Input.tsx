@@ -1,4 +1,4 @@
-import { type CSSProperties, type InputHTMLAttributes, useState } from "react";
+import { forwardRef, type CSSProperties, type InputHTMLAttributes, useState } from "react";
 import * as t from "../tokens";
 
 const base: CSSProperties = {
@@ -29,7 +29,10 @@ interface Props extends InputHTMLAttributes<HTMLInputElement> {
   variant?: "default" | "bare";
 }
 
-export default function Input({
+// `forwardRef` because focus is sometimes put here from outside: the tree's
+// filter is reached by a keyboard shortcut the shell owns, and a shortcut that
+// can only be answered by clicking the field would not be one.
+const Input = forwardRef<HTMLInputElement, Props>(function Input({
   variant = "default",
   autoComplete = "off",
   style,
@@ -39,7 +42,7 @@ export default function Input({
   onMouseEnter,
   onMouseLeave,
   ...rest
-}: Props) {
+}, ref) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
 
@@ -48,6 +51,7 @@ export default function Input({
 
   return (
     <input
+      ref={ref}
       style={{
         ...(isBare ? bare : base),
         ...(disabled ? { color: t.TEXT_FAINT, borderColor: t.BORDER } : {}),
@@ -78,4 +82,6 @@ export default function Input({
       {...rest}
     />
   );
-}
+});
+
+export default Input;

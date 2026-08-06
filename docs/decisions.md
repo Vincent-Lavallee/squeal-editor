@@ -3194,8 +3194,8 @@ reason the tree following it reads as consequence rather than as drift.
    under its strip — which turned out to be a 32px row carrying one word above
    every table you open, for a question the sidebar was already answering: the
    picker there retargets the tab in front and re-browses, and the tree beside
-   it is drawing that very database. The bar was removed. `Ctrl+Shift+D` does
-   nothing on a grid tab as a result, which is the same answer `Ctrl+Enter`
+   it is drawing that very database. The bar was removed. The picker shortcut
+   does nothing on a grid tab as a result, which is the same answer `Ctrl+Enter`
    gives there and for the same reason — the shortcut is guarded rather than
    left to set state nothing renders from.
 3. **The tree's expansion, schema flips and filter are keyed by database.**
@@ -3214,15 +3214,18 @@ except that tab's own control.
 
 **`Select` grew a controlled `open` and an `attached` variant.** The shortcut is
 what forced the first: a picker owning its own open state can only be opened by
-its own trigger, and `Ctrl+Shift+D` has to reach the pane being worked in, which
-only `Shell` knows. The second is the trigger with no chrome of its own, so it
-can be a segment of the Run button rather than a control beside it — including
-a caret in `currentColor`, because the standalone variants' muted grey is
-illegible on an accent fill.
+its own trigger, and it has to reach the pane being worked in, which only
+`Shell` knows. The second is the trigger with no chrome of its own, so it can be
+a segment of the Run button rather than a control beside it — including a caret
+in `currentColor`, because the standalone variants' muted grey is illegible on
+an accent fill.
 
-**`Ctrl+Shift+D`, not `Ctrl+D`.** Shell commands are registered into Monaco as
-actions, so `Ctrl+D` would take *add selection to next find match* away inside
-the editor — the one place this shortcut is pressed most.
+**It shipped on `Ctrl+Shift+D`, not `Ctrl+D`**, because shell commands are
+registered into Monaco as actions and `Ctrl+D` would take *add selection to next
+find match* away inside the editor — the one place this shortcut is pressed
+most. **That has since been reversed**: the picker is `Ctrl+D` and Monaco's
+action is `Ctrl+Shift+D`. See *Monaco's own commands are registry rows* below
+for what changed — not the price, which is identical, but who is told about it.
 
 ---
 
@@ -5270,3 +5273,92 @@ this picker always is; maximised, the 19px lands on screen more often than not.
 **Tested on the geometry, not on a screenshot.** The claim is "inside the
 window" and that is a number. The test forces the fresh mount deliberately, and
 it was confirmed to fail against the old line before being kept.
+
+---
+
+## Monaco's own commands are registry rows, so the whole keyboard is one list
+
+**Why.** The Preferences screen claimed to be *the* list of keyboard shortcuts
+and was the list of eleven. Everything else the editor answers — find, comment,
+move a line, add a cursor — was Monaco's, undocumented, and unmovable: the only
+way to learn a key was to press it, and the only way to change one was not to.
+
+Worse, the omission was already costing something. `Ctrl+D` was ruled out for
+the database picker because Monaco has *add selection to next find match* there,
+a fact that lived in a code comment and nowhere a user could read it. A list
+that leaves out half the keyboard cannot be reasoned about; it can only be
+worked around.
+
+**A row with a `command` is Monaco's, and that is the whole of the split.** No
+handler, no `addAction` — Monaco already runs the action and already binds it,
+so the row exists to *document* it and to move it. `APP_SHORTCUTS` and
+`EDITOR_COMMANDS` are the two halves and `SHORTCUTS` is still the whole list,
+because the clash check has to see the entire keyboard or it is checking half of
+one. *Rejected: a second registry beside the first*, which is exactly the shape
+that let `Ctrl+D` look free.
+
+**Twenty-one of them, not all of them.** Monaco binds far more; the line is
+"would anyone reach for it in a SQL editor". Writing a row down is not free — it
+is a chord the clash check will refuse to everything else — so a row nobody
+presses is a key nobody can have. The rest keep their defaults, and
+`editor.action.quickCommand` (F1) is how they are found, which is why it is one
+of the twenty-one.
+
+**`addKeybindingRules`, and the removal names the chord.** The standalone API
+takes both halves — a `-command` rule removes, the rule beside it adds — and
+Monaco's resolver honours the removal syntax for dynamic overrides. *Rejected: a
+bare `-command`*, which removes **every** binding the action has, and several
+have more than one: `nextMatchFindAction` is `F3` and, separately, `Enter` while
+the find widget's input is focused. Moving `F3` would have silently stopped
+Enter from finding the next match, a break nobody would trace back. Naming the
+chord removes one binding. The `when` is carried across verbatim for the same
+class of reason: registered without it, a moved chord fires anywhere the editor
+owns the keyboard rather than where its default did.
+
+**A row Monaco and this app agree on is not touched at all.** Only a chord
+differing from `monacoChord` is rewritten. *Rejected: always removing and
+re-adding*, which is one code path instead of two and would have been tidier —
+but `Ctrl` in this vocabulary means the platform's own modifier, so Monaco's
+real-Ctrl macOS bindings have **no spelling here**, and rewriting unconditionally
+would flatten every per-platform default into the Windows one. The cost of the
+narrower rule, accepted: on macOS the screen states the chord this app would
+issue rather than the one Monaco shipped, for the handful whose mac default
+differs — and it becomes true the moment either is rebound.
+
+**`Ctrl+D` and `Ctrl+Shift+D` swapped, which reverses an entry above.** The
+price is unchanged — the database picker takes a key the editor had — but it is
+now a row on a screen, next to the action it displaced, and either side can be
+moved back. That is the difference between a trade-off and a constraint.
+
+---
+
+## Two new shortcuts, and only one of them is a new gesture
+
+**Why.** `Ctrl+Shift+T` was free (Monaco binds `KeyT` only for *transpose
+letters*, and only on macOS, with the real Ctrl key), and the two things it and
+`Ctrl+Shift+F` name were both reachable by mouse alone.
+
+***New tab in the other pane* is not the `split` command that was rejected.**
+That rejection was about overloading the *move* gesture: making `Ctrl+\` always
+produce two panes would have minted a tab nobody asked for and made one key mean
+two things depending on how many tabs were open. Asking for a tab is the whole
+of what this command is, so none of that applies — and `dockTab` is untouched
+and still the only way an existing tab crosses. It is the Shift-pair of
+`Ctrl+T`, and it is the one control in the app that names *the pane you are not
+in*, which is why its label says so instead of saying "split".
+
+**`Ctrl+Shift+F` unfolds the sidebar before it focuses.** Focus cannot enter
+`display: none`, so a command that only focused would do nothing in exactly the
+case where the field is hardest to reach with a mouse. Both halves are `Shell`'s
+because the collapse is, and what crosses to `Sidebar` is a **counter**, not a
+flag: focusing is an event, and a boolean has no "off" state for a second press
+to return from. The two updates are one batch, so the effect finds the bar on
+screen; `0` is the launch value and is skipped, or the app would take focus
+before anyone asked for it. `Input` became `forwardRef` for this and nothing
+else.
+
+**The dialog scrolls now, and the hint line does not.** Thirty-odd rows is
+taller than a window, and a dialog whose *Close* has gone off the bottom of the
+screen is one there is no way out of. The clash message stays pinned for the
+same reason it is one line: a refusal named at the top of a list that has been
+scrolled away from is a refusal nobody sees.

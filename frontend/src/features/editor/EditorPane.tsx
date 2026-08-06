@@ -7,7 +7,7 @@ import { useTabs } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import Select from '../../common/components/Select.tsx';
 import { statementAt } from '../../common/db/splitStatements.ts';
-import { chordFromEvent, formatChord, SHORTCUTS, type ShortcutId } from '../../common/shortcuts.ts';
+import { APP_SHORTCUTS, chordFromEvent, formatChord, type ShortcutId } from '../../common/shortcuts.ts';
 import * as t from '../../common/tokens';
 import { useEditor } from './useEditor.ts';
 import { defineTheme, keybindingFor, monaco, px, THEME, token } from './monaco.ts';
@@ -411,11 +411,14 @@ export default function EditorPane({ tab, onRun, running, commands, onSaveQuery,
    * keydowns, so what is registered here is what a shortcut means where it is
    * used most.
    *
-   * **Every shortcut in the registry, not a hand-written list.** A row that only
+   * **Every shortcut the app owns, not a hand-written list.** A row that only
    * had a `window` listener would be a shortcut that stops working the moment
    * the cursor is in the editor -- an outcome nobody adding one would think to
    * check for. Registering the lot means adding a shortcut is a registry row and
-   * a handler, and nothing here.
+   * a handler, and nothing here. `APP_SHORTCUTS` and not `SHORTCUTS`, because
+   * the registry also holds Monaco's own commands: those already have an action
+   * and a handler, and one here would be a second action running nothing. Their
+   * keys are moved by `useEditorKeybindings` instead.
    *
    * **Its own effect, keyed on the bindings**, because they are a preference now
    * and change while this is mounted -- an action's keybinding cannot be
@@ -429,7 +432,7 @@ export default function EditorPane({ tab, onRun, running, commands, onSaveQuery,
     const instance = editor.current;
     if (!instance) return;
 
-    const actions = SHORTCUTS.map((shortcut) => instance.addAction({
+    const actions = APP_SHORTCUTS.map((shortcut) => instance.addAction({
       id: `squeal.${shortcut.id}`,
       label: shortcut.label,
       keybindings: keybindingFor(bindings[shortcut.id]),

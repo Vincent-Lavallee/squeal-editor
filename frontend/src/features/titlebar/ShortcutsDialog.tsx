@@ -7,13 +7,24 @@ import Modal from '../../common/components/Modal.tsx';
 import { chordFromEvent, chordOwner, formatChord, SHORTCUTS, type ShortcutId } from '../../common/shortcuts.ts';
 import * as t from '../../common/tokens';
 
-const WIDTH = 480;
+const WIDTH = 560;
 const CHORD_W = 156;
 /** Reserved whether or not the row has a Reset in it, so nothing shifts when one appears. */
 const RESET_W = 64;
 
 const list: React.CSSProperties = { display: 'flex', flexDirection: 'column', margin: 0, padding: 0, listStyle: 'none', border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, overflow: 'hidden' };
 const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: t.GAP_SM, padding: `${t.GAP_XS}px 10px` };
+
+/*
+ * The groups scroll; the heading, the hint line and the buttons do not.
+ *
+ * Once the editor's own commands joined the registry this is thirty-odd rows,
+ * which is taller than a window -- and a dialog whose *Close* has gone off the
+ * bottom of the screen is one there is no way out of. The hint has to stay put
+ * for the same reason it lives in one line: a clash named at the top of a list
+ * scrolled away from is a refusal nobody sees.
+ */
+const scroller: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: t.GAP, overflowY: 'auto', maxHeight: '58vh', paddingRight: t.GAP_XS };
 
 const GROUPS = [...new Set(SHORTCUTS.map((shortcut) => shortcut.group))];
 
@@ -77,6 +88,7 @@ export default function ShortcutsDialog({ onClose }: Props) {
           {clash ?? 'Click a shortcut to record a new key. Esc cancels.'}
         </p>
 
+        <div style={scroller}>
         {GROUPS.map((group) => (
           <section key={group} style={{ display: 'flex', flexDirection: 'column', gap: t.GAP_XS }}>
             <Label>{group}</Label>
@@ -104,6 +116,7 @@ export default function ShortcutsDialog({ onClose }: Props) {
             </ul>
           </section>
         ))}
+        </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: t.GAP_XS }}>
           <Button variant="ghost" disabled={Object.keys(overrides).length === 0} onClick={() => { stop(); resetAll(); }}>

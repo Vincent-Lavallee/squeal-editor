@@ -15,7 +15,7 @@ src/common/             shared infrastructure, no components
   bridge/bridge.ts      typed request/response over the extension channel
   icons/                icon bindings, workspace glyphs, the connection colour palette
   db/                   the UI's engine table
-  shortcuts.ts          every keyboard shortcut, and the one spelling of a chord
+  shortcuts.ts          every keyboard shortcut — the app's and Monaco's — and the one spelling of a chord
 src/store/              every slice; bridge-crossed state and the keys it is held under
   index.ts              configureStore + RootState/AppDispatch
   hooks.ts              useAppDispatch / useAppSelector
@@ -47,7 +47,7 @@ src/features/
   queries/              SavedQueriesButton (the strip's picker), SaveQueryDialog
   editor/               EditorPane, useEditor (text surface over the tabs slice), monaco (theme + worker),
                         completion + keywords + sqlScope + useSqlCompletion,
-                        format + useSqlFormatter
+                        format + useSqlFormatter, useEditorKeybindings (Monaco's own commands, on our chords)
   results/              ResultsTable, StatementTabs, FilterBar, JsonCellDrawer,
                         ResultsContext (useResultsView), useResults
   statusbar/            StatusBar + ReadOnlyConfirm: the bottom bar and its lock
@@ -373,6 +373,9 @@ into their own strip, while the tree, its context menus and `Ctrl+T` open into
 `workingPane`. Duplicate is the third case and it is the first rule again — a
 copy appears beside its original, in that tab's pane, since a copy you have to
 go and find in the other half is not the comparison the gesture is for.
+`Ctrl+Shift+T` is the fourth and the only one that names neither: it is *the
+pane you are not in*, which is the whole of what the command is for, and is why
+its label says so rather than saying "split".
 
 New tabs used to mint into the primary pane always, with dragging the only way
 into the secondary one — which is what left the secondary strip with no `+` and
@@ -786,7 +789,7 @@ It has no Run to hang a caret off, and a strip built only to hold the answer is
 was pointed when it was opened, for as long as it is open: reaching the same
 table under another database is pointing the tree there and clicking it again,
 which gives a second tab rather than changing the first one underneath the rows
-already on screen. `Ctrl+Shift+D` therefore does nothing on a grid tab, the same
+already on screen. `Ctrl+D` therefore does nothing on a grid tab, the same
 answer `Ctrl+Enter` gives there. See `docs/decisions.md`.
 
 **The name is deliberately not inside the Run button.** Spelling it out there
@@ -1683,24 +1686,100 @@ is simply missing on the platform that cannot show it.
 
 ## Keyboard shortcuts
 
-Every shortcut the app owns is one row of `SHORTCUTS` in `common/shortcuts.ts`
-— an id, a label, a group and a default chord — and the Preferences menu's
-*Keyboard shortcuts* screen (`features/titlebar/ShortcutsDialog.tsx`) is that
-list with a way to change one.
+Every shortcut on the Preferences menu's *Keyboard shortcuts* screen
+(`features/titlebar/ShortcutsDialog.tsx`) is one row of `SHORTCUTS` in
+`common/shortcuts.ts` — an id, a label, a group and a default chord — and that
+screen is the list with a way to change one.
+
+**Two kinds of row, told apart by whether it names a `command`.** A row without
+one is the app's: something in `Shell` or `EditorPane` answers it, and
+`EditorPane` registers it with Monaco as an action of its own. A row *with* one
+names an action Monaco already has, already runs and already binds — nothing
+here answers it, and moving it means taking Monaco's own keybinding away and
+issuing another. `APP_SHORTCUTS` and `EDITOR_COMMANDS` are the two halves, and
+`SHORTCUTS` is still the whole list, because the clash check has to see the
+entire keyboard.
 
 | Group | | Default |
 |---|---|---|
 | Editor | Run | `Ctrl+Enter` |
 | Editor | Run statement under cursor | `Ctrl+Shift+Enter` |
 | Editor | Save query | `Ctrl+S` |
-| Editor | Switch this tab's database | `Ctrl+Shift+D` |
+| Editor | Switch this tab's database | `Ctrl+D` |
 | Tabs | New tab | `Ctrl+T` |
+| Tabs | New tab in the other pane | `Ctrl+Shift+T` |
 | Tabs | Close tab | `Ctrl+W` |
 | Tabs | Next tab | `Ctrl+PageDown` |
 | Tabs | Previous tab | `Ctrl+PageUp` |
 | Tabs | Move tab to the other pane | `Ctrl+\` |
 | Connection | Disconnect | `Ctrl+Shift+W` |
 | View | Toggle sidebar | `Ctrl+B` |
+| View | Filter tables | `Ctrl+Shift+F` |
+
+And Monaco's own, from here down — `command` is the action id, `when` is the
+context expression its default carries:
+
+| Group | | Default | Monaco's action |
+|---|---|---|---|
+| Text editing | Toggle line comment | `Ctrl+/` | `editor.action.commentLine` |
+| Text editing | Toggle block comment | `Shift+Alt+A` | `editor.action.blockComment` |
+| Text editing | Format | `Shift+Alt+F` | `editor.action.formatDocument` |
+| Text editing | Indent | `Ctrl+]` | `editor.action.indentLines` |
+| Text editing | Outdent | `Ctrl+[` | `editor.action.outdentLines` |
+| Text editing | Move line up | `Alt+ArrowUp` | `editor.action.moveLinesUpAction` |
+| Text editing | Move line down | `Alt+ArrowDown` | `editor.action.moveLinesDownAction` |
+| Text editing | Copy line up | `Shift+Alt+ArrowUp` | `editor.action.copyLinesUpAction` |
+| Text editing | Copy line down | `Shift+Alt+ArrowDown` | `editor.action.copyLinesDownAction` |
+| Text editing | Delete line | `Ctrl+Shift+K` | `editor.action.deleteLines` |
+| Text editing | Trigger suggestion | `Ctrl+Space` | `editor.action.triggerSuggest` |
+| Find | Find | `Ctrl+F` | `actions.find` |
+| Find | Replace | `Ctrl+H` | `editor.action.startFindReplaceAction` |
+| Find | Find next | `F3` | `editor.action.nextMatchFindAction` |
+| Find | Find previous | `Shift+F3` | `editor.action.previousMatchFindAction` |
+| Find | Go to line | `Ctrl+G` | `editor.action.gotoLine` |
+| Find | The editor's command palette | `F1` | `editor.action.quickCommand` |
+| Selection | Add cursor above | `Ctrl+Alt+ArrowUp` | `editor.action.insertCursorAbove` |
+| Selection | Add cursor below | `Ctrl+Alt+ArrowDown` | `editor.action.insertCursorBelow` |
+| Selection | Add selection to next match | `Ctrl+Shift+D` | `editor.action.addSelectionToNextFindMatch` |
+| Selection | Select all occurrences | `Ctrl+Shift+L` | `editor.action.selectHighlights` |
+
+**Only twenty-one of Monaco's actions, and the line is "would anyone reach for
+it in a SQL editor".** Monaco binds far more, and the rest keep their defaults
+untouched and unlisted — `editor.action.quickCommand` above is how they are
+found. Writing a row down is not free: it is a chord the clash check will refuse
+to anything else, so a row nobody would press is a key nobody can have.
+
+**`useEditorKeybindings` is the whole mechanism, and it runs once for the
+window.** Keybinding rules belong to the standalone keybinding *service*, of
+which there is one — so it is `ShellLayout`'s to call, beside `useSqlCompletion`
+and `useSqlFormatter` and for their reason. `monaco.editor.addKeybindingRules`
+takes both halves: a rule whose command is prefixed `-` removes, and the rule
+beside it adds.
+
+**The removal names the chord, not just the command.** A bare `-command` removes
+*every* binding Monaco gave that action, and several have more than one:
+`nextMatchFindAction` is `F3` and, separately, `Enter` while the find widget's
+input has focus. Take the lot and Enter stops finding the next match — a break
+nobody would connect to having moved `F3`.
+
+**A row Monaco and this app agree on is left entirely alone.** Only a row whose
+current chord differs from `EditorCommand.monacoChord` is touched, which is the
+user's overrides plus the one row shipped moved. That is what keeps this from
+flattening the per-platform defaults Monaco varies by OS: `Ctrl` here means the
+platform's own modifier, so Monaco's real-Ctrl macOS bindings (`Ctrl+G` for *Go
+to line*, `Ctrl+Space` for *Trigger suggestion*) have **no spelling at all** in
+this vocabulary. *The cost, accepted:* on macOS the screen states the chord this
+app would issue rather than the one Monaco actually shipped, for the handful
+whose mac default differs — and it becomes true the moment either is rebound.
+
+**`Ctrl+D` is the database picker and `Ctrl+Shift+D` is Monaco's *add selection
+to next match*, which is a reversal.** It used to be the other way round on the
+reasoning that taking `Ctrl+D` away inside the editor was too high a price. The
+price is the same; what changed is that the editor's commands are now rows, so
+the trade is stated on the screen and either side of it can be moved back.
+`monacoChord` on that row is what marks it: the one place the chord shipped is
+not the chord Monaco chose, so its binding is rewritten from the first launch
+rather than only when a user moves it. See `docs/decisions.md`.
 
 **`Ctrl+W` is a browser accelerator, and that had to be settled by pressing it.**
 A synthetic `KeyboardEvent` enters at the DOM and would pass whether or not a
@@ -1710,14 +1789,23 @@ and goes in where a physical key does. WebView2 lets it through: it closes the
 tab, and the window is still there afterwards, which is half of what that test
 asserts. See `docs/testing.md`.
 
-**`Ctrl+Shift+D` opens a picker rather than doing anything itself**, and it is
+**`Ctrl+D` opens a picker rather than doing anything itself**, and it is
 the reason `Select` grew a controlled `open`: a picker that owned its own open
 state could only ever be opened by its own trigger. `Shell` holds `pickerPane`
 — one value, since two lists open at once is not a state worth representing —
 and the command sets it to `workingPane`, so a split answers for the half you
-are in. `Ctrl+Shift+D` and not `Ctrl+D`: shell commands are registered into
-Monaco as actions, and `Ctrl+D` there is *add selection to next find match*,
-which is exactly what would be taken away in the place this is pressed most.
+are in.
+
+**`Ctrl+Shift+F` puts focus in the tree's filter, and unfolds the sidebar first
+if it is folded away** — focus cannot enter `display: none`, so a command that
+only focused would silently do nothing exactly when the field is hardest to
+reach with the mouse. `Shell` owns both halves because it owns the collapse, and
+what reaches `Sidebar` is a **counter**, not a flag: focusing is an event, and a
+boolean has no "off" for the second press to return from. The two updates are
+one batch, so by the time `Sidebar`'s effect runs the bar is on screen; `0` is
+the launch value and is skipped, or the app would steal focus before anyone
+asked. It selects as well as focuses, so pressing it again over a filter already
+typed replaces it. `Input` is `forwardRef` for this and only this.
 
 **Close tab and Disconnect act on what is in front; their menus act on what was
 clicked.** `Ctrl+W` takes `workingPane`'s active tab, the same pointer `nextTab`
@@ -1728,11 +1816,14 @@ neither activates it first, so a background server can be closed without leaving
 the one being worked in.
 
 **Adding one is a registry row and a handler**, and both listeners pick it up:
-`EditorPane` registers a Monaco action for *every* row rather than a hand-written
-list, and `Shell`'s window listener searches its own command map for whichever id
-holds the chord. A row wired only to the window listener would be a shortcut that
-stops working the moment the cursor is in the editor — which is not something the
-person adding it would think to check.
+`EditorPane` registers a Monaco action for every row in `APP_SHORTCUTS` rather
+than a hand-written list, and `Shell`'s window listener searches its own command
+map for whichever id holds the chord. A row wired only to the window listener
+would be a shortcut that stops working the moment the cursor is in the editor —
+which is not something the person adding it would think to check. **Adding one
+of Monaco's is a row and nothing else**: it has a handler already, and an
+`addAction` for it here would be a second action running nothing, which is why
+that loop is `APP_SHORTCUTS` and not `SHORTCUTS`.
 
 **Two owners, and which one a shortcut belongs to is what it acts on.** Run,
 Run-statement and Save are the *editor's*: they need this pane's text, cursor and
@@ -1798,15 +1889,23 @@ idiom, so the rows below it do not move — and recording stays open so the next
 press is the correction. Two shortcuts on one chord is a screen that cannot say
 which one wins.
 
-**There is no "split" command, because there is no split verb.** *Move tab to the
-other pane* dispatches the same `moveTab(id, null, pane)` a drag onto the other
-strip does, and a split is what that looks like when the pane had none — so the
-one shortcut both opens a split and closes it, exactly as dragging does. Which
-pane it acts on is `workingPane`, not `focusedPane` directly: a split that
+**There is still no "split" command, because there is no split verb.** *Move tab
+to the other pane* dispatches the same `moveTab(id, null, pane)` a drag onto the
+other strip does, and a split is what that looks like when the pane had none —
+so the one shortcut both opens a split and closes it, exactly as dragging does.
+Which pane it acts on is `workingPane`, not `focusedPane` directly: a split that
 collapses unmounts the secondary `<main>` and leaves `focusedPane` pointing at a
 pane that is gone, and every tab command would then act on an empty strip until
 the user clicked something. Stepping between tabs is the same pane's strip,
 wrapping at either end, and a pane holding one tab has nowhere to step to.
+
+***New tab in the other pane* is the second command that produces one, and it is
+not that verb either.** It is `openEditorTab` into the pane `workingPane` is
+not, which with no split yet is what opens one. The objection that sank a
+`split` command was that overloading the *move* gesture would mint a tab nobody
+asked for; asking for a tab is the whole of what this is, and `Ctrl+Shift+T` is
+the Shift-pair of `Ctrl+T` for exactly that reason. `dockTab` is unchanged and
+still the only way an existing tab crosses. See `docs/decisions.md`.
 
 **The grid's keys are not in the registry, and that is the line.** Ctrl+C,
 Delete, Ctrl+Delete and the arrows in `ResultsTable` are the *control's* own keys

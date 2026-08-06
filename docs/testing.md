@@ -243,6 +243,19 @@ given, and it would ship looking perfectly reasonable in the list. Two more hold
 the registry itself honest — no two shortcuts on one chord, and a shortcut is not
 a clash with itself.
 
+**A block of its own covers the editor's commands**, the rows that name a Monaco
+action rather than a handler here. Three of them are about `monacoChord`, which
+is the chord that gets *removed*: a row that quietly defaulted it wrong would
+leave Monaco's own binding in place and add a second one beside it, so the test
+names the only row that ships moved and would fail the moment a second appeared
+without being noticed. The other two are the invariants two lists behind one
+registry have to keep — every row is in exactly one half, and no two name the
+same action, since two removals of one action would take each other's binding
+away. What is *not* asserted here is that a chord is one Monaco can encode:
+`keybindingFor` lives in `monaco.ts`, which imports `monaco-editor` and its
+`?worker` modules and so cannot be loaded outside Vite. The round-trip through
+`parseChord` covers the spelling; the app run covers the rest.
+
 It takes a `KeyPress` structural type rather than a real `KeyboardEvent`, which
 is what lets a case be a literal in a suite with no DOM. A `KeyboardEvent` is
 assignable to it, so the app passes the real thing.
@@ -255,6 +268,16 @@ their own test in the postgres block, starting from the empty state the *Close
 All* test leaves — and **it counts `.editor` divs to see the split**, because
 there is no split flag to read and the tab labels span both strips, so the tab
 count cannot tell a docked tab from a second tab.
+
+**`Ctrl+Shift+T` is proved by the close that follows it, not by the split.** Two
+panes appearing says a tab was minted somewhere; it does not say *where*.
+Nothing focused the new pane, so `workingPane` is still primary and `Ctrl+W`
+takes the first tab — the survivor being the second one is only possible if the
+second was never in the primary strip. The `Ctrl+Shift+F` test asserts the
+`display` of the filter bar as well as `document.activeElement`, because the
+half of that command worth testing is the unfold: focusing a field inside
+`display: none` fails silently and looks exactly like a shortcut that is not
+wired up.
 
 **Both dispatch their chords at an element, never at `window`.** These listeners
 are on the window, and an event fired straight at it skips the propagation that

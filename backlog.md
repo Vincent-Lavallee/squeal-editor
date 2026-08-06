@@ -98,11 +98,13 @@ Things that do not exist yet.
   palette — run, format, switch connection or database, toggle read-only,
   settings, a new tab — along with jumping to a table by name, which is the part
   that earns it a keybinding once a connection holds more tables than a tree is
-  pleasant to scroll. Monaco ships its own palette, editor-scoped and live today;
-  turn it off so there is one. The composition root owns it and hands it the
-  commands, because a palette that imports every feature is exactly the hub the
-  feature split exists to prevent, and whatever key it takes has to be rebound
-  inside the editor too — the way running already is — or Monaco eats it first.
+  pleasant to scroll. Monaco ships its own palette, editor-scoped and live
+  today; it is now a registry row on `F1`, so turning it off is unbinding that
+  row rather than reaching into Monaco — do that, so there is one. The
+  composition root owns it and hands it the commands, because a palette that
+  imports every feature is exactly the hub the feature split exists to prevent,
+  and whatever key it takes has to be rebound inside the editor too — the way
+  running already is — or Monaco eats it first.
 
 - **Relationship diagram** — Understanding how tables relate means reading DDL
   or reaching for another tool, because nothing in the app shows foreign keys
