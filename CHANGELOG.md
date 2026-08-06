@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.13.0...v0.14.0) (2026-08-06)
+
+
+### Features
+
+* Added monaco shortcuts ([19c3607](https://github.com/Vincent-Lavallee/squeal-editor/commit/19c36074dd1c9c8a33bd9911c94a6fe1d0a96bf1))
+* Import / Export connections ([8196148](https://github.com/Vincent-Lavallee/squeal-editor/commit/8196148b7eebab9290018a6e4515eeca801596a0))
+* Multi db support within single connection ([92d1e80](https://github.com/Vincent-Lavallee/squeal-editor/commit/92d1e8084e8e5cf94b9dd0adb9555b4be1ff77b2))
+* Tab closing shortcut + Conn close shortcut ([5ef5c4d](https://github.com/Vincent-Lavallee/squeal-editor/commit/5ef5c4d2272f1d4bbdece3ac73d64414847c72ca))
+
+
+### Bug Fixes
+
+* Removed database changing with tab change ([3de1f50](https://github.com/Vincent-Lavallee/squeal-editor/commit/3de1f500db3f3fbbbb1481f7c731847aa5db234d))
+
 ## [0.13.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.12.1...v0.13.0) (2026-08-04)
 
 
