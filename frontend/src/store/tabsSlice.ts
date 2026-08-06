@@ -44,7 +44,14 @@ export interface Tab {
    * `null` only while the connection reported no databases at all.
    */
   database: string | null;
-  kind: 'editor' | 'grid';
+  /**
+   * A `diagram` tab is the third kind and the thinnest: it holds nothing but
+   * the database it is about, which `Tab.database` already carries. It has no
+   * text to save, no rows to browse and nothing keyed by its id anywhere --
+   * which is what made it cheap enough to be a tab at all. See
+   * `docs/decisions.md`.
+   */
+  kind: 'editor' | 'grid' | 'diagram';
   /** Which table a `grid` tab is browsing. Absent on an `editor` tab. */
   table?: string;
   /**
@@ -302,6 +309,14 @@ const tabsSlice = createSlice({
       // Every new tab starts where the one in front already is. A tab reaches a
       // different database only by being pointed there, never by being opened.
       const database = action.payload.database ?? inheritedDatabase(state, connectionId);
+
+      // Before the grid branch and never reaching the editor one below: a
+      // diagram tab consumes no `Query N` and seeds no text, so both of those
+      // would be wrong about it in a way nothing would report.
+      if (kind === 'diagram') {
+        mint(state, { connectionId, database, kind, title: title ?? 'Relationships' }, pane);
+        return;
+      }
 
       if (kind === 'grid') {
         // The caller's label when it has one -- it knows which schema goes
@@ -838,6 +853,23 @@ export function useTabs() {
       (savedQueryId: string, title: string, sql: string, pane?: Tab['pane']): void => {
         const id = store.getState().session.activeConnectionId;
         if (id) dispatch(tabOpened({ connectionId: id, kind: 'editor', title, savedQueryId, sql, pane }));
+      },
+      [dispatch, store]
+    ),
+    /**
+     * The relationship diagram, in a tab of its own.
+     *
+     * `database` is given rather than inherited, because the diagram is *about*
+     * a database the way a grid tab is about a table -- opening it on whatever
+     * the tab in front happened to be pointed at would draw a schema the user
+     * was not looking at. Nothing is returned: unlike a grid or a definition
+     * tab there is nothing to seed afterwards, since the tab already holds
+     * everything the view needs.
+     */
+    openDiagramTab: useCallback(
+      (database?: string | null, pane?: Tab['pane']): void => {
+        const id = store.getState().session.activeConnectionId;
+        if (id) dispatch(tabOpened({ connectionId: id, kind: 'diagram', database, pane }));
       },
       [dispatch, store]
     ),

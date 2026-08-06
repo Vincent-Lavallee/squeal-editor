@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { useSession } from './store/sessionSlice.ts';
 import Shell from './Shell.tsx';
@@ -13,21 +13,31 @@ export default function App() {
   const { connected, activeConnectionId } = useSession();
   const { check } = useUpdater();
   const [adding, setAdding] = useState(false);
+  /*
+   * The diagram is asked for from the titlebar and opened as a tab inside the
+   * shell, and the two are siblings -- so the request is held by the one thing
+   * that renders both, exactly as `adding` is. A counter rather than a flag:
+   * what travels is the *asking*, and there is no state to come back from.
+   */
+  const [diagramRequest, setDiagramRequest] = useState(0);
 
   useEffect(() => { check(); }, [check]);
 
   useEffect(() => { setAdding(false); }, [activeConnectionId]);
 
+  const shellShowing = connected && !adding;
+  const openDiagram = useCallback(() => setDiagramRequest((request) => request + 1), []);
+
   return (
     <>
       {IS_MACOS
-        ? <TitlebarMacos />
-        : <Titlebar onCheckForUpdates={() => check(true)} />
+        ? <TitlebarMacos onOpenDiagram={shellShowing ? openDiagram : undefined} />
+        : <Titlebar onCheckForUpdates={() => check(true)} onOpenDiagram={shellShowing ? openDiagram : undefined} />
       }
       <UpdateBanner />
       <div className="app-body">
-        {connected && !adding ? (
-          <Shell onAddConnection={() => setAdding(true)} />
+        {shellShowing ? (
+          <Shell onAddConnection={() => setAdding(true)} openDiagramRequest={diagramRequest} />
         ) : (
           <ConnectScreen onCancel={connected ? () => setAdding(false) : undefined} />
         )}

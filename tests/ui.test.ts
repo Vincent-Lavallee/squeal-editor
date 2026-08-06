@@ -2684,6 +2684,207 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
   });
 
+  /*
+   * The diagram is drawn entirely from arithmetic over the catalog, so what only
+   * the running app can prove is the wiring: that the menu reaches it, that it
+   * draws the database the *tree* is on, that a node opens the table the way the
+   * tree does, and that dragging one moves it without opening anything. The
+   * shape of the catalog behind it is `extension.test.ts`' business.
+   */
+  describe('relationship diagram', () => {
+    const nodeNames = `[...document.querySelectorAll('[data-testid="diagram-node-name"]')].map(e => e.textContent)`;
+    const diagramShowing = `!!document.querySelector('[data-testid="diagram"]')`;
+    /** Answers `null` for "not yet", or `waitFor` takes a `false` as an answer.
+     *  Waits for a *node*, not the frame: the frame is up while the schema is
+     *  still being read, and there is nothing to measure until the nodes land. */
+    const diagramDrawn = `document.querySelector('[data-testid="diagram-node"]') ? true : null`;
+    const node = (label: string) => `
+      [...document.querySelectorAll('[data-testid="diagram-node"]')]
+        .find(e => e.querySelector('[data-testid="diagram-node-name"]').textContent === ${JSON.stringify(label)})`;
+    const nodeLeft = (label: string) => `${node(label)}.getBoundingClientRect().left`;
+    /**
+     * A node is dragged with plain pointer events at its own centre. It is both
+     * the drag handle and the way into the table, so a press-move-release is
+     * the only gesture that can tell the suite which of the two happened.
+     */
+    const dragNode = (label: string, dx: number, dy: number) => `(() => {
+      const el = ${node(label)};
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      const at = (type, cx, cy) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: cx, clientY: cy, pointerId: 1, button: 0 }));
+      el.setPointerCapture = () => {};
+      at('pointerdown', x, y);
+      at('pointermove', x + ${dx}, y + ${dy});
+      at('pointerup', x + ${dx}, y + ${dy});
+      return true;
+    })()`;
+    const clickNode = (label: string) => `(() => {
+      const el = ${node(label)};
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      const at = (type) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, pointerId: 1, button: 0 }));
+      el.setPointerCapture = () => {};
+      at('pointerdown');
+      at('pointerup');
+      return true;
+    })()`;
+    const openDiagram = `document.querySelector('[data-menu="Database"]').click(); true;`;
+    const clickDiagramItem = `[...document.querySelectorAll('[data-testid="menu-item"]')].find(e => e.textContent === 'Relationship diagram').click(); true;`;
+
+    beforeAll(async () => {
+      await connect(PG, 'pg-diagram');
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1500);
+    });
+
+    test('the Database menu opens it on the database the tree is showing', async () => {
+      await app.evaluate(openDiagram);
+      await Bun.sleep(200);
+      await app.evaluate(clickDiagramItem);
+      await app.waitFor(diagramDrawn);
+
+      const names = await app.evaluate<string[]>(nodeNames);
+      expect(names).toContain('users');
+      expect(names).toContain('events');
+      expect(names).toContain('cities');
+      // The default schema is left off a label and every other schema is spelled
+      // out -- the tree's rule, applied to a node.
+      expect(names).toContain('reporting.daily_stats');
+      // A view is never a node: nothing can reference one.
+      expect(names).not.toContain('active_users');
+
+      // A tab of its own, in front, beside the `Query 1` the connection was
+      // born with -- not an overlay, and not something that replaced anything.
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'Relationships']);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe('Relationships');
+    });
+
+    test('dragging a node moves it and opens nothing', async () => {
+      const before = await app.evaluate<number>(nodeLeft('users'));
+      await app.evaluate(dragNode('users', 120, 40));
+      await Bun.sleep(300);
+
+      expect(await app.evaluate<number>(nodeLeft('users'))).toBeCloseTo(before + 120, 0);
+      // A drag read as a click would have opened a grid tab, which is exactly
+      // the confusion CLICK_SLOP exists to prevent. The strip is unchanged, and
+      // the diagram is still the tab in front.
+      expect(await app.evaluate<boolean>(diagramShowing)).toBe(true);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'Relationships']);
+    });
+
+    test('the pane is not the canvas: dragging a node does not also scroll it', async () => {
+      // Both gestures start with a pointerdown on the node, and the node's has
+      // to stop there -- otherwise the canvas pans by the same delta the node
+      // moves by, in the opposite direction, and the node crawls at half speed
+      // under a view sliding out from under it. That is what "hard to pick up"
+      // was, and a scroll offset is the only thing that shows it.
+      const scrolled = `document.querySelector('[data-testid="diagram-canvas"]').scrollLeft`;
+      const before = await app.evaluate<number>(scrolled);
+      await app.evaluate(dragNode('users', 60, 0));
+      await Bun.sleep(300);
+      expect(await app.evaluate<number>(scrolled)).toBe(before);
+    });
+
+    /*
+     * A node dragged out of the drawing's own bounds, in both directions — and
+     * the two directions fail differently, which is why both are here.
+     *
+     * Dragging *out* is the canvas' business: an absolutely-positioned node
+     * extends `scrollWidth` on its own, so it stays reachable either way, but
+     * the sized element carrying the dot grid does not follow it and the node
+     * ends up sitting on bare background outside the canvas it belongs to.
+     *
+     * Dragging *back past zero* is the one that loses it outright. There is no
+     * negative scroll region, so a node at a negative coordinate is somewhere
+     * nothing can scroll to — which is what was reported.
+     */
+    test('a node dragged past the edge stays on the canvas, in both directions', async () => {
+      const canvas = `document.querySelector('[data-testid="diagram-canvas"]')`;
+      // The scroll container's child is the sized element: what the dot grid is
+      // painted on, and what has to grow with the nodes.
+      const surfaceWidth = `${canvas}.firstElementChild.getBoundingClientRect().width`;
+      const nodeRight = (label: string) => `${node(label)}.getBoundingClientRect().right`;
+
+      const before = await app.evaluate<number>(surfaceWidth);
+      await app.evaluate(dragNode('logs', 900, 0));
+      await Bun.sleep(300);
+      expect(await app.evaluate<number>(surfaceWidth)).toBeGreaterThan(before);
+
+      // Reachable is the actual claim, so scroll to the end and require it to
+      // be on screen — a surface that grew but stopped short would pass the
+      // assertion about the number and still leave the node past the edge.
+      await app.evaluate(`${canvas}.scrollLeft = ${canvas}.scrollWidth; true;`);
+      await Bun.sleep(300);
+      const paneRight = await app.evaluate<number>(`${canvas}.getBoundingClientRect().right`);
+      expect(await app.evaluate<number>(nodeRight('logs'))).toBeLessThanOrEqual(paneRight);
+
+      await app.evaluate(`${canvas}.scrollLeft = 0; ${canvas}.scrollTop = 0; true;`);
+      await Bun.sleep(200);
+      await app.evaluate(dragNode('logs', -4000, -4000));
+      await Bun.sleep(300);
+      const paneBox = await app.evaluate<{ left: number; top: number }>(
+        `(() => { const r = ${canvas}.getBoundingClientRect(); return { left: r.left, top: r.top }; })()`
+      );
+      const nodeBox = await app.evaluate<{ left: number; top: number }>(
+        `(() => { const r = ${node('logs')}.getBoundingClientRect(); return { left: r.left, top: r.top }; })()`
+      );
+      expect(nodeBox.left).toBeGreaterThanOrEqual(paneBox.left);
+      expect(nodeBox.top).toBeGreaterThanOrEqual(paneBox.top);
+    });
+
+    test('the arrangement is not remembered across a tab switch', async () => {
+      const moved = await app.evaluate<number>(nodeLeft('users'));
+
+      await app.evaluate(clickTab('Query 1'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<boolean>(diagramShowing)).toBe(false);
+
+      await app.evaluate(clickTab('Relationships'));
+      await app.waitFor(diagramDrawn);
+
+      // Laid out fresh: `users` is back where the layout puts it, not where the
+      // drags left it. Coming back is also what re-reads the schema, which is
+      // why nothing caches the fetch behind it.
+      expect(await app.evaluate<number>(nodeLeft('users'))).toBeLessThan(moved);
+    });
+
+    test('clicking a node opens that table, leaving the diagram open behind it', async () => {
+      await app.evaluate(clickNode('events'));
+      await Bun.sleep(1500);
+
+      // The same gesture clicking `events` in the tree is: a grid tab on it, in
+      // front. The diagram is a tab like any other now, so it stays where it
+      // was rather than being dismissed by the thing it opened.
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'Relationships', 'events']);
+      expect(await app.evaluate<string>(activeTabLabel)).toBe('events');
+      expect(await app.evaluate<number>(rowCount)).toBeGreaterThan(0);
+
+      await app.evaluate(closeTab('events'));
+      await Bun.sleep(400);
+    });
+
+    test('closing it is the tab closing, and it is never asked about', async () => {
+      // Nothing in a diagram is unsaved work -- it holds no text of its own --
+      // so it closes the way a grid tab does, with no dialog.
+      await app.evaluate(closeTab('Relationships'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<boolean>(closeConfirmShowing)).toBe(false);
+      expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1']);
+    });
+
+    test('the menu is not offered while the connect screen is up', async () => {
+      // It is a menu about the database you are looking at, and the connect
+      // screen is not looking at one -- so it is absent rather than inert. The
+      // connection behind it is still open, which is what makes this the case
+      // `connected` alone would get wrong.
+      await app.evaluate(`document.querySelector('[data-testid="rail-add"]').click(); true;`);
+      await Bun.sleep(600);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-menu="Database"]')`)).toBe(false);
+    });
+  });
+
   describe('mysql', () => {
     beforeAll(async () => {
       await connect(MYSQL, 'mysql-smoke');

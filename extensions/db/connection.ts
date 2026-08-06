@@ -2,6 +2,7 @@ import type {
   CellValue,
   ColumnInfo,
   ConnectionConfig,
+  DiagramTable,
   RowDelete,
   RowEdit,
   SortOrder,
@@ -64,6 +65,11 @@ export interface ConnectionHandle {
   listDatabases(): Promise<string[]>;
   listTables(database: string): Promise<TableInfo[]>;
   listColumns(database: string, relation: Relation): Promise<ColumnInfo[]>;
+  /**
+   * Every table of a database with its columns and foreign keys, in one call --
+   * what the relationship diagram draws. See `Driver.listRelationships`.
+   */
+  listRelationships(database: string): Promise<DiagramTable[]>;
   /**
    * A table's row identity alone -- the same `Driver.rowKey` call `browse` and
    * `write` already make, asked for without paging or writing anything. Backs
@@ -262,6 +268,10 @@ function build<C>(
 
     async listColumns(database, relation) {
       return useClient(database, (client) => driver.listColumns(client, database, relation));
+    },
+
+    async listRelationships(database) {
+      return useClient(database, (client) => driver.listRelationships(client, database));
     },
 
     async rowKey(database, relation) {

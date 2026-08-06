@@ -710,3 +710,13 @@ This is a record, not a plan. Nothing here is waiting on anything.
   its own minimum width applied, hanging it off the trigger by a number too small
   and then widening it past the window. Roughly 19px of the list was clipped
   whenever the window was not maximised, on every fresh open.
+
+- **2026-08-05** — **Relationship diagram** — Understanding how tables relate meant reading DDL
+  or reaching for another tool, because nothing in the app showed foreign keys
+  at all — the tree only marked primary keys. Added a diagram, opened from a new
+  top-level menu item, laying out every table in the current database with
+  their columns and primary/foreign keys marked, connected by lines for each
+  FK. Clicking a table node opens that table the same way clicking it in the
+  tree does; nodes can be dragged to declutter an auto-layout, but the
+  arrangement is not remembered — it lays out fresh each time the diagram is
+  opened.

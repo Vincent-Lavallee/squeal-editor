@@ -2,6 +2,7 @@ import type {
   CellValue,
   ColumnInfo,
   ConnectionConfig,
+  DiagramTable,
   RowDelete,
   RowEdit,
   SqlDialect,
@@ -134,6 +135,20 @@ export interface Driver<C> {
    * a display string apart to find out where it lives.
    */
   listColumns(client: C, database: string, relation: Relation): Promise<ColumnInfo[]>;
+  /**
+   * Every table of a database with its columns and foreign keys, for the
+   * relationship diagram.
+   *
+   * Not `listTables` plus a `listColumns` per table: the diagram is about all of
+   * them at once, so this is two catalog reads over the whole database rather
+   * than two per table. Each engine shapes its rows into `DiagramColumnPart`s
+   * and `DiagramLinkPart`s and hands them to `assembleDiagram`, which is where
+   * the grouping lives so it cannot drift per engine.
+   *
+   * **Tables only.** A view declares no foreign key and nothing may reference
+   * one, so it would be a node no line could reach.
+   */
+  listRelationships(client: C, database: string): Promise<DiagramTable[]>;
   /**
    * Run one statement.
    *

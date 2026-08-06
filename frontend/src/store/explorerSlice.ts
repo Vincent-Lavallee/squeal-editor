@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-import type { ColumnInfo, FunctionInfo, TableInfo, TriggerInfo } from '../../../shared/protocol/index.ts';
+import type { ColumnInfo, DiagramTable, FunctionInfo, TableInfo, TriggerInfo } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { relationName, resolveRelation, type Relation } from '../common/db/relation.ts';
 import type { RootState } from './index.ts';
@@ -86,6 +86,16 @@ interface ExplorerState {
    */
   functions: Record<string, Record<string, FunctionInfo[] | null>>;
   /**
+   * Every table of a database with its columns and foreign keys, keyed
+   * connection -> database: the relationship diagram's whole subject.
+   *
+   * The one cache here nothing reads twice. `loadRelationships` carries no
+   * `condition`, so opening the diagram always re-reads the server -- see the
+   * thunk. It is written down anyway because it crossed the bridge, which is
+   * the only test that decides where a value lives.
+   */
+  relationships: Record<string, Record<string, DiagramTable[]>>;
+  /**
    * The tree's in-flight fetch, and its failure. Singular because one tree is
    * drawn at a time -- but each names its connection, because the fetch that
    * lands is not always the one the tree is still waiting for.
@@ -101,6 +111,7 @@ const initialState: ExplorerState = {
   stars: {},
   triggers: {},
   functions: {},
+  relationships: {},
   loadingTables: null,
   error: null,
 };
@@ -410,6 +421,35 @@ export const loadFunctions = createAppThunk(
   }
 );
 
+/**
+ * Every table of a database with its columns and foreign keys, for the diagram.
+ *
+ * **Deliberately uncached, unlike every other list in this slice.** The tree's
+ * tables are fetched on every database switch, so a `condition` is what keeps
+ * that off the bridge; the diagram is opened by hand and rarely, and it is
+ * *about* the shape of the schema right now. A cached answer would draw a
+ * foreign key added since as missing, and there is no refresh control anywhere
+ * to ask past it -- reopening the diagram is that control.
+ *
+ * It returns the unwrapped result rather than a slice flag for the wait, the
+ * call `refreshDatabases` already makes: the diagram is one component that
+ * opens, fetches once and closes, so its spinner and its error live and die
+ * with it. The tables themselves land here because they crossed the bridge.
+ */
+export const loadRelationships = createAppThunk(
+  'explorer/loadRelationships',
+  async ({ database }: FunctionsArg, { getState, rejectWithValue }) => {
+    const connectionId = getState().session.activeConnectionId;
+    if (!connectionId) return rejectWithValue('Not connected.');
+    try {
+      const { tables } = await call('db.relationships', { connectionId, database });
+      return { connectionId, database, tables };
+    } catch (err) {
+      return rejectWithValue(errorMessage(err));
+    }
+  }
+);
+
 /** Argument for fetching a trigger's DDL. */
 interface TriggerDdlArg {
   database: string;
@@ -514,6 +554,7 @@ const explorerSlice = createSlice({
         delete state.stars[connectionId];
         delete state.triggers[connectionId];
         delete state.functions[connectionId];
+        delete state.relationships[connectionId];
         if (state.loadingTables?.connectionId === connectionId) state.loadingTables = null;
         if (state.error?.connectionId === connectionId) state.error = null;
       })
@@ -590,6 +631,14 @@ const explorerSlice = createSlice({
         const byDatabase = state.functions[connectionId];
         if (!byDatabase || byDatabase[database] === undefined) return;
         byDatabase[database] = functions;
+      })
+      .addCase(loadRelationships.fulfilled, (state, action) => {
+        const { connectionId, database, tables } = action.payload;
+        // A disconnect that landed first dropped the connection; writing here
+        // anyway would resurrect it with nothing left to ever collect it. There
+        // is no requested-marker to look for, because this one is never cached.
+        if (!(connectionId in state.databases)) return;
+        (state.relationships[connectionId] ??= {})[database] = tables;
       })
       //
       // The database list arrives with the connection itself, so the explorer

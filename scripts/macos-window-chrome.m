@@ -39,10 +39,10 @@ static void restyle(NSWindow *window) {
 
 /*
  * Neutralino never populates NSApp.mainMenu, so the macOS menu bar is blank —
- * unlike Windows, where File/About live in our own custom titlebar HTML
- * (Titlebar.tsx). This rebuilds the same two menus, with the same items, as
- * literal top-level NSMenus so macOS users get the same functionality in the
- * place macOS convention puts it.
+ * unlike Windows, where File/Database/Preferences/About live in our own custom
+ * titlebar HTML (Titlebar.tsx). This rebuilds the same menus, with the same
+ * items, as literal top-level NSMenus so macOS users get the same functionality
+ * in the place macOS convention puts it.
  *
  * A native menu item cannot call a React handler directly, so each one
  * evaluates a small JS snippet in the webview that dispatches a `squeal:menu`
@@ -80,6 +80,7 @@ static void restyle(NSWindow *window) {
 - (void)environments:(id)sender { [SquealMenuHandler dispatchEvent:@"environments"]; }
 - (void)exportConnections:(id)sender { [SquealMenuHandler dispatchEvent:@"exportConnections"]; }
 - (void)importConnections:(id)sender { [SquealMenuHandler dispatchEvent:@"importConnections"]; }
+- (void)relationshipDiagram:(id)sender { [SquealMenuHandler dispatchEvent:@"relationshipDiagram"]; }
 - (void)shortcuts:(id)sender { [SquealMenuHandler dispatchEvent:@"shortcuts"]; }
 - (void)checkForUpdates:(id)sender { [SquealMenuHandler dispatchEvent:@"checkForUpdates"]; }
 - (void)about:(id)sender { [SquealMenuHandler dispatchEvent:@"about"]; }
@@ -122,6 +123,19 @@ static void installMenuBar(void) {
   NSMenuItem *exitItem = [[NSMenuItem alloc] initWithTitle:@"Exit" action:@selector(exit:) keyEquivalent:@""];
   exitItem.target = handler;
   [fileMenu addItem:exitItem];
+
+  /* Windows renders this menu only while a connection is open, since it is
+   * about the database you are looking at. A native menu bar is built once,
+   * here, by code that cannot see React state -- so it is always present and the
+   * item is a no-op on the connect screen. */
+  NSMenuItem *databaseMenuItem = [NSMenuItem new];
+  [mainMenu addItem:databaseMenuItem];
+  NSMenu *databaseMenu = [[NSMenu alloc] initWithTitle:@"Database"];
+  databaseMenuItem.submenu = databaseMenu;
+
+  NSMenuItem *diagramItem = [[NSMenuItem alloc] initWithTitle:@"Relationship diagram" action:@selector(relationshipDiagram:) keyEquivalent:@""];
+  diagramItem.target = handler;
+  [databaseMenu addItem:diagramItem];
 
   NSMenuItem *preferencesMenuItem = [NSMenuItem new];
   [mainMenu addItem:preferencesMenuItem];

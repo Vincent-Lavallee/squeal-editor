@@ -4,6 +4,7 @@ import type { Connection as MysqlConnection, FieldPacket } from 'mysql2/promise'
 import type { Driver } from './driver.ts';
 import {
   KEEPALIVE_DELAY_MS,
+  assembleDiagram,
   describeOk,
   pickForeignKeys,
   pickRowKey,
@@ -160,6 +161,58 @@ export const mysqlDriver: Driver<MysqlConnection> = {
       primaryKey: r[2] === 'PRI',
       foreignKey: foreignKeys.get(r[0] as string),
     }));
+  },
+
+  async listRelationships(client, database) {
+    // `listColumns`' read with the table filter lifted, joined to TABLES so only
+    // base tables come through: a view has no constraint of its own and cannot
+    // be referenced, so it would be a node no line reaches.
+    const [columnRows] = (await client.query(
+      {
+        sql: `SELECT c.TABLE_NAME, c.COLUMN_NAME, c.COLUMN_TYPE, c.COLUMN_KEY
+                FROM information_schema.COLUMNS c
+                JOIN information_schema.TABLES t
+                  ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+               WHERE c.TABLE_SCHEMA = ? AND t.TABLE_TYPE = 'BASE TABLE'
+               ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION`,
+        rowsAsArray: true,
+      },
+      [database]
+    )) as [string[][], FieldPacket[]];
+
+    // REFERENCED_TABLE_SCHEMA is compared here where `listColumns` ignores it,
+    // and the widened scope is why: this read spans every table in the database
+    // at once, so a foreign key into *another* database would otherwise land on
+    // whichever local table happened to share the referenced name. ORDINAL_POSITION
+    // is the column's place within the constraint, which is the key order
+    // `assembleDiagram` takes on trust.
+    const [linkRows] = (await client.query(
+      {
+        sql: `SELECT TABLE_NAME, CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+                FROM information_schema.KEY_COLUMN_USAGE
+               WHERE TABLE_SCHEMA = ?
+                 AND REFERENCED_TABLE_SCHEMA = TABLE_SCHEMA
+               ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION`,
+        rowsAsArray: true,
+      },
+      [database]
+    )) as [string[][], FieldPacket[]];
+
+    return assembleDiagram(
+      columnRows.map((r) => ({
+        table: r[0] as string,
+        name: r[1] as string,
+        dataType: r[2] as string,
+        primaryKey: r[3] === 'PRI',
+      })),
+      linkRows.map((r) => ({
+        table: r[0] as string,
+        constraint: r[1] as string,
+        column: r[2] as string,
+        refTable: r[3] as string,
+        refColumn: r[4] as string,
+      }))
+    );
   },
 
   async query(client, sql, params) {

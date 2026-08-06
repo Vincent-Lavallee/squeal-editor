@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CloseIcon, NewTabIcon, QueryIcon, TableIcon } from '../../common/icons/icons.ts';
+import { CloseIcon, DiagramIcon, NewTabIcon, QueryIcon, TableIcon } from '../../common/icons/icons.ts';
 import type { Tab } from '../../store/tabsSlice.ts';
 import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import * as t from '../../common/tokens';
@@ -264,7 +264,7 @@ export default function TabStrip({ tabs: tabList, activeTabId, onActivate, onClo
         // and not an action offered on hover.
         const showsDot = tab.unsaved === true && hoveredCloseId !== tab.id;
         const shown = active || hovered || tab.unsaved === true;
-        const Icon = tab.kind === 'grid' ? TableIcon : QueryIcon;
+        const Icon = tab.kind === 'grid' ? TableIcon : tab.kind === 'diagram' ? DiagramIcon : QueryIcon;
         // Only while something is actually in flight, and never on the tab
         // being dragged: an insertion mark on the thing you are holding says a
         // move that is no move at all.

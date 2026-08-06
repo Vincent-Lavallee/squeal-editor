@@ -24,6 +24,7 @@ import type {
 } from './config.ts';
 import type {
   ColumnInfo,
+  DiagramTable,
   FunctionInfo,
   QueryResult,
   RowDelete,
@@ -104,6 +105,28 @@ export interface Commands {
   'db.columns': {
     req: { connectionId: string; database: string; table: string; schema?: string };
     res: { columns: ColumnInfo[] };
+  };
+  /**
+   * Every table in a database with its columns and its foreign keys, at once --
+   * what the relationship diagram draws.
+   *
+   * A command of its own rather than `db.tables` plus a `db.columns` per table,
+   * because a diagram is about *all* of them simultaneously: a database of two
+   * hundred tables would be four hundred round trips before one line could be
+   * drawn, and the answer would be assembled from two hundred separately-timed
+   * views of a catalog that may have moved in between. Each driver answers this
+   * with two catalog reads over the whole database.
+   *
+   * It is fetched fresh every time the diagram opens and cached nowhere on this
+   * side, unlike the tree's tables -- see `loadRelationships` in the UI.
+   *
+   * **No layout comes back.** Where a node sits is the webview's business and
+   * the extension has no opinion about pixels, which is why this is shaped as
+   * catalog rather than as a drawing.
+   */
+  'db.relationships': {
+    req: { connectionId: string; database: string };
+    res: { tables: DiagramTable[] };
   };
   /**
    * Run the user's statement, exactly as written.

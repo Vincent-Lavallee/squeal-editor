@@ -10,9 +10,18 @@ import ShortcutsDialog from './ShortcutsDialog.tsx';
 import { useAbout } from './useAbout.ts';
 import { useWindowChrome } from './useWindowChrome.ts';
 
-interface Props { onCheckForUpdates: () => void; }
+interface Props {
+  onCheckForUpdates: () => void;
+  /**
+   * Undefined whenever there is no shell to draw a diagram in -- the connect
+   * screen, or a connection still being added. The *Database* menu is then not
+   * rendered at all, rather than offered and refusing: it is a menu about the
+   * database you are looking at, and there is not one.
+   */
+  onOpenDiagram?: () => void;
+}
 
-export default function Titlebar({ onCheckForUpdates }: Props) {
+export default function Titlebar({ onCheckForUpdates, onOpenDiagram }: Props) {
   const { maximized, minimize, toggleMaximize, close, dragProps } = useWindowChrome();
   const { connected, serverLabel } = useSession();
   const { version, openDataDir } = useAbout();
@@ -28,6 +37,10 @@ export default function Titlebar({ onCheckForUpdates }: Props) {
     { label: 'Export connections', onSelect: () => setShowingExport(true) },
     { label: 'Import connections', onSelect: () => setShowingImport(true) },
     { label: 'Exit', onSelect: close },
+  ];
+
+  const databaseItems = [
+    { label: 'Relationship diagram', onSelect: () => onOpenDiagram?.() },
   ];
 
   const preferencesItems = [
@@ -50,6 +63,7 @@ export default function Titlebar({ onCheckForUpdates }: Props) {
   return (
     <header style={{ display: 'flex', alignItems: 'center', flex: 'none', height: t.TITLEBAR_H, paddingLeft: t.GAP_SM, borderBottom: `1px solid ${t.BORDER}`, userSelect: 'none' }}>
       <Menu label="File" items={fileItems} />
+      {onOpenDiagram && <Menu label="Database" items={databaseItems} />}
       <Menu label="Preferences" items={preferencesItems} />
       <Menu label="About" items={aboutItems} />
       {showingAbout && <AboutDialog version={version} onClose={() => setShowingAbout(false)} />}

@@ -40,8 +40,11 @@ export { isFileEngine } from './config.ts';
 export type {
   CellValue,
   ColumnInfo,
+  DiagramColumn,
+  DiagramTable,
   FilterCondition,
   FilterOperator,
+  ForeignKeyLink,
   ForeignKeyRef,
   FunctionInfo,
   QueryResult,

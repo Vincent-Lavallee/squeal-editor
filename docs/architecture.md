@@ -48,7 +48,7 @@ frontend/             React + Vite → builds into resources/
     icons/            icon bindings, workspace glyphs, the connection colour palette
     db/               engine definitions, environment list
   src/store/          the slices and the session: what every feature shares
-  src/features/       titlebar, connections, explorer, editor, results
+  src/features/       titlebar, connections, explorer, editor, results, diagram
   src/styles/         the design system
 extensions/db/        the process that makes the calls the webview cannot
   main.ts             transport, registry, command handlers

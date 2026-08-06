@@ -59,6 +59,58 @@ export interface ForeignKeyRef {
 }
 
 /**
+ * One foreign-key constraint, whole -- every column of it, in key order.
+ *
+ * `ForeignKeyRef`'s counterpart, and deliberately not the same shape. That one
+ * answers *where does this cell point*, which a composite constraint has no
+ * answer to, so it is dropped. This one answers *what points at what*, where a
+ * composite constraint is a relationship like any other and dropping it would
+ * leave two tables looking unrelated. One catalog, two questions.
+ *
+ * `name` is the constraint's own, so two constraints between the same pair of
+ * tables stay two relationships rather than collapsing into one line.
+ */
+export interface ForeignKeyLink {
+  name: string;
+  columns: string[];
+  refTable: string;
+  /** Absent for MySQL and SQLite, whose database is its schema. */
+  refSchema?: string;
+  /** Parallel to `columns`: the Nth local column points at the Nth of these. */
+  refColumns: string[];
+}
+
+/**
+ * A column as the diagram draws it: enough to label a row and mark a key.
+ *
+ * `ColumnInfo` without its `foreignKey`, and the omission is the point. Which
+ * of a table's columns are foreign keys is read off `DiagramTable.foreignKeys`,
+ * so a composite constraint marks all of its columns rather than none of them.
+ */
+export interface DiagramColumn {
+  name: string;
+  dataType: string;
+  primaryKey: boolean;
+}
+
+/**
+ * One table in the relationship diagram: what it holds, and what it points at.
+ *
+ * Views are absent. A view declares no foreign key and nothing may point at
+ * one, so it could only ever be a node no line reaches -- which is clutter in
+ * the one drawing whose whole subject is the lines.
+ *
+ * `foreignKeys` are the constraints declared *on* this table, never the ones
+ * pointing at it, so every line in the diagram is drawn once by its source.
+ */
+export interface DiagramTable {
+  name: string;
+  schema?: string;
+  columns: DiagramColumn[];
+  foreignKeys: ForeignKeyLink[];
+}
+
+/**
  * A column of a table, as the catalog describes it.
  *
  * `dataType` is the engine's *own* rendering of the type -- `varchar(255)` from

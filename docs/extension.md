@@ -407,6 +407,54 @@ Each engine reads its own catalog for the mapping:
 same `driver.listColumns` call `db.columns` does — there is no separate
 detection for the browsed path to drift from the completion/tree path.
 
+## The whole database at once, for the diagram
+
+`db.relationships` answers a database's every table with its columns and its
+foreign keys, in one call — what the frontend's relationship diagram draws.
+
+**It is a command of its own rather than `db.tables` plus a `db.columns` per
+table**, because a diagram is about all of them simultaneously: two hundred
+tables would be four hundred round trips before one line could be drawn, and the
+answer would be stitched together from two hundred separately-timed views of a
+catalog that may have moved in between. Each driver answers it with **two**
+catalog reads over the whole database — the same two queries `listColumns`
+already makes for one relation, with the relation filter lifted.
+
+SQLite is the exception and cannot be otherwise: it has no catalog to read across
+a database, since `pragma_table_info` and `pragma_foreign_key_list` each take a
+table name. So it loops. That is affordable for the reason the loop exists at all
+— the database is a file on this machine, so each pragma reads pages that are
+already open rather than making a round trip.
+
+**Tables only.** A view declares no foreign key and nothing may reference one, so
+it could only ever be a node no line reaches. Postgres also drops individual
+partitions (`relispartition`), exactly as `listTables` does — they carry their
+parent's columns and would draw the same table N times.
+
+**A composite constraint survives here, where `pickForeignKeys` drops it**, and
+the two answers are a deliberate pair rather than a drift. That one is answering
+for a *cell*, and a cell holds one value, so a fraction of a key is a wrong
+answer. A line between two tables is not a fraction of anything: the tables
+really are related, and dropping the constraint would draw them as strangers.
+`ForeignKeyLink` is therefore the whole constraint — every column, in key order,
+paired position for position with the columns it points at — and
+`assembleDiagram` in `drivers/common.ts` is where the grouping lives so it cannot
+drift per engine, the same footing as `pickRowKey` and `pickForeignKeys` beside
+it. The fixture's `cities` → `regions` is the case that pins both answers at
+once; see `docs/testing.md`.
+
+**A constraint whose target is not among the tables returned is dropped**, since
+a line has to end somewhere the diagram is drawing. That is a cross-database
+foreign key on MySQL, or one into a schema the column read did not cover. MySQL
+is also the one driver that compares `REFERENCED_TABLE_SCHEMA` here where
+`listColumns` ignores it, and the widened scope is why: this read spans every
+table in the database at once, so a foreign key into *another* database would
+otherwise land on whichever local table happened to share the referenced name.
+
+**No layout comes back.** Where a node sits is the webview's business and this
+side has no opinion about pixels, which is why the response is shaped as catalog
+rather than as a drawing.
+
 ## A relation is a name *and* a schema
 
 `Relation` (`{ table, schema? }`) is what every command about one relation

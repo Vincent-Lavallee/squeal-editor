@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type {
   ColumnInfo,
   ConnectionConfig,
+  DiagramTable,
   FilterCondition,
   QueryResult,
   SortOrder,
@@ -255,6 +256,95 @@ describe.each([
     const page = await browse('daily.stats', 0, 'reporting');
     expect(page.result.rows).toHaveLength(1);
     expect(String(page.result.rows[0]![1])).toBe('1');
+  });
+
+  const relationships = async (): Promise<DiagramTable[]> =>
+    ((await h.ok('db.relationships', { connectionId, database: fixtureDb })) as { tables: DiagramTable[] }).tables;
+
+  const diagramTable = (tables: DiagramTable[], name: string): DiagramTable | undefined =>
+    tables.find((table) => table.name === name);
+
+  test('the diagram reads every table of the database in one call', async () => {
+    const tables = await relationships();
+    const names = tables.map((table) => table.name).sort();
+
+    // Every seeded table, whichever schema it is in -- one answer for the whole
+    // database, which is the reason this command exists rather than a call per
+    // table.
+    expect(names).toContain('users');
+    expect(names).toContain('events');
+    expect(names).toContain('regions');
+    expect(names).toContain('cities');
+    expect(names).toContain('logs');
+
+    // A view has no constraint of its own and cannot be referenced, so it would
+    // be a node no line could ever reach.
+    expect(names).not.toContain('active_users');
+  });
+
+  test('a diagram table carries its columns in declaration order, with its keys marked', async () => {
+    const users = diagramTable(await relationships(), 'users');
+
+    expect(users?.columns.map((c) => c.name).slice(0, 3)).toEqual(['id', 'name', 'email']);
+    expect(users?.columns.find((c) => c.name === 'id')?.primaryKey).toBe(true);
+    expect(users?.columns.find((c) => c.name === 'name')?.primaryKey).toBe(false);
+    // The engine's own rendering, not a vocabulary of ours -- the same rule
+    // `db.columns` follows, asked here through a different query.
+    expect(users?.columns.find((c) => c.name === 'name')?.dataType).toBeTruthy();
+  });
+
+  test('a single-column foreign key is one link, named by its own constraint', async () => {
+    const tables = await relationships();
+    const events = diagramTable(tables, 'events');
+
+    expect(events?.foreignKeys).toHaveLength(1);
+    const link = events?.foreignKeys[0];
+    expect(link?.columns).toEqual(['user_id']);
+    expect(link?.refTable).toBe('users');
+    expect(link?.refColumns).toEqual(['id']);
+    expect(link?.refSchema).toBe(expectSchemaQualified ? 'public' : undefined);
+    // A constraint has a name of its own, which is what keeps two constraints
+    // between the same pair of tables from collapsing into one line.
+    expect(link?.name).toBeTruthy();
+
+    // The line is drawn once, by the table that declares it -- `users` does not
+    // report the constraint pointing *at* it.
+    expect(diagramTable(tables, 'users')?.foreignKeys).toEqual([]);
+  });
+
+  test('a composite foreign key survives whole, paired by key position', async () => {
+    // The case `pickForeignKeys` deliberately drops and this deliberately keeps:
+    // a cell holds one of the two values so there is no row to navigate to, but
+    // the tables really are related and drawing them as strangers is worse.
+    const cities = diagramTable(await relationships(), 'cities');
+
+    expect(cities?.foreignKeys).toHaveLength(1);
+    const link = cities?.foreignKeys[0];
+    // In key order, and paired position for position -- `region_code` points at
+    // `code`, which a driver matching the two sides by *name* would get wrong.
+    expect(link?.columns).toEqual(['country', 'region_code']);
+    expect(link?.refTable).toBe('regions');
+    expect(link?.refColumns).toEqual(['country', 'code']);
+
+    // And the cell-level reading of the same constraint still refuses it, which
+    // is what makes these two answers a deliberate pair rather than a drift.
+    const columns = (await h.ok('db.columns', { connectionId, database: fixtureDb, table: 'cities' })) as {
+      columns: ColumnInfo[];
+    };
+    expect(columns.columns.find((c) => c.name === 'region_code')?.foreignKey).toBeUndefined();
+  });
+
+  test('a table nothing references and that references nothing has no links', async () => {
+    const tables = await relationships();
+    expect(diagramTable(tables, 'logs')?.foreignKeys).toEqual([]);
+    expect(diagramTable(tables, 'tags')?.foreignKeys).toEqual([]);
+  });
+
+  test.if(expectSchemaQualified)('a diagram table names the schema it lives in', async () => {
+    const tables = await relationships();
+    expect(diagramTable(tables, 'users')?.schema).toBe('public');
+    // The whole database, not one schema: a table outside `public` is a node too.
+    expect(diagramTable(tables, 'daily_stats')?.schema).toBe('reporting');
   });
 
   test('browsing a table reads it, quoted for the engine', async () => {

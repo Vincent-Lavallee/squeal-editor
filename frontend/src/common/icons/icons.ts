@@ -29,6 +29,7 @@ import {
   RiLeafLine,
   RiLockLine,
   RiLockUnlockLine,
+  RiNodeTree,
   RiRefreshLine,
   RiRocketLine,
   RiShoppingCartLine,
@@ -91,8 +92,12 @@ export const SelectCaretIcon = RiArrowDownSLine;
  *  reads as muted as any other tree glyph. */
 export const KeyIcon = RiKey2Line;
 
-/** A foreign-key cell's affordance to follow it to the row it points at. */
+/** A foreign-key cell's affordance to follow it to the row it points at, and the
+ *  mark on a foreign-key column in the relationship diagram. */
 export const ForeignKeyIcon = RiExternalLinkLine;
+
+/** The relationship diagram, in the Database menu — tables joined by their keys. */
+export const DiagramIcon = RiNodeTree;
 
 /** The pinned group's heading, and a starred table's mark -- always filled:
  *  there is no "unstarred" drawing of this glyph, since an unstarred table

@@ -5362,3 +5362,200 @@ taller than a window, and a dialog whose *Close* has gone off the bottom of the
 screen is one there is no way out of. The clash message stays pinned for the
 same reason it is one line: a refusal named at the top of a list that has been
 scrolled away from is a refusal nobody sees.
+
+---
+
+## The relationship diagram reads the whole database in one call, and remembers nothing about how it looked
+
+Three decisions, and each of them had a plausible alternative that the app's own
+existing rules could have been read as demanding.
+
+**One command, not the tree's calls repeated.** `db.tables` plus a `db.columns`
+per table would have needed no new protocol at all — the diagram could have been
+assembled entirely out of what the tree already fetches. It is refused because a
+diagram is about every table *simultaneously*: two hundred tables is four hundred
+round trips before one line can be drawn, and the picture would be stitched from
+two hundred separately-timed views of a catalog that may have moved in between.
+`db.relationships` is two catalog reads per engine — the same two `listColumns`
+already makes, with the relation filter lifted. SQLite loops instead, because
+`pragma_table_info` takes a table name and there is no database-wide catalog to
+read; that is affordable for the reason the loop exists, since the database is a
+local file and each pragma reads pages that are already open.
+
+**A composite foreign key is kept here and dropped there, on purpose.**
+`pickForeignKeys` refuses one and `assembleDiagram` keeps one, and having two
+answers to "what does this constraint mean" looked like exactly the drift the
+shared assemblers in `drivers/common.ts` exist to prevent. They are answering
+different questions. `ForeignKeyRef` answers *where does this cell point*, and a
+cell holds one value — navigating on a fraction of a key lands on every row
+sharing that fraction, silently, which is the same class of wrong answer
+`pickRowKey` refuses a nullable unique column for. `ForeignKeyLink` answers *what
+points at what*, where a composite constraint is a relationship like any other
+and dropping it would draw two related tables as strangers. The fixture's
+`cities` → `regions` is one test asserting both, so the pair cannot decay into an
+accident — and its local columns are deliberately not named after the ones they
+point at, so a driver pairing the two sides by name rather than by key position
+fails rather than passing by coincidence.
+
+**The arrangement is not remembered, and this is the one that will look wrong
+first.** Every other view preference here survives something — the sidebar's
+width lives as long as the session, the split rides in the session snapshot
+because *which tabs are beside each other* turned out to be part of what you had
+open. A diagram's arrangement is neither. What would have to survive is a
+position per table, and the thing it is a position *of* changes: a table added,
+renamed or dropped leaves a pinned node either stranded or missing, and a
+remembered layout that is right for the schema as it was is a drawing of a
+database that no longer exists. Laying out fresh is also what makes reopening the
+diagram the refresh control, which is why `loadRelationships` is the one list in
+`explorerSlice` with no `condition` — a cached read would show a foreign key added
+since as missing, with nothing anywhere to ask past it. The cost, accepted: a
+diagram you decluttered by hand is decluttered again next time.
+
+**It shipped as a full-bleed overlay and is a tab; see the entry below.** It is
+not a `<Modal>` either way — a modal is a sentence and a pair of buttons, and
+this is a drawing that wants the window.
+
+**The *Database* menu comes and goes, and `connected` is not the test.** The menu
+is about the database you are looking at, so it is absent on the connect screen
+rather than present and inert. The condition is *is the shell on screen*, not *is
+a connection open*: adding a second connection leaves the first one open while
+the shell is not, and gating on `connected` would have offered a diagram with
+nowhere to draw it. macOS is the one platform where it is always present —
+`installMenuBar` builds that bar once at launch from a process that cannot see
+React state — so the item is there and does nothing on the connect screen.
+
+**The diagram draws the tree's database, not the working tab's.** It answers the
+same question the tree answers, and the sidebar's picker is already the control
+that moves it — see *The tree stopped following the tab*. Drawing a pane's
+database instead would let one half of a split silently decide what the whole
+window is looking at, and with two panes on two databases there is no second
+answer for the other half to give.
+
+**Escape listens on `document`, not `window`.** Both work for a real keypress, so
+this is a convention rather than a fix: the menus and the context menu listen on
+`document`, and the UI suite's `pressEscape` dispatches a **non-bubbling**
+`KeyboardEvent` at `document` — which reaches document's own listeners and never
+travels up to `window`. A `window` listener therefore ships working and untestable
+by the seam every other dismissal here is tested through, which is how this one
+was found.
+
+---
+
+## The diagram became a tab, and the objection to it was smaller than it looked
+
+**Why the reversal.** It shipped as a full-bleed overlay on the reading that a
+tab "would have pulled it into session restore, the split, `Tab.kind` and every
+reader keyed by tab id, for a view that is opened, read and closed". Using it is
+what settled the other way: an overlay is a *mode*, and this is a thing you look
+at while working — you want it beside a query, you want two of them on two
+databases, you want to come back to it. Every one of those is a tab, and none of
+them is an overlay.
+
+**The objection was priced wrong, and the reason is worth writing down.** Each
+item on that list turned out to cost a line or nothing:
+
+- `Tab.kind` gained a member and `tabOpened` a branch — a diagram consumes no
+  `Query N` and seeds no text, so it must be taken *before* both existing arms.
+- Session restore needed nothing: `mint` already takes the kind, and the
+  serialiser got a branch only so the snapshot does not claim a diagram tab has
+  `sql: ''`.
+- The split, the drag, the closes, `promoteIfPrimaryEmpty` — all kind-agnostic
+  already, and every one of them took a third kind for free.
+- Nothing is keyed by a diagram tab's id anywhere. `resultsSlice`, `sqlByTab`
+  and the staging maps never hear about it.
+- Two call sites had to learn the kind on top of that: *Duplicate*, which would
+  otherwise have handed back a blank query tab, and the `main-grid` test id,
+  which must keep meaning "the result grid's pane".
+
+**The general lesson**: "it would touch the tab machinery" is a cost estimate,
+and the estimate is only worth anything once the machinery is checked for
+whether it is keyed by *kind* or by *tab*. Here almost all of it was the latter,
+which is exactly what the split and the close-set work had already made true —
+the earlier decisions had already paid for this one.
+
+**What it settled for free.** *Which database does the diagram draw* had been
+its own question, answered with "the tree's". A tab carries `Tab.database`, so
+the answer is now the same one every other tab gives, and being *born* on the
+tree's database is the rule a table clicked in the tree already followed. It
+gets the grid tab's answer on pickers too: no picker at all, because it is about
+the database it was opened on for as long as it is open.
+
+**Escape stopped closing it, and that is the point of it being a tab.** The tab's
+× is the close. A view that also answered Escape would be a second way out of
+something the strip already closes, and Escape closing a *tab* is not a gesture
+this app has anywhere else.
+
+---
+
+## The node drag: four defects behind one report, and only one of them was the drag code
+
+Reported as "having trouble picking / dropping". Four separate causes, which is
+the useful part — a drag that feels unreliable is rarely one bug:
+
+1. **The canvas panned at the same time.** The pane below pans on its own
+   pointerdown, and a press on a node bubbles to it, so both gestures ran: the
+   node followed the pointer while the canvas scrolled the other way underneath
+   it. The visible result is a node moving at roughly half speed under a view
+   sliding away, which reads as the app fighting you. `stopPropagation` on the
+   node's pointerdown is the whole fix, and it is asserted on the canvas'
+   `scrollLeft` — the only thing that shows it.
+2. **Pointer capture is not enough on a re-rendering element.** The listeners
+   were on the node, which re-renders on every frame of its own drag; a captured
+   element that re-renders can lose the capture, and the pointer is then over a
+   *sibling* node with the drag stopped halfway. They are on `window` now. The
+   capture request stays, because it keeps the cursor right window-wide.
+3. **`touch-action` defaulted to letting the browser take the gesture.** A few
+   pixels in, a precision trackpad or a touchscreen is a pan as far as the
+   browser is concerned; it fires `pointercancel` and the node stops dead. Also
+   why `pointercancel` is now handled and is deliberately *not* a click — it is
+   the OS taking the gesture away, not the user completing one.
+4. **The dragged node painted behind its neighbours.** Dragging across a taller
+   table put it underneath, which reads as having dropped it somewhere it cannot
+   be seen. A `z-index` while dragging.
+
+`CLICK_SLOP` also went from 4px to 5px. The node is both the handle and the way
+into the table, so the two gestures are told apart by distance alone, and the
+asymmetry matters: a press that drifts a pixel is a click every user meant as
+one, while the cost of guessing wrong is a tab nobody asked for.
+
+**The zoom had a fifth, found on the way.** Ctrl+wheel was an `onWheel` prop, and
+React registers its root wheel listener as **passive** — so `preventDefault`
+there does nothing and the webview zoomed *itself* on top of the diagram,
+leaving the whole app scaled with no obvious way back. It is a native listener
+with `passive: false` now. A bare wheel still scrolls, because taking that away
+is the one thing every canvas that does it is complained about for.
+
+---
+
+## A node dragged out of bounds, and why the two directions are two different bugs
+
+Reported as dragging a table offscreen and not being able to scroll back to it.
+It is two defects wearing one symptom, and separating them is what makes the fix
+small:
+
+**Outward, the canvas did not follow.** The scroll extent came from
+`layoutDiagram`'s pristine positions, so the sized element — the one carrying the
+dot grid — stayed the size of the arrangement as first drawn. Reachability
+survived by accident: an absolutely-positioned node extends its scroll
+container's `scrollWidth` on its own, so you *could* scroll to it. What you found
+there was the node sitting on bare background past the end of its own canvas.
+`extentOf` is asked of the **placed** nodes now — laid out plus dragged — so the
+surface grows to include them and shrinks again when they come back.
+
+**Inward past zero, it was genuinely lost.** There is no negative scroll region,
+so a node at a negative coordinate is somewhere no scrollbar can reach: dragged
+up and left, it went to −2827px and stayed there. Nothing can grow to cover that,
+so the drag floors the offset at `-node.x`/`-node.y` and the node pins against
+the canvas' corner instead.
+
+**`layoutDiagram` stopped reporting a width and height at all**, and that is the
+structural half of the fix rather than a tidy-up. How much room the drawing needs
+is a question about where the nodes *are*, which stops being the layout's answer
+the moment one is dragged — so `extentOf` is the one function that answers it and
+there is no second number to disagree. Two sources for one fact is the whole bug.
+
+**Both halves were confirmed to fail against the old code before being kept**,
+and that is what caught a bad first assertion: the test originally asserted
+`scrollWidth` grew, which passed *before* the fix for the accident above. It
+asserts the sized element's own width instead — the thing that actually did not
+follow. A test that passes against the code it was written for is not evidence.

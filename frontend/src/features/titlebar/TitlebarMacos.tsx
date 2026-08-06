@@ -48,7 +48,18 @@ const dotBase: React.CSSProperties = {
   flex: 'none',
 };
 
-export default function TitlebarMacos() {
+interface Props {
+  /**
+   * Undefined whenever there is no shell to draw a diagram in. The native menu
+   * item cannot come and go the way the Windows one does -- `installMenuBar`
+   * builds the bar once, at launch, from a process that cannot see React state
+   * -- so on macOS the item is always there and does nothing on the connect
+   * screen. That is the one place the two titlebars deliberately differ.
+   */
+  onOpenDiagram?: () => void;
+}
+
+export default function TitlebarMacos({ onOpenDiagram }: Props) {
   const { maximized, minimize, toggleMaximize, close, dragProps } = useWindowChrome();
   const { connected, serverLabel } = useSession();
   const { version, openDataDir } = useAbout();
@@ -68,6 +79,7 @@ export default function TitlebarMacos() {
         case 'exportConnections': setShowingExport(true); break;
         case 'importConnections': setShowingImport(true); break;
         case 'shortcuts': setShowingShortcuts(true); break;
+        case 'relationshipDiagram': onOpenDiagram?.(); break;
         case 'checkForUpdates': check(true); break;
         case 'about': setShowingAbout(true); break;
         case 'openDataDir': openDataDir(); break;
@@ -75,7 +87,7 @@ export default function TitlebarMacos() {
     }
     window.addEventListener('squeal:menu', onNativeMenu);
     return () => window.removeEventListener('squeal:menu', onNativeMenu);
-  }, [close, check, openDataDir]);
+  }, [close, check, openDataDir, onOpenDiagram]);
 
   const dot = (colour: string, hoverColour: string, name: string, symbol: React.ReactNode) => (
     <button

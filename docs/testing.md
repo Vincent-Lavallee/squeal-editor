@@ -54,7 +54,7 @@ discovers every `*.test.ts` — the script name cannot override it. The UI suite
 would therefore try to launch a window on a bare `bun test`, so it opts out
 behind `SQUEAL_UI=1` (set by `test:ui`, along with a longer timeout, because
 launching the app blows past Bun's 5s default hook timeout). Expect
-`404 pass / 158 skip` from a bare run, and `133 pass` in ~365s from `test:ui`.
+`425 pass / 178 skip` from a bare run, and `150 pass` in ~385s from `test:ui`.
 
 **`test:ui` builds the extension too, and driving the app by hand must as well.**
 `build:ext` compiles `extensions/db/squeal-db-ext.exe`, which is what
@@ -124,6 +124,16 @@ page, and page 2 a partial one. It is also why there is no 100-row table: browse
 it from row 51 and a *full* page comes back with nothing after it, which is
 precisely the case the old "a full page means there is more" guess got wrong.
 A fixture sized to make the bug reachable beats a second table.
+
+`cities` → `regions` is the **composite** foreign key, and it pins two
+deliberately different readings of one constraint: `pickForeignKeys` drops it (a
+cell holds one of its two values, so there is no single row to navigate to) while
+`assembleDiagram` keeps it (the tables really are related, and a diagram that
+dropped it would draw them as strangers). One test asserts both at once, which is
+what stops the pair from decaying into an accident. Its local columns are
+deliberately *not* named after the ones they point at — `region_code` → `code` —
+so a driver pairing the two sides by name rather than by key position fails here
+instead of passing by coincidence.
 
 The SQLite seed carries one shape the other two do not have to: `users.id` is
 `INTEGER PRIMARY KEY` **deliberately**, because that is the rowid alias whose

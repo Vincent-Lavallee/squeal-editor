@@ -24,7 +24,7 @@ import type { TableFilter } from '../../../shared/protocol/index.ts';
  */
 export interface SessionSnapshot {
   tabs: Array<{
-    kind: 'editor' | 'grid';
+    kind: 'editor' | 'grid' | 'diagram';
     /**
      * Which database this tab was pointed at. Absent on a snapshot written
      * while the database was the connection's, which reads as "it was on the

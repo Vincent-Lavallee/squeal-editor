@@ -18,6 +18,15 @@
  * UNIQUE NOT NULL column and no primary key (so its identity is the unique key),
  * and `logs` has neither (so the grid must stay read-only against it).
  *
+ * `cities` -> `regions` is the **composite** foreign key, and it is the pair the
+ * two readings of a constraint pull apart on: `pickForeignKeys` drops it (a cell
+ * holds one of its two values, so there is no row to navigate to) while
+ * `assembleDiagram` keeps it (the tables really are related, and a diagram that
+ * dropped it would draw them as strangers). Its local columns are deliberately
+ * *not* named after the ones they point at -- `region_code` -> `code` -- so a
+ * driver pairing the two sides by name rather than by key position fails here
+ * instead of passing by coincidence.
+ *
  * `reporting."daily.stats"` has a dot in its *own* name, beside a
  * `reporting.daily_stats` that does not. It is the case that cannot be addressed
  * by splitting a display string -- `reporting.daily.stats` has no correct split
@@ -59,6 +68,16 @@ INSERT INTO reporting."daily.stats" VALUES ('2026-01-06', 1);
 CREATE TABLE events (id serial primary key, label text, user_id int REFERENCES users(id));
 INSERT INTO events (label) SELECT 'e' || g FROM generate_series(1, 150) g;
 UPDATE events SET user_id = (SELECT id FROM users WHERE name = 'Ada') WHERE label = 'e1';
+CREATE TABLE regions (country text, code text, name text, PRIMARY KEY (country, code));
+INSERT INTO regions VALUES ('fr', 'idf', 'Ile-de-France');
+CREATE TABLE cities (
+  id serial primary key,
+  country text,
+  region_code text,
+  name text,
+  FOREIGN KEY (country, region_code) REFERENCES regions (country, code)
+);
+INSERT INTO cities (country, region_code, name) VALUES ('fr', 'idf', 'Paris');
 CREATE TABLE tags (label text NOT NULL UNIQUE, weight int);
 INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
 CREATE TABLE logs (msg text);
@@ -120,6 +139,21 @@ WITH RECURSIVE series AS (
 )
 SELECT CONCAT('e', n) FROM series;
 UPDATE events SET user_id = (SELECT id FROM users WHERE name = 'Ada') WHERE label = 'e1';
+CREATE TABLE regions (
+  country varchar(2),
+  code varchar(10),
+  name varchar(50),
+  PRIMARY KEY (country, code)
+);
+INSERT INTO regions VALUES ('fr', 'idf', 'Ile-de-France');
+CREATE TABLE cities (
+  id int auto_increment primary key,
+  country varchar(2),
+  region_code varchar(10),
+  name varchar(50),
+  FOREIGN KEY (country, region_code) REFERENCES regions (country, code)
+);
+INSERT INTO cities (country, region_code, name) VALUES ('fr', 'idf', 'Paris');
 CREATE TABLE tags (label varchar(50) NOT NULL UNIQUE, weight int);
 INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
 CREATE TABLE logs (msg varchar(100));
@@ -180,6 +214,16 @@ WITH RECURSIVE series(n) AS (
 )
 SELECT 'e' || n FROM series;
 UPDATE events SET user_id = (SELECT id FROM users WHERE name = 'Ada') WHERE label = 'e1';
+CREATE TABLE regions (country TEXT, code TEXT, name TEXT, PRIMARY KEY (country, code));
+INSERT INTO regions VALUES ('fr', 'idf', 'Ile-de-France');
+CREATE TABLE cities (
+  id INTEGER PRIMARY KEY,
+  country TEXT,
+  region_code TEXT,
+  name TEXT,
+  FOREIGN KEY (country, region_code) REFERENCES regions (country, code)
+);
+INSERT INTO cities (country, region_code, name) VALUES ('fr', 'idf', 'Paris');
 CREATE TABLE tags (label TEXT NOT NULL UNIQUE, weight INT);
 INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
 CREATE TABLE logs (msg TEXT);

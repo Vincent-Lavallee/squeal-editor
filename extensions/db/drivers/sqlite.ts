@@ -3,7 +3,10 @@ import { Database as SqliteDatabase } from 'bun:sqlite';
 import type { CellValue } from '../../../shared/protocol/index.ts';
 import type { Driver } from './driver.ts';
 import {
+  type DiagramColumnPart,
+  type DiagramLinkPart,
   type KeyPart,
+  assembleDiagram,
   describeOk,
   pickForeignKeys,
   pickRowKey,
@@ -205,6 +208,84 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
       primaryKey: Number(r[2]) > 0,
       foreignKey: foreignKeys.get(r[0] as string),
     }));
+  },
+
+  /**
+   * The one engine that answers this a table at a time, because SQLite has no
+   * catalog to read across one: `pragma_table_info` and `pragma_foreign_key_list`
+   * each take a table name. That is a loop where the other two run two queries,
+   * and it is affordable for the reason the loop exists -- a SQLite database is
+   * a file on this machine, so each pragma is a read of already-open pages
+   * rather than a round trip.
+   */
+  async listRelationships(client) {
+    const tables = sqliteRows(
+      client,
+      `SELECT name FROM sqlite_master
+        WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+        ORDER BY name`
+    ).map((r) => r[0] as string);
+
+    // A `REFERENCES parent` with no column names means the parent's primary key,
+    // matched position for position -- so the parent's key is resolved once per
+    // parent, not once per constraint that points at it.
+    const primaryKeys = new Map<string, string[]>();
+    const primaryKeyOf = (table: string): string[] => {
+      let key = primaryKeys.get(table);
+      if (!key) {
+        key = sqliteRows(client, 'SELECT name FROM pragma_table_info(?) WHERE pk > 0 ORDER BY pk', [table]).map(
+          (r) => r[0] as string
+        );
+        primaryKeys.set(table, key);
+      }
+      return key;
+    };
+
+    const columns: DiagramColumnPart[] = [];
+    const links: DiagramLinkPart[] = [];
+
+    for (const table of tables) {
+      for (const r of sqliteRows(client, 'SELECT name, type, pk FROM pragma_table_info(?)', [table])) {
+        columns.push({
+          table,
+          name: r[0] as string,
+          dataType: r[1] as string,
+          primaryKey: Number(r[2]) > 0,
+        });
+      }
+
+      // `id` groups a constraint's columns and `seq` orders them within it, which
+      // is the key order the other two engines get from an ORDER BY.
+      const byConstraint = new Map<string, unknown[][]>();
+      for (const r of sqliteRows(client, 'SELECT id, seq, "table", "from", "to" FROM pragma_foreign_key_list(?)', [table])) {
+        const parts = byConstraint.get(String(r[0])) ?? [];
+        parts.push(r);
+        byConstraint.set(String(r[0]), parts);
+      }
+
+      for (const [id, parts] of byConstraint) {
+        const ordered = [...parts].sort((a, b) => Number(a[1]) - Number(b[1]));
+        const refTable = ordered[0]![2] as string;
+        const resolved = ordered.map((r) => (r[4] as string | null) ?? primaryKeyOf(refTable)[Number(r[1])]);
+        // The whole constraint is dropped rather than half of it: a parent whose
+        // key is narrower than the reference leaves a column pointing at nothing,
+        // and a line drawn from a key we had to guess at is worse than no line.
+        if (resolved.some((column) => column === undefined)) continue;
+        for (const [at, r] of ordered.entries()) {
+          links.push({
+            table,
+            // SQLite names no constraint, so its own index for the table is the
+            // identity -- which is what keeps two references to one parent apart.
+            constraint: `fk_${id}`,
+            column: r[3] as string,
+            refTable,
+            refColumn: resolved[at]!,
+          });
+        }
+      }
+    }
+
+    return assembleDiagram(columns, links);
   },
 
   async query(client, sql, params) {

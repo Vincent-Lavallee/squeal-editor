@@ -69,6 +69,18 @@ export const VEIL_DEEP = '#111113e6';
  */
 export const VEIL_BLUR = 12;
 
+/**
+ * The dot of the relationship diagram's canvas grid.
+ *
+ * Not a second surface and not a border: it is a *texture* on the one
+ * background, and the only thing it means is "this area pans and zooms" -- which
+ * is a real fact about the one view that has it, not decoration. Grayscale, so
+ * rule 2 holds. Same white-at-low-alpha family as HOVER and VEIL_SHEEN, a step
+ * up from HOVER because a 4% dot at 24px spacing is invisible and a grid nobody
+ * can see is worse than none.
+ */
+export const CANVAS_DOT = '#ffffff1a';
+
 /* ---- Text ---- */
 export const TEXT = '#edeef0'; /* slate-12: primary */
 export const TEXT_MUTED = '#b0b4ba'; /* slate-11: labels, axes, secondary */

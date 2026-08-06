@@ -70,6 +70,13 @@ function snapshotFor(state: RootState, connectionId: string): SessionSnapshot {
         const filter = browsed ? browsed.filter : (tab.filter ?? null);
         return { kind: tab.kind, database: tab.database, table: tab.table, schema: tab.schema, title: tab.title, filter, pane: tab.pane };
       }
+      // A diagram holds nothing but the database it is about, so that is all
+      // that is written down. Falling through to the editor shape below would
+      // store an `sql: ''` that is not a fact about this tab and that the
+      // restore would then have to know to ignore.
+      if (tab.kind === 'diagram') {
+        return { kind: tab.kind, database: tab.database, title: tab.title, pane: tab.pane };
+      }
       return {
         kind: tab.kind,
         database: tab.database,

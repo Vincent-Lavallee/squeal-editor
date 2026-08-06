@@ -106,16 +106,6 @@ Things that do not exist yet.
   and whatever key it takes has to be rebound inside the editor too — the way
   running already is — or Monaco eats it first.
 
-- **Relationship diagram** — Understanding how tables relate means reading DDL
-  or reaching for another tool, because nothing in the app shows foreign keys
-  at all — the tree only marks primary keys. Add a diagram, opened from a new
-  top-level menu item, laying out every table in the current database with
-  their columns and primary/foreign keys marked, connected by lines for each
-  FK. Clicking a table node opens that table the same way clicking it in the
-  tree does; nodes can be dragged to declutter an auto-layout, but the
-  arrangement is not remembered — it lays out fresh each time the diagram is
-  opened.
-
 - **Linux AppImage release** — Linux ships no release download at all right now
   — the raw zip it used to carry had no desktop integration (no icon in the
   launcher, no .desktop entry, nothing), which was worse than nothing, so it

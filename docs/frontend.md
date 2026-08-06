@@ -50,6 +50,7 @@ src/features/
                         format + useSqlFormatter, useEditorKeybindings (Monaco's own commands, on our chords)
   results/              ResultsTable, StatementTabs, FilterBar, JsonCellDrawer,
                         ResultsContext (useResultsView), useResults
+  diagram/              RelationshipDiagram, layout (pure), useDiagram
   statusbar/            StatusBar + ReadOnlyConfirm: the bottom bar and its lock
   updater/              UpdateBanner, useUpdater: the found-update strip
 src/neutralino.d.ts     ambient types for the global Neutralino client
@@ -89,7 +90,10 @@ that lives apart from its values is two sources for one fact.
 | which database the tree is browsing, **per connection** (`treeDatabases`) | `Shell` local state | never left |
 | the tree's expansion, schema flips and filter text, **per database** | `Sidebar` local state | never left |
 | `tabs`, `activeTabId`, `secondaryActiveTabId`, `kind`, `pane`, `title`, a grid tab's `filter` seed, an editor tab's `savedQueryId` | `tabs` slice | never left, but see above |
-| `databases`, `tables`, `columns`, `stars` | `explorer` slice | crossed |
+| `databases`, `tables`, `columns`, `stars`, `relationships` | `explorer` slice | crossed |
+| that a diagram has been *asked for*, as a counter | `App` local state | never left, and is an event rather than a state |
+| where a diagram node has been dragged to, the canvas' zoom, which node is being dragged | `RelationshipDiagram` local state | never left, and is gone when the tab leaves the front |
+| the diagram's own fetch: whether it is waiting, and why it failed | `RelationshipDiagram` local state | lives and dies with one open — see *The relationship diagram* |
 | `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), the `sql` the result came from, per statement, per tab | `results` slice | crossed |
 | which of a tab's statements is on screen, and how many the run held | `results` slice | never left, but it is the key its results are held under |
 | staged cell edits + row deletes, per tab (+ `saving`, `saveError`) | `results` context | never left, until Save |
@@ -1156,6 +1160,148 @@ not need to be: an untouched draft derives itself from `browse.filter`
 ran the moment the freshly opened tab reads it back — one `browseTable` carrying
 the filter is the whole of the wiring, the same as `applyFilter` beside it.
 
+## The relationship diagram
+
+*Database → Relationship diagram* opens a **tab** drawing every table of a
+database with its columns, marking the primary and foreign keys, and joining
+them with a line per foreign key. Clicking a node opens that table exactly as
+clicking it in the tree does; nodes can be dragged to declutter the arrangement.
+
+**It is the third `Tab.kind`, and it is the thinnest.** A diagram tab holds
+nothing but the database it is about — which `Tab.database` already carries — so
+there is no text to save, no rows to browse and nothing anywhere keyed by its
+id. That is what made it cheap enough to be a tab: every reader it touches
+either ignores it or already had an answer for a grid tab. It shipped as a
+full-bleed overlay first; see `docs/decisions.md` for what changed.
+
+**The tab is what says which database.** `Tab.database` is the only thing that
+decides what is drawn, the same field `runQuery` and `browseTable` read one
+level down. So two diagrams on two databases are two ordinary tabs, and a
+diagram is about the database it was opened on for as long as it is open —
+**the grid tab's answer exactly**, which is why it also has no database picker.
+It is *born* on the tree's database, the same rule a table clicked in the tree
+follows: the menu belongs to no pane and no tab, so the only database it can
+mean is the one being looked at.
+
+**Opening it travels as a counter, not a flag.** The titlebar is rendered beside
+`Shell`, not inside it, so `App` is the only thing that can see both — it holds
+`diagramRequest` and `Shell` opens a tab when it changes. A counter for
+`focusFilter`'s reason: what travels is the *asking*, there is no "off" state a
+boolean could return to, and asking twice means two tabs, which is the answer
+clicking a table twice already gives. `Shell` compares against a ref rather than
+keying an effect on the number alone, or the effect fires on mount and opens a
+diagram nobody asked for.
+
+`App` passes `onOpenDiagram` down only while the shell is actually showing,
+which is what makes the *Database* menu absent on the connect screen rather than
+present and inert. `connected` alone would get that wrong: adding a second
+connection leaves the first one open while the shell is not.
+
+**The layout is arithmetic, in `layout.ts`, and nothing there touches the DOM.**
+A node's height is its column count, so where every box and every line goes is
+decided before anything paints — no measuring, no refs, no second pass. Three
+bands top to bottom: clusters of related tables laid out as columns of
+increasing dependency depth (a table that references nothing on the left, what
+hangs off it to the right), largest cluster first, then every table that neither
+references nor is referenced packed into a block. One barycentre pass orders each
+column against the one before it, which is enough — the result only has to beat
+alphabetical, and dragging is there for what is left.
+
+**A cycle contributes depth 0 rather than recursing.** Two tables referencing
+each other is legal and a self-reference is common, so the walk marks what it is
+resolving and treats a re-entry as zero: an arbitrary answer where the honest one
+does not exist, and a bounded one.
+
+**Lines are anchored on columns, not on boxes**, which is the whole reason a node
+draws its columns at all — four foreign keys into one parent would otherwise be
+four lines between the same two points. A composite key draws one line per
+column, so a two-column constraint reads as two columns. A self-reference is a
+loop off the node's right edge.
+
+**Dragging and opening are one gesture told apart by distance.** The node is both
+the handle and the way in, so the click is decided on release: under `CLICK_SLOP`
+px of travel opens the table, past it the node has moved. The table opens in
+front and the diagram stays where it was, a tab like any other — nothing is
+dismissed by the thing it opened.
+
+**Four things make the drag work, and each of them was a way it did not.**
+
+- **The node's pointerdown stops propagating.** The canvas pans on its own
+  pointerdown and a press on a node bubbles to it, so both ran at once: the node
+  chased the pointer while the canvas scrolled the opposite way underneath it,
+  and the node crawled at half speed under a view sliding out from under it.
+  That is the whole of what "hard to pick up" was.
+- **The move and up listeners are on `window`, not on the node.** Pointer
+  capture is requested but a captured element that re-renders — which this one
+  does, every frame of a drag — can lose it, and the pointer is then over a
+  *sibling* node with the drag stopped dead halfway.
+- **`touch-action: none` on the node.** Without it the browser claims the
+  gesture as a pan a few pixels in and fires `pointercancel`, which reads as the
+  drag being flaky rather than as the browser having taken it. `pointercancel`
+  is handled too, and is deliberately not a click: it is the OS taking the
+  gesture away, not the user finishing one.
+- **The dragged node is lifted.** Without a `z-index` it slides *behind* a
+  taller neighbour it is dragged across, and the gesture reads as the node
+  having been dropped somewhere it cannot be seen.
+
+**A node may be dragged out of the drawing's bounds, and the two directions
+break differently.** Outward, the canvas follows: `extentOf` is asked of the
+*placed* nodes rather than of the layout, so the sized element — the one the dot
+grid is painted on — grows to include whatever has been dragged past its edge,
+and shrinks again when it comes back. Inward past zero, there is nothing to grow:
+a scroll container has no negative region, so a node at a negative coordinate is
+somewhere nothing can scroll to. The drag floors the offset at `-node.x`/`-node.y`
+instead, which pins the node against the canvas' own corner.
+
+**`layoutDiagram` deliberately reports no extent.** How much room the drawing
+needs is a question about where the nodes *are*, and that stops being the
+layout's answer the moment one is dragged — so there is one function that answers
+it, asked of the current positions. Two sources for that number is precisely the
+bug above.
+
+**The arrangement is not remembered, and that is a decision rather than an
+omission.** `layoutDiagram` runs fresh on every mount — which now includes every
+switch away from the tab and back, since only the active tab's pane is rendered
+— and the drag offsets go with it. Anything remembered would have to survive a
+table being added, renamed or dropped, and a diagram that reopens with a node
+pinned where a table no longer is is worse than one that arranges itself. The
+offsets are cleared by an effect keyed on the layout, so a new arrangement never
+inherits offsets measured against the old one.
+
+**The canvas wears a dotted grid**, `--canvas-dot` at `GRID_SPACING`. It rides
+on the *sized* element rather than the scaled one, so it scrolls with the content
+and its spacing scales with the zoom while each dot stays 1px — which is what
+makes zooming read as moving a camera over a canvas rather than as the picture
+being redrawn at another size. The element takes `max(drawing, 100%)` in both
+axes, or a diagram narrower than the pane leaves bare background beside it and
+the canvas stops looking like one.
+
+**Ctrl+wheel zooms through a native listener with `passive: false`.** React
+registers its root wheel listener as passive, where `preventDefault` does
+nothing — so the webview would zoom *itself* on top of this, leaving the whole
+app scaled with no obvious way back. A bare wheel scrolls, because taking that
+away is the one thing every canvas that does it is complained about for.
+
+**The fetch is uncached and the wait is local.** `loadRelationships` carries no
+`condition`, unlike every other list in `explorerSlice`: the tree's tables are
+re-read on every database switch so a cache is what keeps that off the bridge,
+while the diagram is opened by hand and is *about* the shape of the schema right
+now. Reopening it is the refresh control, which is why there is no other one. The
+tables land in the slice because they crossed; the spinner and the error stay in
+the component, the call `refreshDatabases` already makes for the picker — they
+have no second reader and die with the view.
+
+**Views are not nodes.** A view declares no foreign key and nothing may reference
+one, so it could only ever be a box no line reaches — clutter in the one drawing
+whose entire subject is the lines. The extension answers that; see
+`docs/extension.md`.
+
+**It rides in the session snapshot, and carries only its database.** The
+serialiser has a branch of its own for it rather than falling through to the
+editor shape, which would store an `sql: ''` that is not a fact about the tab
+and that the restore would then have to know to ignore. Nothing else needed
+changing: `mint` takes the kind, and a diagram tab reopens and re-reads.
+
 ## Sorting by a column header
 
 Clicking a grid header sorts the result by that column. It works on **both** kinds
@@ -2218,11 +2364,14 @@ Two things there are load-bearing:
    arrive as two props**, one on each side of the gesture: `SavedQueriesButton`
    takes `onOpen` and `EditorPane` takes `onSaveQuery`, because opening one spans
    the tabs, the editor and the queries slice, and saving spans the same three
-   back the other way.
+   back the other way. **The diagram is the sixth**, and it is the plainest of
+   them: clicking a node opens a table, which is the very first example on this
+   list, so `RelationshipDiagram` takes `onOpenTable` and `Shell` hands it the
+   same handler the tree gets, with the close wrapped around it.
 2. **Components never touch `dispatch` or `call` directly.** Each feature exports
-   one hook — `useExplorer`, `useResults`, `useEditor`, plus app-level
-   `useSession` and `useTabs` — and that hook is the feature's whole public
-   surface.
+   one hook — `useExplorer`, `useResults`, `useEditor`, `useDiagram`, plus
+   app-level `useSession` and `useTabs` — and that hook is the feature's whole
+   public surface.
 3. **The session and the tab list live in `store/`, not in a feature.** Every
    feature reads them, so no feature could own them without becoming a hub in
    everything but name. `features/connections` owns the *screen you connect
@@ -2235,6 +2384,12 @@ has to reach the connect screen with connections still open, so "there is a
 connection" and "show the shell" became different questions. `adding` lives in
 `App` and is dismissed by watching `activeConnectionId` change — never by hooking
 a connect handler, of which there are already two.
+
+That distinction is what the *Database* menu is gated on, and it is the reason
+the gate is not `connected`: the menu is offered only while the shell is actually
+showing, so adding a second connection — first still open, shell not on screen —
+takes it away rather than offering a diagram with nowhere to draw. `showingDiagram`
+sits beside `adding` for the same reason and is reset by the same effect.
 
 **A rail chip right-clicks to *Disconnect*, and that is the second way out.** The
 first is the status bar's button, bottom-left, which is where it has always

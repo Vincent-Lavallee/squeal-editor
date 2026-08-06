@@ -7,6 +7,7 @@ import { useSavedQueries } from './store/savedQueriesSlice.ts';
 import { useSession } from './store/sessionSlice.ts';
 import { useShortcuts } from './store/settingsSlice.ts';
 import { useTabs, type CloseIntent, type Tab } from './store/tabsSlice.ts';
+import { RelationshipDiagram } from './features/diagram/index.ts';
 import { EditorPane, useEditor, useEditorKeybindings, useSqlCompletion, useSqlFormatter } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
 import { SaveQueryDialog, SavedQueriesButton } from './features/queries/index.ts';
@@ -30,20 +31,30 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-interface Props { onAddConnection: () => void; }
+interface Props {
+  onAddConnection: () => void;
+  /**
+   * A counter the titlebar's *Relationship diagram* bumps, because the menu is
+   * `App`'s child and the tab it opens is this one's — see `App.tsx`. A counter
+   * and not a flag for `focusFilter`'s reason: opening is an *event*, there is
+   * no "off" state for a boolean to come back to, and asking twice has to mean
+   * two tabs, which is the answer clicking a table twice already gives.
+   */
+  openDiagramRequest: number;
+}
 
-export default function Shell({ onAddConnection }: Props) {
+export default function Shell({ onAddConnection, openDiagramRequest }: Props) {
   return (
     <ResultsProvider>
-      <ShellLayout onAddConnection={onAddConnection} />
+      <ShellLayout onAddConnection={onAddConnection} openDiagramRequest={openDiagramRequest} />
     </ResultsProvider>
   );
 }
 
-function ShellLayout({ onAddConnection }: Props) {
+function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
   const {
     tabs, activeTab, activeTabId, secondaryTabs, secondaryActiveTab, secondaryActiveTabId,
-    openGridTab, openEditorTab, openSavedQueryTab, setDatabase, markTabSaved, database,
+    openGridTab, openEditorTab, openSavedQueryTab, openDiagramTab, setDatabase, markTabSaved, database,
     activateTab, closeIdsFor, closeTabs, connectionTabs, moveTab, renameTab,
   } = useTabs();
   const { dialect, disconnect, activeConnectionId } = useSession();
@@ -399,6 +410,25 @@ function ShellLayout({ onAddConnection }: Props) {
   }, [secondaryActiveTab, secondaryNeedsBrowse, browseInSecondary]);
 
   /*
+   * The titlebar's *Relationship diagram*, arriving as a bumped counter.
+   *
+   * It opens on **the database the tree is showing**, for the reason a table
+   * clicked in the tree does below: the menu belongs to no pane and no tab, so
+   * the only database it can mean is the one being looked at. Into the pane
+   * being worked in, the rule every control attached to no pane follows.
+   *
+   * The ref is what makes a counter a counter: an effect keyed on it alone
+   * would also fire on mount, opening a diagram nobody asked for the moment a
+   * connection appears.
+   */
+  const lastDiagramRequest = useRef(openDiagramRequest);
+  useEffect(() => {
+    if (openDiagramRequest === lastDiagramRequest.current) return;
+    lastDiagramRequest.current = openDiagramRequest;
+    openDiagramTab(treeDatabase, workingPane);
+  }, [openDiagramRequest, openDiagramTab, treeDatabase, workingPane]);
+
+  /*
    * A table clicked in the tree opens on **the database the tree is showing**,
    * never on whatever the tab in front happens to be pointed at. The two are
    * now separate facts by design, so this is the whole of how a table reached
@@ -482,11 +512,18 @@ function ShellLayout({ onAddConnection }: Props) {
       else browseInPrimary(id, tab.table, 0);
       return;
     }
+    // A diagram has nothing to carry across but the database it is about, so a
+    // copy is simply another one of it -- and it must be taken before the
+    // editor branch below, which would otherwise hand back a blank query tab.
+    if (tab.kind === 'diagram') {
+      openDiagramTab(tab.database, tab.pane);
+      return;
+    }
     // Seeded at birth, the way a definition tab is: the model reads the tab's
     // text when it is created, so this is not a write into a live editor, and a
     // copy nobody has touched yet is not a tab holding unsaved work.
     openEditorTab(undefined, peekSql(tabId) ?? '', tab.database, tab.pane);
-  }, [tabs, secondaryTabs, openGridTab, openEditorTab, browseInPrimary, browseInSecondary, peekSql]);
+  }, [tabs, secondaryTabs, openGridTab, openEditorTab, openDiagramTab, browseInPrimary, browseInSecondary, peekSql]);
 
   /*
    * Saved queries span the tabs, the editor's text and the queries slice, so both
@@ -590,11 +627,12 @@ function ShellLayout({ onAddConnection }: Props) {
    * long as it is open. Reaching the same table under another database is
    * pointing the tree there and clicking it again, which is a second tab
    * rather than the first one changing underneath the rows already on screen.
-   * See `docs/decisions.md`.
+   * See `docs/decisions.md`. A diagram tab is the same answer, one level up:
+   * it is about the database it was opened on, for as long as it is open.
    */
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <ConnectionRail onAdd={onAddConnection} />
 
       <div style={{ display: 'grid', gridTemplateColumns: sidebarCollapsed ? '28px 1fr' : `${sidebarWidth}px auto 1fr`, flex: 1, minHeight: 0 }}>
@@ -603,7 +641,10 @@ function ShellLayout({ onAddConnection }: Props) {
         {!sidebarCollapsed && <ResizeHandle orientation="vertical" onDrag={dragSidebar} />}
 
         <div ref={panes} style={{ display: 'flex', minWidth: 0, minHeight: 0 }}>
-          <main data-testid={primaryShowEditor ? undefined : 'main-grid'} className={primaryShowEditor ? '' : 'main--grid'}
+          {/* `main--grid` is every non-editor tab, since it is what hides Monaco;
+              the test id is the *grid* alone, so a diagram tab does not answer
+              to a selector meaning "the result grid's pane". */}
+          <main data-testid={primaryShowEditor || activeTab?.kind === 'diagram' ? undefined : 'main-grid'} className={primaryShowEditor ? '' : 'main--grid'}
             style={{ position: 'relative', display: 'grid', gridTemplateRows: primaryShowEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(${EDITOR_MIN}px, 1fr) auto ${resultsHeight}px` : `${t.TAB_H}px 1fr`, flex: showSplit ? `${splitFraction} 1 0` : 1, minWidth: 0, minHeight: 0 }}
             onFocusCapture={() => setFocusedPane('primary')} onPointerDownCapture={() => setFocusedPane('primary')}>
             {/* The button is beside the strip, not inside it: the strip scrolls
@@ -624,7 +665,9 @@ function ShellLayout({ onAddConnection }: Props) {
               pickerOpen={pickerPane === 'primary'} onPickerOpenChange={(open) => setPickerPane(open ? 'primary' : null)} />
             {primaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragResults} />}
             <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: primaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
-              {activeTab ? <ResultsTable tab={activeTab} /> : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}
+              {activeTab?.kind === 'diagram'
+                ? <RelationshipDiagram tab={activeTab} onOpenTable={openTable} />
+                : activeTab ? <ResultsTable tab={activeTab} /> : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}
             </div>
 
             {/*
@@ -646,7 +689,7 @@ function ShellLayout({ onAddConnection }: Props) {
           {showSplit && <ResizeHandle orientation="vertical" onDrag={dragSplit} />}
 
           {showSplit && (
-            <main data-testid={secondaryShowEditor ? undefined : 'main-grid-secondary'} className={secondaryShowEditor ? '' : 'main--grid'}
+            <main data-testid={secondaryShowEditor || secondaryActiveTab?.kind === 'diagram' ? undefined : 'main-grid-secondary'} className={secondaryShowEditor ? '' : 'main--grid'}
               style={{ position: 'relative', display: 'grid', gridTemplateRows: secondaryShowEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(${EDITOR_MIN}px, 1fr) auto ${secondaryResultsHeight}px` : `${t.TAB_H}px 1fr`, flex: `${1 - splitFraction} 1 0`, minWidth: 0, minHeight: 0 }}
               onFocusCapture={() => setFocusedPane('secondary')} onPointerDownCapture={() => setFocusedPane('secondary')}>
               <div style={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
@@ -664,7 +707,9 @@ function ShellLayout({ onAddConnection }: Props) {
                 pickerOpen={pickerPane === 'secondary'} onPickerOpenChange={(open) => setPickerPane(open ? 'secondary' : null)} />
               {secondaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragSecondaryResults} />}
               <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: secondaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
-                <ResultsTable tab={secondaryActiveTab} />
+                {secondaryActiveTab?.kind === 'diagram'
+                  ? <RelationshipDiagram tab={secondaryActiveTab} onOpenTable={openTable} />
+                  : <ResultsTable tab={secondaryActiveTab} />}
               </div>
 
               {draggedPane === 'primary' && (
