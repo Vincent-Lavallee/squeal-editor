@@ -87,9 +87,32 @@ const thStyle: React.CSSProperties = { ...cellBase, position: 'sticky', top: 0, 
 const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 1, background: t.BG, color: t.TEXT_FAINT, textAlign: 'right', userSelect: 'none', fontSize: t.TEXT_BADGE, height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}` };
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
 
-export default function ResultsTable({ tab }: { tab: Tab | null }) {
+interface Props {
+  tab: Tab | null;
+  /**
+   * The filter bar's database picker, passed straight through: the bar is this
+   * component's to draw but the list and the pointing are the shell's, exactly
+   * as the editor toolbar's picker is. Nothing here reads them.
+   */
+  databases: string[];
+  onSelectDatabase: (database: string) => void;
+  pickerOpen: boolean;
+  onPickerOpenChange: (open: boolean) => void;
+}
+
+export default function ResultsTable({ tab, databases, onSelectDatabase, pickerOpen, onPickerOpenChange }: Props) {
   const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey, sort, toggleSort, canSort, rowsKey, rememberScroll, recallScroll } = useResults(tab);
   const activeTabId = tab?.id ?? null;
+  /*
+   * The database a grid tab reads from, named here and nowhere else on screen.
+   *
+   * A grid tab has no toolbar of its own to carry it the way an editor tab
+   * does, and its picker in the filter bar above is a caret with no label --
+   * so this bar is the one place that says which database the rows came from.
+   * An editor tab's is left off deliberately: its toolbar already states it,
+   * and one place names a thing.
+   */
+  const gridDatabase = tab?.kind === 'grid' ? tab.database : null;
   const grid = useRef<HTMLDivElement>(null);
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -170,7 +193,8 @@ export default function ResultsTable({ tab }: { tab: Tab | null }) {
   const tabBars = (
     <>
       <StatementTabs tab={tab} />
-      <FilterBar tab={tab} />
+      <FilterBar tab={tab} databases={databases} onSelectDatabase={onSelectDatabase}
+        pickerOpen={pickerOpen} onPickerOpenChange={onPickerOpenChange} />
     </>
   );
 
@@ -410,8 +434,11 @@ export default function ResultsTable({ tab }: { tab: Tab | null }) {
       {tabBars}
       <div data-testid="results-bar" style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', padding: `0 ${t.GAP_LG}px`, height: barH, borderBottom: `1px solid ${t.BORDER}`, fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>
         {/* No table name: the tab and the filter bar above both already say
-            which table this is, and one place names a thing. */}
+            which table this is, and one place names a thing. The database is
+            the one thing nothing else on a grid tab says -- see `gridDatabase`
+            -- and it leads, because it qualifies everything after it. */}
         <span>
+          {gridDatabase && <><span data-testid="results-db">{gridDatabase}</span>{' · '}</>}
           {browse ? `rows ${firstRow}–${browse.offset + count}` : `${count} row${count === 1 ? '' : 's'}`} · {result.durationMs} ms
           {/* `readOnlyReason` is a standing fact about the connection or the
               table, shown unprompted; `editBlockedHint` is the opposite -- it

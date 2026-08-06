@@ -850,9 +850,9 @@ export function useTabs() {
      * mark on a tab nobody has touched, at the instant it appears.
      */
     openSavedQueryTab: useCallback(
-      (savedQueryId: string, title: string, sql: string, pane?: Tab['pane']): void => {
+      (savedQueryId: string, title: string, sql: string, pane?: Tab['pane'], database?: string | null): void => {
         const id = store.getState().session.activeConnectionId;
-        if (id) dispatch(tabOpened({ connectionId: id, kind: 'editor', title, savedQueryId, sql, pane }));
+        if (id) dispatch(tabOpened({ connectionId: id, kind: 'editor', title, savedQueryId, sql, pane, database }));
       },
       [dispatch, store]
     ),

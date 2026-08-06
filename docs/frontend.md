@@ -97,7 +97,7 @@ that lives apart from its values is two sources for one fact.
 | `result`, query error, `running`, `browse` (with its `keyColumns` and the `filter` the page was fetched with), the `sql` the result came from, per statement, per tab | `results` slice | crossed |
 | which of a tab's statements is on screen, and how many the run held | `results` slice | never left, but it is the key its results are held under |
 | staged cell edits + row deletes, per tab (+ `saving`, `saveError`) | `results` context | never left, until Save |
-| the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Apply |
+| the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Search |
 | where the result grid is scrolled to, per tab | `results` context (a ref) | never left, and a restored session refetches its rows |
 | saved connections | `saved` slice | crossed |
 | saved queries | `savedQueries` slice | crossed |
@@ -782,19 +782,20 @@ the connection's initial database, so that tab has to be moved by its own caret
 click that used to be free. DBeaver's navigator draws the same line for the same
 reason; TablePlus draws the other one. See `docs/decisions.md`.
 
-**An editor tab says which database it is on; a grid tab does not.** The editor
-states the name as a small muted label at the far left of its toolbar and hangs
-the *control* off the right of the Run button as a caret only — the two halves
-of one answer, split so that neither shouts.
+**Both kinds of tab say which database they are on, and both split the answer
+the same way: a name where there is room for one, a caret on the loudest control
+in the bar.** The editor states the name as a small muted label at the far left
+of its toolbar and hangs the control off the right of *Run*. A grid tab has no
+toolbar, so the name goes in the results bar — leading, before the row range and
+the duration, because it qualifies both — and the caret hangs off *Search* in the
+filter bar. Neither ever grows a strip of its own to hold a single word.
 
-**A grid tab has nothing of its own, on purpose, and now has no picker at all.**
-It has no Run to hang a caret off, and a strip built only to hold the answer is
-32px carrying a single word above every table you open. It runs where the tree
-was pointed when it was opened, for as long as it is open: reaching the same
-table under another database is pointing the tree there and clicking it again,
-which gives a second tab rather than changing the first one underneath the rows
-already on screen. `Ctrl+D` therefore does nothing on a grid tab, the same
-answer `Ctrl+Enter` gives there. See `docs/decisions.md`.
+**The grid's picker is the same control doing the same thing**, `pointTabAt`,
+and a grid tab re-browses on the spot rather than opening a second tab
+elsewhere. It shipped without one, on the reading that a grid tab has nothing of
+its own; see `docs/decisions.md` for what that cost. `Ctrl+D` therefore opens
+whichever of the two pickers the tab in front has, and does nothing only on a
+diagram tab.
 
 **The name is deliberately not inside the Run button.** Spelling it out there
 put a second piece of high-contrast content inside the loudest control on
@@ -1176,12 +1177,26 @@ full-bleed overlay first; see `docs/decisions.md` for what changed.
 
 **The tab is what says which database.** `Tab.database` is the only thing that
 decides what is drawn, the same field `runQuery` and `browseTable` read one
-level down. So two diagrams on two databases are two ordinary tabs, and a
-diagram is about the database it was opened on for as long as it is open —
-**the grid tab's answer exactly**, which is why it also has no database picker.
-It is *born* on the tree's database, the same rule a table clicked in the tree
-follows: the menu belongs to no pane and no tab, so the only database it can
-mean is the one being looked at.
+level down. So two diagrams on two databases are two ordinary tabs. It is *born*
+on the tree's database, the same rule a table clicked in the tree follows: the
+menu belongs to no pane and no tab, so the only database it can mean is the one
+being looked at.
+
+**It is moved by a picker of its own, and that picker is the sidebar header's
+rather than the editor's caret.** There is no loud primary control in this bar to
+attach a caret to, and a `<Select variant="bare">` is documented as the form for
+a select that *names what you are looking at* — which is the whole of what a
+diagram's database is. It lands in the same `pointTabAt` the other two do, and
+needs no line there: the drawing reads `Tab.database`, so moving the tab is the
+whole of moving the drawing. `Ctrl+D` opens it, the same as everywhere else —
+there is no longer a kind of tab that answers nothing.
+
+**And a node opens on that database, not on the tree's.** `onOpenTable` takes
+the diagram's own `Tab.database` and `Shell.openTable` prefers it to
+`treeDatabase` — the tree is free to be somewhere else by the time a node is
+clicked, and inheriting its answer opens a grid pointed at a database the table
+may not be in, which fails to browse the instant it appears. The tree passes
+none, because for the tree the default *is* the answer.
 
 **Opening it travels as a counter, not a flag.** The titlebar is rendered beside
 `Shell`, not inside it, so `App` is the only thing that can see both — it holds
@@ -1244,14 +1259,32 @@ dismissed by the thing it opened.
   taller neighbour it is dragged across, and the gesture reads as the node
   having been dropped somewhere it cannot be seen.
 
-**A node may be dragged out of the drawing's bounds, and the two directions
-break differently.** Outward, the canvas follows: `extentOf` is asked of the
-*placed* nodes rather than of the layout, so the sized element — the one the dot
-grid is painted on — grows to include whatever has been dragged past its edge,
-and shrinks again when it comes back. Inward past zero, there is nothing to grow:
-a scroll container has no negative region, so a node at a negative coordinate is
-somewhere nothing can scroll to. The drag floors the offset at `-node.x`/`-node.y`
-instead, which pins the node against the canvas' own corner.
+**A node may be dragged anywhere, including out of the drawing's bounds, and
+the two directions are answered by one thing.** `extentOf` is asked of the
+*placed* nodes rather than of the layout, and it reports a **box** — `left`,
+`top`, `right`, `bottom` — not a size. Outward, the sized element (the one the
+dot grid is painted on) grows to include whatever went past its edge, and
+shrinks again when it comes back. Inward past zero, the box's near corner goes
+negative instead, the container is sized to the *difference*, and the drawing is
+shifted back into it by `translate(-left, -top)` under the zoom. A scroll
+container still has no negative region — nothing at a negative coordinate has to
+be reachable, because by the time it is drawn there is no negative coordinate
+left. Clamping the drag at `-node.x`/`-node.y` was the first answer and it is
+what a node pinned against the corner, refusing to follow the pointer, was.
+
+**Moving the origin means moving the scroll offset with it**, in a layout effect
+comparing against the previous origin. The container grows at its *leading* edge,
+so every node already on screen slides right by exactly that much unless
+`scrollLeft` follows — which reads as the whole diagram lurching sideways while
+one node is being placed. Compared rather than re-applied on every render, or it
+would fight a pan already in flight; scaled by the zoom, which is the factor
+between the drawing's coordinates and the container's.
+
+**The nodes and the edge lines share the shifted layer**, so both move by the
+same amount and no line comes loose from the node it was drawn to. The `<svg>`
+is sized to the far corner and left at that layer's origin: a line to a node at
+a negative coordinate is drawn outside its box, which its `overflow: visible`
+already allows.
 
 **`layoutDiagram` deliberately reports no extent.** How much room the drawing
 needs is a question about where the nodes *are*, and that stops being the
@@ -1259,10 +1292,30 @@ layout's answer the moment one is dragged — so there is one function that answ
 it, asked of the current positions. Two sources for that number is precisely the
 bug above.
 
+**Refreshing re-reads the schema, and the drawing stays up while it does.**
+The toolbar's refresh button sits last, after the zoom group, and `Ctrl+R` is
+the same act on the keyboard. What both produce is a **counter**, not a call:
+the fetch is `useDiagram`'s effect and the token it re-runs on is
+`buttonReloads + refreshRequest` — the button's own asks plus the shell's,
+summed rather than reconciled by an effect, since both only ever count up and
+either one bumping changes the token. `refreshRequest` arrives from `Shell`
+because the key belongs to the window and the fetch belongs to this component;
+it is held **per pane**, or a split showing two diagrams would refresh both.
+
+**`firstLoad`, not `loading`, decides whether the canvas comes down.** A
+refresh over a drawing already on screen spins the icon and leaves the drawing;
+only a diagram with nothing to keep says *Reading the schema…*. That is the
+tree's rule, and it is asked of the **tables** rather than of `loading`: the
+database changes a render before the effect starts fetching, so reading
+`loading` there answers "not loading, nothing to draw" and paints *holds no
+tables* over a database nobody has asked about yet. `error` releases it, or a
+first load that fails would wait forever instead of saying why.
+
 **The arrangement is not remembered, and that is a decision rather than an
 omission.** `layoutDiagram` runs fresh on every mount — which now includes every
 switch away from the tab and back, since only the active tab's pane is rendered
-— and the drag offsets go with it. Anything remembered would have to survive a
+— and the drag offsets go with it. A refresh is the same: new tables are a new
+layout, so the arrangement resets there too. Anything remembered would have to survive a
 table being added, renamed or dropped, and a diagram that reopens with a node
 pinned where a table no longer is is worse than one that arranges itself. The
 offsets are cleared by an effect keyed on the layout, so a new arrangement never
@@ -1374,7 +1427,7 @@ sort would mean nothing until its query is run again.
 
 `FilterBar` sits above the results bar on a **grid tab only**. It is either the
 condition builder (column, operator, value, joined by one `AND`/`OR`) or a raw
-`WHERE` box. Applying re-browses from the extension — see `extension.md` for why
+`WHERE` box. *Search* re-browses from the extension — see `extension.md` for why
 a query's result has none.
 
 **It is always open, and always shows a row.** There is no reveal button and no
@@ -1382,14 +1435,27 @@ collapsed summary: a filter you have to go and find is one you do not use, and a
 button that opens a form is a click that says nothing. An untouched builder
 renders one blank condition that is *not* in the draft yet — editing it is what
 materialises it, and `useResults` prunes incomplete rows before anything runs, so
-a bar nobody has touched is not a filter and Apply is disabled.
+a bar nobody has touched searches the whole table.
+
+**The button reads *Search* and is never disabled by the draft**, only by a
+request already in flight. It is the same action either way — run the draft —
+but "Apply", greyed out until the draft diverged from what is applied, made the
+one gesture that reads the table again unreachable: pressing it on an unchanged
+filter is the cheapest way to ask whether anything has changed on the server.
+That is why `filterDirty` no longer exists. `Ctrl+R` is the same thing on the
+keyboard and is *not* the same call — see *Refreshing what a tab is showing*.
 
 **The bar is exactly as tall as it has rows.** Every row is one line of a shared
 grid — lead, column, operator, value, remove, then a trailing cell only the first
-row fills with `+ / Raw / Apply`. A second line of buttons underneath would
+row fills with `+ / Raw / Search`. A second line of buttons underneath would
 double the height of the bar to hold controls that fit on the line already there.
 The empty cells on later rows are load-bearing: drop them and that row's controls
 slide left and the columns stop lining up.
+
+**The database picker hangs off *Search*, as a caret**, exactly as the editor's
+hangs off *Run*: same accent-filled group, same divider, same `caretOnly` select,
+and the name stated elsewhere — the results bar — rather than inside the control.
+See *The database is the tab's*.
 
 **The draft holds both forms at once, and only `mode` says which is in force.**
 `FilterDraft` (in `ResultsContext.tsx`) is not the protocol's `TableFilter` union
@@ -1419,9 +1485,9 @@ that quotes conditionally instead — see *Completion*.
 Seven things are load-bearing, and each was found rather than designed:
 
 - **The draft is a context; the applied filter is a slice.** The bridge test,
-  unbent, exactly as the staged edits beside it: only Apply crosses. Those two
-  being allowed to differ *is* what an unapplied edit is, and `filterDirty` —
-  the comparison of the two — is the whole of when Apply has anything to do.
+  unbent, exactly as the staged edits beside it: only *Search* crosses. Those two
+  being allowed to differ *is* what an unapplied edit is — but nothing compares
+  them any more, because the button runs whether or not they differ.
 - **The bar is keyed off the tab's `table`, not off `browse`.** A filter the
   server rejects clears `browse` (a failed page leaves nothing to page from), so
   a bar keyed off it would vanish together with the error — taking away the one
@@ -1431,7 +1497,7 @@ Seven things are load-bearing, and each was found rather than designed:
   reason: running, error and empty all replace the grid, and the filter belongs
   to the tab rather than to whatever the grid is currently showing. It draws
   nothing on an editor tab, so a query's result is untouched.
-- **Apply and the form toggle are on the row; *Clear* is in the results bar.**
+- **Search and the form toggle are on the row; *Clear* is in the results bar.**
   That split is the same rule again rather than an inconsistency: an error
   replaces the results bar, so anything needed to *recover* from a bad filter has
   to live on the row that survives. Clear does not qualify — emptying the value
@@ -1454,10 +1520,45 @@ Seven things are load-bearing, and each was found rather than designed:
   `browse.columnInfo`, which does go empty with the grid it describes — the two
   fields answer different questions and only one of them needs to survive an error.
 
-Applying always browses from **offset 0**: a filter's matches are a different set,
-and holding the old offset lands on page 3 of a one-page result, which reads as
-"no matches" rather than as a paging artefact. Reload stays user-initiated
-throughout — editing the draft touches no database, and only Apply does.
+Searching always browses from **offset 0**: a filter's matches are a different
+set, and holding the old offset lands on page 3 of a one-page result, which reads
+as "no matches" rather than as a paging artefact. Reload stays user-initiated
+throughout — editing the draft touches no database, and only *Search* does.
+
+## Refreshing what a tab is showing
+
+`Ctrl+R` re-reads whatever the pane being worked in has on screen, and what that
+means is the tab's kind:
+
+| Tab | What it re-reads |
+|---|---|
+| grid | the page: same table, same **offset**, the filter that fetched it and the sort it is in (`useResults.refresh`) |
+| diagram | the database's schema (`useDiagram`'s fetch, asked for as a counter) |
+| editor | nothing |
+
+**A grid reads the *applied* filter, never the draft** — which is the whole
+difference between it and the *Search* button beside it. A refresh answers "has
+this changed on the server", so running a half-typed bar would be a different
+question; and it keeps the offset, where Search deliberately goes back to page 1
+because the matches are a different set.
+
+**An editor tab is the one that answers nothing, and `refresh` refuses for
+itself** rather than the shell guarding — its rows came from statements the user
+wrote, and re-issuing those is *Run*, which may well write. A key every browser
+has taught people means "reload" must not be the key that re-runs a `DELETE`.
+
+**But it is bound on every kind of tab regardless**, because the point of
+claiming `Ctrl+R` is that the webview does not get to reload the app with it:
+both listeners `preventDefault` before anything checks whether there is
+something to refresh, the same defence `Ctrl+S` already makes against the
+browser's save dialog.
+
+**The two paths differ because the state does.** A grid's rows are in a slice,
+so the shell can call a thunk; a diagram's fetch is local to the component that
+opens it, so what crosses is the *asking* — a per-pane counter, the shape
+`openDiagramRequest` and `focusFilter` already use. Each also has a control of
+its own: *Search* for a grid, the refresh button after the zoom group for a
+diagram.
 
 ## The way in
 
@@ -1852,6 +1953,7 @@ entire keyboard.
 | Editor | Run statement under cursor | `Ctrl+Shift+Enter` |
 | Editor | Save query | `Ctrl+S` |
 | Editor | Switch this tab's database | `Ctrl+D` |
+| Results | Refresh the rows | `Ctrl+R` |
 | Tabs | New tab | `Ctrl+T` |
 | Tabs | New tab in the other pane | `Ctrl+Shift+T` |
 | Tabs | Close tab | `Ctrl+W` |
@@ -1940,7 +2042,15 @@ the reason `Select` grew a controlled `open`: a picker that owned its own open
 state could only ever be opened by its own trigger. `Shell` holds `pickerPane`
 — one value, since two lists open at once is not a state worth representing —
 and the command sets it to `workingPane`, so a split answers for the half you
-are in.
+are in. Which of the pane's pickers opens is the tab's kind: an editor tab's
+caret on *Run*, a grid tab's on *Search*, a diagram's own name at the left of
+its toolbar. Every kind has one, so the guard is only that a tab is open at all
+— otherwise `pickerPane` would point at a pane with no list in it.
+
+**`Ctrl+R` is bound whether or not there is anything to refresh**, because the
+key it is taking is the webview's *reload*. Both listeners `preventDefault`
+first, and what happens next is the tab's kind — see *Refreshing what a tab is
+showing*.
 
 **`Ctrl+Shift+F` puts focus in the tree's filter, and unfolds the sidebar first
 if it is folded away** — focus cannot enter `display: none`, so a command that

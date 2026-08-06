@@ -18,8 +18,13 @@ import { selectActiveConnection } from '../../store/sessionSlice.ts';
  *
  * It re-reads on every open by design; see `loadRelationships` for why nothing
  * caches it.
+ *
+ * `reloads` is how many times a fresh read has been *asked for* — the toolbar's
+ * refresh button and `Ctrl+R` both count into it. A number rather than a
+ * callback, so asking is one more render with a different dep and the fetch
+ * below stays the only place that fetches; the value itself is never read.
  */
-export function useDiagram(database: string | null) {
+export function useDiagram(database: string | null, reloads = 0) {
   const dispatch = useAppDispatch();
   const connectionId = useAppSelector((s) => s.session.activeConnectionId);
   // The schema that goes without saying, so a node's label can leave it off --
@@ -48,12 +53,27 @@ export function useDiagram(database: string | null) {
         setLoading(false);
       });
     return () => { current = false; };
-  }, [connectionId, database, dispatch]);
+  }, [connectionId, database, dispatch, reloads]);
 
   return {
     tables: (tables ?? null) as DiagramTable[] | null,
     defaultSchema,
     loading,
+    /**
+     * Whether there is nothing to keep on screen, which is what decides
+     * between a message and a spinning icon -- the tree's rule, which learned
+     * it the hard way: a refresh that replaces a drawing you were reading with
+     * "Reading the schema…" is the app taking it away to tell you it is
+     * fetching. Switching database is a first load again, because what is up
+     * is a drawing of the other one.
+     *
+     * Asked of the *tables*, not of `loading`: the database changes a render
+     * before the effect starts fetching, and reading `loading` there answers
+     * "not loading, nothing to draw" -- which paints "holds no tables" over a
+     * database nobody has asked about yet. `error` is what releases it, so a
+     * fetch that fails on a first load shows why instead of waiting forever.
+     */
+    firstLoad: tables === undefined && error === null,
     error,
   };
 }

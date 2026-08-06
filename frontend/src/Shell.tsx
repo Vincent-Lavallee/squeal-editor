@@ -64,8 +64,8 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
   //
   // Called once per pane rather than once for "the" active tab: a split view has
   // two tabs in front at once, each with its own run/browse/running. See `useResults`.
-  const { run: runPrimary, tabRunning: primaryRunning, browseIn: browseInPrimary } = useResults(activeTab);
-  const { run: runSecondary, tabRunning: secondaryRunning, browseIn: browseInSecondary } = useResults(secondaryActiveTab);
+  const { run: runPrimary, tabRunning: primaryRunning, browseIn: browseInPrimary, refresh: refreshPrimary } = useResults(activeTab);
+  const { run: runSecondary, tabRunning: secondaryRunning, browseIn: browseInSecondary, refresh: refreshSecondary } = useResults(secondaryActiveTab);
   const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema, databases } = useExplorer();
   // `peekSql` alone: every seed now rides `tabOpened`, so the composition root
   // reads the editor's text and never writes it.
@@ -191,6 +191,22 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
    * phase, so a handler inside the pane cannot swallow it first.
    */
   const [focusedPane, setFocusedPane] = useState<'primary' | 'secondary'>('primary');
+
+  /*
+   * How many times a fresh read has been asked of each pane's diagram.
+   *
+   * A diagram's fetch is its own — local to `RelationshipDiagram`, because it
+   * lives and dies with one open — so `Ctrl+R` cannot call it the way it calls
+   * `useResults.refresh`. What crosses instead is the *asking*, as a counter,
+   * the shape `openDiagramRequest` and `focusFilter` already use: an event has
+   * no "off" state for a boolean to come back from, and pressing twice has to
+   * mean two reads. One per pane, because the key acts on the pane being
+   * worked in and a split can show two diagrams.
+   */
+  const [diagramRefresh, setDiagramRefresh] = useState({ primary: 0, secondary: 0 });
+  const askDiagramRefresh = useCallback((pane: Tab['pane']) => {
+    setDiagramRefresh((asked) => ({ ...asked, [pane]: asked[pane] + 1 }));
+  }, []);
 
   /*
    * Which pane's database list is open, if any.
@@ -322,7 +338,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
 
   const shellCommands: Partial<Record<ShortcutId, () => void>> = useMemo(() => ({
     // Into the pane being worked in, like every other tab command here.
-    newTab: () => { openEditorTab(undefined, undefined, undefined, workingPane); },
+    newTab: () => { openEditorTab(undefined, undefined, treeDatabase, workingPane); },
     /*
      * Into the *other* pane, which with no split yet is what opens one.
      *
@@ -331,7 +347,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
      * verb was that overloading the move gesture would mint a tab nobody asked
      * for. Asking for a tab is the whole of what this is. See `docs/decisions.md`.
      */
-    newTabOtherPane: () => { openEditorTab(undefined, undefined, undefined, workingPane === 'secondary' ? 'primary' : 'secondary'); },
+    newTabOtherPane: () => { openEditorTab(undefined, undefined, treeDatabase, workingPane === 'secondary' ? 'primary' : 'secondary'); },
     closeTab: closeActiveTab,
     nextTab: () => stepTab(1),
     previousTab: () => stepTab(-1),
@@ -341,18 +357,31 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
      * other tab command here follows. Opening it is all this does; the picking
      * is the picker's, and Escape closes it the way it always did.
      *
-     * Nothing happens on a grid tab, which has no picker of its own: the same
-     * answer Ctrl+Enter gives there, and for the same reason. Guarded rather
-     * than left to set state nothing renders from, or the next thing to read
+     * Every kind of tab has a picker now, each in the bar it already had: the
+     * caret on Run, the caret on Search, the diagram's own name at the left of
+     * its toolbar. `workingTab` still has to exist, or the next thing to read
      * `pickerPane` inherits a pointer at a pane with no list in it.
      */
-    selectDatabase: () => { if (workingTab?.kind === 'editor') setPickerPane(workingPane); },
+    selectDatabase: () => { if (workingTab) setPickerPane(workingPane); },
+    /*
+     * Re-read what the pane being worked in is showing: a grid tab's page, or
+     * a diagram's schema. An editor tab has neither -- its rows came from
+     * statements the user wrote, and re-issuing those is Run -- so
+     * `useResults.refresh` refuses for itself and nothing happens.
+     *
+     * Bound on every kind regardless, because the whole point of claiming
+     * Ctrl+R is that the webview does not get to reload the app with it.
+     */
+    refresh: () => {
+      if (workingTab?.kind === 'diagram') { askDiagramRefresh(workingPane); return; }
+      if (workingPane === 'secondary') refreshSecondary(); else refreshPrimary();
+    },
     // The one in front, which is what `useSession().disconnect` already defaults
     // to. The rail's menu is the other way in, and it names its own chip.
     disconnect: () => disconnect(),
     toggleSidebar,
     filterTables: focusTableFilter,
-  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar, focusTableFilter, workingPane, workingTab]);
+  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar, focusTableFilter, workingPane, workingTab, treeDatabase, refreshPrimary, refreshSecondary, askDiagramRefresh]);
 
   /*
    * The shortcuts the shell owns, and the half of each that answers from
@@ -436,13 +465,18 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
    * `analytics.orders` as a tab pointed at `shop`, a grid that fails to browse
    * the instant it appears.
    *
+   * `database` is for the caller that is looking at a database of its own: a
+   * diagram is a picture of one, and a node clicked in it means that one's
+   * table however far the tree has since been moved. The tree passes none,
+   * because for the tree the default *is* the answer.
+   *
    * The tree belongs to no pane, so what it opens goes to the one being worked
    * in. A strip's own `+` and bookmark name their own pane instead, because
    * those *are* attached to one.
    */
-  const openTable = useCallback((table: TableInfo) => {
+  const openTable = useCallback((table: TableInfo, database?: string | null) => {
     const relation = relationOf(table);
-    const tabId = openGridTab(relation, relationLabel(relation, defaultSchema), treeDatabase, workingPane);
+    const tabId = openGridTab(relation, relationLabel(relation, defaultSchema), database ?? treeDatabase, workingPane);
     if (!tabId) return;
     if (workingPane === 'secondary') browseInSecondary(tabId, relation.table, 0);
     else browseInPrimary(tabId, relation.table, 0);
@@ -537,8 +571,8 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
    * each strip has one, so the button you reach for is the answer.
    */
   const openSavedQuery = useCallback((query: SavedQuery, pane: Tab['pane']) => {
-    openSavedQueryTab(query.id, query.name, query.sql, pane);
-  }, [openSavedQueryTab]);
+    openSavedQueryTab(query.id, query.name, query.sql, pane, treeDatabase);
+  }, [openSavedQueryTab, treeDatabase]);
 
   /*
    * Ctrl+S. Which of the two things it does is whether the tab already knows
@@ -581,14 +615,17 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
 
   /*
    * Point one tab at a database -- the whole of what a *tab's* picker does,
-   * whichever pane's moved.
+   * whichever pane's, and whichever kind of tab it hangs off.
    *
-   * There is one per pane's editor toolbar, and they are two controls onto one
-   * value rather than two values: each names the tab it is about, and both land
-   * here. A grid tab re-browses on the spot, so what is on screen never
-   * disagrees with what the tab says it is showing; if the table is not there
-   * under the new database that surfaces as that pane's own error, the same as
-   * any missing table.
+   * There is one per pane per kind -- the caret on Run for an editor tab, the
+   * caret on Search for a grid tab, the name at the left of a diagram's
+   * toolbar -- and they are all controls onto one value rather than several:
+   * each names the tab it is about, and all of them land here. A grid tab
+   * re-browses on the spot, so what is on screen never disagrees with what the
+   * tab says it is showing; if the table is not there under the new database
+   * that surfaces as that pane's own error, the same as any missing table. A
+   * diagram needs no line here at all: it draws from `Tab.database`, so moving
+   * the tab is the whole of moving the drawing.
    *
    * The sidebar's picker is deliberately **not** one of these -- see
    * `browseDatabase`.
@@ -622,13 +659,11 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
   const secondaryShowEditor = secondaryActiveTab?.kind === 'editor';
 
   /*
-   * A grid tab draws no database line of its own, and now has no picker
-   * anywhere: it runs where the tree was pointed when it was opened, for as
-   * long as it is open. Reaching the same table under another database is
-   * pointing the tree there and clicking it again, which is a second tab
-   * rather than the first one changing underneath the rows already on screen.
-   * See `docs/decisions.md`. A diagram tab is the same answer, one level up:
-   * it is about the database it was opened on, for as long as it is open.
+   * Every kind of tab opens on the database the tree was pointed at and can be
+   * moved from there by its own picker: the caret on Run, the caret on Search,
+   * the diagram's own name at the left of its toolbar. They differ in where
+   * the control hangs, never in what it does -- all three land in `pointTabAt`.
+   * See `docs/decisions.md` for the two that went without one first.
    */
 
   return (
@@ -655,7 +690,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
                 onCloseOthers={(id) => requestClose({ kind: 'others', id })} onCloseToTheRight={(id) => requestClose({ kind: 'right', id })}
                 onCloseAll={() => requestClose({ kind: 'all', pane: 'primary' })}
                 onMove={(id, beforeId) => moveTab(id, beforeId, 'primary')} onRename={renameTab}
-                onNewTab={() => openEditorTab(undefined, undefined, undefined, 'primary')} onDuplicateTab={duplicateTab}
+                onNewTab={() => openEditorTab(undefined, undefined, treeDatabase, 'primary')} onDuplicateTab={duplicateTab}
                 draggingId={draggingId} onDragTab={setDraggingId} />
               <SavedQueriesButton onOpen={(query) => openSavedQuery(query, 'primary')} />
             </div>
@@ -666,8 +701,14 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
             {primaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragResults} />}
             <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: primaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
               {activeTab?.kind === 'diagram'
-                ? <RelationshipDiagram tab={activeTab} onOpenTable={openTable} />
-                : activeTab ? <ResultsTable tab={activeTab} /> : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}
+                ? <RelationshipDiagram tab={activeTab} onOpenTable={openTable} refreshRequest={diagramRefresh.primary}
+                    databases={databases} onSelectDatabase={(db) => pointTabAt(activeTab, 'primary', db)}
+                    pickerOpen={pickerPane === 'primary'} onPickerOpenChange={(open) => setPickerPane(open ? 'primary' : null)} />
+                : activeTab
+                  ? <ResultsTable tab={activeTab}
+                      databases={databases} onSelectDatabase={(db) => pointTabAt(activeTab, 'primary', db)}
+                      pickerOpen={pickerPane === 'primary'} onPickerOpenChange={(open) => setPickerPane(open ? 'primary' : null)} />
+                  : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}
             </div>
 
             {/*
@@ -697,7 +738,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
                   onCloseOthers={(id) => requestClose({ kind: 'others', id })} onCloseToTheRight={(id) => requestClose({ kind: 'right', id })}
                   onCloseAll={() => requestClose({ kind: 'all', pane: 'secondary' })}
                   onMove={(id, beforeId) => moveTab(id, beforeId, 'secondary')} onRename={renameTab}
-                  onNewTab={() => openEditorTab(undefined, undefined, undefined, 'secondary')} onDuplicateTab={duplicateTab}
+                  onNewTab={() => openEditorTab(undefined, undefined, treeDatabase, 'secondary')} onDuplicateTab={duplicateTab}
                   draggingId={draggingId} onDragTab={setDraggingId} />
                 <SavedQueriesButton onOpen={(query) => openSavedQuery(query, 'secondary')} />
               </div>
@@ -708,8 +749,12 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
               {secondaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragSecondaryResults} />}
               <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: secondaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
                 {secondaryActiveTab?.kind === 'diagram'
-                  ? <RelationshipDiagram tab={secondaryActiveTab} onOpenTable={openTable} />
-                  : <ResultsTable tab={secondaryActiveTab} />}
+                  ? <RelationshipDiagram tab={secondaryActiveTab} onOpenTable={openTable} refreshRequest={diagramRefresh.secondary}
+                      databases={databases} onSelectDatabase={(db) => pointTabAt(secondaryActiveTab, 'secondary', db)}
+                      pickerOpen={pickerPane === 'secondary'} onPickerOpenChange={(open) => setPickerPane(open ? 'secondary' : null)} />
+                  : <ResultsTable tab={secondaryActiveTab}
+                      databases={databases} onSelectDatabase={(db) => pointTabAt(secondaryActiveTab, 'secondary', db)}
+                      pickerOpen={pickerPane === 'secondary'} onPickerOpenChange={(open) => setPickerPane(open ? 'secondary' : null)} />}
               </div>
 
               {draggedPane === 'primary' && (

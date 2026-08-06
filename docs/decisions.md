@@ -5559,3 +5559,193 @@ and that is what caught a bad first assertion: the test originally asserted
 `scrollWidth` grew, which passed *before* the fix for the accident above. It
 asserts the sized element's own width instead — the thing that actually did not
 follow. A test that passes against the code it was written for is not evidence.
+
+**The inward half has since been reversed**: a node may be dragged past the
+origin after all, and the drawing's origin moves with it. See *A node may go
+past the origin* below.
+
+---
+
+## A grid tab gets a database picker after all, and *Apply* became *Search*
+
+**Why.** *The database moved back onto the tab* (above) argued a grid tab should
+state nothing of its own, and removed the `DatabaseBar` that had briefly carried
+it. That was right about the bar and wrong about the picker, and using it is what
+showed the difference: a table opened on the wrong database is a grid you have to
+close and re-open by way of the sidebar, and the tab in front of you offers no
+way to say "not that one, this one". The objection was **32px of chrome for one
+word**, not the control — and there was a bar to hang it on all along.
+
+**What changed.** Three things, and they are one gesture:
+
+- **The filter bar's *Apply* is *Search*, and is never disabled by the draft.**
+  Only a request in flight takes it away. Greyed out until the draft diverged
+  from what is applied, it made the most ordinary thing anyone wants from a grid
+  — *read that again* — unreachable, which is exactly how "let me refresh by
+  clicking it" was reported. `filterDirty` was the whole of that gate and is
+  gone. The word changed with the behaviour: *Apply* is about a form, *Search* is
+  about the rows, and it now runs whether or not the form moved.
+- **The database picker hangs off it as a caret**, the run group's shape at the
+  bar's own control height. No new idiom: an accent-filled group, a 1px divider
+  in the fill's own foreground, a `caretOnly` select. It lands in the same
+  `pointTabAt` the editor's caret does, so a grid tab re-browses on the spot.
+- **The name goes in the results bar, leading** — before the row range and the
+  duration, because it qualifies both. The same split the editor toolbar draws
+  between its far-left label and the arrow on Run, in the only bar a grid tab
+  has. *Rejected: naming it beside the caret*, which is the "second piece of
+  high-contrast content in the loudest control" objection one control over.
+
+**`Ctrl+D` therefore works on a grid tab**, where the earlier entry recorded it
+doing nothing. The guard is now "the tab has a picker" rather than "the tab is an
+editor tab". (A diagram tab was the one kind left out here, on the reading that a
+diagram is a picture *of* a database — that lasted about an hour; see *The
+diagram refreshes and switches database* below.)
+
+**The cost, accepted:** the tradeoff *The database moved back onto the tab*
+claimed as bought back — "nothing can move a tab's database except that tab's own
+control" — is untouched, because this **is** that tab's own control. What is new
+is that a grid tab now has one, and switching it re-browses under the rows on
+screen. That is the point of pressing it, and it is the same thing the editor's
+caret has always done to a query.
+
+---
+
+## `Ctrl+R` refreshes a grid, and it is not the *Search* button
+
+**Why.** Every grid in every tool answers `Ctrl+R`, and this one answered it by
+letting the webview reload the whole app — which is a worse outcome than doing
+nothing.
+
+**What it does.** Re-reads the page on screen: same table, same **offset**, the
+filter that fetched it, the sort it is in. `useResults.refresh`.
+
+**It reads the applied filter, never the draft**, which is the whole of why it is
+not simply the *Search* button on a key. A refresh answers *has this changed on
+the server*, so running a half-typed bar would be a different question — and it
+keeps the offset, where Search deliberately returns to page 1 because a filter's
+matches are a different set.
+
+**Only a grid tab.** An editor tab's rows came from statements the user wrote,
+and re-issuing those is *Run*, which may well write — a key every browser has
+taught people means "reload" must not be the key that re-runs a `DELETE`.
+`refresh` refuses for itself rather than the shell guarding, so both callers get
+the same answer.
+
+**But it is bound on every kind of tab**, because the point of claiming the chord
+is that the embedder does not get it: both listeners `preventDefault` before
+anything checks whether there is something to refresh. That is `Ctrl+S`'s
+existing defence against the webview's save dialog, applied to reload.
+
+---
+
+## A node may go past the origin, and the drawing's origin goes with it
+
+**Why.** *A node dragged out of bounds* (above) fixed the outward direction by
+growing the canvas and the inward one by **refusing the drag** — flooring the
+offset at `-node.x`/`-node.y`. That reads as the node sticking against the corner
+and refusing to follow the pointer, which is a second thing wrong with dragging
+rather than the absence of the first. The reasoning that produced it is still
+true and was simply pointed at the wrong layer: *a scroll container has no
+negative region*, so nothing at a negative coordinate can be reached. The answer
+is to leave no negative coordinate at the point where it would matter.
+
+**What changed.** `extentOf` reports a **box** rather than a size — `left`, `top`,
+`right`, `bottom`, with the near corner at 0 until something is dragged past it.
+The container is sized to the difference and the drawing is shifted back into it
+with `translate(-left, -top)` under the zoom. The nodes and the `<svg>` of edges
+share that one shifted layer, so no line comes loose from the node it was drawn
+to.
+
+**The scroll offset moves by the same delta, in a layout effect.** The container
+grows at its *leading* edge, so without it every node already on screen slides
+right by exactly the amount the origin moved — the whole diagram lurching
+sideways while one node is being placed. Compared against the previous origin
+rather than re-applied every render, or it fights a pan already in flight; a
+layout effect rather than a plain one, or the shift is a visible jump.
+
+**The test changed with it, and had to.** The old one asserted the node stayed
+inside the pane after a huge inward drag, which is the clamp restated. It now
+drags past the origin, scrolls back to zero and requires the node to be *there* —
+reachability, which was the actual claim all along. A second test asserts a
+neighbour does not move during that drag, which is the scroll compensation and
+nothing else.
+
+---
+
+## A diagram node opens on the diagram's database, not on the tree's
+
+**Why.** A diagram is a picture of exactly one database and says so at the left
+of its own bar. Clicking a node called `Shell.openTable`, which had one answer —
+`treeDatabase` — and that answer is right for the tree and only for the tree. Open
+a diagram of `shop`, move the sidebar to `analytics`, click a node: a grid tab
+pointed at `analytics` for a table that may not be there, failing to browse the
+instant it appears.
+
+**What changed.** `onOpenTable` takes the database its caller means, and
+`openTable` prefers it to `treeDatabase`. The tree passes none, because for the
+tree the default *is* the answer — which is what keeps *a table clicked in the
+tree opens on the tree's database* intact rather than qualified.
+
+**Not a new rule, the existing one applied one level up.** *The tree stopped
+following the tab* established that "which database am I looking at" and "where
+does this run" are separate facts; a diagram is a third thing looking at one, and
+it had been borrowing the tree's answer for want of being asked.
+
+---
+
+## The diagram refreshes and switches database, and the picker argument was wrong twice
+
+**Why.** Two entries above argued a diagram needs no database picker: it is a
+picture *of* a database, so pointing one elsewhere is "opening a diagram of that
+database", which the *Database* menu already does. That is true and it is not an
+answer — the menu opens a **new tab**, so the only way to look at another
+database's shape was to accumulate diagram tabs and close the ones you were done
+with. The same argument was made for a grid tab and reversed for the same reason
+one entry earlier. Two reversals of one argument in one sitting is the argument
+being wrong, not the cases being special: **a tab that is about a database gets a
+control for which database.** There is no kind left that does not.
+
+And nothing could re-read a schema. The thunk behind it was already uncached
+*because* the shape changes under you — its own comment said reopening the tab
+was the refresh control, which is a tab close and a menu trip to answer "did my
+migration land".
+
+**What changed.**
+
+- **A `<Select variant="bare">` replaces the toolbar's database label**, in
+  place, at the far left. Deliberately not the run group's caret: there is no
+  filled primary control in this bar to attach one to, and `bare` is documented
+  as the form for a select that *names what you are looking at* — the sidebar
+  header's picker, which is the same job one level out. It lands in the same
+  `pointTabAt` the other two do and needs no branch there, because the drawing
+  reads `Tab.database`.
+- **A refresh button, last, after the zoom group** — the sidebar's own icon and
+  its `spin` while the read is in flight, so a refresh that changes nothing still
+  says it happened.
+- **`Ctrl+R` is the same act on the keyboard**, joining the grid.
+
+**The refresh crosses as a counter, not a call**, because the diagram's fetch is
+local to the component that opens it (it lives and dies with one open, which is
+still right). `Shell` holds one counter **per pane** — a split can show two
+diagrams and the key acts on the pane being worked in — and the component sums it
+with its own button's count: both only ever increase, so either one bumping
+changes the token the fetch effect re-runs on. *Rejected: an effect watching the
+prop and calling a local `reload()`* — that is two counters kept in step by hand
+where one addition says the same thing.
+
+**`firstLoad` is asked of the tables, not of `loading`.** A refresh over a
+drawing already on screen has to leave it up and spin the icon — the tree learned
+that one the hard way, and replacing a diagram you are reading with *Reading the
+schema…* is the same defect. Keying it on `loading && tables === undefined`
+shipped a flash of *holds no tables* on every database switch: `Tab.database`
+changes a render before the effect starts fetching, and in that frame nothing is
+loading and there is nothing to draw. `tables === undefined && error === null` is
+the honest question — *is there anything to keep* — and `error` is what releases
+it, or a first load that failed would sit under *Reading the schema…* forever.
+
+**The test creates its table with `docker exec psql`, not through a query tab.**
+Switching to a query tab and back **remounts the diagram**, which re-reads the
+schema on its own — so a test that ran its DDL through the app would pass with
+the refresh button deleted. Changing the schema behind the app's back is both the
+only way to isolate the control and the exact case it exists for: someone else
+ran the migration.

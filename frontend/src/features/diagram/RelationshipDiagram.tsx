@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { TableInfo } from '../../../../shared/protocol/index.ts';
 import type { Tab } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import Note from '../../common/components/Note.tsx';
-import { DiagramIcon, ForeignKeyIcon, KeyIcon, TableIcon } from '../../common/icons/icons.ts';
+import Select from '../../common/components/Select.tsx';
+import { DiagramIcon, ForeignKeyIcon, KeyIcon, RefreshIcon, TableIcon } from '../../common/icons/icons.ts';
+import { formatChord } from '../../common/shortcuts.ts';
+import { useShortcuts } from '../../store/settingsSlice.ts';
 import * as t from '../../common/tokens';
-import { edgePath, extentOf, layoutDiagram, type DiagramEdge, type DiagramNode } from './layout.ts';
+import { edgePath, extentOf, layoutDiagram, type DiagramEdge, type DiagramExtent, type DiagramNode } from './layout.ts';
 import { useDiagram } from './useDiagram.ts';
 
 /** Zoom bounds, and the step each press of the two controls takes. */
@@ -27,7 +30,32 @@ const GRID_SPACING = 24;
 interface Props {
   /** The tab this diagram is, so it draws the database that tab is pointed at. */
   tab: Tab;
-  onOpenTable: (table: TableInfo) => void;
+  /**
+   * Open a table, **on this diagram's own database** rather than on whatever
+   * the tree happens to be showing: a diagram is a picture of one database, so
+   * a node clicked in it can only mean that database's table. Leaving the
+   * caller to infer it opened a grid pointed somewhere the table may not exist.
+   */
+  onOpenTable: (table: TableInfo, database: string | null) => void;
+  /**
+   * Every database of this tab's connection, and the way to point the tab at
+   * one of them -- the editor toolbar's pair, handed down for its reason: the
+   * explorer is a sibling feature and the shell already holds both.
+   */
+  databases: string[];
+  onSelectDatabase: (database: string) => void;
+  /** Whether this pane's database list is showing, so `Ctrl+D` can open it. */
+  pickerOpen: boolean;
+  onPickerOpenChange: (open: boolean) => void;
+  /**
+   * `Ctrl+R`, arriving as a counter for `openDiagramRequest`'s reason: asking
+   * for a fresh read is an event, and a boolean has no "off" for the second
+   * press to come back from. It is summed with this component's own button
+   * rather than watched by an effect -- both only ever count up, so the sum
+   * changes exactly when either one is pressed, and there is nothing to keep
+   * in step.
+   */
+  refreshRequest: number;
 }
 
 /** Where the user has dragged a node to, relative to where the layout put it. */
@@ -50,9 +78,12 @@ const iconStyle = { flex: 'none', width: t.ICON, height: t.ICON } as const;
  * table being added, renamed or dropped, and a diagram that reopens with a node
  * pinned where a table no longer is is worse than one that arranges itself.
  */
-export default function RelationshipDiagram({ tab, onOpenTable }: Props) {
+export default function RelationshipDiagram({ tab, onOpenTable, databases, onSelectDatabase, pickerOpen, onPickerOpenChange, refreshRequest }: Props) {
   const database = tab.database;
-  const { tables, defaultSchema, loading, error } = useDiagram(database);
+  const { bindings } = useShortcuts();
+  // Every ask for a fresh read, from either way in. See `refreshRequest`.
+  const [buttonReloads, setButtonReloads] = useState(0);
+  const { tables, defaultSchema, loading, firstLoad, error } = useDiagram(database, buttonReloads + refreshRequest);
   const [offsets, setOffsets] = useState<Offsets>({});
   const [zoom, setZoom] = useState(1);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -82,11 +113,37 @@ export default function RelationshipDiagram({ tab, onOpenTable }: Props) {
   );
   const byKey = useMemo(() => new Map(placed.map((node) => [node.key, node])), [placed]);
   /**
-   * How much room the drawing needs *right now* — read off the placed nodes, so
+   * The box the drawing occupies *right now* — read off the placed nodes, so
    * dragging one past the edge grows the canvas to include it rather than
    * putting it somewhere the scrollbars cannot reach.
    */
   const extent = useMemo(() => extentOf(placed), [placed]);
+  const canvasWidth = extent.right - extent.left;
+  const canvasHeight = extent.bottom - extent.top;
+
+  /*
+   * Dragging a node past the origin moves the drawing's origin with it, and
+   * the whole picture would jump sideways by that amount if nothing answered:
+   * the content grows at the *leading* edge, so everything already on screen
+   * slides away from a scroll offset that still means what it used to.
+   *
+   * Scrolling by the same delta is what holds the view still — the node
+   * follows the pointer and its neighbours do not move at all. A layout
+   * effect, because an offset applied after paint is a visible jump, and
+   * compared against the previous origin rather than run on every render,
+   * since re-scrolling on an unrelated render would fight a pan already in
+   * flight. Multiplied by the zoom, which is the factor between the drawing's
+   * coordinates and the container's.
+   */
+  const drawnOrigin = useRef({ left: extent.left, top: extent.top });
+  useLayoutEffect(() => {
+    const container = scroll.current;
+    const previous = drawnOrigin.current;
+    drawnOrigin.current = { left: extent.left, top: extent.top };
+    if (!container) return;
+    container.scrollLeft += (previous.left - extent.left) * zoom;
+    container.scrollTop += (previous.top - extent.top) * zoom;
+  }, [extent, zoom]);
 
   /*
    * Dragging a node.
@@ -127,16 +184,13 @@ export default function RelationshipDiagram({ tab, onOpenTable }: Props) {
       // Divided by the zoom, or a node under a scaled canvas runs away from the
       // pointer as soon as the view is not at 100%.
       //
-      // Floored so the node's drawn position never goes negative: a scroll
-      // container has no negative region, so a node dragged off the top or left
-      // edge would be somewhere nothing could scroll back to. Dragging the
-      // other way needs no limit -- `extentOf` grows the canvas to follow.
+      // Unbounded in every direction, including past the origin: `extentOf`
+      // moves the drawing's own origin out to meet a negative coordinate and
+      // `drawnOrigin`'s effect scrolls by the same amount, so a node dragged
+      // off the top or left edge is somewhere the container can still reach.
       setOffsets((prev) => ({
         ...prev,
-        [key]: {
-          dx: Math.max(origin.dx + dx / zoom, -base.x),
-          dy: Math.max(origin.dy + dy / zoom, -base.y),
-        },
+        [key]: { dx: origin.dx + dx / zoom, dy: origin.dy + dy / zoom },
       }));
     };
 
@@ -145,9 +199,10 @@ export default function RelationshipDiagram({ tab, onOpenTable }: Props) {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
       setDragging(null);
-      // The same gesture clicking the table in the tree is. A view is never a
-      // node here, so the kind is not a question.
-      if (opened && !moved) onOpenTable({ name: base.relation.table, schema: base.relation.schema, kind: 'table' });
+      // The same gesture clicking the table in the tree is, on the database
+      // this diagram is of. A view is never a node here, so the kind is not a
+      // question.
+      if (opened && !moved) onOpenTable({ name: base.relation.table, schema: base.relation.schema, kind: 'table' }, database);
     };
     const onUp = () => finish(true);
     // A cancelled pointer is the OS taking the gesture away — it is not a
@@ -158,7 +213,7 @@ export default function RelationshipDiagram({ tab, onOpenTable }: Props) {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
-  }, [offsets, zoom, layout.nodes, onOpenTable]);
+  }, [offsets, zoom, layout.nodes, onOpenTable, database]);
 
   /**
    * Dragging the canvas scrolls it. The alternative is a second offset for the
@@ -217,20 +272,35 @@ export default function RelationshipDiagram({ tab, onOpenTable }: Props) {
     }
     container.addEventListener('wheel', onWheel, { passive: false });
     return () => container.removeEventListener('wheel', onWheel);
-  }, [stepZoom, loading, error]);
+    // `firstLoad`, not `loading`: what this needs is the canvas being mounted,
+    // and a refresh with a drawing already up never unmounts it.
+  }, [stepZoom, firstLoad, error]);
 
   const referenceCount = layout.edges.length;
 
   return (
     <div data-testid="diagram" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
-      {/* The editor's toolbar shape at the same height: the tab's database
-          named at the far left as a plain label, actions at the right. A
-          diagram tab has no picker, the answer a grid tab already gives —
-          it is about the database it was opened on, for as long as it is open. */}
+      {/* The editor's toolbar shape at the same height: the database this
+          diagram is *of* at the far left, actions at the right. It is the
+          sidebar header's picker rather than the editor's caret, because there
+          is no loud primary control here to hang a caret off and because this
+          select *names what you are looking at*, which is what `bare` is for. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, flex: 'none', height: t.TAB_H, padding: `0 ${t.GAP_SM}px`, borderBottom: `1px solid ${t.BORDER}` }}>
         <DiagramIcon style={{ ...iconStyle, color: t.TEXT_MUTED }} aria-hidden="true" />
-        <span data-testid="diagram-db" style={{ overflow: 'hidden', fontSize: t.TEXT_LABEL, color: t.TEXT_MUTED, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{database}</span>
-        {!loading && !error && (
+        <Select variant="bare" searchable value={database ?? ''} onSelect={onSelectDatabase}
+          open={pickerOpen} onOpenChange={onPickerOpenChange}
+          options={databases.map((db) => ({ value: db, label: db }))}
+          placeholder={databases.length === 0 ? 'No databases' : 'Select a database…'}
+          disabled={databases.length === 0} aria-label="Database this diagram is of"
+          data-testid="diagram-db"
+          title={database ? `Drawing ${database}` : undefined}
+          // `width: auto` against the component's own `100%`, or the trigger
+          // claims the whole bar and pushes the count out to sit against the
+          // zoom controls -- it is a label here, sized to the name it holds.
+          // The cap is for a name long enough to be a paragraph; the label
+          // ellipsises inside it.
+          style={{ width: 'auto', minWidth: 0, maxWidth: 260 }} />
+        {!firstLoad && !error && (
           <span data-testid="diagram-counts" style={{ flex: 'none', fontSize: t.TEXT_LABEL, color: t.TEXT_FAINT }}>
             {layout.nodes.length} {layout.nodes.length === 1 ? 'table' : 'tables'} · {referenceCount} {referenceCount === 1 ? 'reference' : 'references'}
           </span>
@@ -239,13 +309,22 @@ export default function RelationshipDiagram({ tab, onOpenTable }: Props) {
         <Button variant="ghost" style={{ height: t.BUTTON_H_BAR, padding: `0 ${t.GAP_SM}px` }} onClick={() => stepZoom(-ZOOM_STEP)} disabled={zoom <= ZOOM_MIN} aria-label="Zoom out" title="Zoom out">−</Button>
         <Button variant="ghost" style={{ height: t.BUTTON_H_BAR, padding: `0 ${t.GAP_SM}px`, fontFamily: t.MONO }} onClick={() => setZoom(1)} title="Reset zoom">{Math.round(zoom * 100)}%</Button>
         <Button variant="ghost" style={{ height: t.BUTTON_H_BAR, padding: `0 ${t.GAP_SM}px` }} onClick={() => stepZoom(ZOOM_STEP)} disabled={zoom >= ZOOM_MAX} aria-label="Zoom in" title="Zoom in">+</Button>
+        {/* Last, after the zoom group: the sidebar's own icon and its spin
+            while the read is in flight, so a refresh that changes nothing
+            still says it happened. */}
+        <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0 }}
+          onClick={() => setButtonReloads((asked) => asked + 1)} disabled={loading || !database}
+          title={`Read the schema again (${formatChord(bindings.refresh)})`} aria-label="Refresh the diagram"
+          data-testid="diagram-refresh">
+          <RefreshIcon className={loading ? 'spin' : undefined} style={iconStyle} aria-hidden="true" />
+        </Button>
       </div>
 
-      {loading && <Note kind="muted">Reading the schema of {database}…</Note>}
-      {!loading && error && <Note kind="error">{error}</Note>}
-      {!loading && !error && layout.nodes.length === 0 && <Note kind="muted">{database} holds no tables.</Note>}
+      {firstLoad && <Note kind="muted">Reading the schema of {database}…</Note>}
+      {!firstLoad && error && <Note kind="error">{error}</Note>}
+      {!firstLoad && !error && layout.nodes.length === 0 && <Note kind="muted">{database} holds no tables.</Note>}
 
-      {!loading && !error && layout.nodes.length > 0 && (
+      {!firstLoad && !error && layout.nodes.length > 0 && (
         <div
           ref={scroll}
           data-testid="diagram-canvas"
@@ -268,13 +347,22 @@ export default function RelationshipDiagram({ tab, onOpenTable }: Props) {
               // At least the pane, so the dots reach every edge: sized to the
               // drawing alone, a diagram narrower than the window leaves bare
               // background beside it and the canvas stops looking like one.
-              width: `max(${extent.width * zoom}px, 100%)`,
-              height: `max(${extent.height * zoom}px, 100%)`,
+              width: `max(${canvasWidth * zoom}px, 100%)`,
+              height: `max(${canvasHeight * zoom}px, 100%)`,
               backgroundImage: `radial-gradient(circle, ${t.CANVAS_DOT} 1px, transparent 1px)`,
               backgroundSize: `${GRID_SPACING * zoom}px ${GRID_SPACING * zoom}px`,
             }}
           >
-            <div style={{ position: 'absolute', top: 0, left: 0, width: extent.width, height: extent.height, transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
+            {/*
+              * `translate` before the scale reads right-to-left, so the shift
+              * happens in the drawing's own coordinates and the zoom then
+              * applies to the result. It is what puts a node at a negative
+              * coordinate inside the scroll container instead of out beyond
+              * an edge nothing can reach — the nodes and the edge lines share
+              * this layer, so both move by exactly the same amount and no line
+              * comes loose from the node it was drawn to.
+              */}
+            <div style={{ position: 'absolute', top: 0, left: 0, width: extent.right, height: extent.bottom, transform: `scale(${zoom}) translate(${-extent.left}px, ${-extent.top}px)`, transformOrigin: '0 0' }}>
               <Edges edges={layout.edges} extent={extent} nodes={byKey} hovered={hovered} />
               {placed.map((node) => (
                 <TableNode
@@ -309,14 +397,18 @@ export default function RelationshipDiagram({ tab, onOpenTable }: Props) {
  */
 function Edges({ edges, extent, nodes, hovered }: {
   edges: DiagramEdge[];
-  extent: { width: number; height: number };
+  extent: DiagramExtent;
   nodes: Map<string, DiagramNode>;
   hovered: string | null;
 }) {
   return (
+    // Sized to the far corner and left at the layer's own origin: a line to a
+    // node at a negative coordinate is drawn outside this box, which
+    // `overflow: visible` already allows -- the layer it shares with the nodes
+    // is what shifts both into view.
     <svg
-      width={extent.width}
-      height={extent.height}
+      width={extent.right}
+      height={extent.bottom}
       style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', overflow: 'visible' }}
       aria-hidden="true"
     >

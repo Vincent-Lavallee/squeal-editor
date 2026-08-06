@@ -13,13 +13,14 @@
  * produced three confusing failures -- keep them exact.
  */
 
+import { $ } from 'bun';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { launchApp, REACT_SETTERS, type AppSession } from './helpers/app.ts';
-import { MYSQL, PG } from './fixtures/config.ts';
+import { MYSQL, PG, PG_CONTAINER } from './fixtures/config.ts';
 
 const UI_ENABLED = process.env.SQUEAL_UI === '1';
 
@@ -1103,8 +1104,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // The bar is there with a blank condition already on it -- there is no
       // button to reveal it and nothing to add before typing a first filter.
       expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="filter-condition"]').length`)).toBe(1);
-      // And a blank row is not a pending change, so there is nothing to apply.
-      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="filter-apply"]').disabled`)).toBe(true);
+      // Search is live over an untouched bar, because pressing it there re-reads
+      // the whole table -- which is the refresh this button doubles as.
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="filter-apply"]').disabled`)).toBe(false);
 
       await app.evaluate(`${REACT_SETTERS}
         pickOption(document.querySelector('[data-testid="filter-column"]'), 'name');`);
@@ -1121,8 +1123,12 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<number>(rowCount)).toBe(1);
       expect(await app.evaluate<string>(`${gridCell(0, 1)}.textContent`)).toBe('Ada');
 
-      // Applied and unchanged since, so there is nothing left to run.
-      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="filter-apply"]').disabled`)).toBe(true);
+      // Still live with the filter applied and the draft unchanged: pressing it
+      // again is how the same page is read a second time.
+      expect(await app.evaluate<boolean>(`document.querySelector('[data-testid="filter-apply"]').disabled`)).toBe(false);
+      await app.evaluate(`document.querySelector('[data-testid="filter-apply"]').click(); true;`);
+      await Bun.sleep(1500);
+      expect(await app.evaluate<number>(rowCount)).toBe(1);
 
       await app.evaluate(`document.querySelector('[data-testid="filter-clear"]').click(); true;`);
       await Bun.sleep(1500);
@@ -2049,6 +2055,100 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     /*
+     * A grid tab's own picker: the caret on *Search*, which is the editor
+     * toolbar's caret on Run one kind of tab over. The database is named in the
+     * results bar rather than beside the caret, the same split the editor draws
+     * between the label at its far left and the arrow on its loudest control.
+     *
+     * `postgres` holds no `users`, so a failed browse is what proves the tab
+     * really moved -- and picking `shop` back proves the move is not one-way.
+     */
+    test('a grid tab moves database from the caret on Search', async () => {
+      await app.evaluate(clickTable('users'));
+      await Bun.sleep(2000);
+      expect(await app.evaluate<number>(rowCount)).toBe(2);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="results-db"]').textContent`)).toBe('shop');
+
+      await app.evaluate(`${REACT_SETTERS}
+        pickOption(document.querySelector('[data-testid="grid-db-select"]'), 'postgres');`);
+      await Bun.sleep(2000);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="note-error"]').length`)).toBe(1);
+      // It moved the tab and nothing else: the tree is where it was left.
+      expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
+
+      await app.evaluate(`${REACT_SETTERS}
+        pickOption(document.querySelector('[data-testid="grid-db-select"]'), 'shop');`);
+      await Bun.sleep(2000);
+      expect(await app.evaluate<number>(rowCount)).toBe(2);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="results-db"]').textContent`)).toBe('shop');
+
+      await app.evaluate(closeTab('users'));
+      await Bun.sleep(300);
+    });
+
+    /*
+     * Ctrl+R re-reads the page on screen. Proven against a row written from
+     * another tab, because a grid that never re-read would show the same two
+     * rows and pass anything weaker -- and the row is deleted and the grid
+     * refreshed a second time, which both cleans up after this test and says
+     * the refresh is a real read rather than a one-off.
+     *
+     * **Pressed for real, not dispatched**, for `Ctrl+W`'s reason exactly: this
+     * chord is the webview's *reload*, so a synthetic event would prove the
+     * handler works while a physical key reloaded the app out from under it.
+     * The connection surviving -- launch lands on the connections list and
+     * nothing auto-connects, so a reload would leave no grid at all -- is as
+     * much of the assertion as the row count.
+     *
+     * `logs` is the subject for the reason the read-only test uses it: nothing
+     * else in this block depends on what is in it.
+     */
+    test('a real Ctrl+R re-reads the rows, and does not reload the app', async () => {
+      await app.evaluate(clickTable('logs'));
+      await Bun.sleep(2000);
+      expect(await app.evaluate<number>(rowCount)).toBe(2);
+
+      await app.evaluate(newTab);
+      await Bun.sleep(400);
+      const scratch = await app.evaluate<string>(activeTabLabel);
+
+      const runInScratch = async (sql: string) => {
+        await app.evaluate(clickTab(scratch));
+        await Bun.sleep(400);
+        await app.evaluate(setEditorText(sql));
+        await Bun.sleep(200);
+        await app.evaluate(pressChord(`key: 'Enter', ctrlKey: true`));
+        await Bun.sleep(1500);
+      };
+
+      await runInScratch(`INSERT INTO logs (msg) VALUES ('refreshed')`);
+
+      await app.evaluate(clickTab('logs'));
+      await Bun.sleep(600);
+      // Nothing polls: the grid still shows the page it fetched.
+      expect(await app.evaluate<number>(rowCount)).toBe(2);
+
+      await app.press('r', { ctrl: true });
+      await Bun.sleep(1500);
+      expect(await app.evaluate<number>(rowCount)).toBe(3);
+      // The app is still the one that was running: a reload lands on the
+      // connections list with no tabs at all.
+      expect(await app.evaluate<string[]>(tabLabels)).toContain('logs');
+
+      await runInScratch(`DELETE FROM logs WHERE msg = 'refreshed'`);
+      await app.evaluate(clickTab('logs'));
+      await Bun.sleep(600);
+      await app.press('r', { ctrl: true });
+      await Bun.sleep(1500);
+      expect(await app.evaluate<number>(rowCount)).toBe(2);
+
+      await app.evaluate(closeTab('logs'));
+      await Bun.sleep(300);
+      await closeTabConfirmed(scratch);
+      await Bun.sleep(300);
+    });
+
+    /*
      * The caret picker fused to the Run button sits at the right edge of its
      * pane, which unmaximised is the right edge of the window -- so it is the
      * one control where a popup placed a few pixels too far right is clipped
@@ -2796,9 +2896,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * the sized element carrying the dot grid does not follow it and the node
      * ends up sitting on bare background outside the canvas it belongs to.
      *
-     * Dragging *back past zero* is the one that loses it outright. There is no
-     * negative scroll region, so a node at a negative coordinate is somewhere
-     * nothing can scroll to — which is what was reported.
+     * Dragging *back past zero* is the one that used to lose it outright:
+     * there is no negative scroll region, so a node at a negative coordinate
+     * is somewhere nothing can scroll to. The drawing's origin moves out to
+     * meet it instead, which is why the claim here is reachability rather
+     * than the node having been stopped at the edge.
      */
     test('a node dragged past the edge stays on the canvas, in both directions', async () => {
       const canvas = `document.querySelector('[data-testid="diagram-canvas"]')`;
@@ -2822,16 +2924,40 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await app.evaluate(`${canvas}.scrollLeft = 0; ${canvas}.scrollTop = 0; true;`);
       await Bun.sleep(200);
-      await app.evaluate(dragNode('logs', -4000, -4000));
+      // Far enough to be well past the origin, which is where the clamp used
+      // to stop it -- the node really does end up at a negative coordinate.
+      await app.evaluate(dragNode('logs', -900, -400));
       await Bun.sleep(300);
-      const paneBox = await app.evaluate<{ left: number; top: number }>(
-        `(() => { const r = ${canvas}.getBoundingClientRect(); return { left: r.left, top: r.top }; })()`
+
+      // Scrolling back to the origin is what reaches it now: the drawing's own
+      // origin moved out with the node, so the container's zero is the node's
+      // new corner rather than the layout's.
+      await app.evaluate(`${canvas}.scrollLeft = 0; ${canvas}.scrollTop = 0; true;`);
+      await Bun.sleep(200);
+      const paneBox = await app.evaluate<{ left: number; top: number; right: number; bottom: number }>(
+        `(() => { const r = ${canvas}.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })()`
       );
       const nodeBox = await app.evaluate<{ left: number; top: number }>(
         `(() => { const r = ${node('logs')}.getBoundingClientRect(); return { left: r.left, top: r.top }; })()`
       );
       expect(nodeBox.left).toBeGreaterThanOrEqual(paneBox.left);
       expect(nodeBox.top).toBeGreaterThanOrEqual(paneBox.top);
+      expect(nodeBox.left).toBeLessThan(paneBox.right);
+      expect(nodeBox.top).toBeLessThan(paneBox.bottom);
+    });
+
+    /*
+     * The neighbours must not move while one node is dragged past the origin.
+     * The drawing's origin moving out grows the canvas at its *leading* edge,
+     * so everything already on screen slides right by that amount unless the
+     * scroll offset is moved by the same delta — which reads as the whole
+     * diagram jumping sideways while one node is being placed.
+     */
+    test('dragging a node past the origin leaves the rest of the diagram where it was', async () => {
+      const before = await app.evaluate<number>(nodeLeft('users'));
+      await app.evaluate(dragNode('logs', -600, 0));
+      await Bun.sleep(300);
+      expect(await app.evaluate<number>(nodeLeft('users'))).toBeCloseTo(before, 0);
     });
 
     test('the arrangement is not remembered across a tab switch', async () => {
@@ -2850,6 +2976,35 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(await app.evaluate<number>(nodeLeft('users'))).toBeLessThan(moved);
     });
 
+    /*
+     * A node opens on **the diagram's own** database, not on the tree's.
+     *
+     * The two are separate facts everywhere else in this app, and a diagram is
+     * the one view that is wholly about one of them: with the tree moved to
+     * `postgres` -- which holds no `cities` -- inheriting the tree's answer
+     * would open a grid that fails to browse the instant it appears, so rows
+     * are what say the diagram's own database was used.
+     */
+    test('a node opens on the diagram\'s database, wherever the tree has gone', async () => {
+      await app.evaluate(selectDatabase('postgres'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string>(treeDatabase)).toBe('postgres');
+
+      await app.evaluate(clickNode('cities'));
+      await Bun.sleep(2000);
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="note-error"]').length`)).toBe(0);
+      expect(await app.evaluate<number>(rowCount)).toBe(1);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="results-db"]').textContent`)).toBe('shop');
+
+      await app.evaluate(closeTab('cities'));
+      await Bun.sleep(400);
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1500);
+      // The diagram is in front again and re-reading the schema, which the next
+      // test clicks a node of: wait for the nodes rather than for the frame.
+      await app.waitFor(diagramDrawn);
+    });
+
     test('clicking a node opens that table, leaving the diagram open behind it', async () => {
       await app.evaluate(clickNode('events'));
       await Bun.sleep(1500);
@@ -2863,6 +3018,63 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
       await app.evaluate(closeTab('events'));
       await Bun.sleep(400);
+    });
+
+    /*
+     * The diagram's own database picker, which is the sidebar header's rather
+     * than a caret: this bar has no loud primary control to attach one to, and
+     * the select *names what you are looking at*, which is what `bare` is for.
+     *
+     * `postgres` holds no tables, so its empty state is what says the drawing
+     * really moved -- and the tree staying on `shop` is what says the picker
+     * moved the tab and nothing else.
+     */
+    test('the diagram switches database from its own picker', async () => {
+      await app.evaluate(`${REACT_SETTERS}
+        pickOption(document.querySelector('[data-testid="diagram-db"]'), 'postgres');`);
+      await app.waitFor(`document.querySelector('[data-testid="diagram-node"]') ? null : true`);
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="diagram-db"]').getAttribute('data-value')`)).toBe('postgres');
+      expect(await app.evaluate<string>(`document.querySelector('[data-testid="diagram"]').textContent`)).toContain('holds no tables');
+      expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
+
+      await app.evaluate(`${REACT_SETTERS}
+        pickOption(document.querySelector('[data-testid="diagram-db"]'), 'shop');`);
+      await app.waitFor(diagramDrawn);
+      expect(await app.evaluate<string[]>(nodeNames)).toContain('users');
+    });
+
+    /*
+     * Refreshing re-reads the schema, and the table it has to notice is created
+     * **behind the app's back** -- straight into the container, not through a
+     * query tab. That is both the case a refresh exists for (someone else
+     * changed the schema) and the only way to change it without switching
+     * tabs, which remounts the diagram and re-reads it for reasons that have
+     * nothing to do with this control.
+     *
+     * Both ways in, one per direction: the button puts the new table on the
+     * canvas, and a real Ctrl+R takes it off again once it is dropped -- which
+     * is also the cleanup, so the later tests still see the fixture's own
+     * tables and nothing else.
+     */
+    test('the diagram re-reads the schema, from its button and from Ctrl+R', async () => {
+      const psql = (sql: string) => $`docker exec ${PG_CONTAINER} psql -U postgres -d shop -c ${sql}`.quiet();
+
+      await psql('CREATE TABLE zzz_fresh (id int primary key)');
+      // Nothing polls, so the drawing is still the one that was read on open.
+      expect(await app.evaluate<string[]>(nodeNames)).not.toContain('zzz_fresh');
+
+      await app.evaluate(`document.querySelector('[data-testid="diagram-refresh"]').click(); true;`);
+      await app.waitFor(`${nodeNames}.includes('zzz_fresh') ? true : null`);
+
+      await psql('DROP TABLE zzz_fresh');
+      // Pressed for real: Ctrl+R is the webview's reload, so a dispatched event
+      // would prove the handler and not the chord. The tab strip still standing
+      // is the other half -- a reload lands on the connections list with none.
+      await app.press('r', { ctrl: true });
+      await app.waitFor(`${nodeNames}.includes('zzz_fresh') ? null : true`);
+      expect(await app.evaluate<string[]>(tabLabels)).toContain('Relationships');
+      expect(await app.evaluate<string[]>(nodeNames)).toContain('users');
     });
 
     test('closing it is the tab closing, and it is never asked about', async () => {

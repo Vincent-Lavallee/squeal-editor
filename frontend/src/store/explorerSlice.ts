@@ -428,8 +428,8 @@ export const loadFunctions = createAppThunk(
  * tables are fetched on every database switch, so a `condition` is what keeps
  * that off the bridge; the diagram is opened by hand and rarely, and it is
  * *about* the shape of the schema right now. A cached answer would draw a
- * foreign key added since as missing, and there is no refresh control anywhere
- * to ask past it -- reopening the diagram is that control.
+ * foreign key added since as missing, and every way of asking again -- the
+ * toolbar's refresh, Ctrl+R, reopening the tab -- comes back through here.
  *
  * It returns the unwrapped result rather than a slice flag for the wait, the
  * call `refreshDatabases` already makes: the diagram is one component that

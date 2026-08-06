@@ -282,14 +282,17 @@ export function useResults(tab: Tab | null) {
   }, [activeTabId, view]);
 
   /*
-   * The filter surface. Three facts that are deliberately not one:
+   * The filter surface. Two facts that are deliberately not one:
    *
    * - `filter` is what the page on screen was fetched with (the slice's).
    * - `filterDraft` is what the bar is showing (the context's), seeded from
    *   `filter` while untouched, which is what makes opening the bar on a
    *   filtered page show the filter that is actually in force.
-   * - `filterDirty` is whether those two have diverged, which is the whole of
-   *   when Apply has anything to do.
+   *
+   * Whether the two have diverged is deliberately *not* a third: the bar's
+   * button reads Search and runs the draft whether or not it differs from what
+   * is applied, so pressing it again is how a table is re-read. See
+   * `docs/decisions.md`.
    *
    * Reload is user-initiated throughout: editing the draft touches no database,
    * and only `applyFilter` browses. A filter that re-ran on every keystroke would
@@ -298,11 +301,9 @@ export function useResults(tab: Tab | null) {
   const appliedFilter = browse?.filter ?? null;
   const filterDraft =
     (activeTabId ? view.filterDraft[activeTabId] : undefined) ?? filterToDraft(appliedFilter);
-  // Compared *pruned*, so the blank row the bar always shows is not a pending
-  // change: an untouched bar over an unfiltered table has nothing to apply, and
-  // Apply says so by being disabled.
+  // Pruned, so the blank row the bar always shows is not a condition: an
+  // untouched bar over an unfiltered table searches the whole table.
   const runnableFilter = pruneFilter(filterDraft);
-  const filterDirty = filterKey(runnableFilter) !== filterKey(appliedFilter);
 
   const setFilterDraft = useCallback(
     (next: FilterDraft) => {
@@ -323,6 +324,25 @@ export function useResults(tab: Tab | null) {
     // dropping it here would silently unsort the grid on Apply.
     void dispatch(browseTable({ tabId: activeTabId, table: gridTable, offset: 0, filter: runnableFilter, sort }));
   }, [dispatch, activeTabId, gridTable, runnableFilter, sort]);
+
+  /**
+   * Re-read exactly what is on screen: the same table, the same page, the
+   * filter that fetched it and the sort it is in.
+   *
+   * The applied filter, never the draft -- a refresh answers "has this changed
+   * on the server", so running a half-typed bar would be a different question.
+   * Applying the draft is what the bar's own button is for, and it is why the
+   * two are separate calls even though both end in a `browseTable`.
+   *
+   * A grid tab's alone: an editor tab's rows came from statements the user
+   * wrote, and re-issuing those is Run, which may well write. `browse.offset`
+   * rather than 0, because the page you are looking at is the thing being
+   * refreshed.
+   */
+  const refresh = useCallback(() => {
+    if (!activeTabId || !gridTable) return;
+    void dispatch(browseTable({ tabId: activeTabId, table: gridTable, offset: browse?.offset ?? 0, filter: appliedFilter, sort }));
+  }, [dispatch, activeTabId, gridTable, browse, appliedFilter, sort]);
 
   /** Drop the filter and re-browse the whole table, draft and all -- still sorted. */
   const clearFilter = useCallback(() => {
@@ -588,10 +608,10 @@ export function useResults(tab: Tab | null) {
     filter: appliedFilter,
     filterDraft,
     setFilterDraft,
-    filterDirty,
     filterActive: appliedFilter !== null,
     applyFilter,
     clearFilter,
+    refresh,
   };
 }
 

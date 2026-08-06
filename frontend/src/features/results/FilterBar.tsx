@@ -36,7 +36,7 @@ const OPERATORS: FilterOperator[] = ['=', '<>', '>', '<', '>=', '<=', 'LIKE', 'I
  * few pixels. A floor means the bar overflows instead, which the container
  * below scrolls.
  *
- * **120px and not more**, because the floor is also what pushes *Apply* off
+ * **120px and not more**, because the floor is also what pushes *Search* off
  * the end: every pixel the value box is guaranteed is one the actions cell
  * cannot have, and the action that runs the filter is worth more on screen
  * than a wider box. At 120 both fit across a pane down to about 500px -- half
@@ -76,6 +76,42 @@ const iconBtn: React.CSSProperties = {
 };
 
 const blankCondition = (column: string): FilterCondition => ({ column, operator: '=', value: '' });
+
+/*
+ * Search, and the caret that says where it searches: the editor toolbar's run
+ * group, at this bar's control height. One shape rather than two buttons that
+ * touch -- the group carries the accent fill and the rounded ends, the halves
+ * inside it draw neither, and the divider is 1px of the fill's own foreground
+ * where a `--border` grey would read as a gap. See `docs/design-system.md`.
+ *
+ * The caret is the whole of the attached half here too: the database's name is
+ * stated once, in the results bar below, for the reason it is stated in the
+ * editor's toolbar rather than inside Run.
+ */
+const searchGroup: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'stretch',
+  height: CONTROL_H,
+  borderRadius: t.RADIUS,
+  background: t.ACCENT,
+  color: t.ON_ACCENT,
+  overflow: 'hidden',
+};
+
+const searchHalf: React.CSSProperties = {
+  height: '100%',
+  padding: '0 8px',
+  border: 'none',
+  borderRadius: 0,
+  background: 'none',
+  color: 'inherit',
+};
+
+const searchDivider: React.CSSProperties = {
+  flex: 'none',
+  width: 1,
+  background: 'color-mix(in srgb, currentColor 35%, transparent)',
+};
 
 /**
  * The conjunction select: narrower, unbolded, and a genuine step down in type
@@ -146,8 +182,28 @@ function conditionsToWhere(conditions: FilterCondition[], conjunction: 'AND' | '
     .join(` ${conjunction} `);
 }
 
-export default function FilterBar({ tab }: { tab: Tab | null }) {
-  const { gridTable, filterColumns, filterDraft, setFilterDraft, filterDirty, applyFilter, running, dialect } = useResults(tab);
+interface Props {
+  tab: Tab | null;
+  /**
+   * Every database of this tab's connection, and the way to point the tab at
+   * one of them -- the editor toolbar's pair, handed down the same way and for
+   * the same reason: the explorer is a sibling feature, and the shell already
+   * holds both.
+   */
+  databases: string[];
+  onSelectDatabase: (database: string) => void;
+  /**
+   * Whether this pane's database list is showing. Controlled by the shell,
+   * because the keyboard is the other way in and only the shell knows which
+   * pane a chord is meant for.
+   */
+  pickerOpen: boolean;
+  onPickerOpenChange: (open: boolean) => void;
+}
+
+export default function FilterBar({ tab, databases, onSelectDatabase, pickerOpen, onPickerOpenChange }: Props) {
+  const { gridTable, filterColumns, filterDraft, setFilterDraft, applyFilter, running, dialect } = useResults(tab);
+  const database = tab?.database ?? null;
 
   // Filtering rides on the SQL the extension authored, so it is offered only
   // where that SQL exists -- the same boundary as the pager and the editable
@@ -202,12 +258,12 @@ export default function FilterBar({ tab }: { tab: Tab | null }) {
   const toBuilder = () => setFilterDraft({ ...draft, mode: 'builder' });
 
   /*
-   * Apply and the form toggle sit on the first row rather than in the results
+   * Search and the form toggle sit on the first row rather than in the results
    * bar below, and that is not a layout preference: a filter the server rejects
    * replaces the results bar with the error, so a control drawn only there would
    * disappear exactly when it is needed to fix what caused it. *Clear* is in the
    * results bar precisely because it is not needed to recover -- emptying the
-   * row and applying does the same thing.
+   * row and searching again does the same thing.
    */
   const actions = (
     <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS }}>
@@ -225,18 +281,34 @@ export default function FilterBar({ tab }: { tab: Tab | null }) {
       >
         {isRaw ? 'Builder' : 'Raw'}
       </Button>
-      {/* Reload is user-initiated: nothing typed here has touched the database.
-          Disabled when the draft already matches what is applied, so the button
-          itself says whether there is anything left to run. */}
-      <Button
-        variant="primary"
-        data-testid="filter-apply"
-        style={{ height: CONTROL_H, padding: '0 8px' }}
-        disabled={running || !filterDirty}
-        onClick={applyFilter}
-      >
-        Apply
-      </Button>
+
+      <div style={searchGroup} data-testid="search-group">
+        {/* Enabled whether or not the draft has moved since it last ran: an
+            unchanged search re-reads the table, which is the cheapest way to
+            ask "has this changed" and the reason this reads Search rather than
+            Apply. Only a request already in flight takes it away. */}
+        <Button
+          variant="primary"
+          data-testid="filter-apply"
+          style={searchHalf}
+          disabled={running}
+          title={`Read ${gridTable} again, with these conditions`}
+          onClick={applyFilter}
+        >
+          Search
+        </Button>
+        <div style={searchDivider} aria-hidden="true" />
+        {/* `align="end"` for the run group's reason: the caret sits near the
+            pane's right edge, so a left-aligned list grows away from the pane
+            it belongs to -- and in a split, across the other one. */}
+        <Select variant="attached" caretOnly searchable align="end" value={database ?? ''} onSelect={onSelectDatabase}
+          open={pickerOpen} onOpenChange={onPickerOpenChange}
+          options={databases.map((db) => ({ value: db, label: db }))}
+          disabled={databases.length === 0} aria-label="Database this tab reads from"
+          data-testid="grid-db-select"
+          title={database ? `Reads from ${database}` : 'Pick a database'}
+          style={{ padding: `0 ${t.GAP_XS}px` }} />
+      </div>
     </div>
   );
 

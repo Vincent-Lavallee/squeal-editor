@@ -412,8 +412,11 @@ Two things to know:
   physical key does, and is the only way to tell the two apart. Reach for it
   whenever a new shortcut takes a key a browser has an opinion about; `Ctrl+W` is
   why it exists, and that test asserts the window is still there afterwards as
-  much as it asserts the tab closed. Everything else stays on the cheaper
-  synthetic events.
+  much as it asserts the tab closed. `Ctrl+R` is the second, and the rule earned
+  its keep there: it is the webview's *reload*, so the refresh test presses it
+  for real and asserts the tab strip is still standing — a reload lands on the
+  connections list with no tabs at all, which a dispatched event could never
+  have caught. Everything else stays on the cheaper synthetic events.
 - **React ignores a synthetic `mouseenter`/`mouseleave`.** It synthesises
   `onMouseEnter` from the delegated `mouseover`/`mouseout` pair at the root, so a
   dispatched `mouseenter` reaches the DOM and no handler at all — which reads as

@@ -34,6 +34,13 @@ export const SHORTCUTS = [
   // selection to next find match" and is now this: that action is a row below,
   // moved to Ctrl+Shift+D. See `docs/decisions.md`.
   { id: 'selectDatabase', group: 'Editor', label: "Switch this tab's database", defaultChord: 'Ctrl+D' },
+  // A grid tab's, and only a grid tab's: it re-reads the page on screen, where
+  // an editor tab's Ctrl+R could only mean re-running whatever statements it
+  // holds -- which is Run's to ask for, and would re-issue an INSERT for a key
+  // every browser has taught the user means "reload". The webview's own reload
+  // is exactly why it is bound at all: the listeners preventDefault it whether
+  // or not there is anything to refresh, on every kind of tab.
+  { id: 'refresh', group: 'Results', label: 'Refresh the rows', defaultChord: 'Ctrl+R' },
   { id: 'newTab', group: 'Tabs', label: 'New tab', defaultChord: 'Ctrl+T' },
   // The Shift-pair of New tab, and the one command that says "split" out loud
   // by minting rather than moving -- `dockTab` below is still the only way an
