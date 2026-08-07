@@ -96,7 +96,8 @@ that lives apart from its values is two sources for one fact.
 | a tab's `connectionId`, `table`, and `sqlByTab` (editor text) | `tabs` slice | crossed |
 | a tab's `database`, and `defaultDatabase` (the seed) per connection | `tabs` slice | crossed |
 | which pane's database list is open (`pickerPane`) | `Shell` local state | never left |
-| which database the tree is browsing, **per connection** (`treeDatabases`) | `Shell` local state | never left |
+| which database the tree is pinned to, **per connection** (`treeDatabases`), for when it is not following the tab | `Shell` local state | never left |
+| whether the tree follows the tab at all (`tree.syncWithTab`) | `settings` slice | crossed |
 | the tree's expansion, schema flips and filter text, **per database** | `Sidebar` local state | never left |
 | `tabs`, `activeTabId`, `secondaryActiveTabId`, `kind`, `pane`, `title`, a grid tab's `filter` seed, an editor tab's `savedQueryId` | `tabs` slice | never left, but see above |
 | `databases`, `tables`, `columns`, `stars`, `relationships` | `explorer` slice | crossed |
@@ -756,50 +757,66 @@ better: a table clicked in the tree (the database it was clicked in), a
 definition tab (the database the DDL was read from), and a duplicate (the
 original's, or "duplicate" would quietly mean "duplicate, elsewhere").
 
-**The tree does not follow the tab. It is browsed on its own.** `Shell` holds
-`treeDatabases`, one database per connection, and hands the active one to
-`Sidebar` as `shownDatabase`; `useExplorer(shown)` takes it as a parameter
-rather than reading a selector, because the tree's database is no longer
-anything the store knows. It is *seeded* from the connection's own database the
-first time that is known — an effect keyed on `(activeConnectionId,
-workingDatabase)` that writes once and never again — and moved after that only
-by the sidebar's picker. Session-local by the bridge test: it has never crossed,
-so a reopened connection starts by showing whatever its tabs are on. The map is
-pruned by diffing the open connections, the same rule everything else keyed by a
+**Whether the tree follows the tab is a switch, and it is on.** The two readings
+are both real — a session working in one database wants the tree and the tab to
+agree, and one comparing two wants the tree to stay put while the tabs move —
+so the sidebar's filter bar carries a toggle between them, `Ctrl+Shift+B`, and
+the answer is remembered globally in `settings` under `tree.syncWithTab`. It is
+a preference about how you browse, not a fact about a server, so it travels
+between connections. See `docs/decisions.md` for the round trip this took: the
+tree followed the tab, then stopped, and is now switchable with following as
+the default.
+
+**`Shell` owns both halves and hands `Sidebar` the answer.** `treeFollowsTab` is
+the setting; `treeDatabases` holds one *pinned* database per connection, for
+when it is off. `shownDatabase` is `treeFollowsTab ? workingDatabase :
+pinnedDatabase`, and `useExplorer(shown)` takes it as a parameter rather than
+reading a selector, because the tree's database is not anything the store knows.
+`treeDatabases` is session-local by the bridge test — it has never crossed, so a
+reopened connection starts by showing whatever its tabs are on — and is pruned
+by diffing the open connections, the same rule everything else keyed by a
 runtime id follows here.
 
-Following the tab was the first design and using it is what ended it: a strip
-holding tabs on two databases re-rooted the tree on every switch, so the tree
-moved out from under whatever was being read for a gesture that was about the
-tabs. See `docs/decisions.md`. The tree's own state (`expandedByDb`,
-`flippedByDb`, `filterByDb` in `Sidebar`) stays **keyed by database** — that was
-right for a different reason and is still right: coming back to a database finds
-its tree the way it was left. Flat state was coherent only while one database
-was ever shown, surviving a switch by *name collision*, so expanding
-`public.users` in one database opened a `public.users` in the next and collapsed
-everything else.
+**The pin is kept level with the tab while the tree is following it.** That one
+line is what makes unpinning *freeze* the tree where it stands instead of
+throwing it back to wherever it was last pinned — a toggle whose first effect is
+to move the thing it was pressed over says nothing about what it does. Unfollowed,
+the same effect writes once, when the connection's database is first known, and
+not again.
 
-**Two controls onto `Tab.database`, and one that is not.** Each pane's own
-picker moves that pane's tab; both land in `Shell`'s `pointTabAt`, which sets
-the database and re-browses on the spot if the tab is a grid one. The sidebar's
-picker is the one that is not: `browseDatabase` moves the tree and the
-connection's *seed*, and nothing that is already open. Retargeting a tab from
-there would re-couple the two facts at the one gesture the decoupling exists
-for. It still moves the seed because with nothing open the tree's database is
-the only one on screen, and is what a first tab should be born on.
+The tree's own state (`expandedByDb`, `flippedByDb`, `filterByDb` in `Sidebar`)
+is **keyed by database**, and following the tab is what makes that load-bearing
+rather than tidy: coming back to a database has to find its tree the way it was
+left. Flat state was coherent only while one database was ever shown, surviving
+a switch by *name collision*, so expanding `public.users` in one database opened
+a `public.users` in the next and collapsed everything else.
+
+**Three controls onto `Tab.database`, and the third is the sidebar's, sometimes.**
+Each pane's own picker moves that pane's tab; both land in `Shell`'s
+`pointTabAt`, which sets the database and re-browses on the spot if the tab is a
+grid one. The sidebar's picker, `browseDatabase`, is the conditional one:
+
+- **Following**, it lands in `pointTabAt` too. Not a convenience — a following
+  tree *is* the tab's database, so a pick that moved only the tree would be
+  undone by the next render, which is a picker that visibly snaps back.
+- **Pinned**, it moves the tree and the connection's *seed* and nothing already
+  open, because retargeting a tab from there would re-couple the two facts at
+  the one gesture the pin exists for. The seed still moves because with nothing
+  open the tree's database is the only one on screen, and is what a first tab
+  should be born on — which is also what the following branch does when there is
+  no tab at all, since `pointTabAt` reads a `null` target as exactly that.
 
 **A table clicked in the tree opens on the tree's database**, which is the whole
 of what makes browsing elsewhere useful: inheriting from the tab in front would
 open `analytics.orders` as a tab pointed at `shop`, a grid that fails the
 instant it appears.
 
-*The cost, accepted, and it is the reason this was a choice rather than a fix:*
-a tab already open is left where it runs. Picking a database in the sidebar
-right after connecting moves the tree but not the `Query 1` that was minted on
-the connection's initial database, so that tab has to be moved by its own caret
-— visible (its toolbar names the database it is on) and one click away, but a
-click that used to be free. DBeaver's navigator draws the same line for the same
-reason; TablePlus draws the other one. See `docs/decisions.md`.
+*What pinning costs, and it is why it is no longer the only answer:* a tab
+already open is left where it runs, so picking a database in the sidebar right
+after connecting moves the tree but not the `Query 1` that was minted on the
+connection's initial database, and that tab has to be moved by its own caret.
+DBeaver's navigator draws that line and TablePlus draws the other; the toggle is
+this app declining to pick one for everybody. See `docs/decisions.md`.
 
 **Both kinds of tab say which database they are on, and both split the answer
 the same way: a name where there is room for one, a caret on the loudest control
@@ -1981,7 +1998,9 @@ entire keyboard.
 | Tabs | Move tab to the other pane | `Ctrl+\` |
 | Connection | Disconnect | `Ctrl+Shift+W` |
 | View | Toggle sidebar | `Ctrl+B` |
+| View | Keep the tree on the tab's database | `Ctrl+Shift+B` |
 | View | Filter tables | `Ctrl+Shift+F` |
+| View | New assistant chat | `Ctrl+Shift+A` |
 
 And Monaco's own, from here down — `command` is the action id, `when` is the
 context expression its default carries:
@@ -2990,12 +3009,14 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   and not in a driver's `ORDER BY` — the extension stays engine-agnostic about how
   the tree reads. Grouped, "above" is per schema: the sort is unchanged and the
   groups are what it happens inside.
-- **The tree groups by schema, and that is a preference rather than a fact about
-  a server.** It is on by default, toggled from a control in the sidebar's own
-  filter bar, and remembered globally in the `settings` slice — a preference you
-  have to leave the tree to change is one nobody finds, and Settings does not
-  exist yet. Which groups have been opened or shut is `Sidebar` state, like which
-  rows are expanded: it never crossed.
+- **The tree groups by schema wherever the relations name one**, which is read
+  off the data (`hasSchemas`) rather than off the engine — the UI does not know
+  what MySQL is, and "do these relations name a schema" is the question being
+  asked anyway. So Postgres draws headings and MySQL, whose database *is* its
+  schema, draws a flat list. It is not a preference: the sidebar's filter bar
+  carries one control and it is the tree/tab toggle. Which groups have been
+  opened or shut is `Sidebar` state, like which rows are expanded: it never
+  crossed.
 
   **The default schema leads, and it is the only group that starts open.** A
   dozen schemas all open cost exactly the scroll grouping exists to remove, and
@@ -3009,9 +3030,10 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   database, per connection, and always after the first render. Flipping is keyed
   by schema name **within a database** (`flippedByDb`), the same as row
   expansion (`expandedByDb`) and the filter text (`filterByDb`): the tree
-  re-roots whenever the tab in front is on another database, so what these
-  remember has to be per database or coming back finds a tree nobody left that
-  way. See "The database is the tab's".
+  re-roots whenever it is moved — which, while it follows the tab, is every
+  switch to one on another database — so what these remember has to be per
+  database or coming back finds a tree nobody left that way. See "The database
+  is the tab's".
 
   **A filter reveals every group it matched in.** The groups are built from the
   filtered list, so a group drawn at all has a hit inside it — and with the other
@@ -3023,10 +3045,9 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   Three more things fall out, and each was found rather than designed:
 
   - **Whether to group at all is read off the data, not off the engine.** MySQL
-    reports no schema on any relation, so there is nothing to group by, no
-    heading is drawn and the toggle is absent — a control that could only ever do
-    nothing is not shown disabled. The UI still does not know what MySQL is; it
-    knows whether these relations name a schema, which is the question anyway.
+    reports no schema on any relation, so there is nothing to group by and no
+    heading is drawn. The UI still does not know what MySQL is; it knows whether
+    these relations name a schema, which is the question anyway.
   - **A key and a label are different strings, and they part on the default
     schema.** `relationName` always qualifies (`public.users`) and is what caches,
     tab ids and expansion state are keyed by — two schemas may each hold a

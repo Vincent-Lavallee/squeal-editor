@@ -58,6 +58,10 @@ export const SHORTCUTS = [
   // destroying it. See `docs/decisions.md`.
   { id: 'disconnect', group: 'Connection', label: 'Disconnect', defaultChord: 'Ctrl+Shift+W' },
   { id: 'toggleSidebar', group: 'View', label: 'Toggle sidebar', defaultChord: 'Ctrl+B' },
+  // The Shift-pair of Toggle sidebar, because it is the other thing you do to
+  // the tree as a whole rather than to a row in it. Ctrl+Shift+S would have been
+  // the mnemonic and is the webview's own "save page as".
+  { id: 'syncTree', group: 'View', label: "Keep the tree on the tab's database", defaultChord: 'Ctrl+Shift+B' },
   // Reveals the sidebar first if it is folded away, since a field nobody can
   // see is not one focus can be put into.
   { id: 'filterTables', group: 'View', label: 'Filter tables', defaultChord: 'Ctrl+Shift+F' },

@@ -2,6 +2,7 @@ import {
   RiAddLine,
   RiArrowLeftDoubleLine,
   RiArrowLeftLine,
+  RiArrowLeftRightLine,
   RiArrowLeftSLine,
   RiArrowDownSLine,
   RiArrowRightDoubleLine,
@@ -25,7 +26,6 @@ import {
   RiFunctions,
   RiGlobalLine,
   RiHistoryLine,
-  RiListUnordered,
   RiKey2Line,
   RiLeafLine,
   RiLockLine,
@@ -68,15 +68,20 @@ export const ViewIcon = RiEyeLine;
 export const TriggerIcon = RiBroadcastLine;
 export const FunctionIcon = RiFunctions;
 
-/**
- * A schema heading in the tree, and the control that turns those headings on.
- *
- * Two bindings rather than one, because they answer different questions: the
- * folder marks a group that exists, the list marks the tree *without* groups.
- * The control shows whichever state clicking it would move to.
- */
+/** A schema heading in the tree: the group a run of relations sits under. */
 export const SchemaIcon = RiFolder3Line;
-export const FlatTreeIcon = RiListUnordered;
+
+/**
+ * The sidebar's *keep the tree on the tab's database* toggle -- two arrows
+ * facing each other, the transfer glyph.
+ *
+ * One binding and not a pair, unlike every other two-state control here: what
+ * it names is a *pairing* rather than a direction, and there is no drawing of
+ * "these two are not paired" that reads as anything. The state is carried by
+ * `--accent` on the glyph instead, which is already this system's word for
+ * "this one".
+ */
+export const SyncTreeIcon = RiArrowLeftRightLine;
 
 /**
  * The disclosure chevron on a tree row: closed points right, and CSS rotates it

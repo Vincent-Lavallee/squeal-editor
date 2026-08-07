@@ -6,7 +6,7 @@ import { selectAssistantReady, sendMessage } from './store/assistantSlice.ts';
 import { useAppDispatch, useAppSelector } from './store/hooks.ts';
 import { useSavedQueries } from './store/savedQueriesSlice.ts';
 import { useSession } from './store/sessionSlice.ts';
-import { useShortcuts } from './store/settingsSlice.ts';
+import { useBooleanSetting, useShortcuts } from './store/settingsSlice.ts';
 import { useTabs, type CloseIntent, type Tab } from './store/tabsSlice.ts';
 import { AssistantPanel, diagnosePrompt, explainPrompt } from './features/assistant/index.ts';
 import { RelationshipDiagram } from './features/diagram/index.ts';
@@ -28,6 +28,17 @@ const RESULTS_MIN = 120;
 const EDITOR_MIN = 120;
 /** The narrowest either half of a split may be dragged to. */
 const SPLIT_MIN = 280;
+
+/**
+ * Whether the tree keeps to the database of the tab in front.
+ *
+ * Remembered globally rather than per connection: it is a choice about how you
+ * browse, so moving to another server keeps the pairing you chose. On by
+ * default, because one database is what an ordinary session works in and the
+ * tree and the tab agreeing is what that looks like -- the pin is the state you
+ * ask for, when comparing two databases is the thing you are doing.
+ */
+const SYNC_TREE_WITH_TAB = 'tree.syncWithTab';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -256,31 +267,44 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
   useSqlCompletion(workingDatabase);
 
   /*
-   * Which database the tree is browsing, per connection.
-   *
-   * **Pinned, not read off the tab in front.** The tree is where you look
-   * around a server, and following the tab re-rooted it on every switch --
-   * so a strip holding tabs on two databases moved the tree out from under
-   * whatever was being read, for a gesture that was about the tabs. It is
-   * seeded from the connection's own database the first time that is known,
-   * and after that only the sidebar's picker moves it: a tab pointed
-   * somewhere else now leaves the tree exactly where it was put.
-   *
-   * Session-local by the bridge test -- it has never crossed -- and held here
-   * for the same reason `pickerPane` is: the sidebar belongs to no pane, and
-   * the composition root is the only thing that can see the connection it is
-   * about. See `docs/decisions.md`.
+   * Which database the tree is browsing, per connection, for as long as it is
+   * **not** following the tab. Session-local by the bridge test -- it has never
+   * crossed -- and held here for the same reason `pickerPane` is: the sidebar
+   * belongs to no pane, and the composition root is the only thing that can see
+   * the connection it is about.
    */
   const [treeDatabases, setTreeDatabases] = useState<Record<string, string>>({});
-  const treeDatabase = (activeConnectionId ? treeDatabases[activeConnectionId] : undefined) ?? workingDatabase;
 
-  // Pinned the first time this connection's database is known and not again.
-  // The `??` above is what covers the frames before that -- a fallback rather
-  // than a default, so a connection still opening shows a tree rather than none.
+  /*
+   * Whether the tree draws the tab in front's database or the one pinned above.
+   *
+   * Following is the default and the sidebar's toggle is what unpins it. Both
+   * readings are real and the toggle exists because neither is right for
+   * everyone: a session working in one database wants them to agree, and one
+   * comparing two wants the tree to stay put while the tabs move. See
+   * `docs/decisions.md` for the round trip this took to arrive at a switch.
+   */
+  const [treeFollowsTab, setTreeFollowsTab] = useBooleanSetting(SYNC_TREE_WITH_TAB, true);
+  const toggleTreeSync = useCallback(() => setTreeFollowsTab(!treeFollowsTab), [setTreeFollowsTab, treeFollowsTab]);
+
+  const pinnedDatabase = activeConnectionId ? treeDatabases[activeConnectionId] : undefined;
+  const treeDatabase = treeFollowsTab ? workingDatabase : (pinnedDatabase ?? workingDatabase);
+
+  /*
+   * The pin is kept level with the tab while the tree is following it, so
+   * unpinning **freezes** the tree where it stands rather than throwing it back
+   * to wherever it was last pinned -- a toggle whose first effect is to move
+   * the thing it was pressed over says nothing about what it does.
+   *
+   * Unfollowed, it is written once when this connection's database is first
+   * known and not again. The `??` above is what covers the frames before that:
+   * a fallback rather than a default, so a connection still opening shows a
+   * tree rather than none.
+   */
   useEffect(() => {
     if (!activeConnectionId || !workingDatabase) return;
-    setTreeDatabases((prev) => (prev[activeConnectionId] ? prev : { ...prev, [activeConnectionId]: workingDatabase }));
-  }, [activeConnectionId, workingDatabase]);
+    setTreeDatabases((prev) => (!treeFollowsTab && prev[activeConnectionId] ? prev : { ...prev, [activeConnectionId]: workingDatabase }));
+  }, [activeConnectionId, workingDatabase, treeFollowsTab]);
 
   // Dropped by diffing the open connections rather than by hooking Disconnect,
   // the same rule everything else keyed by a runtime id follows here.
@@ -394,12 +418,13 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
     // to. The rail's menu is the other way in, and it names its own chip.
     disconnect: () => disconnect(),
     toggleSidebar,
+    syncTree: toggleTreeSync,
     filterTables: focusTableFilter,
     // Named `toggle` because that is the gesture: `openAssistantTab` focuses the
     // one already open rather than minting a second, so pressing it twice lands
     // you back where you were.
     newAssistantChat: () => openAssistantTab(workingPane),
-  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar, focusTableFilter, openAssistantTab, workingPane, workingTab, treeDatabase, refreshPrimary, refreshSecondary, askDiagramRefresh]);
+  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar, toggleTreeSync, focusTableFilter, openAssistantTab, workingPane, workingTab, treeDatabase, refreshPrimary, refreshSecondary, askDiagramRefresh]);
 
   /*
    * The shortcuts the shell owns, and the half of each that answers from
@@ -698,8 +723,8 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
    * diagram needs no line here at all: it draws from `Tab.database`, so moving
    * the tab is the whole of moving the drawing.
    *
-   * The sidebar's picker is deliberately **not** one of these -- see
-   * `browseDatabase`.
+   * The sidebar's picker is one of these only while the tree is following the
+   * tab -- see `browseDatabase`.
    */
   const pointTabAt = useCallback((target: Tab | null, pane: Tab['pane'], database: string) => {
     setDatabase(database, target?.id ?? null);
@@ -709,22 +734,28 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
   }, [setDatabase, browseInPrimary, browseInSecondary]);
 
   /*
-   * The sidebar's picker moves the *tree*, and nothing that is already open.
-   * It answers "which database am I looking at", which stopped being the same
-   * question as "where does this tab run" the moment the tree stopped
-   * following the tab -- retargeting a tab from here would re-couple the two
-   * at the one gesture the decoupling exists for.
+   * The sidebar's picker, which the toggle beside it makes mean two things.
    *
-   * It still moves the connection's seed, because with nothing open the tree's
-   * database is the only one on screen and is what a first tab should be born
-   * on. A tab already open keeps running where it runs; its own picker is what
-   * moves it.
+   * **Following**, it points the tab in front at the database as well. Not a
+   * convenience: a following tree *is* the tab's database, so a pick that moved
+   * only the tree would be undone by the very next render -- a picker that
+   * visibly snaps back. Pointing the tab is what makes it land, and it is the
+   * other half of what the two arrows on the toggle say.
+   *
+   * **Pinned**, it moves the tree and the connection's seed and nothing that is
+   * already open: retargeting a tab from here would re-couple the two facts at
+   * the one gesture the pin exists for. The seed still moves because with
+   * nothing open the tree's database is the only one on screen and is what a
+   * first tab should be born on -- which is also the whole of what the
+   * following branch does when there is no tab, since `pointTabAt` takes a
+   * `null` target to mean exactly that.
    */
   const browseDatabase = useCallback((database: string) => {
     if (!activeConnectionId) return;
     setTreeDatabases((prev) => ({ ...prev, [activeConnectionId]: database }));
-    setDatabase(database, null);
-  }, [activeConnectionId, setDatabase]);
+    if (treeFollowsTab) pointTabAt(workingTab, workingPane, database);
+    else setDatabase(database, null);
+  }, [activeConnectionId, setDatabase, treeFollowsTab, pointTabAt, workingTab, workingPane]);
 
   const primaryShowEditor = activeTab?.kind === 'editor';
   const secondaryShowEditor = secondaryActiveTab?.kind === 'editor';
@@ -742,7 +773,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
       <ConnectionRail onAdd={onAddConnection} />
 
       <div style={{ display: 'grid', gridTemplateColumns: sidebarCollapsed ? '28px 1fr' : `${sidebarWidth}px auto 1fr`, flex: 1, minHeight: 0 }}>
-        <Sidebar shownDatabase={treeDatabase} onSelectTable={openTable} onSelectDatabase={browseDatabase} onShowDefinition={showDefinition} onShowTriggerDefinition={showTriggerDefinition} onShowFunctionDefinition={showFunctionDefinition}
+        <Sidebar shownDatabase={treeDatabase} synced={treeFollowsTab} onToggleSync={toggleTreeSync} onSelectTable={openTable} onSelectDatabase={browseDatabase} onShowDefinition={showDefinition} onShowTriggerDefinition={showTriggerDefinition} onShowFunctionDefinition={showFunctionDefinition}
           collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} focusFilter={filterFocusRequest} />
         {!sidebarCollapsed && <ResizeHandle orientation="vertical" onDrag={dragSidebar} />}
 

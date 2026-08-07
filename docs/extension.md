@@ -1013,8 +1013,9 @@ is **absent**, never defaulted: the reader spells its own default, so a
 preference added later cannot arrive already holding an answer its feature never
 chose.
 
-The first one is `tree.groupBySchema`. Settings live here rather than in the
-webview for the store's own reason — see `docs/decisions.md`.
+`tree.syncWithTab` and `keybindings` are what is written there today. Settings
+live here rather than in the webview for the store's own reason — see
+`docs/decisions.md`.
 
 ### Carrying it to another machine (`transfer.ts`)
 

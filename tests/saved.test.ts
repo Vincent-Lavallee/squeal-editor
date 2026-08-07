@@ -607,22 +607,22 @@ describe('settings', () => {
   });
 
   test('a setting survives a new extension process', async () => {
-    await h.ok('settings.set', { key: 'tree.groupBySchema', value: 'false' });
-    expect((await settings())['tree.groupBySchema']).toBe('false');
+    await h.ok('settings.set', { key: 'tree.syncWithTab', value: 'false' });
+    expect((await settings())['tree.syncWithTab']).toBe('false');
 
     await h.stop();
     h = await startHarness(ENV);
 
     // Global by design: it is a preference about trees, not a fact about any
     // one server, so it outlives every connection including the process.
-    expect((await settings())['tree.groupBySchema']).toBe('false');
+    expect((await settings())['tree.syncWithTab']).toBe('false');
   });
 
   test('writing a key again replaces it rather than failing on the primary key', async () => {
-    await h.ok('settings.set', { key: 'tree.groupBySchema', value: 'false' });
-    await h.ok('settings.set', { key: 'tree.groupBySchema', value: 'true' });
+    await h.ok('settings.set', { key: 'tree.syncWithTab', value: 'false' });
+    await h.ok('settings.set', { key: 'tree.syncWithTab', value: 'true' });
 
-    expect((await settings())['tree.groupBySchema']).toBe('true');
+    expect((await settings())['tree.syncWithTab']).toBe('true');
   });
 });
 

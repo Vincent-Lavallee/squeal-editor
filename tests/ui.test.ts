@@ -73,8 +73,13 @@ const toggleSchema = (schema: string) => `
 const setFilter = (text: string) =>
   `${REACT_SETTERS} setNative(document.querySelector('[data-testid="sidebar-filter"]'), ${JSON.stringify(text)}); true;`;
 
-const clickGroupToggle = `document.querySelector('[data-testid="sidebar-group-toggle"]').click(); true;`;
-const groupToggleExists = `!!document.querySelector('[data-testid="sidebar-group-toggle"]')`;
+/**
+ * The sidebar's *keep the tree on the tab's database* toggle. `aria-pressed` is
+ * what says which way it is set -- the glyph never changes, only its colour.
+ */
+const clickSyncToggle = `document.querySelector('[data-testid="sidebar-sync-toggle"]').click(); true;`;
+const syncToggleOn = `document.querySelector('[data-testid="sidebar-sync-toggle"]').getAttribute('aria-pressed') === 'true'`;
+const syncToggleExists = `!!document.querySelector('[data-testid="sidebar-sync-toggle"]')`;
 
 /** Summon the context menu on a row, at its own top-left corner. */
 const rightClickTable = (label: string) => `
@@ -478,10 +483,11 @@ async function closeTabConfirmed(label: string): Promise<void> {
  * Work *in* a database: point the tree at it, and the tab in front too when it
  * is an editor tab and so has a picker of its own.
  *
- * Two gestures, because they are two controls onto two facts -- the sidebar
- * browses, and a tab's own caret moves where it runs. Most of this suite means
- * the pair, and reaches for this; the tests that are *about* the two being
- * separate drive each picker by hand instead.
+ * Two gestures rather than one, because the tree and the tab can be unpinned
+ * from each other -- and this suite unpins them, so most of it means the pair
+ * and reaches for this. With them paired the second gesture points the tab
+ * where it already is, which is why it is safe either way. The tests that are
+ * *about* the two being separate drive each picker by hand instead.
  */
 async function useDatabase(name: string): Promise<void> {
   await app.evaluate(selectDatabase(name));
@@ -633,22 +639,6 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(setFilter(''));
       await Bun.sleep(400);
       expect(await app.evaluate<string[]>(treeLabelsIn('reporting'))).toEqual([]);
-    });
-
-    test('the toggle flattens the tree, and the names carry their schema again', async () => {
-      await app.evaluate(clickGroupToggle);
-      await Bun.sleep(300);
-
-      expect(await app.evaluate<string[]>(schemaLabels)).toEqual([]);
-      const labels = await app.evaluate<string[]>(treeLabels);
-      // Nothing above the rows now says which schema they are in, so the name
-      // has to -- otherwise two `users` would read identically.
-      expect(labels).toContain('reporting.daily_stats');
-      expect(labels).toContain('users');
-
-      await app.evaluate(clickGroupToggle);
-      await Bun.sleep(300);
-      expect(await app.evaluate<string[]>(schemaLabels)).toEqual(['public', 'reporting']);
     });
 
     test('orders every table above every view, inside each group', async () => {
@@ -1976,6 +1966,41 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     /*
+     * The tree and the tab in front are paired by default, and the pairing runs
+     * both ways -- which is the whole of what the two arrows on the toggle say.
+     * Every test below this one is about them being *un*paired, so this is also
+     * where the suite unpins them.
+     */
+    test('the tree follows the tab, and the sidebar picker brings the tab along', async () => {
+      expect(await app.evaluate<boolean>(syncToggleOn)).toBe(true);
+
+      await app.evaluate(selectTabDatabase('postgres'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string>(editorDatabase)).toBe('postgres');
+      expect(await app.evaluate<string>(treeDatabase)).toBe('postgres');
+
+      // The other direction: a pick in the sidebar that moved only the tree
+      // would be undone by the next render, since a following tree *is* the
+      // tab's database. The tab moving with it is what makes the pick land.
+      await app.evaluate(selectDatabase('shop'));
+      await Bun.sleep(1500);
+      expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
+      expect(await app.evaluate<string>(editorDatabase)).toBe('shop');
+      expect(await app.evaluate<string[]>(treeLabels)).toContain('users');
+    });
+
+    test('unpinning freezes the tree where it stands rather than moving it', async () => {
+      await app.evaluate(clickSyncToggle);
+      await Bun.sleep(400);
+      expect(await app.evaluate<boolean>(syncToggleOn)).toBe(false);
+      // The pin was kept level with the tab while it followed, so the toggle's
+      // own first effect is nothing at all -- a control that moved the thing it
+      // was pressed over would say nothing about what it does.
+      expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
+      expect(await app.evaluate<string>(editorDatabase)).toBe('shop');
+    });
+
+    /*
      * The database belongs to the tab, not to the connection: this is the
      * assertion the whole `tabsSlice` shape exists for now. Pointing one tab
      * somewhere else leaves every other tab where it was.
@@ -1984,10 +2009,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * "remembered" `postgres` for it would be the connection-scoped shape
      * wearing a per-tab field.
      *
-     * And the tree does not come along, in either direction: not when a tab is
-     * pointed elsewhere, and not when the tab in front is swapped for one that
-     * runs elsewhere. A tree that re-rooted on a tab switch moved out from
-     * under whatever was being read, for a gesture that was about the tabs.
+     * And with the tree unpinned it does not come along, in either direction:
+     * not when a tab is pointed elsewhere, and not when the tab in front is
+     * swapped for one that runs elsewhere. A tree that re-rooted on a tab
+     * switch moved out from under whatever was being read, for a gesture that
+     * was about the tabs.
      */
     test('a tab moves database on its own, and the tree stays where it was put', async () => {
       await app.evaluate(newTab);
@@ -2013,9 +2039,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
     /*
      * The other half of the same split, and the one that says which control
-     * owns which fact: the sidebar's picker browses, and browsing moves nothing
-     * that is already running. It is put back on `shop` at the end because the
-     * rest of this block reads `shop`'s tree.
+     * owns which fact once they are unpinned: the sidebar's picker browses, and
+     * browsing moves nothing that is already running. It is put back on `shop`
+     * at the end because the rest of this block reads `shop`'s tree.
      */
     test('the sidebar picker moves the tree, not the tab in front', async () => {
       await app.evaluate(selectDatabase('postgres'));
@@ -2640,6 +2666,24 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
     });
 
     /*
+     * Ctrl+Shift+B is the same gesture as the toggle in the filter bar, so the
+     * assertion is that the button reports what the key did: one command, two
+     * ways in, and no second piece of state for them to disagree through. It is
+     * put back afterwards because the rest of this block is written unpinned.
+     */
+    test('the sync shortcut is the sidebar toggle', async () => {
+      expect(await app.evaluate<boolean>(syncToggleOn)).toBe(false);
+
+      await app.evaluate(pressChord(`key: 'B', ctrlKey: true, shiftKey: true`));
+      await Bun.sleep(400);
+      expect(await app.evaluate<boolean>(syncToggleOn)).toBe(true);
+
+      await app.evaluate(pressChord(`key: 'B', ctrlKey: true, shiftKey: true`));
+      await Bun.sleep(400);
+      expect(await app.evaluate<boolean>(syncToggleOn)).toBe(false);
+    });
+
+    /*
      * Ctrl+W as the *host* sees it, not as a `KeyboardEvent` the DOM was handed.
      *
      * Ctrl+W is a browser accelerator, and WebView2 ships with browser
@@ -2755,32 +2799,33 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * the numbering everything above depends on. The block that follows opens
      * its own connection anyway, so ending on one costs nothing.
      */
-    test('the grouping choice survives a relaunch, and is not tied to the connection', async () => {
-      // The test above left the empty state, and a tab is what the picker points
-      // -- with none there is nothing to point and no tree to group.
-      await app.evaluate(newTab);
-      await Bun.sleep(400);
-      await app.evaluate(selectDatabase('shop'));
-      await Bun.sleep(1500);
-      await app.evaluate(clickGroupToggle);
-      await Bun.sleep(400);
-      expect(await app.evaluate<string[]>(schemaLabels)).toEqual([]);
+    test('the tree-sync choice survives a relaunch, and is not tied to the connection', async () => {
+      // Unpinned near the top of this block and never put back, which is what
+      // makes this a real persistence check: the *default* surviving a relaunch
+      // would prove only that nothing was read at all.
+      expect(await app.evaluate<boolean>(syncToggleOn)).toBe(false);
 
       // `connect` reloads the webview, so this is the launch path: the settings
       // are read fresh from the store and no React state survives it.
-      await connect(PG, 'pg-regroup');
+      await connect(PG, 'pg-resync');
+      await Bun.sleep(500);
+
+      // Still unpinned -- a preference about trees, remembered globally rather
+      // than against the connection it happened to be changed on.
+      expect(await app.evaluate<boolean>(syncToggleOn)).toBe(false);
+
+      // And it still behaves that way on a connection that has never seen the
+      // toggle: the tree stays where it is put while the tab runs elsewhere.
       await app.evaluate(selectDatabase('shop'));
       await Bun.sleep(1500);
+      await app.evaluate(selectTabDatabase('postgres'));
+      await Bun.sleep(1200);
+      expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
+      expect(await app.evaluate<string>(editorDatabase)).toBe('postgres');
 
-      // Still flat -- a preference about trees, remembered globally rather than
-      // against the connection it happened to be changed on.
-      expect(await app.evaluate<string[]>(schemaLabels)).toEqual([]);
-      expect(await app.evaluate<string[]>(treeLabels)).toContain('reporting.daily_stats');
-
-      // Back to grouped, which is the default and what later blocks expect.
-      await app.evaluate(clickGroupToggle);
-      await Bun.sleep(400);
-      expect(await app.evaluate<string[]>(schemaLabels)).toEqual(['public', 'reporting']);
+      // The tab goes back where the block that follows expects to run.
+      await app.evaluate(selectTabDatabase('shop'));
+      await Bun.sleep(1200);
     });
   });
 
@@ -4180,12 +4225,13 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(mysql).not.toContain('daily_stats');
     });
 
-    test('MySQL has no schema layer, so it draws no groups and offers no toggle', async () => {
+    test('MySQL has no schema layer, so it draws no groups', async () => {
       // Still on Shop prod (MySQL). Its database *is* its schema, so there is
-      // nothing to group by -- and a toggle that could only ever do nothing is
-      // not shown rather than shown disabled.
+      // nothing to group by and the tree is drawn flat.
       expect(await app.evaluate<string[]>(schemaLabels)).toEqual([]);
-      expect(await app.evaluate<boolean>(groupToggleExists)).toBe(false);
+      // The sync toggle is there all the same: what it pairs is the tree and
+      // the tab, which every engine has.
+      expect(await app.evaluate<boolean>(syncToggleExists)).toBe(true);
       // The tree itself is untouched: names are bare, as they always were.
       expect(await app.evaluate<string[]>(treeLabels)).toContain('users');
     });

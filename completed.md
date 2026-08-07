@@ -762,3 +762,18 @@ This is a record, not a plan. Nothing here is waiting on anything.
   is holding is listed like any other and picking it goes to that tab, rather
   than being hidden from the list — one thread is still never in two tabs, but
   that is enforced by routing instead of by omission.
+
+- **2026-08-07** — **Sync the tree with the tab** — The sidebar's group-by-schema
+  toggle is replaced by a *keep the tree on the tab's database* toggle — the
+  transfer glyph, two arrows facing each other — on by default and bound to
+  `Ctrl+Shift+B`. The tree following the tab was the original design, was removed
+  because a strip holding tabs on two databases re-rooted it out from under
+  whatever was being read, and is now a switch instead of a verdict: the two
+  readings are different sessions, not better and worse. Following, it runs both
+  ways — the sidebar's picker points the tab in front as well, because a
+  following tree *is* the tab's database and a pick that moved only the tree
+  would be undone by the next render. The pin is kept level with the tab while it
+  follows, so unpinning freezes the tree where it stands rather than throwing it
+  back somewhere it was left. The cost, stated because it is a deletion: the tree
+  now always groups where the relations name a schema, and the flat-list escape
+  hatch is gone with the control that offered it.

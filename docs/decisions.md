@@ -6289,3 +6289,68 @@ problem to correct, not ours to mangle.
 `formatSql` moved to `common/db/`, for `splitStatements`' reason: two features
 need it and neither may import the other. `features/editor/format.ts` keeps the
 Monaco registration and nothing else.
+
+---
+
+## Whether the tree follows the tab is a switch, and it defaults to following
+
+**Why.** "The tree stopped following the tab, and the sidebar picker stopped
+moving it" (above) settled the question one way and shipped both costs it wrote
+down: a tab already open is left behind by the first pick after connecting, and
+the tree and the tab drift apart in a session that never meant them to. Living
+with that made the shape of the disagreement clear — **the two readings are not
+better and worse, they are different sessions.** Working *in* one database, the
+tree following the tab is simply what "where am I" looks like and having to move
+two controls is friction. Comparing two databases, a tree that re-roots on every
+tab switch moves out from under whatever is being read, which is the original
+complaint and it has not stopped being true.
+
+Neither reading wins on the merits, which is what makes it a preference rather
+than a decision. DBeaver ships one and TablePlus ships the other; both are right
+about their own user.
+
+**What changed.** `tree.syncWithTab` in the `settings` store, on by default, with
+the toggle in the sidebar's own filter bar and `Ctrl+Shift+B` on it.
+`shownDatabase` is `treeFollowsTab ? workingDatabase : pinnedDatabase`, so the
+old behaviour is the whole of the `false` branch — nothing was deleted, it was
+given a switch.
+
+**Following is the default because it is the ordinary session.** One database is
+what most connections are used in, and the pinned tree only starts paying for
+itself once there are tabs on two. A default nobody needs until they are doing
+something unusual is a default that reads as a bug for everyone else, which is
+what "can you avoid the database tree changing with the tab" was reporting from
+the other side.
+
+**The pin is kept level with the tab while the tree is following it**, so
+unpinning freezes the tree where it stands rather than throwing it back to
+wherever it was last pinned. A toggle whose first effect is to move the thing it
+was pressed over says nothing about what it does.
+
+**The sidebar's picker points the tab as well, while following** — the exact
+thing the previous entry rejected, and it is not a reversal of that reasoning so
+much as it is the reasoning not applying. That entry refused the retarget because
+it would make the state "tree on `analytics`, tab on `shop`" unreachable by
+asking for it. Following, that state does not exist by definition; pinned, the
+picker still refuses to touch the tab and the state is reachable exactly as
+before. What the retarget prevents is worse than what it costs: a following tree
+*is* the tab's database, so a pick that moved only the tree would be undone by
+the next render — a picker that visibly snaps back.
+
+**What it cost, and it is a real deletion.** The slot the toggle occupies was
+the group-by-schema toggle, so the tree now always groups where the relations
+name a schema and there is no way back to one flat list. That control was the
+app's first preference (`tree.groupBySchema`, and the reason the `settings` table
+exists at all) and grouped was already its default; what is gone is the escape
+hatch, not the behaviour. *Rejected: keeping both controls* — two toggles in a
+32px bar beside a filter field is a toolbar, and the bar is not one. If flat
+trees are wanted back they belong in a Settings screen, which still does not
+exist.
+
+**The UI suite unpins near the top of the Postgres block and leaves it unpinned.**
+Everything written before this shipped assumes the pinned semantics, and rather
+than rewrite those assertions the suite proves the paired behaviour in both
+directions first — the tab moving the tree, and the sidebar's picker moving the
+tab — then turns the toggle off and carries on. The relaunch test is what proves
+the preference is stored: it asserts the *non-default* value survives, since the
+default surviving would prove only that nothing was read.

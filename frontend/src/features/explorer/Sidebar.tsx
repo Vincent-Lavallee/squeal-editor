@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { FunctionInfo, TableInfo, TriggerInfo } from '../../../../shared/protocol/index.ts';
 import { relationLabel, relationName, relationOf } from '../../common/db/relation.ts';
-import { CopiedIcon, DisclosureIcon, FlatTreeIcon, FunctionIcon, KeyIcon, RefreshIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, StarIcon, TableIcon, TriggerIcon, ViewIcon } from '../../common/icons/icons.ts';
+import { CopiedIcon, DisclosureIcon, FunctionIcon, KeyIcon, RefreshIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, StarIcon, SyncTreeIcon, TableIcon, TriggerIcon, ViewIcon } from '../../common/icons/icons.ts';
 import DropTableConfirm from './DropTableConfirm.tsx';
 import { useExplorer } from './useExplorer.ts';
 import Badge from '../../common/components/Badge.tsx';
@@ -11,18 +11,9 @@ import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.
 import Input from '../../common/components/Input.tsx';
 import Select from '../../common/components/Select.tsx';
 import Skeleton from '../../common/components/Skeleton.tsx';
-import { useBooleanSetting } from '../../store/settingsSlice.ts';
 import * as t from '../../common/tokens';
 
 const iconSvg = { flex: 'none', width: 16, height: 16 };
-
-/**
- * Grouping is remembered globally, so it is a preference about trees rather than
- * a fact about one server -- moving to another connection keeps the shape you
- * chose. Grouped is the default: a flat run of a hundred relations is the state
- * the grouping exists to fix, so the fix should not have to be found first.
- */
-const GROUP_BY_SCHEMA = 'tree.groupBySchema';
 
 /** A tree with nothing to show yet. Frozen and shared: a fresh `new Set()` per
  *  render would be a new identity for every memo downstream of it. */
@@ -30,14 +21,19 @@ const NO_KEYS: ReadonlySet<string> = new Set();
 
 interface Props {
   /**
-   * Which database the tree is drawing. It is the composition root's, and it is
-   * **not** the database of the tab in front: the tree is browsed on its own,
-   * so switching to a tab pointed somewhere else leaves it exactly where it
-   * was. `onSelectDatabase` is the only thing that moves it. Keying the
-   * expansion state below by database is what makes coming back to one find the
-   * tree the way it was left.
+   * Which database the tree is drawing. It is the composition root's, because
+   * only that can see whether `synced` means "the tab in front's" or "the last
+   * one picked here". Keying the expansion state below by database is what
+   * makes coming back to one find the tree the way it was left.
    */
   shownDatabase: string | null;
+  /**
+   * Whether the tree keeps to the database of the tab in front. It is read
+   * here only to draw the toggle -- what it *does* is `Shell`'s, which is
+   * where `shownDatabase` and `onSelectDatabase` both resolve against it.
+   */
+  synced: boolean;
+  onToggleSync: () => void;
   onSelectTable: (table: TableInfo) => void;
   onSelectDatabase: (database: string) => void;
   onShowDefinition: (database: string, table: TableInfo) => void;
@@ -58,7 +54,7 @@ interface Props {
   focusFilter?: number;
 }
 
-export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase, onShowDefinition, onShowTriggerDefinition, onShowFunctionDefinition, collapsed, onToggleCollapse, focusFilter }: Props) {
+export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectTable, onSelectDatabase, onShowDefinition, onShowTriggerDefinition, onShowFunctionDefinition, collapsed, onToggleCollapse, focusFilter }: Props) {
   const { databases, database, tables, columnsFor, loadTableColumns, triggersFor, loadTableTriggers, functionsFor, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, firstLoad, error } = useExplorer(shownDatabase);
 
   /*
@@ -97,7 +93,6 @@ export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase
     | null
   >(null);
   const [dropping, setDropping] = useState<TableInfo | null>(null);
-  const [groupBySchema, setGroupBySchema] = useBooleanSetting(GROUP_BY_SCHEMA, true);
   // No store flag for this one -- see `refreshDatabases` -- so the spinner is
   // this click's alone, not a fact the tree needs to know either.
   const [refreshingDatabases, setRefreshingDatabases] = useState(false);
@@ -242,7 +237,7 @@ export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase
 
   /*
    * MySQL reports no schema, because its database *is* its schema -- so there is
-   * nothing to group by and the toggle does not apply. That is read off the data
+   * nothing to group by and the tree is drawn flat. That is read off the data
    * rather than off the engine: the UI does not know what MySQL is, and "these
    * relations name a schema" is exactly the question being asked anyway.
    */
@@ -250,7 +245,7 @@ export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase
     (unpinned?.some((table) => table.schema !== undefined) ?? false) ||
     (functions?.some((f) => f.schema !== undefined) ?? false);
   const grouped = useMemo(() => {
-    if (!unpinned || !hasSchemas || !groupBySchema) return null;
+    if (!unpinned || !hasSchemas) return null;
     // Grouping preserves the order within each group, so the sort above still
     // holds tables over views inside every one of them.
     const groups = new Map<string, TableInfo[]>();
@@ -275,7 +270,7 @@ export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase
       if (b === defaultSchema) return 1;
       return a.localeCompare(b);
     });
-  }, [unpinned, hasSchemas, groupBySchema, defaultSchema, functionsBySchema]);
+  }, [unpinned, hasSchemas, defaultSchema, functionsBySchema]);
 
   const renderRow = (table: TableInfo, db: string, indented: boolean) => {
     const key = relationName(relationOf(table));
@@ -386,14 +381,13 @@ export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase
         {/*
           * The control lives here rather than in Settings, which does not exist:
           * the choice is about the tree in front of you, and a preference you have
-          * to leave the tree to change is one nobody finds. It is absent on an
-          * engine with no schemas -- a toggle that could only ever do nothing.
+          * to leave the tree to change is one nobody finds.
           */}
         {/*
-          * Refresh before the group toggle, not after: the header above ends in
+          * Refresh before the sync toggle, not after: the header above ends in
           * [db-refresh][collapse], so this bar's last slot has to be the other
-          * toggle-like control (group-by-schema) for the two refresh icons to
-          * land in the same column instead of one sitting a button-width off.
+          * toggle-like control for the two refresh icons to land in the same
+          * column instead of one sitting a button-width off.
           */}
         <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0 }}
           onClick={refreshTables} disabled={!database || loading}
@@ -402,16 +396,19 @@ export default function Sidebar({ shownDatabase, onSelectTable, onSelectDatabase
           <RefreshIcon className={loading ? 'spin' : undefined} style={iconSvg} aria-hidden="true" />
         </Button>
 
-        {hasSchemas && (
-          <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0 }}
-            onClick={() => setGroupBySchema(!groupBySchema)}
-            title={groupBySchema ? 'Show every table in one list' : 'Group tables by schema'}
-            aria-label={groupBySchema ? 'Show every table in one list' : 'Group tables by schema'}
-            aria-pressed={groupBySchema}
-            data-testid="sidebar-group-toggle">
-            {groupBySchema ? <FlatTreeIcon style={iconSvg} aria-hidden="true" /> : <SchemaIcon style={iconSvg} aria-hidden="true" />}
-          </Button>
-        )}
+        {/*
+          * Unlike every other toggle in this bar's history, it is drawn on every
+          * engine: what it pairs is the tree and the tab, which every connection
+          * has, rather than a schema layer only some of them report.
+          */}
+        <Button variant="ghost" style={{ justifyContent: 'center', flex: 'none', width: 24, height: 24, padding: 0, ...(synced ? { color: t.ACCENT } : {}) }}
+          onClick={onToggleSync}
+          title={synced ? 'The tree follows the tab in front (Ctrl+Shift+B)' : 'Keep the tree on the tab\'s database (Ctrl+Shift+B)'}
+          aria-label={synced ? 'Stop the tree following the tab' : "Keep the tree on the tab's database"}
+          aria-pressed={synced}
+          data-testid="sidebar-sync-toggle">
+          <SyncTreeIcon style={iconSvg} aria-hidden="true" />
+        </Button>
       </div>
 
       <nav style={{ flex: 1, overflowY: 'auto', padding: `${t.GAP_SM}px 6px`, display: collapsed ? 'none' : undefined }}>
