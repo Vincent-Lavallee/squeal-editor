@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
+#import <dlfcn.h>
 
 /*
  * Injected into the Neutralino shell via DYLD_INSERT_LIBRARIES (the launcher
@@ -20,6 +21,43 @@
  * resize and native zoom all survive, and the webview paints the bar.
  */
 
+/*
+ * Puts the Dock icon back to the bundle's own icon.icns, which package-macos.sh
+ * builds with the ~80% content inset macOS composites its icons inside.
+ *
+ * It has to be taken back, because Neutralino gives it away: it reads
+ * modes.window.icon from the config and hands that PNG to
+ * -[NSApplication setApplicationIconImage:] at startup, which outranks the
+ * bundle's CFBundleIconFile. frontend/public/icon.png is deliberately
+ * full-bleed — right for the Windows window and taskbar icon, which are drawn
+ * at native size — so the Dock ended up showing an icon a fifth larger than
+ * every neighbour, and the inset iconutil had just produced was never displayed.
+ *
+ * The inset could not be moved to the config instead. Deleting the key from
+ * Contents/Resources/neutralino.config.json does nothing at all: `neu build`
+ * bundles a copy of the config *inside* resources.neu, and that copy is the one
+ * Neutralino reads — the loose file is only a fallback. So the override has to
+ * be undone after the fact, and this is the process it happens in.
+ *
+ * The path is derived from this dylib's own location rather than from
+ * NSBundle.mainBundle: the launcher shim execs a *symlink* out of
+ * Contents/Resources (see package-macos.sh), so argv[0] does not name
+ * Contents/MacOS and bundle detection cannot be relied on. dladdr always names
+ * the file this code was loaded from. Failing to find it is still the right
+ * outcome — a nil image is documented to reset the icon to the bundle's.
+ */
+static void useBundleDockIcon(void) {
+  Dl_info info;
+  NSImage *icon = nil;
+  if (dladdr((const void *)&useBundleDockIcon, &info) != 0 && info.dli_fname) {
+    NSString *frameworks = [[NSString stringWithUTF8String:info.dli_fname] stringByDeletingLastPathComponent];
+    NSString *icns = [[[frameworks stringByDeletingLastPathComponent]
+        stringByAppendingPathComponent:@"Resources"] stringByAppendingPathComponent:@"icon.icns"];
+    icon = [[NSImage alloc] initWithContentsOfFile:icns.stringByStandardizingPath];
+  }
+  NSApp.applicationIconImage = icon;
+}
+
 static void restyle(NSWindow *window) {
   window.styleMask |= NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                       NSWindowStyleMaskMiniaturizable |
@@ -35,6 +73,12 @@ static void restyle(NSWindow *window) {
 
   /* The window may have failed to become key while it was borderless. */
   [window makeKeyAndOrderFront:nil];
+
+  /* Claimed here as well as on did-finish-launching because Neutralino sets its
+   * own icon while building the window, and which of the two runs first is its
+   * startup order to change, not ours. Reclaiming it at both points means the
+   * last word is this one either way. */
+  useBundleDockIcon();
 }
 
 /*
@@ -281,5 +325,6 @@ __attribute__((constructor)) static void squealWindowChromeInit(void) {
               usingBlock:^(NSNotification *note) {
                 installMenuBar();
                 installEditShortcuts();
+                useBundleDockIcon();
               }];
 }

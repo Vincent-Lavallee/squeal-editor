@@ -2710,6 +2710,43 @@ Read the `decisions.md` entry before touching any of them; all three cost real
 digging, and Neutralino's own `setDraggableRegion` is the wrong answer to the
 second.
 
+### The two titlebars
+
+`App.tsx` picks `TitlebarMacos` or `Titlebar` off `NL_OS`, and they are two
+components rather than one with branches in it — the platforms disagree about
+where the window controls sit, what they look like and where the menus live,
+which is most of what a titlebar is.
+
+**Which means a control added to one is simply absent on the other.** The same
+lesson *Carrying the connections to another machine* already records for a File
+menu item, one level up: it is the whole titlebar, not the menu. The assistant
+button is how it was found — it shipped on Windows only, and on macOS there was
+no way to start a conversation at all, on a build where everything behind the
+button worked. Adding a control means adding it twice, or deciding out loud that
+it is one platform's.
+
+**The macOS bar keeps its title centred by spending the balance, not adding to
+it.** The traffic lights are a fixed-width group on the left, and the right-hand
+row is declared the same width; the assistant button is drawn *inside* that row
+rather than beside it, so the row stays `LIGHTS_W` either way and the flexible
+middle stays symmetric. A control appended after the balance row would slide the
+title off centre by its own width.
+
+**The traffic lights are revealed by hovering the group, not the dot.** Pointing
+at any one of macOS' three lights labels all three, so `lightsHovered` gates the
+symbols while `hovered` — the dot actually under the pointer — gates only the
+darker shade. Two hover states, because they answer two different questions.
+
+**Each glyph is drawn in a viewBox the size of the dot, so it is centred by its
+own coordinates rather than by the flexbox around it.** The first cut drew 5×5
+art with a 0.8 stroke: half the stroke falls outside the viewBox on all four
+sides, the browser clips it, and each glyph loses a different amount depending on
+which way its strokes run — which is what read as three symbols nudged in three
+directions. The green glyph does not follow `maximized`: macOS swaps that symbol
+between fullscreen and zoom, not between zoomed and not, and this button has
+always been a zoom. The state is still said where it is load-bearing, in the
+label and the tooltip.
+
 ### The menus
 
 `Menu` is one dropdown, drawn twice: **File** (Exit) and **About** (check for

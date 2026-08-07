@@ -367,6 +367,38 @@ and PNG are full-bleed again; the script shrinks a copy to 80% and pads it back
 out before handing it to `iconutil`, so `icon.icns` gets the inset and nothing
 else does. One drawing, each platform's packaging asks for what it needs from it.
 
+**And producing the inset icns turned out not to be the same thing as showing
+it.** Neutralino reads `modes.window.icon` from the config and, on macOS, hands
+that PNG to `-[NSApplication setApplicationIconImage:]` at startup — which
+outranks the bundle's `CFBundleIconFile`. So the Dock spent every launch showing
+the full-bleed PNG, the inset icns `iconutil` had just built was never displayed,
+and the icon read a fifth larger than its neighbours exactly as before the fix.
+The packaging change was correct and invisible, which is the worst combination
+to debug: the artifact on disk is right, so nothing about it looks wrong.
+
+**The reclaim is in the dylib, and it is there because the config is not
+reachable.** Deleting the key from `Contents/Resources/neutralino.config.json`
+does nothing at all — `neu build` bundles a copy of the config *inside*
+`resources.neu` and that copy is the one Neutralino reads; the loose file is only
+a fallback. Editing the committed config would take the icon away from Windows,
+which needs it. So the override is undone after the fact, in the one place that
+is already inside the process for exactly this class of reason: the injected
+dylib sets the icon back to the bundle's own `icon.icns` (see below). It runs on
+both `applicationDidFinishLaunching` and the window restyle, because which of the
+two beats Neutralino's own call is Neutralino's startup order to change.
+
+**The icns path is derived from the dylib's own location via `dladdr`, not from
+`NSBundle.mainBundle`.** The launcher shim execs a *symlink* out of
+`Contents/Resources`, so `argv[0]` does not name `Contents/MacOS` and bundle
+detection cannot be relied on — the same shim, and the same reason, as the
+`NL_PATH` entry below. `dladdr` always names the file the code was loaded from.
+
+**Verified by measuring, not by looking**, because "the icon looks right" is the
+claim this entry exists because of: the running app's Dock tile was screenshotted
+and its plate measured against Finder's in the same crop. Before the dylib change
+it was ~1.25× its neighbours — precisely the 1/0.8 the inset was supposed to
+remove — and after it, the same size as them.
+
 ---
 
 ## The query pane is Monaco, and the engine names its own dialect

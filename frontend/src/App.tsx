@@ -35,7 +35,8 @@ export default function App() {
   return (
     <>
       {IS_MACOS
-        ? <TitlebarMacos onOpenDiagram={shellShowing ? openDiagram : undefined} />
+        ? <TitlebarMacos onOpenDiagram={shellShowing ? openDiagram : undefined}
+            onOpenAssistant={shellShowing ? openAssistant : undefined} />
         : <Titlebar onCheckForUpdates={() => check(true)} onOpenDiagram={shellShowing ? openDiagram : undefined}
             onOpenAssistant={shellShowing ? openAssistant : undefined} />
       }
