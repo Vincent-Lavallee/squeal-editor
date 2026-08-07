@@ -119,3 +119,39 @@ export interface AiToolDef {
   /** JSON Schema, handed to the model as written. */
   parameters: unknown;
 }
+
+/**
+ * One kept conversation as the picker meets it: enough to name it and to order
+ * the list, and none of what was said.
+ *
+ * The body is deliberately absent here. A transcript carries schema dumps and
+ * DDL and runs to tens of kilobytes, so a list that carried every body would
+ * pull every conversation ever had into memory to draw a dozen rows —
+ * `conversations.get` fetches the one that was picked.
+ */
+export interface AiConversationSummary {
+  id: string;
+  /** The tab's own name, which the model wrote on its first reply. */
+  title: string;
+  /**
+   * When it was last written, in epoch milliseconds.
+   *
+   * The app's own clock, not a value a server sent, which is why the UI may
+   * render it through `Date` — the rule that forbids that is about database
+   * values, and this one was minted here.
+   */
+  updatedAt: number;
+}
+
+/**
+ * A kept conversation with what was said in it.
+ *
+ * `body` is an **opaque string**, the `db.saved.connect` session rule applied to
+ * a thread: the store keeps text and the UI owns its meaning, so a message shape
+ * has no business in this contract or in the schema. What the UI encodes into it
+ * is *not* the conversation as it stands — a tool result carrying rows is
+ * written down as its shape. See `docs/frontend.md`.
+ */
+export interface AiConversation extends AiConversationSummary {
+  body: string;
+}

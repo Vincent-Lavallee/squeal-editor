@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { FunctionInfo, SavedQuery, TableInfo, TriggerInfo } from '../../shared/protocol/index.ts';
 import { relationLabel, relationOf } from './common/db/relation.ts';
-import { useAppSelector } from './store/hooks.ts';
+import { selectAssistantReady, sendMessage } from './store/assistantSlice.ts';
+import { useAppDispatch, useAppSelector } from './store/hooks.ts';
 import { useSavedQueries } from './store/savedQueriesSlice.ts';
 import { useSession } from './store/sessionSlice.ts';
 import { useShortcuts } from './store/settingsSlice.ts';
 import { useTabs, type CloseIntent, type Tab } from './store/tabsSlice.ts';
-import { AssistantPanel } from './features/assistant/index.ts';
+import { AssistantPanel, diagnosePrompt, explainPrompt } from './features/assistant/index.ts';
 import { RelationshipDiagram } from './features/diagram/index.ts';
 import { EditorPane, useEditor, useEditorKeybindings, useSqlCompletion, useSqlFormatter } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
@@ -68,6 +69,9 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
     activateTab, closeIdsFor, closeTabs, connectionTabs, moveTab, renameTab,
   } = useTabs();
   const { dialect, disconnect, activeConnectionId } = useSession();
+  const dispatch = useAppDispatch();
+  // One boolean, deliberately: see `selectAssistantReady`.
+  const assistantReady = useAppSelector(selectAssistantReady);
   // `tabRunning`, not the shown result's own `running`: a batch of several
   // statements leaves the pane showing a finished one while a later one is still
   // going, and Run must stay busy until the whole batch is done.
@@ -599,6 +603,49 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
   }, [openSavedQueryTab, treeDatabase]);
 
   /*
+   * Ask the assistant something on the user's behalf: a new conversation, born
+   * holding the question.
+   *
+   * Both callers are elsewhere in the app -- the error under a result grid, a
+   * selection in the editor -- and both go through here for the reason every
+   * cross-feature gesture does: opening a tab is the tabs', sending a message is
+   * the assistant's, and neither feature may import the other.
+   *
+   * **A new tab every time**, which is what `openAssistantTab` already means: a
+   * diagnosis is a new question, and dropping it into a conversation about
+   * something else buries both.
+   *
+   * **It opens in the *other* pane, splitting the view.** This is the one place
+   * in the app that does not use `workingPane`, and the exception is the whole
+   * point of these two entry points: the question is *about what is on screen*,
+   * so an answer that replaces it with itself makes you flip back and forth
+   * between the error and the explanation of the error. Beside it, the two are
+   * readable together -- which is the gesture `Ctrl+Shift+T` already exists for,
+   * taken automatically because here the app is the one deciding to open a tab.
+   * With no split yet, minting into the secondary pane is what creates one.
+   *
+   * **Whether it can be asked at all is decided by the callers**, which draw
+   * their control only when a key is stored -- so there is no branch here for
+   * the state where nothing could be sent. A button offering to diagnose an
+   * error and then opening a form to paste a key into is help that turns into
+   * an errand; and queuing the question to fire once a key arrives is real
+   * machinery (a prompt with a lifetime, surviving a tab close) for the one
+   * state where the assistant does not work at all.
+   */
+  const askAssistant = useCallback((question: string) => {
+    const tabId = openAssistantTab(workingPane === 'secondary' ? 'primary' : 'secondary');
+    if (tabId) void dispatch(sendMessage({ tabId, text: question }));
+  }, [openAssistantTab, workingPane, dispatch]);
+
+  const diagnoseFailure = useCallback((tab: Tab, failure: { sql: string | null; error: string }) => {
+    askAssistant(diagnosePrompt({ tabTitle: tab.title, database: tab.database, ...failure }));
+  }, [askAssistant]);
+
+  const explainSelection = useCallback((tab: Tab, sql: string) => {
+    askAssistant(explainPrompt({ tabTitle: tab.title, database: tab.database, sql }));
+  }, [askAssistant]);
+
+  /*
    * Ctrl+S. Which of the two things it does is whether the tab already knows
    * which saved query it is:
    *
@@ -719,6 +766,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
               <SavedQueriesButton onOpen={(query) => openSavedQuery(query, 'primary')} />
             </div>
             <EditorPane tab={activeTab} onRun={runPrimary} running={primaryRunning} commands={shellCommands} onSaveQuery={saveActiveQuery}
+              onExplainSelection={assistantReady && activeTab ? (sql) => explainSelection(activeTab, sql) : undefined}
               focused={!showSplit || focusedPane === 'primary'}
               databases={databases} onSelectDatabase={(db) => pointTabAt(activeTab, 'primary', db)}
               pickerOpen={pickerPane === 'primary'} onPickerOpenChange={(open) => setPickerPane(open ? 'primary' : null)} />
@@ -732,6 +780,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
                     pickerOpen={pickerPane === 'primary'} onPickerOpenChange={(open) => setPickerPane(open ? 'primary' : null)} />
                 : activeTab
                   ? <ResultsTable tab={activeTab}
+                      onDiagnose={assistantReady ? (failure) => diagnoseFailure(activeTab, failure) : undefined}
                       databases={databases} onSelectDatabase={(db) => pointTabAt(activeTab, 'primary', db)}
                       pickerOpen={pickerPane === 'primary'} onPickerOpenChange={(open) => setPickerPane(open ? 'primary' : null)} />
                   : <Note kind="muted">Nothing open. Click a table, or start a new query.</Note>}
@@ -769,6 +818,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
                 <SavedQueriesButton onOpen={(query) => openSavedQuery(query, 'secondary')} />
               </div>
               <EditorPane tab={secondaryActiveTab} onRun={runSecondary} running={secondaryRunning} commands={shellCommands} onSaveQuery={saveSecondaryQuery}
+                onExplainSelection={assistantReady && secondaryActiveTab ? (sql) => explainSelection(secondaryActiveTab, sql) : undefined}
                 focused={focusedPane === 'secondary'} exposeGlobal={false}
                 databases={databases} onSelectDatabase={(db) => pointTabAt(secondaryActiveTab, 'secondary', db)}
                 pickerOpen={pickerPane === 'secondary'} onPickerOpenChange={(open) => setPickerPane(open ? 'secondary' : null)} />
@@ -781,6 +831,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
                       databases={databases} onSelectDatabase={(db) => pointTabAt(secondaryActiveTab, 'secondary', db)}
                       pickerOpen={pickerPane === 'secondary'} onPickerOpenChange={(open) => setPickerPane(open ? 'secondary' : null)} />
                   : <ResultsTable tab={secondaryActiveTab}
+                      onDiagnose={assistantReady && secondaryActiveTab ? (failure) => diagnoseFailure(secondaryActiveTab, failure) : undefined}
                       databases={databases} onSelectDatabase={(db) => pointTabAt(secondaryActiveTab, 'secondary', db)}
                       pickerOpen={pickerPane === 'secondary'} onPickerOpenChange={(open) => setPickerPane(open ? 'secondary' : null)} />}
               </div>

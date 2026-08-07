@@ -1142,6 +1142,55 @@ insert reading as a fresh row rather than the same one again. The empty string
 is a real value the `UNIQUE (connection_id, database, schema, table_name)`
 index can actually compare, which a `NULL` cannot be asked to do.
 
+### Assistant conversations
+
+`conversations` (id, title, updated_at, body) keeps the assistant's threads, so
+one can be reopened after a quit. It is the **second table here that references
+nothing**, and for a sharper version of `saved_queries`' reason: a conversation
+may name three connections over its life, or none, so filing it under one would
+be filing it under whichever server it happened to mention first — and deleting
+that connection would then take the transcript with it.
+
+**The commands are `conversations.*`, not `ai.*`**, and the split is where the
+work is: `assistant.ts` owns the provider — the key, the catalog, one turn — and
+none of it is involved in reading a transcript back. A stored thread is text on
+disk about nobody's server, which is the category `queries.*` and `settings.*`
+are already in.
+
+`body` is opaque, the `connection_sessions` rule again. What is *not* opaque is
+`title` and `updated_at`, and that is the one deliberate departure from it: the
+picker names a conversation and orders the list by them, and parsing every
+transcript on disk to draw a dozen rows is exactly what a column costs nothing
+to avoid.
+
+Four rules:
+
+- **`conversations.list` answers without bodies**, where `settings.list` and
+  `queries.list` answer with everything. The shape of the data decides, not a
+  convention: a setting is a short string and a saved query is one statement,
+  while a transcript carries the schema dumps and DDL the model read. `get`
+  fetches the one that was picked.
+- **The id is the caller's**, unlike `queries.save`'s, which the store mints. A
+  thread is written on a debounce *while it is still being had*, so an id the UI
+  did not hold yet would make the first two saves of one conversation two rows.
+- **`updated_at` is answered, not sent**, and `conversations.save` answers with
+  it rather than `{ ok: true }`. It is what the list is ordered by, so one clock
+  deciding it is what stops two saves a second apart from being ordered by
+  whichever side was asked — and returning it is what lets the UI keep its
+  picker current without re-reading the list after every exchange. Epoch
+  **milliseconds** here, unlike a migration's seconds: this one is compared,
+  never printed as a version.
+- **`get` answers `null` for an id no row holds**, rather than throwing. A tab
+  can outlive the conversation it was reopened from, deleted from the picker
+  while the tab sat behind it, and "there is nothing there" is a state the panel
+  draws — `ai.status`'s rule, one table over.
+
+**Nothing here knows about the redaction, and that is deliberate.** The rule that
+an attached result is written down as its shape and never as its values is
+enforced where the values are, in the webview, before the body is handed over —
+see `docs/frontend.md`. This side stores the text it is given, the same way it
+stores a session snapshot without knowing what a tab is.
+
 ### Saved sessions
 
 `connection_sessions` holds one **opaque snapshot string** per saved connection —
@@ -1200,6 +1249,7 @@ migrations/
                                         names `saved_connections.environment` already held
   1785360179-connection-names-not-unique.ts
   1785428731-saved-queries.ts           named statements, referencing nothing
+  1786107358-conversations.ts           the assistant's threads, referencing nothing either
 ```
 
 A file is `<epoch>-what-it-does.ts` and **that epoch is its `version`** — the

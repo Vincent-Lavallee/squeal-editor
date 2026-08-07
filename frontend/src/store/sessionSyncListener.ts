@@ -1,5 +1,6 @@
 import { createListenerMiddleware, isAnyOf } from '@reduxjs/toolkit';
 
+import { conversationRestarted, openConversation, userSaid } from './assistantSlice.ts';
 import { activePart, browseTable } from './resultsSlice.ts';
 import type { SessionSnapshot } from './sessionSnapshot.ts';
 import { disconnect, saveSession } from './sessionSlice.ts';
@@ -77,6 +78,24 @@ function snapshotFor(state: RootState, connectionId: string): SessionSnapshot {
       if (tab.kind === 'diagram') {
         return { kind: tab.kind, database: tab.database, title: tab.title, pane: tab.pane };
       }
+      // An assistant tab holds a conversation and no database, so the link is
+      // all that goes down -- and it comes off the live thread when there is
+      // one, falling back to the seed the tab was restored with and never
+      // adopted. The grid filter's split exactly: the live value wins for a tab
+      // that has been looked at, the seed answers for one that has not.
+      //
+      // The presence of the entry decides, not its `id`: a thread the user
+      // cleared holds `id: null`, and coalescing that onto the seed would
+      // reopen tomorrow the conversation they emptied today.
+      if (tab.kind === 'assistant') {
+        const held = state.assistant.byTab[tab.id];
+        return {
+          kind: tab.kind,
+          title: tab.title,
+          pane: tab.pane,
+          conversationId: held ? (held.id ?? undefined) : tab.conversationId,
+        };
+      }
       return {
         kind: tab.kind,
         database: tab.database,
@@ -107,9 +126,15 @@ function saveIfChanged(state: RootState, dispatch: AppDispatch, connectionId: st
 // Debounced: re-check every connection still open when a session settles. Only
 // the open ones are serialised, so a disconnect can never overwrite a stored
 // snapshot with the empty shape its own teardown leaves behind.
+//
+// The three assistant actions are here because each *moves an assistant tab's
+// conversation link*, and none of them touches a tab: without them a thread
+// started and quit out of would restore empty, since nothing else the user did
+// would have written the snapshot again.
 startAppListening({
   matcher: isAnyOf(
-    tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged, tabRenamed, tabSaved, browseTable.fulfilled
+    tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged, tabRenamed, tabSaved, browseTable.fulfilled,
+    userSaid, conversationRestarted, openConversation.pending
   ),
   effect: async (_action, api) => {
     api.cancelActiveListeners();

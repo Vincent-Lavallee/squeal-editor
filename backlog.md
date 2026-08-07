@@ -85,18 +85,6 @@ Things that do not exist yet.
   _Connect_ naming it, never a silently conjured empty database — so creating one
   has to be something the user asked for by name.
 
-- **Assistant: remembered conversations** — The assistant panel ships without
-  memory: the thread lives for as long as the app does and quitting drops it, so
-  a long debugging conversation cannot be come back to. Persist the messages and
-  the tool calls, with a list of past conversations to reopen. The line that has
-  to hold: an attached result is stored as its shape — `128 rows of users(id,
-  email, created_at)` — and never as the values, because the rows only ever left
-  the process on one deliberate gesture and that gesture should not also mean
-  they sit in `squeal.db` forever, in a table that is not encrypted the way
-  passwords are. It is a store table and a migration, and it touches nothing the
-  panel already does, which is why it was left out of the first cut rather than
-  built half-way.
-
 - **GitHub sync** — Authenticate via browser-based OAuth (no hosted backend) and sync workspaces, connections, and user settings to a private gist automatically on change. Connection passwords are never included in the synced data.
 
 - **Preferences: Settings screen** — The Preferences menu ships with Keyboard

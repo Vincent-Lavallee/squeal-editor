@@ -18,17 +18,13 @@ import type { TableFilter } from '../../../shared/protocol/index.ts';
  * The split rides along too (`pane`, `secondaryActiveIndex`), which reverses
  * the call that shipped it as session-only; see `docs/decisions.md`.
  *
- * `savedQueryId` is the exception to "runtime ids are left out", and only looks
- * like one: it is a *stored* query's id, minted by the extension and outliving
- * every session, which is exactly why the link can be written down at all.
+ * `savedQueryId` and `conversationId` are the exceptions to "runtime ids are
+ * left out", and only look like ones: both are *stored* ids that outlive every
+ * session, which is exactly why either link can be written down at all.
  */
 export interface SessionSnapshot {
   tabs: Array<{
-    /**
-     * An `assistant` tab rides here like any other, and restores empty: the
-     * conversation itself is not persisted yet (see `backlog.md`), so what comes
-     * back is the place it was open, not the thread that was in it.
-     */
+    /** An `assistant` tab rides here like any other, carrying `conversationId`. */
     kind: 'editor' | 'grid' | 'diagram' | 'assistant';
     /**
      * Which database this tab was pointed at. Absent on a snapshot written
@@ -43,6 +39,13 @@ export interface SessionSnapshot {
     sql?: string;
     filter?: TableFilter | null;
     savedQueryId?: string;
+    /**
+     * The conversation an `assistant` tab was holding. Absent on a snapshot
+     * written before conversations were kept, and on one whose tab was opened
+     * and never spoken to -- both read as "it comes back empty", which is what
+     * an assistant tab with nothing in it is.
+     */
+    conversationId?: string;
     /** Whether this tab held edits it had not saved back to its query. */
     unsaved?: boolean;
     /**

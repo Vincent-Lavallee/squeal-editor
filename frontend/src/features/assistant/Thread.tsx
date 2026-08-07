@@ -17,6 +17,7 @@ import { AssistantIcon, DisclosureIcon, ToolIcon } from '../../common/icons/icon
 import * as t from '../../common/tokens';
 import type { PendingApproval, ToolRecord } from '../../store/assistantSlice.ts';
 import type { AiMessage } from '../../../../shared/protocol/index.ts';
+import Markdown from './Markdown.tsx';
 
 interface Props {
   messages: AiMessage[];
@@ -104,30 +105,16 @@ function Message({ message, tools }: { message: AiMessage; tools: Record<string,
 }
 
 /**
- * The answer's text, with fenced code blocks drawn as code.
+ * The answer's text.
  *
- * Deliberately not a markdown renderer: the only markup that matters in an
- * answer about SQL is the fence, and a dependency that also draws tables, images
- * and links would be bringing a document format into a chat panel.
+ * It handled fenced code and nothing else for a while, on the reading that the
+ * fence is the only markup that matters in an answer about SQL. Models format
+ * their answers regardless, so what that shipped was tables as raw pipes and
+ * `**` around words meant to be bold. `Markdown.tsx` is the hand-rolled subset
+ * that replaced it — still no dependency, still no raw HTML, still nothing
+ * clickable. See `docs/decisions.md`.
  */
-function Prose({ text }: { text: string }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: t.GAP_SM, fontSize: t.TEXT_BODY, lineHeight: 1.5 }}>
-      {text.split(/```/).map((chunk, index) =>
-        index % 2 === 1 ? (
-          <pre
-            key={index}
-            style={{ margin: 0, padding: t.GAP, overflowX: 'auto', border: `1px solid ${t.BORDER}`, borderRadius: t.RADIUS, color: t.TEXT, fontFamily: t.MONO, fontSize: t.TEXT_BADGE }}
-          >
-            {chunk.replace(/^\w*\n/, '')}
-          </pre>
-        ) : (
-          <span key={index} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{chunk}</span>
-        )
-      )}
-    </div>
-  );
-}
+const Prose = ({ text }: { text: string }) => <Markdown text={text} />;
 
 /**
  * One call, collapsed to a line. Expanding it is how "what did it just read" is

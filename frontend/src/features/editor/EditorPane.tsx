@@ -5,6 +5,7 @@ import { useShortcuts } from '../../store/settingsSlice.ts';
 import type { Tab } from '../../store/tabsSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
+import ContextMenu, { type MenuItem } from '../../common/components/ContextMenu.tsx';
 import Select from '../../common/components/Select.tsx';
 import { statementAt } from '../../common/db/splitStatements.ts';
 import { APP_SHORTCUTS, chordFromEvent, formatChord, type ShortcutId } from '../../common/shortcuts.ts';
@@ -125,6 +126,19 @@ interface Props {
    */
   onSaveQuery?: () => void;
   /**
+   * Hand the highlighted SQL to the assistant, from Monaco's context menu.
+   *
+   * The shell's, like `onSaveQuery`: opening a conversation spans the tabs and
+   * the assistant slice. Unlike it, this one *does* take the text — the
+   * selection lives in Monaco's model and nowhere the store can be asked, which
+   * is the same reason `getEditorSelection` exists as a tool at all.
+   *
+   * Absent when there is no key stored, and the menu item is then not
+   * registered rather than registered and disabled: a context menu is a list of
+   * what you can do here, and this is a feature that does not exist yet.
+   */
+  onExplainSelection?: (sql: string) => void;
+  /**
    * Whether *this* pane is the one the window-level Ctrl+Enter/Ctrl+S fallback
    * should act on -- Monaco's own instance-level bindings need no such gate,
    * they only ever fire when that instance has DOM focus, but the fallback
@@ -178,7 +192,7 @@ declare global {
   }
 }
 
-export default function EditorPane({ tab, onRun, running, commands, onSaveQuery, focused, exposeGlobal = true, databases, onSelectDatabase, pickerOpen, onPickerOpenChange }: Props) {
+export default function EditorPane({ tab, onRun, running, commands, onSaveQuery, onExplainSelection, focused, exposeGlobal = true, databases, onSelectDatabase, pickerOpen, onPickerOpenChange }: Props) {
   const { dialect } = useSession();
   // `connectionTabs` -- every tab of the connection, **both panes** -- is only
   // used below to garbage-collect models of tabs that are gone entirely. It is
@@ -230,8 +244,8 @@ export default function EditorPane({ tab, onRun, running, commands, onSaveQuery,
    * has to run whatever the *current* handler, text and tab are -- capturing
    * them would pin it to the first render and run the empty query forever.
    */
-  const latest = useRef({ sql, onRun, dialect, activeTabId, peekSql, commands, onSaveQuery });
-  latest.current = { sql, onRun, dialect, activeTabId, peekSql, commands, onSaveQuery };
+  const latest = useRef({ sql, onRun, dialect, activeTabId, peekSql, commands, onSaveQuery, onExplainSelection });
+  latest.current = { sql, onRun, dialect, activeTabId, peekSql, commands, onSaveQuery, onExplainSelection };
 
   /*
    * What every way of running runs: the selection when there is one, the whole
@@ -353,6 +367,11 @@ export default function EditorPane({ tab, onRun, running, commands, onSaveQuery,
       // One background: the cursor's line is marked in the gutter by a brighter
       // number (editorLineNumber.activeForeground), not by a lit surface.
       renderLineHighlight: 'none',
+      // Monaco's own right-click menu is off: this app draws one, from the same
+      // `<ContextMenu>` the tree and the grid use. Monaco's is a second design
+      // system in the middle of this one -- its own surface, hover and type,
+      // none of it reading the tokens. See `docs/decisions.md`.
+      contextmenu: false,
       // Sizes and fonts come from the tokens, same as the colours: Monaco takes
       // no CSS, so they are read rather than written down a second time.
       padding: { top: px('--gap'), bottom: px('--gap') },
@@ -441,6 +460,97 @@ export default function EditorPane({ tab, onRun, running, commands, onSaveQuery,
 
     return () => { if (editor.current) actions.forEach((action) => action.dispose()); };
   }, [bindings, runShortcut]);
+
+  /*
+   * *Explain with AI*, in Monaco's own right-click menu.
+   *
+   * Its own registration rather than a row in `APP_SHORTCUTS`, because that
+   * registry is the app's **chords** -- one spelling of a keybinding, rebindable
+   * from the shortcuts screen -- and this has no chord. It is a menu item and
+   * nothing else, so putting it there would invent a keyboard shortcut nobody
+   * asked for and a row in a settings screen that has to be given a key.
+   *
+   * `precondition: 'editorHasSelection'` is what makes it appear only on text
+   * that is actually highlighted: Monaco evaluates the context key when the menu
+   * opens, so a right-click on a bare caret does not offer to explain nothing.
+   * Reading the selection off the instance in `run` rather than from state is
+   * the same call `sqlToRun` already makes -- the selection is Monaco's and the
+   * store has never heard of it.
+   *
+   * Registered per pane like the actions above and for their reason: `addAction`
+   * scopes to its own editor, so the secondary pane's menu explains the
+   * secondary pane's selection.
+   */
+  /**
+   * The selected text, or `''`. Monaco's, read on demand -- the store has never
+   * heard of a selection, which is the same reason `sqlToRun` reads it here.
+   */
+  const selectedText = useCallback((): string => {
+    const instance = editor.current;
+    const range = instance?.getSelection();
+    return range && instance ? (instance.getModel()?.getValueInRange(range) ?? '') : '';
+  }, []);
+
+  /**
+   * Replace whatever is selected -- or insert at the caret when nothing is.
+   *
+   * Through `executeEdits` rather than `setValue`, so the change leaves as an
+   * ordinary edit: one undo step, and `onDidChangeModelContent` carries it to
+   * the store like a keystroke. The same trap `setValue` always was.
+   */
+  const replaceSelection = useCallback((text: string) => {
+    const instance = editor.current;
+    const range = instance?.getSelection();
+    if (!instance || !range) return;
+    instance.executeEdits('squeal.contextMenu', [{ range, text, forceMoveMarkers: true }]);
+    instance.focus();
+  }, []);
+
+  /*
+   * The editor's right-click menu, drawn by this app rather than by Monaco.
+   *
+   * `contextmenu: false` turns Monaco's own off (see the create options), and
+   * the host below opens `<ContextMenu>` instead -- the same primitive the tree,
+   * the grid and the tab strip already summon, which is the whole reason it
+   * lives in `common/`. Monaco's menu is a second design system in the middle of
+   * this one: its own surface, its own hover, its own type, none of it reading
+   * the tokens. See `docs/decisions.md`.
+   *
+   * The items are rebuilt each time it opens rather than held in state, because
+   * every one of them is a question about the selection *now*.
+   */
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const menuItems = useCallback((): MenuItem[] => {
+    const instance = editor.current;
+    const selected = selectedText();
+    const hasSelection = selected.length > 0;
+    const items: MenuItem[] = [];
+
+    if (latest.current.onExplainSelection) {
+      items.push({
+        label: 'Explain with AI',
+        disabled: !hasSelection,
+        title: hasSelection ? undefined : 'Select some SQL first',
+        onSelect: () => latest.current.onExplainSelection?.(selected),
+      });
+    }
+    items.push(
+      { label: hasSelection ? 'Run selection' : 'Run', onSelect: () => latest.current.onRun(sqlToRun()) },
+      { label: 'Format', onSelect: () => void instance?.getAction('editor.action.formatDocument')?.run() },
+      {
+        label: 'Cut',
+        disabled: !hasSelection,
+        onSelect: () => { void Neutralino.clipboard.writeText(selected); replaceSelection(''); },
+      },
+      { label: 'Copy', disabled: !hasSelection, onSelect: () => void Neutralino.clipboard.writeText(selected) },
+      // Read through the shell's clipboard, not `navigator.clipboard` (a
+      // permission prompt this app cannot answer) and not `execCommand`
+      // (refused outright in a webview).
+      { label: 'Paste', onSelect: () => void Neutralino.clipboard.readText().then(replaceSelection) },
+    );
+    return items;
+  }, [replaceSelection, selectedText, sqlToRun]);
 
   /*
    * Show the active tab's model.
@@ -626,7 +736,12 @@ export default function EditorPane({ tab, onRun, running, commands, onSaveQuery,
         </div>
       )}
 
-      <div className="editor" style={editorBox} ref={host} />
+      {/* `preventDefault` is what stops the webview's own menu, exactly as the
+          tree, the grid and the tab strip already do. */}
+      <div className="editor" style={editorBox} ref={host}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }} />
+
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems()} onClose={() => setMenu(null)} />}
     </>
   );
 }

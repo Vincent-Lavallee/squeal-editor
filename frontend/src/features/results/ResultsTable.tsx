@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ThinkingOrb } from 'thinking-orbs';
 
 import type { CellValue } from '../../../../shared/protocol/index.ts';
-import { CopyIcon, ForeignKeyIcon, NextPageIcon, PrevPageIcon, SortAscIcon, SortDescIcon } from '../../common/icons/icons.ts';
+import { AssistantIcon, CopyIcon, ForeignKeyIcon, NextPageIcon, PrevPageIcon, SortAscIcon, SortDescIcon } from '../../common/icons/icons.ts';
 import type { Tab } from '../../store/tabsSlice.ts';
 import { useResults } from './useResults.ts';
 import { cancelQuery } from '../../store/resultsSlice.ts';
@@ -26,6 +26,21 @@ const isJsonType = (dataType: string | undefined): boolean => {
 };
 
 const iconSvg = { flex: 'none', width: 16, height: 16 };
+
+/** The controls in the error box's corner. They wear the box's red, not the chrome's gray. */
+const errorAction: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 24,
+  height: 24,
+  padding: 0,
+  border: 'none',
+  borderRadius: t.RADIUS,
+  background: 'transparent',
+  color: t.RED_TEXT,
+  cursor: 'pointer',
+};
 
 /**
  * The sort mark in a header: the arrow in force, or the faint hover hint.
@@ -98,10 +113,19 @@ interface Props {
   onSelectDatabase: (database: string) => void;
   pickerOpen: boolean;
   onPickerOpenChange: (open: boolean) => void;
+  /**
+   * Hand this failure to the assistant. Absent when there is no key stored, in
+   * which case the button is not drawn at all.
+   *
+   * It spans the tabs and the assistant, so it is `Shell`'s -- this component
+   * reports the failure and never composes the question, the same rule that
+   * keeps it from importing a sibling feature.
+   */
+  onDiagnose?: (failure: { sql: string | null; error: string }) => void;
 }
 
-export default function ResultsTable({ tab, databases, onSelectDatabase, pickerOpen, onPickerOpenChange }: Props) {
-  const { result, browse, error, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey, sort, toggleSort, canSort, rowsKey, rememberScroll, recallScroll } = useResults(tab);
+export default function ResultsTable({ tab, onDiagnose, databases, onSelectDatabase, pickerOpen, onPickerOpenChange }: Props) {
+  const { result, browse, error, errorSql, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey, sort, toggleSort, canSort, rowsKey, rememberScroll, recallScroll } = useResults(tab);
   const activeTabId = tab?.id ?? null;
   /*
    * The database a grid tab reads from, named here and nowhere else on screen.
@@ -218,11 +242,26 @@ export default function ResultsTable({ tab, databases, onSelectDatabase, pickerO
       {tabBars}
       <div style={emptyCtr}>
         <div data-testid="note-error" style={{ position: 'relative', maxWidth: 560, width: '100%', padding: t.GAP, border: `1px solid ${t.RED}`, borderRadius: t.RADIUS_LG, background: t.RED_BG, color: t.RED_TEXT, fontSize: t.TEXT_BODY, fontFamily: t.MONO, whiteSpace: 'pre-wrap', wordBreak: 'break-word', textAlign: 'left' }}>
+          {/* Both controls sit in one row in the corner rather than each being
+              positioned on its own, so a second one cannot land on top of the
+              first the day a third arrives. They keep the box's own red: this
+              is chrome inside a semantic surface, and an accent button here
+              would be a second thing shouting in a box that is already loud. */}
+          <div style={{ position: 'absolute', top: t.GAP_SM, right: t.GAP_SM, display: 'flex', gap: t.GAP_XS }}>
+            {/* Only with a key stored: a button that opens the assistant onto
+                its connect screen is an offer of help that turns into a form. */}
+            {onDiagnose && (
+              <button type="button" data-testid="diagnose-error" style={errorAction}
+                onClick={() => onDiagnose({ sql: errorSql, error })} title="Diagnose with AI" aria-label="Diagnose with AI">
+                <AssistantIcon style={iconSvg} />
+              </button>
+            )}
+            <button type="button" style={errorAction}
+              onClick={() => void Neutralino.clipboard.writeText(error)} title="Copy error" aria-label="Copy error">
+              <CopyIcon style={iconSvg} />
+            </button>
+          </div>
           {error}
-          <button type="button" style={{ position: 'absolute', top: t.GAP_SM, right: t.GAP_SM, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, padding: 0, border: 'none', borderRadius: t.RADIUS, background: 'transparent', color: t.RED_TEXT, cursor: 'pointer' }}
-            onClick={() => void Neutralino.clipboard.writeText(error)} title="Copy error">
-            <CopyIcon style={iconSvg} />
-          </button>
         </div>
       </div>
     </>

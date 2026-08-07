@@ -51,6 +51,14 @@ declare namespace Neutralino {
   namespace clipboard {
     /** Copy a table's name from the context menu. A webview API, not the bridge. */
     function writeText(text: string): Promise<void>;
+    /**
+     * Paste, from the editor's own right-click menu.
+     *
+     * The shell's clipboard rather than `navigator.clipboard`, which is gated on
+     * a permission prompt this app has no way to answer -- and rather than
+     * `document.execCommand('paste')`, which webviews refuse outright.
+     */
+    function readText(): Promise<string>;
   }
 
   namespace os {

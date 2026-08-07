@@ -743,3 +743,22 @@ This is a record, not a plan. Nothing here is waiting on anything.
   `openTab` so SQL written against another database is born there rather than
   opened and then moved. Both refuse a name the connection does not have,
   answering with the real list.
+
+- **2026-08-07** — **Assistant: remembered conversations** — The assistant panel
+  shipped without memory: the thread lived for as long as the app did and
+  quitting dropped it, so a long debugging conversation could not be come back
+  to. Messages and tool calls are now persisted in a `conversations` table, a
+  restored assistant tab comes back holding its thread, and a picker in the
+  assistant bar reopens a past one into the tab it was asked from. The line that
+  holds: an attached result is stored as its shape — `128 rows of users(id,
+  email, created_at)` — and never as the values, in both the message the model
+  would be re-sent and the record the thread draws, because the rows only ever
+  left the process on one deliberate gesture and that gesture should not also
+  mean they sit in `squeal.db` forever. The tool that moves values declares its
+  own summary, beside `mutating`, so a tool added later cannot quietly get rows
+  persisted. The bar's second control is a `+` rather than a bin, because nothing
+  is destroyed by it: the thread being left keeps its row and turns up in the
+  picker, and deleting one is its own gesture there. A conversation another tab
+  is holding is listed like any other and picking it goes to that tab, rather
+  than being hidden from the list — one thread is still never in two tabs, but
+  that is enforced by routing instead of by omission.

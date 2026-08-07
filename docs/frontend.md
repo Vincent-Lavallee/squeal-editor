@@ -33,6 +33,11 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
   resultsSlice.ts       the result grid, keyed by tab
   updaterSlice.ts       the release check, download progress + useUpdater()
   settingsSlice.ts      the user's preferences + useBooleanSetting()
+  assistantSlice.ts     the conversations, the account, and the agent loop itself
+  sessionSnapshot.ts    what a connection's open tabs look like written down
+  sessionSyncListener.ts   when that snapshot is written
+  conversationRecord.ts    what a conversation looks like written down, values removed
+  conversationSyncListener.ts  when that record is written
 src/features/
   connections/          ConnectScreen, ConnectionForm, SavedConnectionList,
                         WorkspacePicker, WorkspaceForm, PasswordPrompt,
@@ -53,6 +58,10 @@ src/features/
   diagram/              RelationshipDiagram, layout (pure), useDiagram
   statusbar/            StatusBar + ReadOnlyConfirm: the bottom bar and its lock
   updater/              UpdateBanner, useUpdater: the found-update strip
+  assistant/            AssistantPanel, Thread, Markdown (an answer, rendered),
+                        Connect, History (past conversations), context (rebuilt per
+                        turn), prompts (the questions the app asks on the user's
+                        behalf), tools (the fifteen)
 src/neutralino.d.ts     ambient types for the global Neutralino client
 src/styles/             the design system
 ```
@@ -113,6 +122,11 @@ that lives apart from its values is two sources for one fact.
 | every stored preference, and whether the launch read has landed | `settings` slice | crossed |
 | the keyboard shortcut overrides (one JSON value in `settings`) | `settings` slice | crossed |
 | which shortcut is being recorded, and the chord that was refused | `ShortcutsDialog` local state | never left |
+| a conversation's messages, tool records and stored `id`, per assistant tab | `assistant` slice | crossed |
+| the list of past conversations to reopen | `assistant` slice | crossed |
+| whose API key is stored, the catalog, the chosen model | `assistant` slice | crossed |
+| the approval resolver, the cancel flag | module-level in `assistantSlice` | a promise resolver is not serialisable and nothing renders from it |
+| whether the history popup is open, and which row's delete is armed | `History` local state | never left |
 | `adding` (the connect screen, with connections open) | `App` local state | never left |
 | which connect screen is showing, and which workspace it is inside | `ConnectScreen` local state | never left |
 | `maximized`, the open menu | `titlebar` local state | never left |
@@ -202,9 +216,12 @@ time — shape restored from the extension's store, contents refetched. Launch s
 lands on the connections list; nothing auto-connects.
 
 **The shape is a `SessionSnapshot`** (`store/sessionSnapshot.ts`) — the tabs
-(kind, table/schema, title, editor `sql`, grid `filter`), which one was active by
-position, `nextQueryNo` and `database`, the connection's own rather than any
-tab's. It leaves out runtime tab ids, which are minted fresh every session. It
+(kind, table/schema, title, editor `sql`, grid `filter`, an assistant tab's
+`conversationId`), which one was active by position, `nextQueryNo` and
+`database`, the connection's own rather than any tab's. It leaves out runtime tab
+ids, which are minted fresh every session — `savedQueryId` and `conversationId`
+only look like exceptions, being *stored* ids that outlive every session, which
+is exactly why either link can be written down at all. It
 lives in its own file, not in a slice, because both slices touch it and
 importing a runtime value between them would close a cycle — `tabsSlice`
 already imports `sessionSlice` for its matchers.
@@ -221,7 +238,9 @@ falls through to that default. See `docs/decisions.md`.
 
 **Saving is a listener middleware** (`store/sessionSyncListener.ts`), not a hook:
 it watches the actions that reshape a session (`tabOpened`, `tabsClosed`,
-`tabMoved`, `tabActivated`, `databaseChanged`, `sqlChanged`, `browseTable.fulfilled`)
+`tabMoved`, `tabActivated`, `databaseChanged`, `sqlChanged`, `browseTable.fulfilled`,
+plus the three that move an assistant tab's conversation link and touch no tab at
+all — see *Conversations are kept*)
 and, debounced ~600ms, serialises every connection still open and dispatches
 `saveSession` for the ones whose snapshot changed (a per-saved-id cache skips the
 rest). It reads the whole store — a hook could not, and the editor text now living
@@ -3283,9 +3302,8 @@ Conversations are **pruned on `tabsClosed` and `disconnect.fulfilled`**, the rul
 `sqlByTab` already follows, matched on the action creators rather than their type
 strings so a rename is a compile error rather than a leak.
 
-An assistant tab restores from a session snapshot like any other, and restores
-**empty** — conversations are not persisted yet, so what comes back is the place
-it was open, not the thread that was in it.
+An assistant tab restores from a session snapshot like any other, and comes back
+holding the thread that was in it — see *Conversations are kept* below.
 
 **The titlebar button sits before the window controls and is narrower than
 them.** It is the app's button rather than the platform's, and matching their
@@ -3293,6 +3311,230 @@ them.** It is the app's button rather than the platform's, and matching their
 flight: a turn running against a database with the tab in the background has no
 other way to show. It is disabled on the connect screen, where the tab it opens
 would have no strip to live in.
+
+### Conversations are kept, and an attached result is kept as its shape
+
+A thread survives a quit. `store/conversationRecord.ts` is what one looks like
+written down, `store/conversationSyncListener.ts` decides when it is written, and
+`conversations.*` is the store's side (`docs/extension.md`).
+
+**The line that holds, and the reason the feature exists in this shape:** a tool
+result carrying rows is stored as `128 rows of users(id, email, created_at)` and
+never as the values. Rows leave the process on exactly one gesture — the model
+calling `getTabResult`, which leaves a row in the thread naming what it read —
+and that gesture is about answering a question now, not about those values
+sitting in `squeal.db` afterwards, in a table nothing encrypts the way a password
+is. **Both copies of the answer are reduced**: the `tool` message the model would
+be re-sent, and the record the thread's disclosure draws. Redacting one and not
+the other would put the values back on disk under a different key.
+
+**The tool declares its own summary**, `Tool.summarise` in `tools.ts` — the
+second property to live on the tool rather than in the loop, and for `mutating`'s
+reason: a tool added later that moves rows cannot quietly get them persisted by a
+loop with no way to know. It runs at the moment the call answers, where the tab
+it was about is still open, so the redaction at save time is a lookup rather than
+a second derivation of something the state may no longer hold. `ToolRecord.stored`
+is where that answer waits; the real result stays beside it, so the thread on
+screen goes on showing what the model was actually given.
+
+*What this does not reach, stated rather than hidden:* an answer that quotes a
+value it read is prose, and prose is stored as written. Redacting that would mean
+rewriting the model's sentences. The rule is about the mechanical copy of a
+result set, which is where the bulk of it would otherwise be.
+
+**A conversation's id is minted on its first message**, not when the tab opens —
+an assistant tab opened and closed without a word leaves nothing behind. Minted
+*here* rather than by the store, unlike a saved query's, because the write is
+debounced while the thread is still running and an id that arrives with the first
+reply would make the first two saves two rows.
+
+**The link rides the session snapshot as `Tab.conversationId`, which is a seed and
+not a second source.** The grid filter's shape exactly: the tab carries it across
+the quit, `useConversation` adopts it once, and from then on
+`assistant.byTab[tabId].id` is the live answer. The serialiser reads the live one
+for a tab that has been looked at and the seed for one that has not — and it
+decides on the *presence* of the entry rather than on its `id`, because a thread
+the user cleared holds `id: null` and coalescing that onto the seed would reopen
+tomorrow the conversation they emptied today.
+
+**Two listeners, because two things are being persisted.**
+`conversationSyncListener` is `sessionSyncListener`'s shape one slice over:
+debounced on everything that adds to a thread, plus an **immediate** save read
+from `getOriginalState()` on `tabsClosed`, `disconnect.fulfilled`,
+`conversationRestarted` and `openConversation.pending` — each of those empties a
+conversation out of a tab, so by the time the reducers have run there is nothing
+left to serialise. That is this listener's answer to what `disconnect.pending` is
+for the session one, and the fourth is the one that is not obvious: reopening a
+past conversation into a tab that already holds one replaces the thread, so the
+outgoing one is written on the way out exactly as a closing tab's is.
+`openConversation.pending` also **empties** the tab as it repoints it, which
+closes the other half of the same window — the tab would otherwise hold the
+outgoing thread's messages under the incoming thread's id for a round trip, and
+a save landing in that gap writes one conversation over another.
+`sessionSyncListener` in turn had to learn three assistant actions, because each
+moves the link and none touches a tab: without them a thread started and quit out
+of would restore empty.
+
+**A thread with no messages is never written**, which is what keeps three cases
+from each costing a row: a tab opened and never spoken to, a thread just cleared,
+and a tab whose stored body failed to load. The last is the one that matters —
+linked but empty, it would write that emptiness over a real conversation, which
+is also why a failed read **unlinks** the tab rather than leaving it pointing at
+something it could not fetch.
+
+**The bar's second control is a `+`, not a bin, and it says what it does.**
+`conversationRestarted` drops the link so the next message starts a conversation
+of its own, and the thread being left keeps its row and turns up in the picker —
+so the gesture is *start another*, never *throw this away*. It was a delete glyph
+first, which described the reducer that shipped before the store existed rather
+than the one that does.
+
+**Reopening lands in the tab you asked from**, which is why the whole feature
+needs nothing from the composition root. A tab is a conversation, so pointing
+this one at a different thread is the tab becoming that conversation — and
+nothing is lost, because the thread that was here is kept too. Minting a tab
+instead would leave the empty one you opened the picker from sitting beside the
+one you wanted. The tab is renamed to the conversation's own name, and only when
+the two differ, since a restored tab already carries the name it was saved under.
+
+**One conversation is never in two tabs, and that is enforced by routing rather
+than by hiding.** The rule is real — two live threads would take turns saving
+their own messages over each other's, which is worse than the
+two-tabs-on-one-saved-query case the app tolerates, since that one is
+last-write-wins over a single body of text. Hiding the open ones from the list
+was the first instrument and it was the wrong one: a second assistant tab showed
+a history with the conversation you were just having missing from it, back only
+once you closed the tab holding it. So `conversationHistoryFor` leaves out only
+**this tab's own** (the one row that could do nothing), and `reachConversation`
+takes the decision instead — a conversation another tab holds is *gone to*, tab
+and connection both activated, not opened a second time. `tabHoldingConversation`
+answers who holds one, and reads the restored **seed** as well as the live link:
+a background tab has not adopted its conversation yet and would otherwise look
+free to reopen elsewhere.
+
+**Which made a delete reachable that had not been before**, so
+`deleteConversation.fulfilled` releases any tab pointing at the row — the answer
+`deleteSavedQuery` already gets from `tabsSlice`. The messages stay on screen,
+because what was deleted is the stored copy and not the thread being read.
+
+**`history` is kept current in place**, off `saveConversation.fulfilled`, which is
+why the save command answers with `updatedAt` rather than `{ ok: true }`. Without
+it a conversation started in one tab would be missing from another tab's picker
+until something re-read the list — the same complaint the hiding caused, arriving
+by a slower route. The popup also re-reads on open rather than caching behind a
+`loaded` flag the way the saved queries do, since a title is written by the model
+mid-conversation.
+
+### Two ways in from the rest of the app
+
+The assistant is reachable from where a question actually arises, not only from
+the titlebar: a **Diagnose with AI** button in the error box under a result grid,
+and **Explain with AI** in the editor's right-click menu on a selection.
+
+**Both go through `Shell.askAssistant`**, which opens a new assistant tab and
+sends one message into it. Opening a tab is the tabs' and sending is the
+assistant's, so the composition root is the only place that may do both — the
+results grid reports its failure and the editor hands over its selected text, and
+neither composes a question or knows the assistant exists.
+
+**A new conversation every time**, which is what `openAssistantTab` already
+means. `openAssistantTab` now answers with the id it minted, the way
+`openGridTab` does, because sending that first message means naming the tab it
+belongs to.
+
+**It opens in the *other* pane, splitting the view**, and this is the one place
+in the app that does not use `workingPane`. The exception is the point of both
+entry points: the question is *about what is on screen*, so an answer that
+replaces it with itself makes you flip between the error and the explanation of
+the error. Beside it, the two are readable together — the gesture
+`Ctrl+Shift+T` already exists for, taken automatically because here the app is
+the one deciding to open a tab. With no split yet, minting into the secondary
+pane is what creates one.
+
+**The question carries its own subject, and that is load-bearing rather than
+verbose.** `context.ts` describes *the tab in front*, and by the time the first
+turn is sent the tab in front is the assistant tab that was just opened: no SQL,
+no result, no database. A prompt leaning on that context would be a prompt about
+nothing. So `prompts.ts` puts the statement and the error — or the selected text
+— in the message itself. It also names the tab they came from, so a fix can be
+offered back into it; by title rather than by id, since the model has `getAllTabs`
+and a tab id in a sentence is for a machine.
+
+**`getEditorSelection` is not the route for the explain case**, for the same
+reason: that tool answers for the primary pane's *active* tab, which is the
+assistant tab by then, so it would find nothing.
+
+**`ResultsState.errorSql` is what a diagnosis is about.** A failure nulls `sql`,
+deliberately — that field is *what re-running this result would run*, and a
+failure has no result to re-run — so the statement that failed is kept beside the
+error instead, born and cleared with it and read by nothing else. The tab's
+editor text is not an answer: the run may have been of a selection or of
+statement three of five, and the text has been free to change since. A browsed
+page's failure carries none, since the extension authored that SQL and it never
+crossed.
+
+**Both controls are drawn only when a key is stored**, and the gate is at the
+call sites rather than inside `askAssistant`. A button offering to diagnose an
+error and then opening a form to paste a key into is help that turns into an
+errand. Queuing the question to fire once a key arrives is the alternative and it
+is real machinery — a prompt with a lifetime, surviving a tab close — for the one
+state where the assistant does not work at all.
+
+**The editor's item lives in the app's own right-click menu**, not in
+`APP_SHORTCUTS`: that registry is the app's *chords*, rebindable from the
+shortcuts screen, and this has none. See *The editor's right-click menu* below.
+
+### The editor's right-click menu
+
+`contextmenu: false`, and `EditorPane` draws `<ContextMenu>` instead — the same
+primitive the tree, the grid and the tab strip already summon, which is the whole
+reason it lives in `common/`. Monaco's own menu is a second design system in the
+middle of this one: its own surface, its own hover, its own type, none of it
+reading the tokens. See `docs/decisions.md`.
+
+Six items: **Explain with AI** (disabled with no selection, and absent entirely
+with no API key), **Run** — *Run selection* when there is one, the same text the
+Run button uses — **Format**, and **Cut / Copy / Paste**.
+
+**The items are rebuilt each time it opens** rather than held in state, because
+every one of them is a question about the selection *now*.
+
+**Clipboard work goes through Neutralino, not the browser.**
+`navigator.clipboard.readText()` is gated on a permission prompt this app has no
+way to answer and `document.execCommand('paste')` is refused outright in a
+webview, so paste reads the shell's clipboard and writes through
+`executeEdits` — as an *edit*, so it is one undo step and reaches the store
+through `onDidChangeModelContent` like a keystroke, rather than the `setValue`
+trap. Cut and Copy write through the same API `ResultsTable` already uses.
+
+### An answer is rendered as markdown, and the SQL in it is the house style
+
+**`Markdown.tsx` renders the subset models actually emit** — headings, emphasis,
+inline and fenced code, ordered and unordered lists, block quotes, rules and
+tables. The panel handled fenced code and nothing else first, on the reading that
+the fence is the only markup that matters in an answer about SQL; models format
+their answers regardless, so what that shipped was tables as raw pipes and `**`
+around words meant to be bold. See `docs/decisions.md`.
+
+**Hand-rolled and deliberately partial, with two hard limits.** No raw HTML —
+everything is React elements built from parsed text, so nothing a model writes
+can put markup into this app. And no images, with links rendered as their label
+plus a muted URL rather than as anchors: the panel is fed by a remote model, and
+a one-click path from its output to a browser is a bigger door than this needs.
+
+**SQL the assistant writes into a tab is reformatted** through
+`common/db/formatSql.ts` — the editor's own Format, the same options, one
+definition of the style. The model is *also* told the house style in its system
+message, and that is why the reformatting is the mechanism rather than the
+instruction: a rule in a prompt is followed most of the time, and "most of the
+time" is exactly when a tab the assistant wrote looks nothing like a tab you
+formatted. It is not the value-handling rule broken — formatting re-spaces
+keywords the *model* wrote and touches no identifier, no literal, and nothing a
+server ever sent. Unparseable SQL is left exactly as it came.
+
+`formatSql` moved to `common/db/` for `splitStatements`' reason: two features
+need it and neither may import the other. `features/editor/format.ts` is now the
+Monaco half alone.
 
 ### The model
 

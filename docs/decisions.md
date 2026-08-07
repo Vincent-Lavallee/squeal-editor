@@ -6046,3 +6046,246 @@ as a convenience for trying things rather than as a supported path, and Claude i
 the default here — putting the flagship provider on a vendor's own "not for
 production" surface is the shape of decision this entry exists to record having
 stopped making.
+
+---
+
+## Conversations are kept, and a result is kept as its shape
+
+**What is chosen.** The assistant's threads are persisted — the messages and the
+tool calls — in a `conversations` table, with a picker in the assistant bar that
+reopens a past one and a session snapshot that brings a tab back holding what was
+in it. It was deliberately left out of the first cut rather than half-built,
+because the one thing that makes it safe is not the storage.
+
+**The line the whole feature is shaped around: an attached result is stored as
+its shape — `128 rows of users(id, email, created_at)` — never as the values.**
+`getTabResult` is the one tool that moves rows out, and it is ungated on purpose
+(see *Reading is not gated*): a card in front of every lookup is a card nobody
+reads. What made that reversal defensible was that the values only ever left the
+process on one deliberate ask, which left a row in the thread naming what it read.
+Persisting the answer verbatim would have quietly retracted that — the values
+would stop being something asked for once and become something sitting in
+`squeal.db` afterwards, in a table nothing encrypts the way a password is, on a
+disk the user has not thought about since. The gesture bought an answer, not a
+copy.
+
+**So the redaction is where the values are, not where the bytes land.** The
+extension stores the text it is handed, exactly as it stores a session snapshot
+without knowing what a tab is; `store/conversationRecord.ts` reduces the result
+before the body is handed over. And the property that decides is on the **tool**
+(`Tool.summarise`), beside `mutating`, for that one's reason: a tool added later
+that moves rows cannot get them persisted by a loop with no way to know it should
+have asked.
+
+*What it does not reach, and is written down rather than glossed:* an answer that
+quotes a value it read is prose, and prose is stored as written. Redacting that
+would mean rewriting the model's sentences, which is a worse thing to do to a
+transcript than the leak it would prevent. The rule is about the mechanical copy
+of a result set, which is where the bulk of it would otherwise be — and there is
+a test asserting the value does not appear anywhere in the serialised bytes,
+rather than that a field changed.
+
+**The picker reopens into the tab you asked from.** A tab *is* a conversation, so
+pointing this one at a different thread is the tab becoming that conversation —
+and nothing is destroyed by it, because the thread that was here is kept too and
+turns up in the same list. That is also what keeps the feature out of the
+composition root entirely: nothing here mints a tab, so `Shell` needed no
+handler. Minting one instead would leave the empty tab you opened the picker from
+sitting beside the one you wanted, which is the gesture failing at exactly the
+moment it is most used.
+
+*Rejected: letting a conversation be open in two tabs.* Two tabs on one saved
+query is a case the app already tolerates, on the reading that they are
+last-write-wins over one body of text. Two live threads are not that — each
+would save its own messages over the other's, and the loser is not a keystroke
+but half a conversation.
+
+**But hiding them from the picker was the wrong way to enforce it, and using it
+is what showed that.** The first cut left every conversation open in any tab out
+of the list, on the reading that one you are looking at is not a *past* one. It
+was reported as the feature being broken: open a second assistant tab and the
+conversation you were having a moment ago is missing from its history, back only
+once you close the tab holding it. The rule was right and the instrument was
+wrong — a list that silently omits things is indistinguishable from a list that
+lost them. Routing replaced it: every conversation is listed, and picking one
+another tab holds **activates that tab** (and its connection) rather than loading
+a second view. Only *this* tab's own stays out, because it is the one row that
+could do nothing at all.
+
+Two things fell out of it, and both were bugs the hiding had been concealing
+rather than solving:
+
+- **A delete became reachable for a conversation a tab is holding**, so
+  `deleteConversation.fulfilled` releases that tab — `deleteSavedQuery`'s answer,
+  and for its reason: the messages stay on screen, since what was deleted is the
+  stored copy and not the thread being read. Without it the next message would
+  re-create the row under its old id, undoing a deliberate delete.
+- **"Who holds this conversation" has to read the restored seed too**, not only
+  the live link. A background tab has not adopted its conversation until it is
+  first drawn, so a check against `assistant.byTab` alone would call it free and
+  put two tabs on it the moment that tab came to front.
+
+*Rejected: a bin for the bar's second control.* It was one, and it described a
+reducer that predated the store. Nothing is destroyed by it now — the thread
+being left keeps its row and is in the picker — so it is a `+`, and the reducer
+is `conversationRestarted` rather than `conversationCleared`. A glyph that says
+*delete* over behaviour that says *keep* is the kind of mismatch a user has to
+discover by risking something.
+
+**The link is a seed on the tab, not a second source.** `Tab.conversationId` is
+written only by the restore and read once, exactly as `Tab.filter` is for a
+restored grid tab; `assistant.byTab[tabId].id` is the live answer from the moment
+it is adopted. The serialiser decides on the *presence* of the entry rather than
+on its `id`, because a cleared thread holds `id: null` and coalescing that onto
+the seed would reopen tomorrow the conversation the user emptied today.
+
+**The id is minted in the UI, where a saved query's is minted by the store.** The
+difference is the write: a query is saved once, on a keypress, so the store can
+answer with an id; a conversation is written on a debounce *while it is still
+being had*, so an id arriving with the first reply would make the first two saves
+of one thread two rows.
+
+**Clear stopped being destructive, and that is the point of it.** It drops the
+link so the next message starts a conversation of its own, and what was cleared
+keeps its row. Deleting one is its own gesture, in the picker, armed-then-committed
+like every other delete here.
+
+*Rejected: a retention cap.* An unbounded table is a real objection and the
+answer to it is the delete in the picker, not a number this app picks on the
+user's behalf. Saved queries are unbounded for the same reason, and a
+conversation that turned out to matter is exactly the kind of thing an automatic
+sweep loses.
+
+**`conversations.*`, not `ai.*`.** The half of the extension that answers them is
+`store.ts` and not `assistant.ts` — a stored thread is text on disk about
+nobody's server, which is the category `queries.*` and `settings.*` are in. The
+provider is not involved in reading a transcript back.
+
+**The listing carries no bodies, where `settings.list` carries everything.** Not
+an inconsistency: the shape of the data decides. A setting is a short string; a
+transcript carries the schema dumps and DDL the model read, so answering with all
+of them to draw a dozen rows is what `conversations.get` exists to avoid.
+
+---
+
+## The assistant is reachable from where the question comes up
+
+**What is chosen.** Two entry points besides the titlebar: *Diagnose with AI* in
+the error box under a result grid, and *Explain with AI* in the editor's
+right-click menu on a selection. Each opens a new conversation already holding
+the question.
+
+**The question carries its own subject, and that is the whole design rather than
+a detail.** The per-turn context describes *the tab in front* — and by the time
+the first turn is sent, the tab in front is the assistant tab that was just
+opened, which holds no SQL, no result and no database. A prompt written to lean
+on that context would be a prompt about nothing. So the statement, the error and
+the selected text travel in the message itself.
+
+That is also why `getEditorSelection` is not the route for the explain case, and
+the trap is worth naming because the tool looks like exactly the right one: it
+answers for the primary pane's *active* tab, which by then is the conversation
+asking the question.
+
+*Rejected: reusing an open conversation.* A diagnosis is a new question. Dropping
+it into a thread about something else buries both, and `openAssistantTab` already
+means "a new one" everywhere else.
+
+*Rejected: queuing the question until a key is pasted.* The controls are simply
+not drawn without one. A button offering to diagnose an error and then opening a
+form to paste an API key into is help that turns into an errand — and a queued
+prompt is real machinery (a lifetime, surviving a tab close, deciding what
+happens if the tab is closed first) for the one state where the assistant does
+not work at all.
+
+**A failure had to start remembering what failed.** `ResultsState.sql` is nulled
+on a rejection on purpose — it means *what re-running this result would run*, and
+a failure has no result to re-run — so `errorSql` is a second field, the pair of
+`error`, born and cleared with it and read by nothing else. Reading the tab's
+editor text instead would have been wrong in the ordinary case rather than the
+exotic one: the run may have been of a selection or of statement three of five,
+and the text is free to change between the failure and the click.
+
+*Rejected: an `APP_SHORTCUTS` row for the editor's item.* That registry is the
+app's chords — one spelling of a keybinding, rebindable from the shortcuts
+screen. This has no chord; it is a menu item. A row there would have invented a
+keyboard shortcut nobody asked for and a settings row that has to be given a key.
+
+**The conversation opens in the *other* pane**, which is the one place in the app
+that does not open into `workingPane`. The exception is the point: the question
+is about what is on screen, so an answer that replaces it with itself makes you
+flip between the error and the explanation of the error. It is the gesture
+`Ctrl+Shift+T` already exists for, taken automatically because here the app is
+the one deciding to open a tab.
+
+---
+
+## The editor's right-click menu is the app's, and an answer is rendered
+
+Two reversals, both found by using the thing, and both the same shape: a piece of
+chrome that was left to whatever the library did.
+
+**Monaco's context menu is off (`contextmenu: false`) and `EditorPane` draws
+`<ContextMenu>`.** Monaco's own is a second design system in the middle of this
+one — its own surface, its own hover, its own type, its own radius, none of it
+reading a token — and it appeared at the exact moment the app had just been given
+a reason to put something in it. The primitive was already in `common/` because
+three features summon one; this is the fourth.
+
+Six items: *Explain with AI*, *Run* (which says *Run selection* when there is
+one, matching the Run button), *Format*, and cut/copy/paste. The items are
+rebuilt on every open rather than held in state, because each is a question about
+the selection now.
+
+**Clipboard work goes through Neutralino rather than the browser**, and that is
+not a preference: `navigator.clipboard.readText()` is gated on a permission
+prompt this app has no way to answer, and `document.execCommand('paste')` is
+refused outright in a webview. Paste writes through `executeEdits`, so it is one
+undo step and reaches the store through `onDidChangeModelContent` like a
+keystroke — never the `setValue` trap.
+
+**The thread renders markdown now.** It handled fenced code and nothing else, on
+the reading that *the only markup that matters in an answer about SQL is the
+fence*. The premise was wrong in the way only use shows: models format their
+answers whether or not anything renders them, so what the reader got was `| id |`
+rows as raw pipes, `**` around words meant to be bold, and `###` heading every
+section. A transcript full of unrendered syntax is not a plainer transcript, it
+is a broken one.
+
+*Still rejected: a markdown dependency.* That half of the original reading holds
+and is what `Markdown.tsx` is written around — a document renderer brings images,
+raw HTML and link handling into a chat panel, and a desktop SQL client has no
+business rendering arbitrary remote content because a model asked it to. What is
+hand-rolled is the subset models actually emit, with two hard limits: **no raw
+HTML** (everything is React elements built from parsed text, so there is no
+`dangerouslySetInnerHTML` for a model to aim at) and **no anchors** — a link is
+its label plus a muted URL, because a one-click path from model output to a
+browser is a bigger door than this feature needs.
+
+---
+
+## The assistant's SQL is reformatted, not asked nicely
+
+**What is chosen.** SQL the model writes into a tab — `openTab`,
+`editTabContent` — goes through the editor's own formatter before it lands, and
+the model is *separately* told the house style in its system message.
+
+**The reformatting is the mechanism; the instruction is the courtesy.** A rule in
+a prompt is followed most of the time, and "most of the time" is exactly the
+failure that matters here: a tab the assistant wrote looking nothing like a tab
+the user formatted. Running it through `formatSql` makes the style a property of
+the tab rather than of whichever model happened to answer. The prompt rule earns
+its place anyway, because it also governs the SQL in the model's *prose*, which
+nothing here can reach.
+
+**It is not the value-handling rule broken**, and the line is worth stating
+because it looks close to one: formatting re-spaces keywords the **model** wrote.
+It touches no identifier, no string literal, and nothing a server ever sent —
+`keywordCase: 'upper'` is explicitly keywords-only for that reason. Unparseable
+SQL is returned exactly as it came, which is `formatSql`'s standing contract:
+sql-formatter refusing to parse a half-written statement is still the model's
+problem to correct, not ours to mangle.
+
+`formatSql` moved to `common/db/`, for `splitStatements`' reason: two features
+need it and neither may import the other. `features/editor/format.ts` keeps the
+Monaco registration and nothing else.

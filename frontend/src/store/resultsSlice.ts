@@ -97,6 +97,21 @@ export interface ResultsState {
    */
   sort: SortOrder | null;
   error: string | null;
+  /**
+   * The statement that produced `error`, held for as long as the error is.
+   *
+   * A second field rather than leaving `sql` set, and the two mean different
+   * things: `sql` is *what re-running this result would run*, and a failure has
+   * no result to re-run, which is why it is nulled above. This is *what went
+   * wrong*, which only the failure has — the pair of `error`, born and cleared
+   * with it. Nothing re-runs from it.
+   *
+   * It exists because the tab's editor text is not an answer: the run may have
+   * been of a selection or of statement three of five, and the text has been
+   * free to change since it failed. Diagnosing an error means naming the
+   * statement that actually failed, not the one sitting in the tab now.
+   */
+  errorSql: string | null;
   running: boolean;
   /** `Date.now()` when the query was dispatched, so the UI can show elapsed time. */
   startedAt: number | null;
@@ -165,7 +180,7 @@ type ResultsByTab = Record<string, TabResults>;
 const initialState: ResultsByTab = {};
 
 const blank = (): ResultsState =>
-  ({ result: null, browse: null, editTarget: null, sql: null, sort: null, error: null, running: false, startedAt: null, columns: [] });
+  ({ result: null, browse: null, editTarget: null, sql: null, sort: null, error: null, errorSql: null, running: false, startedAt: null, columns: [] });
 
 /** The result on screen for a tab, or undefined before anything has run in it. */
 export const activePart = (tab: TabResults | undefined): ResultsState | undefined => tab?.parts[tab.active];
@@ -483,6 +498,7 @@ const resultsSlice = createSlice({
         s.running = true;
         s.startedAt = Date.now();
         s.error = null;
+        s.errorSql = null;
         // Bumped on every attempt, not just a successful one: a page key built
         // from it must stop matching the moment a new run starts, whether or
         // not this one ever reaches `fulfilled`.
@@ -525,6 +541,10 @@ const resultsSlice = createSlice({
         // force, and the next click on that header starts from ascending again.
         s.sort = null;
         s.error = action.payload ?? 'The query failed.';
+        // The statement as it was sent, off the arg rather than off the tab's
+        // text: this is the one moment the failing statement is knowable, and
+        // it is what a diagnosis has to be about.
+        s.errorSql = action.meta.arg.sql;
       })
       // A page is always one result: the extension wrote its SQL and there is
       // exactly one statement in it, so a grid tab's list is a list of one and
@@ -534,6 +554,7 @@ const resultsSlice = createSlice({
         s.running = true;
         s.startedAt = Date.now();
         s.error = null;
+        s.errorSql = null;
       })
       .addCase(browseTable.fulfilled, (state, action) => {
         const s = state[action.meta.arg.tabId]?.parts[0];
@@ -575,6 +596,10 @@ const resultsSlice = createSlice({
         s.browse = null;
         s.sort = null;
         s.error = action.payload ?? 'Could not read the table.';
+        // Deliberately none: a page's SQL was authored by the extension and
+        // never crossed to this side, so there is no statement of the user's to
+        // diagnose. The error itself is still shown and still copyable.
+        s.errorSql = null;
       });
     // There is deliberately no `sessionOpened` case. It used to reset this,
     // because a session opening dropped every tab and a grid outliving its tab

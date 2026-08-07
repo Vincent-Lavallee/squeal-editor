@@ -22,6 +22,7 @@ reading the others first, except `architecture.md`, which is the map.
 | touching the editor, its completion, or what it knows about the schema | `frontend.md` + `extension.md` |
 | touching the relationship diagram, its layout, or what it reads | `frontend.md` + `extension.md` |
 | touching the assistant: its tools, what it may see, or what it must ask before doing | `frontend.md` + `decisions.md` |
+| touching what a conversation remembers, or what of it reaches the disk | `frontend.md` + `extension.md` + `decisions.md` |
 | touching how a model is reached — the API key, a provider, the models | `extension.md` + `decisions.md` |
 | adding an AI provider, or changing a wire format or a model filter | `extension.md` + `decisions.md` |
 | touching what one *Run* sends, or how a tab is cut into statements | `frontend.md` + `decisions.md` |

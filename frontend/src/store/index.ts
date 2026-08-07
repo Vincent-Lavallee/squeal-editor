@@ -3,6 +3,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { assistantReducer } from './assistantSlice.ts';
 import { awsSignInReducer } from './awsSignInSlice.ts';
 import { connectionTestReducer } from './connectionTestSlice.ts';
+import { conversationSyncMiddleware } from './conversationSyncListener.ts';
 import { environmentsReducer } from './environmentsSlice.ts';
 import { explorerReducer } from './explorerSlice.ts';
 import { resultsReducer } from './resultsSlice.ts';
@@ -33,6 +34,11 @@ import { workspacesReducer } from './workspacesSlice.ts';
  * `sessionSyncMiddleware` is the write half of session restore: it watches the
  * tabs as they change and persists each connection's shape. It is prepended per
  * the listener-middleware convention, so it sees actions before the reducers run.
+ * `conversationSyncMiddleware` is the same arrangement one slice over, writing
+ * each assistant thread as it is had -- separate because it watches different
+ * actions, writes a different table, and answers to a different retention rule
+ * (a session is one row per connection, replaced; a conversation is one row per
+ * thread, kept until it is deleted).
  *
  * `assistant` is here by the same test and is the one slice that also *drives*
  * something: the agent loop runs in its thunk, because six of its tools answer
@@ -56,7 +62,8 @@ export const store = configureStore({
     settings: settingsReducer,
     assistant: assistantReducer,
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().prepend(sessionSyncMiddleware.middleware),
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().prepend(sessionSyncMiddleware.middleware, conversationSyncMiddleware.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

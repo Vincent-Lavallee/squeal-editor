@@ -51,14 +51,13 @@ export interface Tab {
    * which is what made it cheap enough to be a tab at all. See
    * `docs/decisions.md`.
    *
-   * An `assistant` tab is thinner still and holds *nothing* -- not even a
-   * database. The conversation is the app's, global and one, so the tab is a
-   * place to look at it rather than an instance of it: two connections each
-   * showing one show the same thread, the way two tabs on one saved query are
-   * two views of that query. It is a tab and not a panel because the thing it
-   * draws wants the room a pane has, and because everything the app already
-   * knows about opening, closing, splitting and reordering then applies to it
-   * for free. See `docs/decisions.md`.
+   * An `assistant` tab holds no database either, and **is** a conversation
+   * rather than a window onto one -- several may be open, each with its own
+   * thread, which is why `openAssistantTab` mints like every other `open*Tab`.
+   * It is a tab and not a panel because the thing it draws wants the room a pane
+   * has, and because everything the app already knows about opening, closing,
+   * splitting and reordering then applies to it for free. See
+   * `docs/decisions.md`.
    */
   kind: 'editor' | 'grid' | 'diagram' | 'assistant';
   /** Which table a `grid` tab is browsing. Absent on an `editor` tab. */
@@ -93,6 +92,21 @@ export interface Tab {
    * none of which came from anywhere.
    */
   savedQueryId?: string;
+  /**
+   * An assistant tab's conversation *seed*: the stored thread a restored tab
+   * should be reopened holding.
+   *
+   * The grid filter's shape exactly, and for its reason. It is written only by
+   * the session restore below and read once, by the panel adopting it -- from
+   * then on `assistant.byTab[tabId].id` is the live answer, and the serialiser
+   * reads that one for a tab that has been looked at and this seed for one that
+   * has not. Nothing writes it back, so the two cannot drift.
+   *
+   * It is the exception to "runtime ids are left out of a snapshot" that
+   * `savedQueryId` already is: a conversation's id is the store's and outlives
+   * every session, which is exactly why the link can be written down.
+   */
+  conversationId?: string;
   /**
    * Whether closing *this tab* would destroy text that exists nowhere else.
    *
@@ -658,6 +672,7 @@ const tabsSlice = createSlice({
               filter: tab.filter ?? undefined,
               title: tab.title,
               savedQueryId: tab.savedQueryId,
+              conversationId: tab.conversationId,
               unsaved: tab.unsaved,
             })
           );
@@ -902,13 +917,20 @@ export function useTabs() {
      *
      * The model names the tab itself on its first reply (`renameConversation`),
      * so a strip holding several says which is which.
+     *
+     * It answers with the id it minted, the way `openGridTab` does, because a
+     * conversation can be opened *with a question already in it* — the error
+     * grid's diagnosis, the editor's explain — and sending that first message
+     * means naming the tab it belongs to. Nothing else reads it.
      */
     openAssistantTab: useCallback(
-      (pane?: Tab['pane']): void => {
+      (pane?: Tab['pane']): string | null => {
         const id = store.getState().session.activeConnectionId;
-        if (id) dispatch(tabOpened({ connectionId: id, kind: 'assistant', pane }));
+        if (!id) return null;
+        dispatch(tabOpened({ connectionId: id, kind: 'assistant', pane }));
+        return mintedId(id, pane);
       },
-      [dispatch, store]
+      [dispatch, mintedId, store]
     ),
     /*
      * Which tabs a close *means* is worked out here and not in the strip, for

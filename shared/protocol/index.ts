@@ -58,7 +58,18 @@ export type {
   TriggerInfo,
 } from './results.ts';
 
-export type { AiApprovalMode, AiMessage, AiModel, AiProvider, AiProviderInfo, AiStatus, AiToolCall, AiToolDef } from './ai.ts';
+export type {
+  AiApprovalMode,
+  AiConversation,
+  AiConversationSummary,
+  AiMessage,
+  AiModel,
+  AiProvider,
+  AiProviderInfo,
+  AiStatus,
+  AiToolCall,
+  AiToolDef,
+} from './ai.ts';
 export { AI_PROVIDERS, providerLabel } from './ai.ts';
 
 export type { SavedQuery } from './queries.ts';

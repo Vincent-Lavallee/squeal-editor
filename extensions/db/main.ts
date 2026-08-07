@@ -36,11 +36,14 @@ import { log } from './log.ts';
 import {
   addEnvironment,
   dataDir,
+  deleteConversation,
   deleteEnvironment,
   deleteQuery,
   deleteSaved,
   deleteWorkspace,
+  getConversation,
   getSession,
+  listConversations,
   listEnvironments,
   listQueries,
   listSaved,
@@ -49,6 +52,7 @@ import {
   listWorkspaces,
   resolveSaved,
   saveConnection,
+  saveConversation,
   saveQuery,
   saveWorkspace,
   setSession,
@@ -377,6 +381,25 @@ const COMMANDS: Handlers = {
 
   async 'queries.delete'({ id }) {
     deleteQuery(id);
+    return { ok: true };
+  },
+
+  /* -- Assistant conversations (the store, not the provider) ------------ */
+
+  async 'conversations.list'() {
+    return { conversations: listConversations() };
+  },
+
+  async 'conversations.get'({ id }) {
+    return { conversation: getConversation(id) };
+  },
+
+  async 'conversations.save'({ id, title, body }) {
+    return { updatedAt: saveConversation({ id, title, body }) };
+  },
+
+  async 'conversations.delete'({ id }) {
+    deleteConversation(id);
     return { ok: true };
   },
 

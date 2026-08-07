@@ -202,7 +202,7 @@ where Postgres has dollar-quoting and SQLite has no routines at all. There is no
 question here for the other two to answer, so a skip would be claiming there was
 one and that it was being ducked.
 
-## `tests/statements.test.ts` — the one suite with no server in it
+## `tests/statements.test.ts` — the first suite with no server in it
 
 It splits a tab's text into statements (`splitStatements`, in the frontend) and
 asserts where the cuts land. That it needs no database is not this suite going
@@ -233,6 +233,31 @@ can say whether it accepts the body as one statement. Both are needed, and the
 second one carries a companion assertion that `SELECT 1; SELECT 2` on the same
 connection is *still* refused — otherwise "the body was accepted" would pass just
 as well if stacking had quietly become legal.
+
+## `tests/conversations.test.ts` — the third suite with no server in it
+
+What a stored conversation is **written down as**, which is where the assistant's
+one hard rule is enforced: an attached result reaches the disk as its shape and
+never as its values.
+
+A database could not be asked about this. By the time these bytes are written the
+rows are already in the webview, and every case is about the copy going the other
+way — which is why it is a pure test of `toStored` rather than an end-to-end one.
+
+Two of its cases are the ones that matter:
+
+- **the value is not in the serialised bytes**, asserted against
+  `JSON.stringify` rather than against a field. "The field changed" is what a
+  redaction that missed one of the two places still passes, and there *are* two:
+  the `tool` message the model would be re-sent, and the record the thread's
+  disclosure draws.
+- **a call that never carried values is stored exactly as it answered.** Schema,
+  DDL, the tab listing, the user's own SQL — a redaction that reached those would
+  leave a reopened conversation unable to say what it had looked at, which is the
+  failure that looks like caution.
+
+The store's own half is in `saved.test.ts` beside the sessions and the saved
+queries, where the body is treated as the opaque string that side sees.
 
 ## `tests/shortcuts.test.ts` — the other suite with no server in it
 
@@ -587,6 +612,12 @@ watching the suite still run green.
 
 Worth stating plainly, because it is the one feature here whose core is untested
 and the gap is not fixable by trying harder.
+
+**What a conversation is written down as is covered, and is the piece of this
+feature most worth covering.** `tests/conversations.test.ts` proves the redaction
+above the provider, and `saved.test.ts` proves the store beneath it. Neither needs
+a key, because neither is about what a model said — only about what is kept of
+it.
 
 **Everything up to a provider is covered.** `db.tables`' server-side `search` and
 `limit` run the same contract tests on all three engines as every other driver

@@ -24,6 +24,7 @@ import {
   RiFolder3Line,
   RiFunctions,
   RiGlobalLine,
+  RiHistoryLine,
   RiListUnordered,
   RiKey2Line,
   RiLeafLine,
@@ -180,6 +181,15 @@ export const ToolIcon = RiToolsLine;
 export const SendIcon = RiSendPlaneLine;
 export const StopIcon = RiStopCircleLine;
 export const SignOutIcon = RiLogoutBoxRLine;
+/** Conversations already had, reopenable from the assistant bar. */
+export const HistoryIcon = RiHistoryLine;
+/**
+ * Start a fresh conversation in this tab. The same glyph `NewTabIcon` uses and a
+ * binding of its own, the way `SelectCaretIcon` and `SortDescIcon` are: what the
+ * two mean is not the same, and the day one wants a different glyph the other
+ * must not follow it.
+ */
+export const NewConversationIcon = RiAddLine;
 
 /*
  * The read-only lock in the status bar. Two kinds, told apart by shape the way a

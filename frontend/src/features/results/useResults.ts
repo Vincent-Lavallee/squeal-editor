@@ -89,6 +89,11 @@ export function useResults(tab: Tab | null) {
     sql: ranSql,
     sort,
     error,
+    // The statement that failed, which is not `ranSql` above: that one is null
+    // on a failure, because nothing is on screen to re-run. This is the pair of
+    // `error` and exists for the one thing that asks about a failure rather
+    // than about a result -- see `ResultsState.errorSql`.
+    errorSql,
     running,
     startedAt,
     columns,
@@ -494,6 +499,7 @@ export function useResults(tab: Tab | null) {
     result,
     browse,
     error,
+    errorSql,
     running,
     startedAt,
     run,
@@ -753,6 +759,7 @@ const EMPTY = Object.freeze({
   sql: null,
   sort: null,
   error: null,
+  errorSql: null,
   running: false,
   startedAt: null,
   columns: [],

@@ -36,7 +36,7 @@ import type {
   TablePage,
   TriggerInfo,
 } from './results.ts';
-import type { AiMessage, AiModel, AiProvider, AiStatus, AiToolDef } from './ai.ts';
+import type { AiConversation, AiConversationSummary, AiMessage, AiModel, AiProvider, AiStatus, AiToolDef } from './ai.ts';
 import type { SavedQuery } from './queries.ts';
 import type { UpdateStatus } from './updater.ts';
 
@@ -570,6 +570,61 @@ export interface Commands {
     res: { query: SavedQuery };
   };
   'queries.delete': {
+    req: { id: string };
+    res: { ok: true };
+  };
+
+  /* -- Assistant conversations. The store again, not the provider. -------- */
+
+  /**
+   * Every kept conversation, newest first, **without its body**.
+   *
+   * These are `conversations.*` rather than `ai.*` because the half of the
+   * extension that answers them is `store.ts` and not `assistant.ts`: a stored
+   * thread is text on disk about nobody's server, the same category
+   * `queries.*` and `settings.*` are in. `ai.*` is the provider — the key, the
+   * catalog, one turn — and none of that is involved in reading a transcript
+   * back.
+   *
+   * The bodies are left out for the reason `settings.list` includes everything:
+   * the shape of the data decides. A setting is a short string and a transcript
+   * is not, so this answers what the picker draws and `conversations.get`
+   * fetches the one that was picked.
+   */
+  'conversations.list': {
+    req: Record<string, never>;
+    res: { conversations: AiConversationSummary[] };
+  };
+  /**
+   * One conversation with what was said in it, or `null` for an id that no
+   * longer names a row.
+   *
+   * Null rather than a rejection, for `ai.status`'s reason: a tab can outlive
+   * the conversation it was reopened from — deleted from the picker while the
+   * tab sat behind it — and "there is nothing there" is an answer the panel
+   * renders as an empty thread, not a failure of the asking.
+   */
+  'conversations.get': {
+    req: { id: string };
+    res: { conversation: AiConversation | null };
+  };
+  /**
+   * Write a conversation, replacing whatever was under that id.
+   *
+   * The `id` is the UI's, minted when a thread gets its first message, unlike
+   * `queries.save` where the store mints one. A conversation is written on a
+   * debounce while it is still being had, so an id the caller does not hold yet
+   * would make the first two saves of one thread two rows.
+   *
+   * `updatedAt` is answered rather than sent: it is what the list is ordered by,
+   * and one clock deciding it is what stops two saves a second apart from being
+   * ordered by whichever side's clock was consulted.
+   */
+  'conversations.save': {
+    req: { id: string; title: string; body: string };
+    res: { updatedAt: number };
+  };
+  'conversations.delete': {
     req: { id: string };
     res: { ok: true };
   };

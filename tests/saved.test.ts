@@ -20,6 +20,8 @@ import { join } from 'node:path';
 
 import { MIGRATIONS } from '../extensions/db/migrations/index.ts';
 import type {
+  AiConversation,
+  AiConversationSummary,
   ConnectionExportSummary,
   ConnectionImportSummary,
   SavedConnection,
@@ -811,6 +813,95 @@ describe('saved queries', () => {
   });
 });
 
+describe('assistant conversations', () => {
+  // The body is opaque here, exactly as a session snapshot is: the store keeps
+  // text and the UI owns what a message looks like. So these treat it as the
+  // string it is, and the *redaction* of what goes into it -- the rule that no
+  // row values are written down -- is proven where it lives, in
+  // `tests/conversations.test.ts`.
+  const body = (text: string): string => JSON.stringify({ messages: [{ role: 'user', content: text }], tools: {} });
+
+  const listing = async (): Promise<AiConversationSummary[]> =>
+    ((await h.ok('conversations.list', {})) as { conversations: AiConversationSummary[] }).conversations;
+
+  const fetch = async (id: string): Promise<AiConversation | null> =>
+    ((await h.ok('conversations.get', { id })) as { conversation: AiConversation | null }).conversation;
+
+  test('one is written, listed, read back whole and deleted', async () => {
+    await h.ok('conversations.save', { id: 'c-round-trip', title: 'Slow orders', body: body('why is this slow') });
+
+    expect(await listing()).toContainEqual({ id: 'c-round-trip', title: 'Slow orders', updatedAt: expect.any(Number) });
+    expect((await fetch('c-round-trip'))?.body).toBe(body('why is this slow'));
+
+    await h.ok('conversations.delete', { id: 'c-round-trip' });
+    expect((await listing()).map((c) => c.id)).not.toContain('c-round-trip');
+  });
+
+  test('the listing carries no body, which is the whole reason it is a separate call', async () => {
+    // A transcript holds the schema dumps and DDL the model read. Answering with
+    // every one of them to draw a dozen rows is what `conversations.get` exists
+    // to avoid, so the absence here is the feature and not an omission.
+    await h.ok('conversations.save', { id: 'c-no-body', title: 'Bodyless', body: body('x'.repeat(5000)) });
+
+    const found = (await listing()).find((c) => c.id === 'c-no-body');
+    expect(found).toBeDefined();
+    expect(found).not.toHaveProperty('body');
+
+    await h.ok('conversations.delete', { id: 'c-no-body' });
+  });
+
+  test('saving the same id again replaces that row rather than adding a second', async () => {
+    // The id is the UI's, unlike a saved query's: a thread is written on a
+    // debounce while it is still being had, so every save after the first must
+    // land on the row the first one made.
+    await h.ok('conversations.save', { id: 'c-replaced', title: 'First name', body: body('one') });
+    await h.ok('conversations.save', { id: 'c-replaced', title: 'Second name', body: body('one two') });
+
+    expect((await listing()).filter((c) => c.id === 'c-replaced')).toHaveLength(1);
+    const reread = await fetch('c-replaced');
+    expect(reread?.title).toBe('Second name');
+    expect(reread?.body).toBe(body('one two'));
+
+    await h.ok('conversations.delete', { id: 'c-replaced' });
+  });
+
+  test('they are listed newest first, by when each was last written', async () => {
+    // Not by when it started: a conversation returned to belongs at the top,
+    // which is what the picker is for.
+    await h.ok('conversations.save', { id: 'c-older', title: 'Older', body: body('a') });
+    await h.ok('conversations.save', { id: 'c-newer', title: 'Newer', body: body('b') });
+    await h.ok('conversations.save', { id: 'c-older', title: 'Older, returned to', body: body('a c') });
+
+    const mine = (await listing()).map((c) => c.id).filter((id) => id.startsWith('c-old') || id.startsWith('c-new'));
+    expect(mine).toEqual(['c-older', 'c-newer']);
+
+    for (const id of ['c-older', 'c-newer']) await h.ok('conversations.delete', { id });
+  });
+
+  test('an id that no longer names a row answers null rather than failing', async () => {
+    // A tab can outlive the conversation it was reopened from -- deleted from
+    // the picker while the tab sat behind it -- and "there is nothing there" is
+    // an answer the panel draws as an empty thread. `ai.status`'s rule.
+    expect(await fetch('c-never-existed')).toBeNull();
+  });
+
+  test('they name no connection, and survive a new extension process', async () => {
+    // The second table in this file that hangs off nothing. A conversation may
+    // name three connections over its life or none, so filing it under one would
+    // be filing it under whichever it happened to mention first -- and deleting
+    // that connection would then take the transcript with it.
+    await h.ok('conversations.save', { id: 'c-survivor', title: 'Survivor', body: body('still here') });
+    const connection = await save({ name: 'conversations-unrelated', config: PG_SERVER, password: { mode: 'none' } });
+    await h.ok('db.saved.delete', { id: connection.id });
+
+    await h.stop();
+    h = await startHarness(ENV);
+
+    expect((await fetch('c-survivor'))?.body).toBe(body('still here'));
+    await h.ok('conversations.delete', { id: 'c-survivor' });
+  });
+});
+
 describe('saved sessions', () => {
   // The store keeps the snapshot verbatim and never parses it -- the UI owns the
   // shape -- so the tests treat it as the opaque string it is.
@@ -1210,6 +1301,7 @@ const stamps = (): Stamp[] => {
 
 /** What each migration would have to undo, for the rewind below. Newest first. */
 const UNDO: Record<string, string[]> = {
+  conversations: ['DROP TABLE conversations'],
   'saved-queries': ['DROP TABLE saved_queries'],
   // The inverse of a rebuild is the same rebuild with the constraint put back.
   // It is far shorter than the migration it undoes for one reason: `rewindTo`
@@ -1386,6 +1478,7 @@ describe('migrating a store written before workspaces', () => {
       db.run('DROP TABLE connection_sessions');
       db.run('DROP TABLE environments');
       db.run('DROP TABLE saved_queries');
+      db.run('DROP TABLE conversations');
       db.run('DROP TABLE schema_migrations');
     })();
     const legacyNames = (db.query('SELECT name FROM saved_connections').all() as { name: string }[]).map((r) => r.name);

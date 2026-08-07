@@ -11,12 +11,13 @@ import { useEffect, useState } from 'react';
 
 import Button from '../../common/components/Button.tsx';
 import Select from '../../common/components/Select.tsx';
-import { AssistantIcon, DeleteIcon, SendIcon, StopIcon } from '../../common/icons/icons.ts';
+import { AssistantIcon, NewConversationIcon, SendIcon, StopIcon } from '../../common/icons/icons.ts';
 import * as t from '../../common/tokens';
 import { loadModels, useAssistantAccount, useConversation } from '../../store/assistantSlice.ts';
 import { useAppDispatch } from '../../store/hooks.ts';
 import type { AiApprovalMode } from '../../../../shared/protocol/index.ts';
 import Connect from './Connect.tsx';
+import History from './History.tsx';
 import Thread from './Thread.tsx';
 
 const MODES: { value: AiApprovalMode; label: string; hint: string }[] = [
@@ -61,10 +62,20 @@ export default function AssistantPanel({ tabId }: { tabId: string }) {
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, fontWeight: 600, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           Assistant
         </span>
+        {/* The history is offered whether or not this tab holds anything --
+            reaching a past conversation is most wanted from an empty one --
+            while starting a new one only appears once there is one to leave.
+
+            A `+` and not a bin: nothing is destroyed by it. The thread being
+            left keeps its stored row and is in the popup beside this button by
+            the time the next message lands, so the gesture is *start another*
+            rather than *throw this away*, and the glyph has to say the same
+            thing the behaviour does. */}
+        {ready ? <History tabId={tabId} onOpen={conversation.open} disabled={conversation.running} /> : null}
         {ready && conversation.messages.length ? (
-          <Button variant="ghost" style={{ flex: 'none', height: t.BUTTON_H_BAR, padding: '0 6px' }} onClick={conversation.clear}
-            title="Clear this conversation" aria-label="Clear this conversation" data-testid="ai-clear">
-            <DeleteIcon style={{ width: t.ICON, height: t.ICON }} />
+          <Button variant="ghost" style={{ flex: 'none', height: t.BUTTON_H_BAR, padding: '0 6px' }} onClick={conversation.startNew}
+            title="New conversation" aria-label="New conversation" data-testid="ai-new-conversation">
+            <NewConversationIcon style={{ width: t.ICON, height: t.ICON }} />
           </Button>
         ) : null}
       </div>
