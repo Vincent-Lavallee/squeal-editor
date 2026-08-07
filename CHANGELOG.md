@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.15.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.14.0...v0.15.0) (2026-08-07)
+
+
+### Features
+
+* Initial diagram implementation ([784196c](https://github.com/Vincent-Lavallee/squeal-editor/commit/784196c3af0076f62508b90322fce08ddcd7cf5d))
+* Initial LLM integration ([e52434c](https://github.com/Vincent-Lavallee/squeal-editor/commit/e52434c86f145bc1c69d5819b2337d153dfa015a))
+
+
+### Bug Fixes
+
+* Macos build issues ([e203cb6](https://github.com/Vincent-Lavallee/squeal-editor/commit/e203cb6465e068738cfc137a9de80cf237b02878))
+* Table result / Diagram database tab handling ([dac5d36](https://github.com/Vincent-Lavallee/squeal-editor/commit/dac5d36929c8411e26325bd2d889818c5c112a88))
+
 ## [0.14.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.13.0...v0.14.0) (2026-08-06)
 
 
