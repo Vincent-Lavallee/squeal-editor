@@ -21,6 +21,9 @@ reading the others first, except `architecture.md`, which is the map.
 | touching React components, state, or the UI's data flow | `frontend.md` |
 | touching the editor, its completion, or what it knows about the schema | `frontend.md` + `extension.md` |
 | touching the relationship diagram, its layout, or what it reads | `frontend.md` + `extension.md` |
+| touching the assistant: its tools, what it may see, or what it must ask before doing | `frontend.md` + `decisions.md` |
+| touching how a model is reached — the API key, a provider, the models | `extension.md` + `decisions.md` |
+| adding an AI provider, or changing a wire format or a model filter | `extension.md` + `decisions.md` |
 | touching what one *Run* sends, or how a tab is cut into statements | `frontend.md` + `decisions.md` |
 | touching saved queries, or anything a tab remembers about where its text came from | `frontend.md` + `extension.md` |
 | touching the titlebar, window controls, dragging, resizing or the frame's colour | `frontend.md` + `decisions.md` |

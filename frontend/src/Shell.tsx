@@ -7,6 +7,7 @@ import { useSavedQueries } from './store/savedQueriesSlice.ts';
 import { useSession } from './store/sessionSlice.ts';
 import { useShortcuts } from './store/settingsSlice.ts';
 import { useTabs, type CloseIntent, type Tab } from './store/tabsSlice.ts';
+import { AssistantPanel } from './features/assistant/index.ts';
 import { RelationshipDiagram } from './features/diagram/index.ts';
 import { EditorPane, useEditor, useEditorKeybindings, useSqlCompletion, useSqlFormatter } from './features/editor/index.ts';
 import { Sidebar, useExplorer } from './features/explorer/index.ts';
@@ -41,20 +42,29 @@ interface Props {
    * two tabs, which is the answer clicking a table twice already gives.
    */
   openDiagramRequest: number;
+  /**
+   * A counter the titlebar's assistant button bumps, exactly as
+   * `openDiagramRequest` is and for its reason: the button is `App`'s child and
+   * the tab it opens is this one's. Asking twice means two tabs, since an
+   * assistant tab is a conversation and two conversations are a real thing to
+   * want.
+   */
+  openAssistantRequest: number;
 }
 
-export default function Shell({ onAddConnection, openDiagramRequest }: Props) {
+export default function Shell({ onAddConnection, openDiagramRequest, openAssistantRequest }: Props) {
   return (
     <ResultsProvider>
-      <ShellLayout onAddConnection={onAddConnection} openDiagramRequest={openDiagramRequest} />
+      <ShellLayout onAddConnection={onAddConnection} openDiagramRequest={openDiagramRequest}
+        openAssistantRequest={openAssistantRequest} />
     </ResultsProvider>
   );
 }
 
-function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
+function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest }: Props) {
   const {
     tabs, activeTab, activeTabId, secondaryTabs, secondaryActiveTab, secondaryActiveTabId,
-    openGridTab, openEditorTab, openSavedQueryTab, openDiagramTab, setDatabase, markTabSaved, database,
+    openGridTab, openEditorTab, openSavedQueryTab, openDiagramTab, openAssistantTab, setDatabase, markTabSaved, database,
     activateTab, closeIdsFor, closeTabs, connectionTabs, moveTab, renameTab,
   } = useTabs();
   const { dialect, disconnect, activeConnectionId } = useSession();
@@ -381,7 +391,11 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
     disconnect: () => disconnect(),
     toggleSidebar,
     filterTables: focusTableFilter,
-  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar, focusTableFilter, workingPane, workingTab, treeDatabase, refreshPrimary, refreshSecondary, askDiagramRefresh]);
+    // Named `toggle` because that is the gesture: `openAssistantTab` focuses the
+    // one already open rather than minting a second, so pressing it twice lands
+    // you back where you were.
+    newAssistantChat: () => openAssistantTab(workingPane),
+  }), [openEditorTab, closeActiveTab, stepTab, dockActiveTab, disconnect, toggleSidebar, focusTableFilter, openAssistantTab, workingPane, workingTab, treeDatabase, refreshPrimary, refreshSecondary, askDiagramRefresh]);
 
   /*
    * The shortcuts the shell owns, and the half of each that answers from
@@ -456,6 +470,16 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
     lastDiagramRequest.current = openDiagramRequest;
     openDiagramTab(treeDatabase, workingPane);
   }, [openDiagramRequest, openDiagramTab, treeDatabase, workingPane]);
+
+  // The assistant arrives the same way and through the same guard. No database
+  // travels with it: the conversation is about no one database, and its tools
+  // name whichever connection they used.
+  const lastAssistantRequest = useRef(openAssistantRequest);
+  useEffect(() => {
+    if (openAssistantRequest === lastAssistantRequest.current) return;
+    lastAssistantRequest.current = openAssistantRequest;
+    openAssistantTab(workingPane);
+  }, [openAssistantRequest, openAssistantTab, workingPane]);
 
   /*
    * A table clicked in the tree opens on **the database the tree is showing**,
@@ -679,7 +703,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
           {/* `main--grid` is every non-editor tab, since it is what hides Monaco;
               the test id is the *grid* alone, so a diagram tab does not answer
               to a selector meaning "the result grid's pane". */}
-          <main data-testid={primaryShowEditor || activeTab?.kind === 'diagram' ? undefined : 'main-grid'} className={primaryShowEditor ? '' : 'main--grid'}
+          <main data-testid={primaryShowEditor || activeTab?.kind === 'diagram' || activeTab?.kind === 'assistant' ? undefined : 'main-grid'} className={primaryShowEditor ? '' : 'main--grid'}
             style={{ position: 'relative', display: 'grid', gridTemplateRows: primaryShowEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(${EDITOR_MIN}px, 1fr) auto ${resultsHeight}px` : `${t.TAB_H}px 1fr`, flex: showSplit ? `${splitFraction} 1 0` : 1, minWidth: 0, minHeight: 0 }}
             onFocusCapture={() => setFocusedPane('primary')} onPointerDownCapture={() => setFocusedPane('primary')}>
             {/* The button is beside the strip, not inside it: the strip scrolls
@@ -700,7 +724,9 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
               pickerOpen={pickerPane === 'primary'} onPickerOpenChange={(open) => setPickerPane(open ? 'primary' : null)} />
             {primaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragResults} />}
             <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: primaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
-              {activeTab?.kind === 'diagram'
+              {activeTab?.kind === 'assistant'
+                ? <AssistantPanel tabId={activeTab.id} />
+                : activeTab?.kind === 'diagram'
                 ? <RelationshipDiagram tab={activeTab} onOpenTable={openTable} refreshRequest={diagramRefresh.primary}
                     databases={databases} onSelectDatabase={(db) => pointTabAt(activeTab, 'primary', db)}
                     pickerOpen={pickerPane === 'primary'} onPickerOpenChange={(open) => setPickerPane(open ? 'primary' : null)} />
@@ -730,7 +756,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
           {showSplit && <ResizeHandle orientation="vertical" onDrag={dragSplit} />}
 
           {showSplit && (
-            <main data-testid={secondaryShowEditor || secondaryActiveTab?.kind === 'diagram' ? undefined : 'main-grid-secondary'} className={secondaryShowEditor ? '' : 'main--grid'}
+            <main data-testid={secondaryShowEditor || secondaryActiveTab?.kind === 'diagram' || secondaryActiveTab?.kind === 'assistant' ? undefined : 'main-grid-secondary'} className={secondaryShowEditor ? '' : 'main--grid'}
               style={{ position: 'relative', display: 'grid', gridTemplateRows: secondaryShowEditor ? `${t.TAB_H}px ${t.TAB_H}px minmax(${EDITOR_MIN}px, 1fr) auto ${secondaryResultsHeight}px` : `${t.TAB_H}px 1fr`, flex: `${1 - splitFraction} 1 0`, minWidth: 0, minHeight: 0 }}
               onFocusCapture={() => setFocusedPane('secondary')} onPointerDownCapture={() => setFocusedPane('secondary')}>
               <div style={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
@@ -748,7 +774,9 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
                 pickerOpen={pickerPane === 'secondary'} onPickerOpenChange={(open) => setPickerPane(open ? 'secondary' : null)} />
               {secondaryShowEditor && <ResizeHandle orientation="horizontal" onDrag={dragSecondaryResults} />}
               <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderTop: secondaryShowEditor ? undefined : `1px solid ${t.BORDER}` }}>
-                {secondaryActiveTab?.kind === 'diagram'
+                {secondaryActiveTab?.kind === 'assistant'
+                  ? <AssistantPanel tabId={secondaryActiveTab.id} />
+                  : secondaryActiveTab?.kind === 'diagram'
                   ? <RelationshipDiagram tab={secondaryActiveTab} onOpenTable={openTable} refreshRequest={diagramRefresh.secondary}
                       databases={databases} onSelectDatabase={(db) => pointTabAt(secondaryActiveTab, 'secondary', db)}
                       pickerOpen={pickerPane === 'secondary'} onPickerOpenChange={(open) => setPickerPane(open ? 'secondary' : null)} />
@@ -763,6 +791,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest }: Props) {
             </main>
           )}
         </div>
+
       </div>
 
       <StatusBar />

@@ -9,6 +9,7 @@ import {
   pickForeignKeys,
   pickRowKey,
   runWrites,
+  tableSearchClause,
   tlsOptions,
   toDisplayRow,
 } from './common.ts';
@@ -93,16 +94,17 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     return rows.map((r) => r[0] as string).filter((name) => !MYSQL_SYSTEM_DBS.has(name));
   },
 
-  async listTables(client, database) {
+  async listTables(client, database, search) {
+    const { clause, params, limit } = tableSearchClause(search, 'TABLE_NAME', (position) => this.placeholder(position));
     const [rows] = (await client.query(
       {
         sql: `SELECT TABLE_NAME, TABLE_TYPE
                 FROM information_schema.TABLES
-               WHERE TABLE_SCHEMA = ?
-               ORDER BY TABLE_NAME`,
+               WHERE TABLE_SCHEMA = ?${clause}
+               ORDER BY TABLE_NAME${limit}`,
         rowsAsArray: true,
       },
-      [database]
+      [database, ...params]
     )) as [string[][], FieldPacket[]];
 
     return rows.map((r) => ({

@@ -32,10 +32,15 @@ import {
   RiNodeTree,
   RiRefreshLine,
   RiRocketLine,
+  RiLogoutBoxRLine,
+  RiSendPlaneLine,
   RiShoppingCartLine,
+  RiSparkling2Line,
   RiStackLine,
   RiStarSFill,
+  RiStopCircleLine,
   RiTableLine,
+  RiToolsLine,
 } from '@remixicon/react';
 
 /**
@@ -164,6 +169,17 @@ export const RefreshIcon = RiRefreshLine;
 /** A saved connection or workspace row's delete, armed by a first click and
  *  committed by a second -- see the row's own `confirmingId`. */
 export const DeleteIcon = RiDeleteBinLine;
+
+/*
+ * The assistant: the titlebar toggle, a tool call in the thread, sending and
+ * stopping. A sparkle is the platform-wide convention for "a model did this", so
+ * it is the one kind here named after a convention rather than after an object.
+ */
+export const AssistantIcon = RiSparkling2Line;
+export const ToolIcon = RiToolsLine;
+export const SendIcon = RiSendPlaneLine;
+export const StopIcon = RiStopCircleLine;
+export const SignOutIcon = RiLogoutBoxRLine;
 
 /*
  * The read-only lock in the status bar. Two kinds, told apart by shape the way a

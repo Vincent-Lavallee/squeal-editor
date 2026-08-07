@@ -24,7 +24,12 @@ import type { TableFilter } from '../../../shared/protocol/index.ts';
  */
 export interface SessionSnapshot {
   tabs: Array<{
-    kind: 'editor' | 'grid' | 'diagram';
+    /**
+     * An `assistant` tab rides here like any other, and restores empty: the
+     * conversation itself is not persisted yet (see `backlog.md`), so what comes
+     * back is the place it was open, not the thread that was in it.
+     */
+    kind: 'editor' | 'grid' | 'diagram' | 'assistant';
     /**
      * Which database this tab was pointed at. Absent on a snapshot written
      * while the database was the connection's, which reads as "it was on the

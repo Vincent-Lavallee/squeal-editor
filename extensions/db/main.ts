@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 
 import {
+  AI_DELTA_EVENT,
   AWS_SSO_PROMPT_EVENT,
   CONNECT_PROGRESS_EVENT,
   CONNECTION_STATE_EVENT,
@@ -27,6 +28,7 @@ import {
   type SqlDialect,
 } from '../../shared/protocol/index.ts';
 import { fitMaximizedToWorkArea, matchWindowFrame } from './chrome.ts';
+import { cancel as cancelTurn, connect as connectAssistant, disconnect as disconnectAssistant, models as assistantModels, send as sendTurn, status as assistantStatus } from './assistant.ts';
 import { credentialStatus, ssoLogin } from './iam.ts';
 import { applyUpdate, checkForUpdate, downloadUpdate } from './updater.ts';
 import { openConnection, type ConnectionHandle } from './connection.ts';
@@ -167,8 +169,18 @@ const COMMANDS: Handlers = {
     return { databases: await getConnection(connectionId).listDatabases() };
   },
 
-  async 'db.tables'({ connectionId, database }) {
-    return { tables: await getConnection(connectionId).listTables(database) };
+  /**
+   * `truncated` is answered from one spare row rather than guessed from a full
+   * page -- `db.browse`'s rule, and for its reason: a listing that exactly fills
+   * the limit is not evidence that anything was left out.
+   */
+  async 'db.tables'({ connectionId, database, search, limit }) {
+    const tables = await getConnection(connectionId).listTables(database, {
+      text: search,
+      limit: limit === undefined ? undefined : limit + 1,
+    });
+    const truncated = limit !== undefined && tables.length > limit;
+    return { tables: truncated ? tables.slice(0, limit) : tables, truncated };
   },
 
   async 'db.columns'({ connectionId, database, table, schema }) {
@@ -399,6 +411,34 @@ const COMMANDS: Handlers = {
 
   async 'update.apply'() {
     applyUpdate();
+    return { ok: true };
+  },
+
+  /* -- The assistant (assistant.ts explains what it is talking to) ------ */
+
+  async 'ai.status'() {
+    return assistantStatus();
+  },
+
+  async 'ai.connect'({ provider, key }) {
+    return connectAssistant(provider, key);
+  },
+
+  async 'ai.disconnect'() {
+    await disconnectAssistant();
+    return { ok: true };
+  },
+
+  async 'ai.models'() {
+    return { models: await assistantModels() };
+  },
+
+  async 'ai.send'({ turnId, model, messages, tools }) {
+    return { message: await sendTurn(turnId, model, messages, tools, (text) => send(AI_DELTA_EVENT, { turnId, text })) };
+  },
+
+  async 'ai.cancel'({ turnId }) {
+    cancelTurn(turnId);
     return { ok: true };
   },
 };

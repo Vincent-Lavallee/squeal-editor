@@ -61,6 +61,7 @@ export const SHORTCUTS = [
   // Reveals the sidebar first if it is folded away, since a field nobody can
   // see is not one focus can be put into.
   { id: 'filterTables', group: 'View', label: 'Filter tables', defaultChord: 'Ctrl+Shift+F' },
+  { id: 'newAssistantChat', group: 'View', label: 'New assistant chat', defaultChord: 'Ctrl+Shift+A' },
 
   /*
    * Monaco's own, from here down. `command` is the action id, `when` is the

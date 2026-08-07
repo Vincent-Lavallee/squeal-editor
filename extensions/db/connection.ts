@@ -10,7 +10,15 @@ import type {
   TableFilter,
   TableInfo,
 } from '../../shared/protocol/index.ts';
-import { buildWhere, orderByClause, withDriver, type Driver, type QueryOutcome, type Relation } from './drivers/index.ts';
+import {
+  buildWhere,
+  orderByClause,
+  withDriver,
+  type Driver,
+  type QueryOutcome,
+  type Relation,
+  type TableSearch,
+} from './drivers/index.ts';
 import { rdsAuthToken } from './iam.ts';
 
 /**
@@ -63,7 +71,7 @@ export interface ConnectionHandle {
   /** What the server calls its own version, for `db.test` to report back. */
   serverVersion(): Promise<string>;
   listDatabases(): Promise<string[]>;
-  listTables(database: string): Promise<TableInfo[]>;
+  listTables(database: string, search?: TableSearch): Promise<TableInfo[]>;
   listColumns(database: string, relation: Relation): Promise<ColumnInfo[]>;
   /**
    * Every table of a database with its columns and foreign keys, in one call --
@@ -262,8 +270,8 @@ function build<C>(
       return useClient(config.database, (client) => driver.listDatabases(client));
     },
 
-    async listTables(database) {
-      return useClient(database, (client) => driver.listTables(client, database));
+    async listTables(database, search) {
+      return useClient(database, (client) => driver.listTables(client, database, search));
     },
 
     async listColumns(database, relation) {

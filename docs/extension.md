@@ -31,6 +31,7 @@ not an objection.
 | `log.ts` | levelled, timestamped logging to a bounded file on disk |
 | `updater.ts` | the user-initiated updater: the release check, the verified download, and launching the installer. Windows-only |
 | `updateKey.ts` | the committed ed25519 public key the download's signature is checked against |
+| `assistant.ts` | the assistant's half that cannot live in the webview: the API key in the keychain, the four providers, the catalog, and one streaming turn |
 
 The split matters: `main.ts` knows nothing about SQL, `drivers/` knows nothing
 about the transport, and `store.ts` and `chrome.ts` know nothing about either.
@@ -1424,3 +1425,96 @@ response. This is not belt-and-braces — it is the *only* reliable signal. See
 
 Verified both ways: it survives 60s+ of normal use (Neutralino answers pings),
 and reaps itself ~25s after the app is hard-killed, releasing its connections.
+
+## The assistant (`assistant.ts`)
+
+The webview owns the agent loop; this file owns the two things it cannot: the
+key, and the request. See `docs/frontend.md` for the loop and `docs/decisions.md`
+for why the split falls here and why the key is the user's own.
+
+**Four providers, two wire formats.** OpenAI, Gemini and DeepSeek all answer
+OpenAI's `/chat/completions` — Gemini through Google's own compatible surface at
+`generativelanguage.googleapis.com/v1beta/openai`, which is why it costs no third
+translation. Anthropic's `/v1/messages` is its own shape and is translated in
+`anthropicBody`. Which format a provider speaks is the *only* thing the split is
+about; everything above `send` treats them identically.
+
+Six things are load-bearing:
+
+- **`status()` answers and never throws, and it costs no request.** It is
+  `aws.credentialStatus`'s job in this domain and follows its rule for its
+  reason: holding no key is an answer, not a failure of the asking. It reads the
+  keychain and stops there — a key is not a session that goes stale while nobody
+  is looking, so proving one at launch would spend a request on every start to
+  learn what the first turn learns anyway.
+- **A key is proved once, in `connect`, and a rejected one is not stored.** That
+  is the only moment the user is watching a key they just pasted, so it is the
+  only moment a bad key can be reported to the person who can fix it. The proof
+  is the catalog request, which is a real call to the real provider.
+- **A 401 on a turn does not delete the stored key**, unlike a credential minted
+  from a sign-in, which should be dropped because the sign-in is what died. This
+  one is the *user's* and is re-minted from a console: an organisation-level
+  block, a spending cap or a transient refusal would otherwise throw away
+  something they have to go and fetch again. The failure is named and the key
+  stays.
+- **Provider and key are one secret.** A provider id kept anywhere else could
+  disagree with the key beside it, and the failure that produces is a working key
+  sent to the wrong company.
+- **The catalog filter is a *shape* filter, and a filter that matches nothing
+  falls back to the unfiltered list.** GitHub's catalog reported tool support per
+  model; none of these four do. So `ENDPOINTS` excludes what is obviously not
+  chat — embeddings, audio, images — plus `claude-3-opus/sonnet/haiku`, whose
+  4096-token output cap would 400 against the `max_tokens` this sends. A model
+  that slips through and cannot call a tool fails as a named error on the first
+  turn, which is the guarantee that was lost and is worth knowing. The fallback
+  exists because the failure mode of a stale pattern is an empty picker nobody
+  can diagnose; a bad catalog is recoverable and an empty one is not.
+- **The SSE reader buffers partial frames across chunk boundaries**, and it is
+  shared by both formats because the framing is the only thing they agree on. It
+  is `readPrompts`' problem in `iam.ts` wearing a different protocol: a chunk
+  boundary can land mid-frame and mid-UTF8, and a reader that only handles
+  complete frames loses whatever straddles one. A frame that will not parse is
+  skipped rather than failing the turn.
+
+**Tool calls are assembled from fragments, differently in each format.** OpenAI
+keys them by *position* and sends the id on the first fragment only; Anthropic
+opens a block with `content_block_start` (which carries the id and the name once)
+and then streams its arguments as `input_json_delta` against that block's index.
+Both end in the same accumulator.
+
+**Anthropic's translation has three traps and each one is a rejected request.**
+System messages are a top-level field rather than turns. A tool result is a
+*user* message holding a `tool_result` block, not a role of its own. And roles
+must alternate — an assistant turn calling three tools produces three results the
+loop appends one at a time, so adjacent same-role turns are coalesced here rather
+than trusted to arrive already grouped.
+
+**The `log.ts` rule extends here with one addition**: nothing a *conversation*
+holds may be logged either, and neither may the key. A prompt carries the schema,
+the user's SQL and whatever result they attached, which is the same data the
+store's encryption exists to protect, under a different name.
+
+## Narrowing a table listing
+
+`db.tables` takes an optional `search` and `limit`, and both are the **server's**
+work — `Driver.listTables` takes a `TableSearch`, and `tableSearchClause` in
+`drivers/common.ts` is the shared assembler beside `buildWhere` and
+`orderByClause`, for their reason: three engines each spelling "match the name,
+case-insensitively, and stop at N" is three chances to disagree about what a
+search means, on a listing the UI treats as interchangeable between engines.
+
+Omitting both is the unbounded listing it has always been, which is what the tree
+still asks for.
+
+Three rules carried over from elsewhere in this file, each because the same trap
+is here:
+
+- **The search value is bound, never interpolated** — `buildWhere`'s rule applied
+  to the other place a user's string reaches a catalog query. There is a test
+  that `' OR 1=1 --` matches nothing and leaves the table standing.
+- **The limit is coerced and interpolated**, because no placeholder carries a
+  `LIMIT` on all three engines. It is the page offset's rule and the second place
+  in the extension SQL is built this way.
+- **`truncated` is answered, not inferred.** The listing asks for `limit + 1` and
+  drops the spare — `db.browse`'s `hasMore` rule, and the same trap: a result that
+  exactly fills the limit is not evidence there is more.

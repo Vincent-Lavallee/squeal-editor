@@ -50,8 +50,17 @@ export interface Tab {
    * text to save, no rows to browse and nothing keyed by its id anywhere --
    * which is what made it cheap enough to be a tab at all. See
    * `docs/decisions.md`.
+   *
+   * An `assistant` tab is thinner still and holds *nothing* -- not even a
+   * database. The conversation is the app's, global and one, so the tab is a
+   * place to look at it rather than an instance of it: two connections each
+   * showing one show the same thread, the way two tabs on one saved query are
+   * two views of that query. It is a tab and not a panel because the thing it
+   * draws wants the room a pane has, and because everything the app already
+   * knows about opening, closing, splitting and reordering then applies to it
+   * for free. See `docs/decisions.md`.
    */
-  kind: 'editor' | 'grid' | 'diagram';
+  kind: 'editor' | 'grid' | 'diagram' | 'assistant';
   /** Which table a `grid` tab is browsing. Absent on an `editor` tab. */
   table?: string;
   /**
@@ -310,11 +319,20 @@ const tabsSlice = createSlice({
       // different database only by being pointed there, never by being opened.
       const database = action.payload.database ?? inheritedDatabase(state, connectionId);
 
-      // Before the grid branch and never reaching the editor one below: a
-      // diagram tab consumes no `Query N` and seeds no text, so both of those
-      // would be wrong about it in a way nothing would report.
+      // Before the grid branch and never reaching the editor one below: neither
+      // of these consumes a `Query N` or seeds any text, so both of those would
+      // be wrong about them in a way nothing would report.
       if (kind === 'diagram') {
         mint(state, { connectionId, database, kind, title: title ?? 'Relationships' }, pane);
+        return;
+      }
+
+      // `database: null` deliberately, where the diagram above takes one: an
+      // assistant tab is about no database, so carrying the inherited one would
+      // put a value in a field every reader of it would then have to ignore.
+      // The title is a placeholder: the model renames it on its first reply.
+      if (kind === 'assistant') {
+        mint(state, { connectionId, database: null, kind, title: title ?? 'Assistant' }, pane);
         return;
       }
 
@@ -870,6 +888,25 @@ export function useTabs() {
       (database?: string | null, pane?: Tab['pane']): void => {
         const id = store.getState().session.activeConnectionId;
         if (id) dispatch(tabOpened({ connectionId: id, kind: 'diagram', database, pane }));
+      },
+      [dispatch, store]
+    ),
+    /**
+     * An assistant tab, and a new one every time.
+     *
+     * It used to focus an existing one instead, back when there was a single
+     * conversation every tab was a window onto -- two identical views is not a
+     * second tab. A tab *is* a conversation now, so asking twice means two of
+     * them, which is what every other `open*Tab` here has always meant. See
+     * `docs/decisions.md`.
+     *
+     * The model names the tab itself on its first reply (`renameConversation`),
+     * so a strip holding several says which is which.
+     */
+    openAssistantTab: useCallback(
+      (pane?: Tab['pane']): void => {
+        const id = store.getState().session.activeConnectionId;
+        if (id) dispatch(tabOpened({ connectionId: id, kind: 'assistant', pane }));
       },
       [dispatch, store]
     ),

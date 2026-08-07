@@ -5749,3 +5749,268 @@ schema on its own — so a test that ran its DDL through the app would pass with
 the refresh button deleted. Changing the schema behind the app's back is both the
 only way to isolate the control and the exact case it exists for: someone else
 ran the migration.
+
+---
+
+## The agent loop runs in the webview, and the extension only makes the call
+
+**Why.** Nine of the fifteen tools answer from state the extension has never
+heard of: the open tabs, their SQL, the editor selection, the result on screen.
+The extension's own test — *can the webview do this itself?* — points the other
+way for the request, since the API key belongs in the OS keychain and must never
+reach a page that renders anything. So the two halves split where the facts are:
+`assistant.ts` owns the key, the providers and one streaming completion request;
+`assistantSlice.ts` owns the loop that reads the model's tool calls, runs them
+and sends the next turn.
+
+**What this avoided.** The bridge is one-way — UI to extension, with replies as
+broadcasts — so a loop in the extension would have needed a *reverse* RPC:
+broadcast a tool-call request, correlate a reply command, time it out, handle
+orphans. That is the single largest piece of new machinery the feature could have
+had, built to serve tools that were up here all along.
+
+**The cost, accepted.** A turn in flight dies with a webview reload. Nothing else
+in the app survives one either.
+
+*Rejected: mirroring the tab state into the extension so it could answer tab
+tools itself.* It is a second source of truth for what is open, kept in step
+forever — and `editTabContent` and `openTab` still have to travel back to the UI,
+so it solves half the problem and adds a whole one.
+
+**`ai.send` is one model call, not one conversation**, and it resolves with the
+finished message while text arrives on the `ai.delta` broadcast — `update.download`'s
+split against `update.progress`, for the same reason: the reply is the outcome
+and the broadcast is the part worth watching. `turnId` is minted by the **UI**
+so `ai.cancel` can name a turn that has not resolved yet, which is every moment
+cancelling is worth anything. Cancelling is a command rather than an
+`AbortSignal` on the call because the signal would only abandon the *reply* — the
+request to the provider would go on streaming to nobody, billed by the token.
+
+---
+
+## What the assistant may see, and what it must ask for
+
+Three gates, and they are deliberately not one setting.
+
+**The per-turn context carries no database values.** The active tab's result is
+described by its shape — columns, types, a row count, the error text in full —
+and never by its cells. This is `log.ts`'s rule (*nothing a database returned may
+be written here*) applied to the other exit from the process. It also carries no
+addresses: engine, dialect, database and read-only are what writing correct SQL
+needs, and a hostname is not.
+
+**`getTabResult` is the only tool that moves values, and it can never be
+auto-approved.** Every other gated tool (`runRawSql`, `runTabQuery`,
+`editTabContent`) offers *allow for this conversation*; this one does not, ever.
+Without that exception the context rule above would hold exactly until the first
+convenience click, which is not a guarantee — it is a delay.
+
+**A grant is scoped per connection, and production is never offered one.** The
+model may target any *open* connection, so a conversation-wide grant would travel
+to a server the user was not thinking about when they gave it. A connection whose
+environment is `production` draws Approve/Reject and nothing else, which is the
+same call the app already makes in defaulting production connections to
+read-only.
+
+*Rejected: deciding what is a write by parsing the SQL.* Read-only sessions are
+server-enforced here precisely because "there is no statement, CTE or procedure
+for a write to hide inside" — a regex in front of `runRawSql` is that exact
+reasoning, reversed.
+
+*Rejected: a second read-only connection for the model's own SQL.* It is the
+stronger guarantee and it was the recommendation: the server refuses every write,
+so the model reads and the user writes. It was turned down for the approval card
+instead, which is visibility rather than enforcement.
+
+**Every tool call leaves a row in the thread, including the silent ones**, which
+is the half that is easy to drop: the ungated calls are exactly the ones with no
+card to remember them by, so a transcript showing only the interruptions would
+have no record of what the model actually read.
+
+---
+
+## The assistant became a tab, and the panel it replaced lasted one revision
+
+**Why.** It shipped as a resizable third column and the objection was found by
+using it: what it draws wants a pane's room, and a column narrow enough to leave
+the editor usable is too narrow to read a conversation in. The two were competing
+for the same pixels every time, which is the shape of a thing that should have
+been a tab.
+
+**What it bought.** Everything the app already knows about tabs applies for free
+— opening, closing, reordering, dragging into the other pane, the split, session
+restore, the strip's own scroll-to-reveal. The panel had none of that and would
+have grown its own version of each.
+
+**The one place it is not an ordinary tab**: `openAssistantTab` activates an
+existing one instead of minting a second. Every other kind is *about* something —
+a table, a database — so asking twice honestly means two of them. The
+conversation is one thing the app holds, so two tabs would be two windows onto it
+with nothing to tell them apart. That is what lets the titlebar button and
+`Ctrl+Shift+A` read as a toggle while being an ordinary tab open, and it is why
+neither is named "toggle" anywhere but in the shortcut registry.
+
+**It carries `database: null`**, where a diagram tab takes the inherited
+database. An assistant tab is about no one database — its tools name whichever
+connection they used — and a field every reader would have to ignore is worse
+than an absent one.
+
+*The cost, accepted:* a tab, unlike a column, cannot be looked at beside the
+result it is about. Splitting the pane puts them side by side, which is the
+gesture the app already has for exactly that.
+
+---
+
+## Reading is not gated, and the row that records it is what makes that safe
+
+**What changed.** `getTabResult` — the one tool that carries real database values
+out — asked for approval every time and could never be auto-approved. It now runs
+like any other read.
+
+**Why the first answer was wrong.** It was not wrong about the risk; it was wrong
+about what a card *does*. A card in front of every lookup is a card nobody reads
+by the third one, and an approval nobody reads is worse than no approval at all,
+because it still looks like a guard to anyone auditing the design. The friction
+landed on the ordinary case — "what does this column contain" — while doing
+nothing an attentive user could not do better.
+
+**What protects the rows instead**, and it is two things that cost nothing:
+
+- **The per-turn context still carries no values**, only shape — columns, types,
+  a row count, the error in full. So the model is never *handed* data; it has to
+  decide to ask for it, which is a decision that shows.
+- **Every tool call leaves a row in the thread naming what it read.** That was
+  already true of the silent calls and is the half of the design that survived
+  this reversal intact: the transcript answers "what did it look at" whether or
+  not anything stopped.
+
+**Approval is now exactly the tools that *do* something** — `runRawSql`,
+`runTabQuery`, `editTabContent` — and how hard they ask is a setting rather than
+a per-call rule: `manual`, `auto`, or `bypass`. `auto` and `bypass` differ on one
+thing and it is the thing worth differing on: `auto` still stops on a
+`production` connection. That is the same line the app draws in defaulting
+production connections to read-only, and it is what keeps a convenience setting
+from silently becoming a production one.
+
+The mode lives in the settings slice, not in the assistant's, so there is one
+source for it. That is deliberately unlike the per-connection grant a card's
+checkbox gives, which belongs to one conversation and dies with it.
+
+---
+
+## An assistant tab is a conversation, and cost reporting is gone
+
+Two reversals of entries above, both found by using the thing.
+
+**Several assistant tabs can be open, and each holds its own conversation.** The
+first cut had one global thread that every tab was a window onto, which is why
+`openAssistantTab` *focused* an existing tab instead of minting one: two
+identical views of one conversation is not a second tab, it is the same tab drawn
+twice. That reasoning was sound and the premise was wrong — asking two unrelated
+questions at once is an ordinary thing to want, and the answer is not to make the
+second one wait. So `assistant.byTab` is keyed by tab id, and `openAssistantTab`
+mints like every other `open*Tab` in the app.
+
+Three things fell out of it, and each would have been a bug left alone:
+
+- **The approval resolver and the cancel flag are keyed by tab.** One of each
+  meant a card answered in one tab released the loop parked in another.
+- **A per-connection grant belongs to one conversation**, so a second tab starts
+  with none of the permissions the first was given.
+- **A delta finds its conversation by turn id**, not by a tab id it carries. The
+  extension has never heard of a tab, and the turn id is unique across every
+  conversation — which also makes it self-correcting: a delta for a turn whose
+  tab has closed matches nothing and is dropped.
+
+The conversations are pruned on `tabsClosed` and `disconnect.fulfilled`, matched
+on the action *creators* rather than their type strings so a rename is a compile
+error rather than a leak. Same rule `sqlByTab` follows.
+
+**The model names its own tab.** `renameConversation` is a tool it is told to
+call once on its first reply, and it can rename **only the tab the conversation
+is in** — a tool that could rename any tab would let a conversation retitle the
+query you are working in. Without it a strip of assistant tabs is a row of
+identical labels, which is the thing that makes several tabs unusable rather than
+useful.
+
+**Cost reporting is removed entirely**, and it stayed removed when the user
+started paying per token directly. It went through three shapes in as many
+revisions — print nothing when unpriced, then *cost unknown* per row, then one
+line under the picker — and every one of them was a way of dressing up the same
+fact: this app cannot reliably know what a model costs. Four providers publishing
+four price lists on their own schedules is that problem multiplied, not solved.
+Three attempts at presenting a number we could not stand behind is the signal
+that the number should not be presented.
+
+---
+
+## A bring-your-own key, over four providers
+
+**What is chosen.** The assistant runs on an API key the user pastes in, kept in
+the OS keychain by `extensions/db/assistant.ts`. Four providers are offered —
+Anthropic, OpenAI, Google and DeepSeek, labelled by the product people actually
+recognise (*Claude*, *ChatGPT*, *Gemini*, *DeepSeek*) — and one key is stored at
+a time.
+
+**Why not a subscription the user already has.** The first cut of this feature
+reached a model through a vendor's private editor endpoint, borrowing another
+product's OAuth client id to get there, so that a user with the right
+subscription paid nothing extra. It worked, and it was the wrong trade:
+
+- It only helped the users who **had** that subscription. For everybody else the
+  assistant was not more expensive, it was absent.
+- The endpoint was not one this project had any claim on, and it could have begun
+  refusing us between one of the vendor's releases and the next, with no
+  deprecation and no notice.
+- The **account risk sat with the user**, on terms they were not the ones
+  agreeing to. A default built on that is a default waiting to break.
+
+**Four providers is not four times the work**, which is what made the answer
+cheap once it was asked. Three of them answer OpenAI's `/chat/completions` —
+Gemini through Google's own compatible surface at
+`generativelanguage.googleapis.com/v1beta/openai` — so the cost is one
+translation layer, for Anthropic's `/v1/messages`, plus a per-provider table.
+
+**What it costs, accepted.** Two guarantees are weaker than a single-vendor
+catalog allowed, and both are named where a maintainer will meet them rather than
+only here:
+
+- **"The catalog is filtered to tool-capable models" is no longer provable.** No
+  provider reports tool support per model. The filter is now a *shape* filter —
+  exclude embeddings, audio and images, plus the `claude-3-opus/sonnet/haiku`
+  generation whose 4096-token output cap this app's `max_tokens` would 400
+  against. A model that slips through fails as a named error on its first turn
+  instead of being kept out. A filter matching nothing falls back to the
+  unfiltered catalog, because an empty picker is the one failure the user cannot
+  diagnose.
+- **The default model is not resolved by asking.** Nobody publishes "the one you
+  should start on". Each provider carries a short ordered list of id patterns and
+  the newest catalog entry matching the earliest pattern wins — the catalog is
+  sorted by publication date before anything is chosen from it, so a provider
+  shipping a newer Sonnet needs no change here. That is a small amount of model
+  knowledge in the source, deliberately taken on, where there previously was
+  none.
+
+**A 401 on a turn does not delete the stored key.** A credential minted from a
+sign-in should be dropped on a refusal, because the sign-in is what died. A
+pasted key is the user's own and has to be re-minted from a console, so an
+organisation block, a spending cap or a transient refusal must not throw it away.
+The failure is named and the key stays.
+
+**Status costs no request.** A key is accepted at the moment it is used or it is
+not, so `ai.status` reads the keychain and stops, and the one place a key is
+proved is `ai.connect` — which is the one moment the user is watching a key they
+just pasted, and therefore the only moment "that key is wrong" reaches the person
+who can fix it.
+
+*Rejected: a key per provider, switched from the picker.* It is a nicer feature
+and a different one. One key at a time keeps the status bar able to state a
+single fact, and re-pasting to switch is the same gesture that adding a key
+already is.
+
+*Rejected: Anthropic's OpenAI-compatibility endpoint, to avoid the translation
+entirely.* It exists and it would have deleted `anthropicBody`. It is documented
+as a convenience for trying things rather than as a supported path, and Claude is
+the default here — putting the flagship provider on a vendor's own "not for
+production" surface is the shape of decision this entry exists to record having
+stopped making.

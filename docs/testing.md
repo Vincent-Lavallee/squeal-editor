@@ -54,7 +54,7 @@ discovers every `*.test.ts` — the script name cannot override it. The UI suite
 would therefore try to launch a window on a bare `bun test`, so it opts out
 behind `SQUEAL_UI=1` (set by `test:ui`, along with a longer timeout, because
 launching the app blows past Bun's 5s default hook timeout). Expect
-`425 pass / 178 skip` from a bare run, and `150 pass` in ~385s from `test:ui`.
+`445 pass / 187 skip` from a bare run, and `158 pass` in ~415s from `test:ui`.
 
 **`test:ui` builds the extension too, and driving the app by hand must as well.**
 `build:ext` compiles `extensions/db/squeal-db-ext.exe`, which is what
@@ -386,6 +386,25 @@ Deleting the temp directory is best-effort: the extension is designed to outlive
 the app by up to the heartbeat timeout and still holds `squeal.db` open,
 which Windows reports as `EBUSY`.
 
+## `tests/assistant.test.ts`
+
+The assistant's key handling, against the real OS keychain under a throwaway
+`SQUEAL_KEYCHAIN_SERVICE` — `saved.test.ts`'s arrangement and its reason.
+
+**Nothing here reaches a provider**, and that is the boundary rather than an
+oversight: every case is one the extension settles before a request would be
+made. `ai.status` answering `no-key` rather than rejecting is the contract the
+whole panel is drawn from; an empty key is refused with nothing stored; the
+catalog and a turn both name the missing key rather than failing as an undefined
+lookup; and removing a key that was never there succeeds, because disconnected is
+a state to reach and not an action to have performed.
+
+It leaves no credential behind without an `afterAll` of its own, unlike
+`saved.test.ts`: no case in it ever stores one.
+
+See *What the assistant is not covered by* below for what this deliberately does
+not reach.
+
 ## `tests/ui.test.ts`
 
 Launches the real app and drives the page over CDP. WebView2 only exposes CDP via
@@ -563,3 +582,61 @@ That flag is **not** what the UI suite attaches through. The suite passes
 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`, which is a browser-level argument and
 independent of Neutralino's setting — verified by turning the inspector off and
 watching the suite still run green.
+
+## What the assistant is *not* covered by
+
+Worth stating plainly, because it is the one feature here whose core is untested
+and the gap is not fixable by trying harder.
+
+**Everything up to a provider is covered.** `db.tables`' server-side `search` and
+`limit` run the same contract tests on all three engines as every other driver
+method — narrowing, case-insensitivity, an empty match, `truncated` answered
+rather than guessed, and a search value carrying a quote binding rather than
+interpolating. The UI suite opens the panel from the titlebar in the real app and
+asserts it lands on its connect screen with a provider picker and a key field,
+which proves the toggle, the column, and `ai.status` resolving through the real
+extension.
+
+**`tests/assistant.test.ts` covers the key handling, and it reaches a real
+keychain.** It runs against a throwaway `SQUEAL_KEYCHAIN_SERVICE`, for
+`saved.test.ts`'s reason, and every case in it is one the extension settles
+*before* a request would go out: no key stored is an answer rather than a
+rejection, an empty key is refused without storing anything, the catalog and a
+turn both say which key is missing, and removing a key that was never there
+succeeds. That is the whole of what can be exercised without somebody's billable
+key.
+
+**Nothing past it is.** Proving a key, the model catalog, the streaming turn in
+either wire format, the agent loop, the fifteen tools and the approval gate have
+**no end-to-end coverage**, because exercising any of them means a real key
+against a real provider — billed per token, on somebody's personal account, which
+no CI runner has.
+
+This is a genuine hole in the project's *"verify against a real database"* rule
+rather than an exemption from it. What that rule can still reach, it does: every
+tool that touches a database goes through the same `db.*` commands the rest of
+the app uses, and those are covered. What is uncovered is the layer above them —
+whether the model is asked the right thing and whether the answer is handled
+right — and today that is only ever verified by hand, with a key pasted in.
+
+Do not "fix" this with a mocked provider. Every bug this project has found so far
+was invisible to a mock, and four providers' worth of hand-written fixtures would
+pin our guess about their shapes rather than their shapes — Anthropic's
+translation especially, whose three traps (system as a field, tool results as
+user turns, roles that must alternate) are all things a fixture would happily
+accept and a real endpoint rejects.
+
+### The bar that overflowed, and why no test caught it
+
+Worth recording beside the gap above, because it is the shape of what that gap
+lets through. The assistant's header once held six controls, all `flex: none`,
+totalling ~610px; in an ordinary pane the last two were pushed past the right
+edge and simply gone. It was reported as *"I see the account, but not the sign
+out"* — a symptom on controls that only render once a provider answers, which is
+precisely what the suites cannot reach.
+
+So the honest reading is not "add a test for this". A layout that only exists
+behind a working key cannot be driven here at all. What is testable is the panel
+*without* one, and that is already covered. The rest is a hand check — which is
+why `docs/design-system.md` now carries the rule this cost rather than leaving it
+as a bug that was fixed once.

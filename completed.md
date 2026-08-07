@@ -720,3 +720,26 @@ This is a record, not a plan. Nothing here is waiting on anything.
   tree does; nodes can be dragged to declutter an auto-layout, but the
   arrangement is not remembered — it lays out fresh each time the diagram is
   opened.
+
+- **2026-08-07** — **Assistant: bring your own key** — The assistant reached its
+  model through a vendor's private editor endpoint, borrowing another product's
+  OAuth client id to get there, so the feature's price was a subscription to that
+  product and its lifespan was however long the vendor kept accepting us.
+  Replaced with a key the user pastes in, kept in the OS keychain, across four
+  providers: Claude, ChatGPT, Gemini and DeepSeek. The UX is unchanged from the
+  tab down — a tab is still a conversation, the model picker, the approval modes
+  and the status bar segment are all where they were — and the sign-in screen is
+  now a provider picker and a key field. Three providers speak OpenAI's wire
+  format (Gemini through Google's own compatible surface); Anthropic's
+  `/v1/messages` is translated. Two guarantees weakened and are recorded in
+  `docs/decisions.md`: the catalog can no longer prove a model supports tools,
+  and the default model is a per-provider rule rather than something the
+  provider marks.
+
+- **2026-08-07** — **Assistant: pointing a tab at a database** — Asking the assistant
+  to switch a tab to another database did nothing useful: the `database`
+  argument on the schema and query tools says where that one call reads, and no
+  tool moved the tab itself. Added `setTabDatabase`, and a `database` on
+  `openTab` so SQL written against another database is born there rather than
+  opened and then moved. Both refuse a name the connection does not have,
+  answering with the real list.

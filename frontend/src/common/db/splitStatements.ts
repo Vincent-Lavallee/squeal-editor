@@ -5,7 +5,7 @@ export function splitStatements(sql: string, dialect: SqlDialect): string[] {
   return statementSpans(sql, dialect).map((statement) => statement.text);
 }
 
-interface StatementSpan {
+export interface StatementSpan {
   text: string;
   /** Where `text` sits in the original SQL, trimmed exactly as `text` is. */
   start: number;
@@ -49,7 +49,7 @@ interface StatementSpan {
  * first fragment fails to parse; with it the whole body arrives as the one
  * statement the server always thought it was.
  */
-function statementSpans(sql: string, dialect: SqlDialect): StatementSpan[] {
+export function statementSpans(sql: string, dialect: SqlDialect): StatementSpan[] {
   const lexis = LEXIS[dialect];
   const statements: StatementSpan[] = [];
   let start = 0;

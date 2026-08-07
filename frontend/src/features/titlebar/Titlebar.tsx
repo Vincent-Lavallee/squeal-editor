@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useAppSelector } from '../../store/hooks.ts';
 import { useSession } from '../../store/sessionSlice.ts';
+import { AssistantIcon } from '../../common/icons/icons.ts';
 import * as t from '../../common/tokens';
 import AboutDialog from './AboutDialog.tsx';
 import EnvironmentsDialog from './EnvironmentsDialog.tsx';
@@ -19,11 +21,22 @@ interface Props {
    * database you are looking at, and there is not one.
    */
   onOpenDiagram?: () => void;
+  /**
+   * Undefined on the connect screen, for `onOpenDiagram`'s reason: the tab it
+   * opens lives in a connection's strip, and there is not one. The button is
+   * drawn disabled rather than hidden, unlike the *Database* menu, because it is
+   * in a fixed row of controls and a gap would move its neighbours.
+   */
+  onOpenAssistant?: () => void;
 }
 
-export default function Titlebar({ onCheckForUpdates, onOpenDiagram }: Props) {
+export default function Titlebar({ onCheckForUpdates, onOpenDiagram, onOpenAssistant }: Props) {
   const { maximized, minimize, toggleMaximize, close, dragProps } = useWindowChrome();
   const { connected, serverLabel } = useSession();
+  // *Any* conversation, not one: several assistant tabs can be open, and what
+  // the dot means here is "the assistant is working", which is about the app
+  // rather than about whichever tab happens to be in front.
+  const assistantRunning = useAppSelector((s) => Object.values(s.assistant.byTab).some((conversation) => conversation.turnId !== null));
   const { version, openDataDir } = useAbout();
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
   const [showingAbout, setShowingAbout] = useState(false);
@@ -76,6 +89,21 @@ export default function Titlebar({ onCheckForUpdates, onOpenDiagram }: Props) {
           {connected ? <span style={{ fontFamily: t.MONO }}>{serverLabel}</span> : 'Squeal Editor'}
         </span>
       </div>
+      {/* Before the window controls, and narrower than them: it is the app's
+          button rather than the platform's, and matching their 46px would read
+          as a fourth window control. */}
+      <button data-testid="titlebar-assistant" disabled={!onOpenAssistant}
+        style={{ ...btnStyle('assistant'), position: 'relative', width: 34, opacity: onOpenAssistant ? 1 : 0.4, cursor: onOpenAssistant ? 'pointer' : 'default' }}
+        onMouseEnter={() => setHoveredBtn('assistant')} onMouseLeave={() => setHoveredBtn(null)}
+        onClick={() => onOpenAssistant?.()}
+        aria-label="New assistant chat" title="New assistant chat">
+        <AssistantIcon style={{ width: t.ICON, height: t.ICON }} />
+        {assistantRunning && (
+          <span data-testid="titlebar-assistant-busy" aria-hidden="true"
+            style={{ position: 'absolute', top: 6, right: 6, width: 5, height: 5, borderRadius: t.RADIUS_PILL, background: t.ACCENT }} />
+        )}
+      </button>
+
       <div style={{ display: 'flex', flex: 'none', height: '100%' }}>
         {(['minimize', 'maximize', 'close'] as const).map((name) => (
           <button key={name} data-testid="titlebar-btn" style={btnStyle(name)}

@@ -20,6 +20,9 @@ export default function App() {
    * what travels is the *asking*, and there is no state to come back from.
    */
   const [diagramRequest, setDiagramRequest] = useState(0);
+  // The assistant is a tab like the diagram, so it asks the same way: a counter
+  // the titlebar bumps and the shell acts on.
+  const [assistantRequest, setAssistantRequest] = useState(0);
 
   useEffect(() => { check(); }, [check]);
 
@@ -27,17 +30,20 @@ export default function App() {
 
   const shellShowing = connected && !adding;
   const openDiagram = useCallback(() => setDiagramRequest((request) => request + 1), []);
+  const openAssistant = useCallback(() => setAssistantRequest((request) => request + 1), []);
 
   return (
     <>
       {IS_MACOS
         ? <TitlebarMacos onOpenDiagram={shellShowing ? openDiagram : undefined} />
-        : <Titlebar onCheckForUpdates={() => check(true)} onOpenDiagram={shellShowing ? openDiagram : undefined} />
+        : <Titlebar onCheckForUpdates={() => check(true)} onOpenDiagram={shellShowing ? openDiagram : undefined}
+            onOpenAssistant={shellShowing ? openAssistant : undefined} />
       }
       <UpdateBanner />
       <div className="app-body">
         {shellShowing ? (
-          <Shell onAddConnection={() => setAdding(true)} openDiagramRequest={diagramRequest} />
+          <Shell onAddConnection={() => setAdding(true)} openDiagramRequest={diagramRequest}
+            openAssistantRequest={assistantRequest} />
         ) : (
           <ConnectScreen onCancel={connected ? () => setAdding(false) : undefined} />
         )}

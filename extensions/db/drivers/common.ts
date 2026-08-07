@@ -9,6 +9,7 @@ import type {
   SortOrder,
   TableFilter,
 } from '../../../shared/protocol/index.ts';
+import type { TableSearch } from './driver.ts';
 // Amazon's published RDS CA bundle, folded into the compiled binary as text.
 import rdsCaBundle from '../rds-global-bundle.pem' with { type: 'text' };
 
@@ -414,6 +415,34 @@ const SORT_DIRECTIONS = new Set<SortOrder['direction']>(['asc', 'desc']);
  * a browsed page and a wrapped query both order by the header the user clicked,
  * which is the only name that is true of both.
  */
+/**
+ * The name filter and the cap a narrowed table listing adds, as SQL fragments.
+ *
+ * Assembled here for `buildWhere`'s reason: three engines each spelling
+ * "match the name, case-insensitively, and stop at N" is three chances for them
+ * to disagree about what a search means, on a listing the UI treats as
+ * interchangeable between engines.
+ *
+ * `nameColumn` is passed in already spelled, because the three read three
+ * different catalogs (`TABLE_NAME`, `t.table_name`, `name`) and none of them is
+ * an identifier the caller chose. **The limit is coerced, never bound**: no
+ * placeholder carries a `LIMIT` on all three engines, so it is forced to a
+ * non-negative integer and interpolated -- the same rule, and the same reason,
+ * as the page offset in `connection.ts`.
+ */
+export function tableSearchClause(
+  search: TableSearch | undefined,
+  nameColumn: string,
+  placeholder: (position: number) => string,
+  startAt = 0
+): { clause: string; params: string[]; limit: string } {
+  const text = search?.text?.trim();
+  const clause = text ? ` AND LOWER(${nameColumn}) LIKE ${placeholder(startAt + 1)}` : '';
+  const params = text ? [`%${text.toLowerCase()}%`] : [];
+  const limit = search?.limit === undefined ? '' : ` LIMIT ${Math.max(0, Math.floor(search.limit))}`;
+  return { clause, params, limit };
+}
+
 export function orderByClause(
   sort: SortOrder | undefined,
   quoteIdent: (name: string) => string

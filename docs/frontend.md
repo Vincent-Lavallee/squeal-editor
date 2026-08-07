@@ -2750,6 +2750,27 @@ feature -- `Shell` stacks the connection rail, the `.app` grid, and this bar in 
 column, so the rail spans the full width on top and the status bar spans it
 beneath, each a fact about the whole shell rather than one pane.
 
+**The assistant's provider is the third thing here, and it is the one that is not
+about a connection.** `AssistantStatus` names the provider whose key is stored —
+*Claude*, *ChatGPT* — behind the assistant's own glyph, carries the accent dot
+while a turn is running, and opens a `<ContextMenu>` holding *Remove the API key*
+or, when there is none, *Add an API key*. Throwing a key away through a menu
+rather than a bare button is the tab strip's close-button reasoning: it is not a
+thing to do by mis-clicking a status bar, so the click that does it is the second
+one.
+
+**The provider is what the segment states, not the model.** Which model answers
+is chosen per conversation and already stated in that tab's composer; who is
+being billed is true of the whole window, which is what earns a segment.
+
+It sits here rather than in the assistant tab's own header for two reasons, and
+the second is the one that made it move: it is a fact about the **app**, like the
+version in the About menu rather than like anything a pane holds — and in the tab
+it existed only while that tab was open, which is the wrong answer to "is this
+set up". `loadAiStatus` is therefore dispatched at launch in `main.tsx`, beside
+`loadSettings`, rather than by whichever component draws first. It costs no
+request: the status is read from the keychain alone.
+
 Locking is immediate; **unlocking opens the app's one modal**, `ReadOnlyConfirm`,
 which asks the connection's environment name typed back before it will turn
 read-only off. It was the first overlay in the app, and the pattern it set is what
@@ -3041,3 +3062,242 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   drag. `resultsHeight`'s clamp reads `window.innerHeight` at drag time rather
   than being pinned once, so a window resized between drags does not leave the
   editor's `minmax` fighting a stale ceiling.
+
+## The assistant
+
+A chat panel that reads the database you have open and can act on your tabs.
+`features/assistant/` draws it, `store/assistantSlice.ts` holds the conversation
+*and runs the loop*, and `extensions/db/assistant.ts` makes the request. See
+`docs/decisions.md` for why that split falls where it does — that entry is not
+optional reading before changing anything here.
+
+**It runs on the user's own API key**, pasted once and kept in the OS keychain.
+Four providers are offered — Claude, ChatGPT, Gemini, DeepSeek — and which one is
+in use is a fact about the app rather than about a conversation. Nothing up here
+ever holds the key: it travels on `ai.connect` and what comes back is a status
+naming the provider, so no component can render it and no snapshot can carry it.
+
+**The loop is up here, which is the part that looks backwards.** Nine of the
+fifteen tools answer from the tabs, the editor selection and the results, none of
+which the extension has heard of; the extension holds the key and the socket.
+So `ai.send` is **one model call, not one conversation** — a turn that calls
+three tools is three of them — and the thunk that drives it reads `getState()`
+between each.
+
+**A slice by the usual test**: every message crossed the bridge, since the
+extension is what sent it. The panel's own furniture — whether it is open, how
+wide — has never left the webview and is `App`/`Shell` state.
+
+### The conversation is global, and every answer names its connection
+
+One thread, not one per connection: the tools take an optional `connectionId` and
+the model may target any *open* connection, so a conversation legitimately spans
+two servers. What makes that safe to read back is that **every tool result is
+tagged with the connection and database it came from** — an untagged answer would
+let turn 3's schema and turn 8's rows describe two different servers with nothing
+saying so.
+
+**A named connection that has since been disconnected throws rather than falling
+back.** That is the whole point of the tagging: quietly resolving to whatever is
+active now is exactly how a query aimed at production ends up running against
+staging with nothing in the transcript saying the target moved. A disconnect
+mid-thread leaves the conversation standing — the tool reports it and the model
+recovers, the same shape the app's answer to a dropped connection already has.
+
+### The context is rebuilt every turn
+
+`context.ts` prepends a system message and a state message at send time, and
+**neither is stored**. The user goes on working while they chat, so a context
+frozen into the conversation at the first message would have the model reasoning
+about the tab they had open ten minutes ago.
+
+What it carries, and the two rules deciding it, are in `docs/decisions.md`: no
+database values, and no addresses. The table list is **capped and says it is
+capped** — a partial listing that did not say so would have the model concluding
+a table does not exist because it fell off the end.
+
+### Tools, and the three ways the loop treats one
+
+`tools.ts` declares all fifteen, and the property that gates a tool lives on the
+tool rather than in the loop, so adding one cannot quietly add a hole:
+
+| | |
+|---|---|
+| `mutating` | `runRawSql`, `runTabQuery`, `editTabContent`, `setTabDatabase` — stops for approval, subject to the mode below |
+| everything else | reads, including `getTabResult` — runs without asking, and still leaves a row |
+
+**`setTabDatabase` is gated even though it neither runs SQL nor overwrites a
+line.** What it changes is where the tab's *next* run goes, and it changes it
+somewhere the user is not looking — which is the same failure `resolveConnection`
+refuses to allow by never falling back to whatever is active now. A tab quietly
+repointed is a query answered by a database nobody named.
+
+**Which database a tab is *on* and which one a call *reads* are two different
+things**, and conflating them is what left the model unable to do this at all:
+the `database` argument the schema and query tools take says where that one call
+looks and changes nothing the user sees, so a model asked to "switch this tab to
+`shop`" had no tool that would. `setTabDatabase` moves the tab; `openTab` takes a
+`database` so SQL written against another one is born there rather than being
+opened and then moved — which would flash the picker and cost an approval the
+opening did not need. Both check the name against the explorer's listing when it
+has one, so a typo comes back as the real list rather than as a tab pointed at
+nothing.
+
+**Reading is never gated, and `getTabResult` is not an exception to that.** It
+was, briefly: it carries real values, so it asked every time and could not be
+auto-approved. Using it is what ended that — a card in front of every lookup is a
+card nobody reads by the third one, which is worse than no card because it still
+looks like a guard. The rows are protected where it costs nothing instead: the
+per-turn context never carries values, so the model has to *ask* rather than
+being handed them, and asking leaves a row in the thread naming what it read. See
+`docs/decisions.md`.
+
+Four things worth knowing before adding one:
+
+- **`getAllTabs` deliberately carries no SQL.** `getTabContent` is what returns a
+  tab's text, one tab at a time, so listing is cheap and reading somebody's draft
+  is a separate decision the model has to make.
+- **`getTabContent` returns the statement spans, and the model never splits SQL
+  itself.** `runTabQuery` and `editTabContent` both take a `statementIndex` from
+  that call. `splitStatements.ts` is a real lexer for the reason its own header
+  gives — a naive split tears a statement in half and sends both pieces to a
+  server — and a model guessing at boundaries is that failure with an extra step.
+- **`editTabContent` goes through `sqlChanged`, not near Monaco.** `EditorPane`'s
+  inbound write already applies store text as an *edit* rather than a `setValue`,
+  so the assistant's rewrite is one undo step and `Ctrl+Z` gets the user's own
+  text back. It is another caller of a seam that existed; it needed no new one.
+- **`openTab` seeds at birth** (`tabOpened`'s `sql`), so a tab the assistant
+  wrote is not born already marked unsaved — the rule the definition tabs and
+  *Duplicate* follow. `editTabContent` *does* mark, because that one really is an
+  edit to text that exists nowhere else.
+
+### The approval gate
+
+The loop parks on a promise held at module level, next to the pending-approval
+card in the state — the bridge's own pending map's split, and for its reason: a
+resolver is not serialisable and nothing renders from it, while the card needs
+what the card needs. `answerApproval` resolves it; a stray click finds nothing
+and no-ops.
+
+**How much it asks is a setting, not a per-call decision.** `assistant.approvalMode`
+is `manual` (every mutating call stops), `auto` (they run — **except on a
+`production` connection**, which still stops) or `bypass` (nothing stops,
+production included). That production line is the one difference between the two
+permissive modes, and it is the same call the app already makes in defaulting
+production connections to read-only.
+
+It lives in the settings slice rather than being mirrored into this one, so there
+is a single source for it: `selectApprovalMode` reads it and the loop calls that.
+That is deliberately unlike `autoApproved`, the per-connection grant a card's
+checkbox gives — the mode is how the user wants to work and outlives a restart,
+while a grant belongs to one conversation and dies with it. Both are scoped per
+connection so neither can travel to a server the user was not thinking about.
+
+**Cancelling is two halves and both are needed.** `ai.cancel` aborts the request
+the extension has open, and a module-level flag stops the loop starting another
+one. Aborting alone leaves the loop to take the rejection and carry on to the
+next tool call it had already decided to make. A cancel is also not painted as an
+error: the user asked.
+
+**The loop stops after 30 tool calls and says so in the thread.** A ceiling and
+not only a Cancel button, because every call is a real round trip to a real
+database — a model looping on `getSchema` would hammer the server for as long as
+nobody was watching, and nobody watching is the normal state of a panel behind a
+collapsed toggle.
+
+### Where it sits: a tab, not a panel
+
+**The assistant is the fourth tab kind**, beside `editor`, `grid` and `diagram`.
+It shipped as a resizable third column first, and that was wrong in a way only
+using it shows: what it draws wants a pane's room, and a column narrow enough to
+leave the editor usable is too narrow to read a conversation in. As a tab it
+inherits everything the app already knows — opening, closing, reordering,
+dragging into the other pane, session restore — for nothing. See
+`docs/decisions.md`.
+
+**It is the thinnest kind there is: it holds nothing, not even a database.**
+`tabOpened` writes `database: null` for one, where a diagram takes the inherited
+database, because an assistant tab is about no one database — and a field every
+reader would have to ignore is worse than an absent one.
+
+**A tab is a conversation, so `openAssistantTab` mints like every other
+`open*Tab`.** Several may be open at once and each holds its own thread —
+`assistant.byTab`, keyed by tab id. It focused an existing tab instead for one
+revision, back when there was a single global conversation and a second tab could
+only ever have been a second view of it; see `docs/decisions.md` for what ended
+that. It arrives from `App` as a bumped counter, the shape `openDiagramRequest`
+already uses.
+
+**The model names the tab itself** on its first reply, via `renameConversation` —
+without it a strip of assistant tabs is a row of identical labels, which is what
+makes several of them unusable rather than useful. The tool renames *only* the
+tab its own conversation is in.
+
+**Three things are keyed by tab that look like they could be singular**, and each
+would be a live bug otherwise: the approval resolver (one would have a card
+answered in one tab release the loop parked in another), the cancel flag, and the
+per-connection auto-approve grant (a second tab must start with none of the
+permissions the first was given). **A delta is the exception and finds its
+conversation by turn id** — the extension has never heard of a tab, the turn id
+is unique across every conversation, and the lookup self-corrects: a delta whose
+tab has closed matches nothing and is dropped.
+
+Conversations are **pruned on `tabsClosed` and `disconnect.fulfilled`**, the rule
+`sqlByTab` already follows, matched on the action creators rather than their type
+strings so a rename is a compile error rather than a leak.
+
+An assistant tab restores from a session snapshot like any other, and restores
+**empty** — conversations are not persisted yet, so what comes back is the place
+it was open, not the thread that was in it.
+
+**The titlebar button sits before the window controls and is narrower than
+them.** It is the app's button rather than the platform's, and matching their
+46px would read as a fourth window control. It carries a dot while a turn is in
+flight: a turn running against a database with the tab in the background has no
+other way to show. It is disabled on the connect screen, where the tab it opens
+would have no strip to live in.
+
+### The model
+
+**The default is a rule over the catalog, never an id**: whichever entry the
+extension marked `isDefault` while reading it, falling back to the first. Which
+rule that is belongs to the side that knows the providers; this side only reads
+the mark, and neither end holds an id that rots.
+
+**The catalog is re-read per key, not per launch.** `loadModels` runs once the
+status is `ready`, and connecting clears `models` and `model` — a picker left
+holding the previous provider's ids is a list of models the new key cannot send
+to, which fails as a 404 several clicks later.
+
+**Nothing about cost is reported, and that is deliberate** — including now that
+the user pays per token directly. It went through three shapes in as many
+revisions — print nothing when unpriced, then *cost unknown* per row, then one
+line under the picker — and every one was a way of dressing up the same fact:
+this app cannot reliably know what a model costs. Four providers publishing four
+price lists on their own schedules is that problem multiplied, not solved. Three
+attempts at presenting a number nobody could stand behind is the signal that the
+number should not be presented. See `docs/decisions.md`.
+
+### Connecting
+
+**One key at a time, and it is proved before it is kept.** `Connect.tsx` is a
+provider picker, a password field and a button; `ai.connect` asks that provider
+for its catalog and stores nothing if the answer is a refusal. That is the one
+moment the user is watching a key they just pasted, so it is the one moment "that
+key is wrong" can be said to the person who can fix it — the alternative is an
+assistant that looks connected and fails on the first question.
+
+**The screen says which product sells a key**, up front rather than after the
+user comes back empty-handed: a ChatGPT Plus or Claude Pro subscription is not an
+API key, the two are sold under one brand, and that confusion is the single most
+likely way this screen wastes somebody's afternoon.
+
+**Adding a key *starts* in the status bar and *happens* in a tab.** The form is a
+picker, a field and a warning, and a 26px strip has nowhere to put any of that —
+so the menu's *Add an API key* opens the tab that already draws it rather than
+growing a second copy of that screen. Removing one clears the keychain entry and
+nothing else, since there is nothing else kept.
+
+**The provider's own error text is shown verbatim.** "This key is not funded" and
+"this key is not a key" are two different errands, and a rewritten message sends
+the user on the wrong one.

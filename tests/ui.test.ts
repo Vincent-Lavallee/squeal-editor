@@ -3260,6 +3260,73 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       expect(applied).toBe(true);
     });
 
+    /*
+     * The assistant, as far as it goes without an API key: the toggle opens a
+     * real column and `ai.status` answers rather than throwing, so the panel
+     * lands on its connect screen instead of an error.
+     *
+     * That is the boundary of what can be tested here and it is worth naming:
+     * nothing in CI or on this machine holds a key any provider would accept, so
+     * the loop, the tools and the approval gate have no end-to-end coverage at
+     * all. See `docs/testing.md`.
+     */
+    test('the titlebar button opens an assistant tab, and it asks for a key', async () => {
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="assistant-panel"]')`)).toBe(false);
+      const before = (await app.evaluate<string[]>(tabLabels)).length;
+
+      await app.evaluate(`document.querySelector('[data-testid="titlebar-assistant"]').click(); true;`);
+      await app.waitFor(`document.querySelector('[data-testid="assistant-panel"]') ? true : null`);
+
+      // The connect form, which means the status resolved to `no-key` rather
+      // than to `unavailable` — the whole of what this side can prove about
+      // reaching the extension. The provider picker and the field are there
+      // because a form missing either is not one.
+      await app.waitFor(`document.querySelector('[data-testid="ai-connect"]') ? true : null`);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="ai-provider-select"]')`)).toBe(true);
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="ai-key"]')`)).toBe(true);
+      expect(await app.evaluate<string[]>(tabLabels)).toContain('Assistant');
+
+      /*
+       * Asking again mints a **second** tab, because an assistant tab is a
+       * conversation and two conversations are a real thing to want. It focused
+       * the existing one while there was a single global thread, back when two
+       * tabs could only ever have been two views of it. See `docs/decisions.md`.
+       */
+      await app.evaluate(`document.querySelector('[data-testid="titlebar-assistant"]').click(); true;`);
+      await app.waitFor(`[...document.querySelectorAll('[data-testid="tab-label"]')].filter(e => e.textContent === 'Assistant').length === 2 ? true : null`);
+      expect(await app.evaluate<string[]>(tabLabels)).toHaveLength(before + 2);
+
+      // They close like any other tab, because they are ones.
+      await app.evaluate(`${tab('Assistant')}.querySelector('[data-testid="tab-close"]').click(); true;`);
+      await app.evaluate(`${tab('Assistant')}.querySelector('[data-testid="tab-close"]').click(); true;`);
+      await app.waitFor(`document.querySelector('[data-testid="assistant-panel"]') ? null : true`);
+    });
+
+    /*
+     * Whether a key is stored is an app-level fact, so it is read at launch and
+     * stated in the status bar — which means it must be there whether or not the
+     * assistant tab has ever been opened. The test above closed it, so this one
+     * runs with none open, which is the case that matters.
+     */
+    test('the status bar states the assistant, and its menu offers a way to act', async () => {
+      expect(await app.evaluate<boolean>(`!!document.querySelector('[data-testid="assistant-panel"]')`)).toBe(false);
+      await app.waitFor(`document.querySelector('[data-testid="statusbar-assistant"]') ? true : null`);
+
+      await app.evaluate(`document.querySelector('[data-testid="statusbar-assistant"]').click(); true;`);
+      const items = await app.waitFor<string[]>(`(() => {
+        const menu = [...document.querySelectorAll('[data-testid="context-menu-item"]')].map(e => e.textContent);
+        return menu.length ? menu : null;
+      })()`);
+
+      // No key on this machine, so the menu offers the way *in* rather than a
+      // removal there is nothing to remove. This is where adding one starts; the
+      // form it needs is drawn in a tab, which this opens.
+      expect(items).toContain('Add an API key');
+
+      await app.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true;`);
+      await app.waitFor(`document.querySelector('[data-testid="context-menu"]') ? null : true`);
+    });
+
     // The bar is the only place the server is named now that the tree's header
     // stopped repeating it.
     test('names the connected server', async () => {

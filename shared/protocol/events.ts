@@ -61,3 +61,21 @@ export type ConnectionState = {
   reason?: string;
 };
 export const CONNECTION_STATE_EVENT = 'connection.state';
+
+/**
+ * A model's answer arriving a piece at a time, during `ai.send`.
+ *
+ * The reply carries the finished message; this is only the text filling in
+ * between, the same split `update.progress` draws against `update.download`. A
+ * turn that calls tools can run for a minute, and a panel with nothing moving in
+ * it for that long reads as hung rather than as working.
+ *
+ * `turnId` is minted by the **UI**, not here, so `ai.cancel` can name a turn
+ * before the `ai.send` that started it has resolved -- which is every moment
+ * cancelling is worth anything.
+ */
+export type AiDelta = {
+  turnId: string;
+  text: string;
+};
+export const AI_DELTA_EVENT = 'ai.delta';

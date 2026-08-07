@@ -36,7 +36,7 @@ import { mysqlDriver } from './mysql.ts';
 import { postgresDriver } from './postgres.ts';
 import { sqliteDriver } from './sqlite.ts';
 
-export type { Driver, QueryOutcome, Relation, TableMeta } from './driver.ts';
+export type { Driver, QueryOutcome, Relation, TableMeta, TableSearch } from './driver.ts';
 export { buildWhere, orderByClause, type WhereClause } from './common.ts';
 export { mysqlDriver } from './mysql.ts';
 export { postgresDriver } from './postgres.ts';

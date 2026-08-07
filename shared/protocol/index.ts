@@ -58,14 +58,18 @@ export type {
   TriggerInfo,
 } from './results.ts';
 
+export type { AiApprovalMode, AiMessage, AiModel, AiProvider, AiProviderInfo, AiStatus, AiToolCall, AiToolDef } from './ai.ts';
+export { AI_PROVIDERS, providerLabel } from './ai.ts';
+
 export type { SavedQuery } from './queries.ts';
 
 export type { UpdateProgress, UpdateStatus } from './updater.ts';
 
 export type { CommandName, CommandReq, CommandRes, Commands } from './commands.ts';
 
-export type { AwsSsoPrompt, ConnectionState, ConnectProgress, DbResponse } from './events.ts';
+export type { AiDelta, AwsSsoPrompt, ConnectionState, ConnectProgress, DbResponse } from './events.ts';
 export {
+  AI_DELTA_EVENT,
   AWS_SSO_PROMPT_EVENT,
   CONNECT_PROGRESS_EVENT,
   CONNECTION_STATE_EVENT,

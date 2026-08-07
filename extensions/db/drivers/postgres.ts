@@ -9,6 +9,7 @@ import {
   pickRowKey,
   runWrites,
   selectExpressionAt,
+  tableSearchClause,
   tlsOptions,
   toDisplayRow,
 } from './common.ts';
@@ -188,16 +189,18 @@ export const postgresDriver: Driver<pg.Client> = {
     return (res.rows as string[][]).map((r) => r[0] as string);
   },
 
-  async listTables(client) {
+  async listTables(client, _database, search) {
+    // Numbered from 1, because `$1` is already spent on the system-schema list.
+    const { clause, params, limit } = tableSearchClause(search, 't.table_name', (position) => this.placeholder(position), 1);
     const res = await client.query({
       text: `SELECT t.table_schema, t.table_name, t.table_type
                FROM information_schema.tables t
                JOIN pg_namespace n ON n.nspname = t.table_schema
                JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid
               WHERE t.table_schema <> ALL($1)
-                AND c.relispartition = false
-              ORDER BY t.table_schema, t.table_name`,
-      values: [PG_SYSTEM_SCHEMAS],
+                AND c.relispartition = false${clause}
+              ORDER BY t.table_schema, t.table_name${limit}`,
+      values: [PG_SYSTEM_SCHEMAS, ...params],
       rowMode: 'array',
     });
 

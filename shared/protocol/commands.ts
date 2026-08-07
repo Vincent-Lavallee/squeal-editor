@@ -36,6 +36,7 @@ import type {
   TablePage,
   TriggerInfo,
 } from './results.ts';
+import type { AiMessage, AiModel, AiProvider, AiStatus, AiToolDef } from './ai.ts';
 import type { SavedQuery } from './queries.ts';
 import type { UpdateStatus } from './updater.ts';
 
@@ -78,9 +79,22 @@ export interface Commands {
     req: { connectionId: string };
     res: { databases: string[] };
   };
+  /**
+   * A database's relations. `search` narrows and caps them **on the server**,
+   * and omitting it is the unbounded listing the tree still asks for.
+   *
+   * Filtering here rather than in the caller is the same rule `db.browse`'s
+   * `filter` follows: a database with thousands of tables is expensive to answer
+   * and expensive to carry, so a caller that cannot hold the whole catalog must
+   * be able to say so before it is assembled -- narrowing what already arrived
+   * has paid every cost the narrowing exists to avoid.
+   *
+   * `truncated` is answered rather than inferred, `db.browse`'s `hasMore` rule
+   * again: a result that exactly fills the limit is not evidence there are more.
+   */
   'db.tables': {
-    req: { connectionId: string; database: string };
-    res: { tables: TableInfo[] };
+    req: { connectionId: string; database: string; search?: string; limit?: number };
+    res: { tables: TableInfo[]; truncated: boolean };
   };
   /**
    * A table's columns. The editor completes against these; nothing draws them.
@@ -732,6 +746,83 @@ export interface Commands {
    */
   'update.apply': {
     req: Record<string, never>;
+    res: { ok: true };
+  };
+
+  /* -- The assistant. Here for the secret, and for the headers. ------------ */
+
+  /**
+   * Where the user stands with the assistant, without asking it to do anything.
+   *
+   * `aws.credentialStatus`'s job in this domain, and it resolves rather than
+   * rejecting for that command's exact reason: holding no key is an answer. It
+   * costs no request either — see `AiStatus` for why a stored key is not
+   * re-proved at launch.
+   */
+  'ai.status': {
+    req: Record<string, never>;
+    res: AiStatus;
+  };
+  /**
+   * Keep a key for a provider, once it has been proved to work.
+   *
+   * **The key is verified before it is written**, by asking that provider for
+   * its catalog: this is the one moment the user is watching, so it is the one
+   * moment a bad key can be reported as a bad key rather than as an assistant
+   * that silently answers nothing. A rejection stores nothing.
+   *
+   * The key goes to the OS keychain here and never travels back to the UI. What
+   * comes back is the same status `ai.status` answers, so a panel that just
+   * connected and a panel that was already connected render from one shape.
+   */
+  'ai.connect': {
+    req: { provider: AiProvider; key: string };
+    res: AiStatus;
+  };
+  /** Forget the stored key. The keychain entry goes; nothing else is kept to clear. */
+  'ai.disconnect': {
+    req: Record<string, never>;
+    res: { ok: true };
+  };
+  /**
+   * The models the stored key may use, filtered to those that can hold a
+   * tool-using conversation -- see `AiModel`. The UI picks its default out of
+   * this rather than naming an id, because which Claude exists moves.
+   */
+  'ai.models': {
+    req: Record<string, never>;
+    res: { models: AiModel[] };
+  };
+  /**
+   * One turn: hand the model the conversation and the tools, get its answer.
+   *
+   * **One model call, not one conversation.** The agent loop lives in the
+   * webview -- it holds the tabs, the editor selection and the results the tools
+   * answer from, none of which this side has ever heard of -- so a turn that
+   * calls three tools is three of these. What is here instead is the part the
+   * webview cannot do: the key is in the OS keychain, and a key must never reach
+   * a page that renders anything.
+   *
+   * Text arrives on the `ai.delta` broadcast as it is generated; this resolves
+   * with the finished message, `update.download`'s split. `turnId` is the UI's
+   * own so `ai.cancel` can name this call while it is still in flight.
+   */
+  'ai.send': {
+    req: { turnId: string; model: string; messages: AiMessage[]; tools: AiToolDef[] };
+    res: { message: AiMessage };
+  };
+  /**
+   * Abort a turn in flight. The pending `ai.send` rejects with a cancellation,
+   * which the loop reads as "stop", not as "retry".
+   *
+   * It is a command rather than an `AbortSignal` on the call because the signal
+   * would only abandon the *reply*: the bridge is fire-and-forget, so nothing
+   * about a caller giving up reaches this side, and the request to the provider
+   * would go on streaming to nobody -- billed by the token. Cancelling has to be
+   * something the UI says.
+   */
+  'ai.cancel': {
+    req: { turnId: string };
     res: { ok: true };
   };
 }

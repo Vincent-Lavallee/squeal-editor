@@ -169,6 +169,70 @@ describe.each([
 
   const names = (tables: TableInfo[]): string[] => tables.map((t) => t.name);
 
+  const searchTables = async (search?: string, limit?: number): Promise<{ tables: TableInfo[]; truncated: boolean }> =>
+    (await h.ok('db.tables', { connectionId, database: fixtureDb, search, limit })) as {
+      tables: TableInfo[];
+      truncated: boolean;
+    };
+
+  /*
+   * The narrowing is the server's, not a filter over what came back -- which is
+   * the whole reason it is on the driver contract. Case-insensitive because a
+   * caller searching for a table does not know how it was capitalised, and
+   * anchored nowhere because a name's middle is as good a handle as its start.
+   */
+  test('a table search narrows on the server, ignoring case', async () => {
+    const { tables } = await searchTables('USER');
+
+    expect(names(tables)).toContain('users');
+    expect(names(tables)).not.toContain('orders');
+  });
+
+  test('a search that matches nothing is empty, not an error', async () => {
+    const { tables, truncated } = await searchTables('no_such_table_anywhere');
+
+    expect(tables).toEqual([]);
+    expect(truncated).toBe(false);
+  });
+
+  /*
+   * `truncated` is answered from a spare row rather than guessed from a full
+   * page -- `db.browse`'s `hasMore` rule, and the same trap: a listing that
+   * exactly fills the limit is not evidence that anything was left out.
+   */
+  test('a capped listing says it was capped, and one that exactly fits does not', async () => {
+    const all = await listTables();
+    expect(all.length).toBeGreaterThan(1);
+
+    const capped = await searchTables(undefined, 1);
+    expect(capped.tables).toHaveLength(1);
+    expect(capped.truncated).toBe(true);
+
+    const exact = await searchTables(undefined, all.length);
+    expect(exact.tables).toHaveLength(all.length);
+    expect(exact.truncated).toBe(false);
+  });
+
+  test('no search and no limit is the unbounded listing the tree still asks for', async () => {
+    const { tables, truncated } = await searchTables();
+
+    expect(names(tables)).toEqual(names(await listTables()));
+    expect(truncated).toBe(false);
+  });
+
+  /*
+   * The search value is bound, never interpolated -- `buildWhere`'s rule applied
+   * to the one other place a user's string reaches a catalog query. The `%` and
+   * `_` inside it are LIKE metacharacters and stay so; what must not happen is
+   * the quote ending the literal.
+   */
+  test('a search carrying a quote matches nothing and leaves the connection standing', async () => {
+    const { tables } = await searchTables("' OR 1=1 --");
+
+    expect(tables).toEqual([]);
+    expect(names(await listTables())).toContain('users');
+  });
+
   const columnsOf = async (table: string, schema?: string): Promise<ColumnInfo[]> =>
     ((await h.ok('db.columns', { connectionId, database: fixtureDb, table, schema })) as { columns: ColumnInfo[] })
       .columns;

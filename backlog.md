@@ -17,12 +17,15 @@ Things that already work, but not well enough.
 
 Things that are wrong.
 
-- **Unbounded table listing** — `listTables` fetches every table in the database
-  with no limit, so a database with thousands of tables is slow to query,
-  renders an unusable tree, and chokes autocomplete. Cap the result at a fixed
-  limit (e.g., 250) with a note in the tree that more exist — the filter bar
-  still searches the full set on the server side. Autocomplete respects the
-  same cap.
+- **Unbounded table listing** — The tree and autocomplete still ask `db.tables`
+  for every table in the database, so one holding thousands is slow to query and
+  renders an unusable tree. **The mechanism they need already exists**: `db.tables`
+  takes a `search` and a `limit`, narrows on the server in every driver, and
+  answers `truncated` from a spare row rather than guessing — built for the
+  assistant's `searchTables` and covered by contract tests on all three engines.
+  What is left is the callers: cap the tree's fetch with a note in it that more
+  exist, point the filter bar at the server-side search instead of filtering what
+  it already has, and hold autocomplete to the same cap.
 
 - **Closing a grid tab discards its staged edits silently** — A browsed grid can
   hold cell edits and row deletes that have not been saved yet, and closing the
@@ -82,7 +85,17 @@ Things that do not exist yet.
   _Connect_ naming it, never a silently conjured empty database — so creating one
   has to be something the user asked for by name.
 
-- **LLM assistant** — A side chat panel (like VS Code) for generating SQL from natural language, explaining queries, fixing errors, and suggesting optimizations. Users bring their own API key for Claude, OpenAI, or DeepSeek, pasted into settings — no hosted backend.
+- **Assistant: remembered conversations** — The assistant panel ships without
+  memory: the thread lives for as long as the app does and quitting drops it, so
+  a long debugging conversation cannot be come back to. Persist the messages and
+  the tool calls, with a list of past conversations to reopen. The line that has
+  to hold: an attached result is stored as its shape — `128 rows of users(id,
+  email, created_at)` — and never as the values, because the rows only ever left
+  the process on one deliberate gesture and that gesture should not also mean
+  they sit in `squeal.db` forever, in a table that is not encrypted the way
+  passwords are. It is a store table and a migration, and it touches nothing the
+  panel already does, which is why it was left out of the first cut rather than
+  built half-way.
 
 - **GitHub sync** — Authenticate via browser-based OAuth (no hosted backend) and sync workspaces, connections, and user settings to a private gist automatically on change. Connection passwords are never included in the synced data.
 

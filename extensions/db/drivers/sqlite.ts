@@ -12,6 +12,7 @@ import {
   pickRowKey,
   runWrites,
   selectExpressionAt,
+  tableSearchClause,
   toDisplayRow,
 } from './common.ts';
 
@@ -149,15 +150,17 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
     return [client.filename];
   },
 
-  async listTables(client) {
+  async listTables(client, _database, search) {
     // `sqlite_%` is the reserved prefix for SQLite's own bookkeeping relations
     // (sqlite_sequence, sqlite_stat1), which is this engine's spelling of the
     // system-catalogs rule the other two apply to whole schemas.
+    const { clause, params, limit } = tableSearchClause(search, 'name', (position) => this.placeholder(position));
     const rows = sqliteRows(
       client,
       `SELECT name, type FROM sqlite_master
-        WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'
-        ORDER BY name`
+        WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'${clause}
+        ORDER BY name${limit}`,
+      params
     );
     return rows.map((r) => ({
       name: r[0] as string,

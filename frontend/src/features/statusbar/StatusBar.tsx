@@ -6,6 +6,7 @@ import { selectActiveTab } from '../../store/tabsSlice.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import Badge from '../../common/components/Badge.tsx';
 import * as t from '../../common/tokens';
+import AssistantStatus from './AssistantStatus.tsx';
 import ReadOnlyConfirm from './ReadOnlyConfirm.tsx';
 
 const iconSvg = { flex: 'none', width: 16, height: 16 };
@@ -77,7 +78,8 @@ export default function StatusBar() {
         </span>
       )}
       <div style={{ flex: 1 }} />
-      {config && <Badge kind="neutral" style={{ marginRight: t.GAP_XS }}>{engineLabel(config.type)}</Badge>}
+      <AssistantStatus />
+      {config && <Badge kind="neutral" style={{ margin: `0 ${t.GAP_XS}px 0 ${t.GAP}px` }}>{engineLabel(config.type)}</Badge>}
       <button type="button" data-testid="statusbar-lock"
         style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, height: '100%', padding: `0 ${t.GAP}px 0 ${t.GAP_SM}px`, border: 'none', background: lockHovered ? t.HOVER : 'none', color: lockHovered ? t.TEXT : t.TEXT_MUTED, font: 'inherit', fontSize: t.TEXT_BADGE, cursor: 'pointer' }}
         onMouseEnter={() => setLockHovered(true)} onMouseLeave={() => setLockHovered(false)}

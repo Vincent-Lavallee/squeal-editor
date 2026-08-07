@@ -1,5 +1,6 @@
 import { configureStore } from '@reduxjs/toolkit';
 
+import { assistantReducer } from './assistantSlice.ts';
 import { awsSignInReducer } from './awsSignInSlice.ts';
 import { connectionTestReducer } from './connectionTestSlice.ts';
 import { environmentsReducer } from './environmentsSlice.ts';
@@ -32,6 +33,11 @@ import { workspacesReducer } from './workspacesSlice.ts';
  * `sessionSyncMiddleware` is the write half of session restore: it watches the
  * tabs as they change and persists each connection's shape. It is prepended per
  * the listener-middleware convention, so it sees actions before the reducers run.
+ *
+ * `assistant` is here by the same test and is the one slice that also *drives*
+ * something: the agent loop runs in its thunk, because six of its tools answer
+ * from the tabs and the results rather than from anything the extension knows.
+ * See `docs/decisions.md`.
  */
 export const store = configureStore({
   reducer: {
@@ -48,6 +54,7 @@ export const store = configureStore({
     tabs: tabsReducer,
     updater: updaterReducer,
     settings: settingsReducer,
+    assistant: assistantReducer,
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().prepend(sessionSyncMiddleware.middleware),
 });

@@ -16,6 +16,13 @@ export interface TableMeta {
   kind: 'table' | 'view';
 }
 
+/** How a table listing is narrowed, when the caller cannot carry the whole database. */
+export interface TableSearch {
+  /** Matched anywhere in the name, case-insensitively. */
+  text?: string;
+  limit?: number;
+}
+
 /**
  * Which relation a call is about, as the two facts that identify one.
  *
@@ -122,7 +129,21 @@ export interface Driver<C> {
    */
   serverVersion(client: C): Promise<string>;
   listDatabases(client: C): Promise<string[]>;
-  listTables(client: C, database: string): Promise<TableMeta[]>;
+  /**
+   * A database's relations, optionally narrowed and capped.
+   *
+   * Both halves of `search` are the **server's** job, not a filter applied to
+   * what came back, and that is the whole reason they are on the contract rather
+   * than in the caller: a database with thousands of tables is slow to answer and
+   * expensive to carry, so narrowing after the fact has already paid every cost
+   * the narrowing exists to avoid.
+   *
+   * Omitted, this is the unbounded listing it has always been -- the tree asks
+   * for everything and gets everything. `text` matches anywhere in the name and
+   * is matched case-insensitively, since a caller searching for a table does not
+   * know how it was capitalised.
+   */
+  listTables(client: C, database: string, search?: TableSearch): Promise<TableMeta[]>;
   /**
    * A table's columns, in the order the table declares them.
    *
