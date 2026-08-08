@@ -146,8 +146,8 @@ export function useExplorer(shown?: string | null) {
   );
 
   const fetchFunctionDdl = useCallback(
-    (db: string, func: string, kind: 'function' | 'procedure', schema?: string): Promise<string> =>
-      dispatch(fetchFunctionDdlThunk({ database: db, function: func, kind, schema }))
+    (db: string, func: FunctionInfo): Promise<string> =>
+      dispatch(fetchFunctionDdlThunk({ database: db, func }))
         .unwrap()
         .then((r) => r.ddl),
     [dispatch]

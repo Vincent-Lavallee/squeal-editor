@@ -3,6 +3,7 @@ import type {
   ColumnInfo,
   ConnectionConfig,
   DiagramTable,
+  FunctionInfo,
   RowDelete,
   RowEdit,
   SqlDialect,
@@ -210,11 +211,14 @@ export interface Driver<C> {
    * Functions and stored procedures in a database, queried per-engine from the catalog.
    * Empty for SQLite, which has no server-side functions.
    */
-  listFunctions(client: C, database: string): Promise<Array<{ name: string; schema?: string; kind: 'function' | 'procedure' }>>;
+  listFunctions(client: C, database: string): Promise<FunctionInfo[]>;
   /**
-   * A function's or procedure's definition.
+   * A function's or procedure's definition, for the row `listFunctions`
+   * reported. It takes that whole row for the same reason `Relation` exists:
+   * what identifies a function is several facts at once, and an engine with
+   * overloads cannot recover the missing ones from a name.
    */
-  functionDdl(client: C, database: string, func: string, kind: 'function' | 'procedure', schema?: string): Promise<string>;
+  functionDdl(client: C, database: string, func: FunctionInfo): Promise<string>;
   /**
    * Drop a relation. `DROP TABLE` and `DROP VIEW` differ per kind and the
    * identifier is quoted per engine, which is why the UI names one and never

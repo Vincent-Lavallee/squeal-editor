@@ -542,20 +542,31 @@ unconditionally and `functionDdl` is unreachable from an empty list; SQLite's
 triggers work the same as the other two engines, read straight out of
 `sqlite_master.sql` the way `tableDdl` already is for a table there.
 
-**MySQL's `functionDdl` needs to be told `kind`, not guess it.**
-`SHOW CREATE FUNCTION` on a name that is actually a procedure throws
-`ER_SP_DOES_NOT_EXIST` outright rather than answering empty, so there is no
-failed-then-fall-back path the way `tableDdl` has none to fall back from
-either. `db.functionDdl` therefore carries the `kind` the tree's `db.functions`
-row already reported, the same way `db.ddl` is already told `table` vs `view`.
+**`db.functionDdl` carries the whole `db.functions` row back**, not a name and a
+schema. Every field of it is load-bearing here and none can be recovered on this
+side:
 
-**Postgres's `pg_get_functiondef` takes a single `oid`, not a schema-qualified
-name.** Casting a bare `"schema"."name"` string to `regprocedure` is the
-tempting shortcut and the wrong one: it requires the full argument-type list to
-resolve an overloaded name, which neither this nor `listFunctions` tracks. The
-oid comes off `pg_proc`/`pg_namespace` instead, the same pair `listFunctions`
-already joins, with `LIMIT 1` standing in for the overload resolution this
-driver does not attempt anywhere else.
+- **`kind` picks MySQL's verb.** `SHOW CREATE FUNCTION` on a name that is
+  actually a procedure throws `ER_SP_DOES_NOT_EXIST` outright rather than
+  answering empty, so there is no failed-then-fall-back path — the same way
+  `db.ddl` is already told `table` vs `view` rather than guessing.
+- **`id` picks the Postgres overload.** `pg_get_functiondef` takes a single
+  `oid`, not a schema-qualified name; casting `"schema"."name"` to `regprocedure`
+  is the tempting shortcut and the wrong one, because it needs the full
+  argument-type list. So `listFunctions` reports `p.oid::text` on every row and
+  `functionDdl` feeds it straight back. A name lookup with `LIMIT 1` remains as
+  the fallback for a caller holding a row from before `id` existed, and it is an
+  approximation: on `public.square(int)` beside `public.square(text)` it answers
+  about whichever the catalog returns first.
+
+**Overloads are what `id` and `args` exist for.** A Postgres function is not
+identified by name, schema and kind — `pg_proc` can hold a dozen rows alike in
+all three. `listFunctions` reports the oid as the row's identity and
+`pg_get_function_identity_arguments` as its signature (identity arguments, not
+`pg_get_function_arguments`, whose `DEFAULT` clauses describe how a function may
+be *called* rather than what it *is*). MySQL reports neither: a routine name is
+already unique within a database there. The fixture defines `square` twice on
+Postgres so the suite has the pair.
 
 Postgres reads its own triggers from `pg_trigger` (`NOT tgisinternal`, which
 excludes the ones a constraint creates for itself) and renders them with

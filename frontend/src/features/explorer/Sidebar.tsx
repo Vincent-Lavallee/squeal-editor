@@ -71,9 +71,13 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
   const treeKey = database ?? '';
   const [expandedByDb, setExpandedByDb] = useState<Record<string, ReadonlySet<string>>>({});
   const [flippedByDb, setFlippedByDb] = useState<Record<string, ReadonlySet<string>>>({});
+  const [openFunctionsByDb, setOpenFunctionsByDb] = useState<Record<string, ReadonlySet<string>>>({});
   const [filterByDb, setFilterByDb] = useState<Record<string, string>>({});
   const expanded = expandedByDb[treeKey] ?? NO_KEYS;
   const flippedSchemas = flippedByDb[treeKey] ?? NO_KEYS;
+  // Held apart from `expanded`, which is keyed by qualified relation name: a
+  // schema holding a table called `functions` would otherwise open both at once.
+  const openFunctions = openFunctionsByDb[treeKey] ?? NO_KEYS;
   const filter = filterByDb[treeKey] ?? '';
   const setFilter = (value: string) => setFilterByDb((prev) => ({ ...prev, [treeKey]: value }));
 
@@ -169,6 +173,15 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
     });
   };
 
+  const toggleFunctions = (schema: string) => {
+    setOpenFunctionsByDb((prev) => {
+      const next = new Set(prev[treeKey] ?? NO_KEYS);
+      if (next.has(schema)) next.delete(schema);
+      else next.add(schema);
+      return { ...prev, [treeKey]: next };
+    });
+  };
+
   const sorted = useMemo(
     () => (tables ? [...tables].sort((a, b) => (a.kind === 'view' ? 1 : 0) - (b.kind === 'view' ? 1 : 0)) : tables),
     [tables]
@@ -182,7 +195,19 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
     () => (sorted && query ? sorted.filter((table) => table.name.toLowerCase().includes(query)) : sorted),
     [sorted, query]
   );
-  const filteredEverythingOut = query !== '' && visible?.length === 0 && (sorted?.length ?? 0) > 0;
+
+  const functions = database ? functionsFor(database) : undefined;
+
+  // The filter reaches functions too. It used to match relations only, so
+  // filtering for one table left every function in the database sitting under
+  // it -- a search that answers about half the tree reads as a broken search.
+  const visibleFunctions = useMemo(
+    () => (functions && query ? functions.filter((func) => func.name.toLowerCase().includes(query)) : functions),
+    [functions, query]
+  );
+
+  const filteredEverythingOut =
+    query !== '' && visible?.length === 0 && (visibleFunctions?.length ?? 0) === 0 && (sorted?.length ?? 0) > 0;
 
   /*
    * Starred tables lift into their own group at the top and drop out of the
@@ -219,21 +244,19 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
     // returns to the shape you chose when the filter clears.
     query !== '' || (schema === defaultSchema) !== flippedSchemas.has(schema);
 
-  const functions = database ? functionsFor(database) : undefined;
-
   // Grouped the same way tables are, so a schema's functions can fold into that
   // schema's own heading instead of needing one of their own -- see `grouped`.
   const functionsBySchema = useMemo(() => {
     const groups = new Map<string, FunctionInfo[]>();
-    if (!functions) return groups;
-    for (const func of functions) {
+    if (!visibleFunctions) return groups;
+    for (const func of visibleFunctions) {
       const schema = func.schema ?? '';
       const existing = groups.get(schema);
       if (existing) existing.push(func);
       else groups.set(schema, [func]);
     }
     return groups;
-  }, [functions]);
+  }, [visibleFunctions]);
 
   /*
    * MySQL reports no schema, because its database *is* its schema -- so there is
@@ -299,30 +322,76 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
     );
   };
 
-  // A function row shares the table row's shape (name, icon, context menu) but
-  // has nothing to disclose -- no columns, no triggers -- so the toggle button
-  // becomes an inert spacer, keeping the name lined up with a table's own.
-  //
-  // Its own testids throughout, never `tree-item`/`tree-label`: those name a
-  // *relation*, which the UI suite reads schema groups by (`treeLabelsIn`, the
-  // tables-above-views ordering check) -- a function folded into a schema
-  // group under those same ids would read as one more relation and land after
-  // every view, breaking "the view is last in its group" the moment a schema
-  // holds both.
-  const renderFunctionRow = (func: FunctionInfo, db: string, indented: boolean) => (
-    <div key={func.name} data-testid="tree-function-item">
-      <div data-testid="tree-function-row" style={{ display: 'flex', alignItems: 'center', height: t.ROW_H_DENSE, borderRadius: t.RADIUS, paddingLeft: indented ? 12 : 0 }}
-        onContextMenu={(e) => { e.preventDefault(); setMenu({ kind: 'function', func, x: e.clientX, y: e.clientY }); }}>
-        <div style={{ flex: 'none', width: 18 }} aria-hidden="true" />
-        <button data-testid="tree-function-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, height: '100%', padding: '0 6px 0 0', border: 'none', background: 'none', color: t.TEXT, font: 'inherit', fontSize: t.TEXT_BADGE, textAlign: 'left', cursor: 'pointer' }}
-          onClick={() => onShowFunctionDefinition(db, func)} title={`${func.name} — click to view definition`}>
-          <FunctionIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
-          <span data-testid="tree-function-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{func.name}</span>
-          <span style={{ marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: t.TEXT_MUTED, fontSize: '0.85em' }}>{func.kind}</span>
-        </button>
+  /*
+   * A function row nests the way a column or a trigger does -- one level in from
+   * the node that discloses it, with no toggle of its own, because there is
+   * nothing under a function to open.
+   *
+   * The label carries the argument list where the engine reports one. Postgres
+   * overloads share a name and a schema, so `square` drawn five times is five
+   * rows that look like a rendering bug and open the same definition;
+   * `square(x integer)` beside `square(x text)` is the fact that tells them
+   * apart. The key is the same problem: `id` is the catalog's own handle and the
+   * only thing unique per row -- keyed by name, React saw duplicates. Where an
+   * engine reports no id, the kind is still part of the fallback key: MySQL
+   * keys its routines on name *and* type, so one database may hold both a
+   * `square` function and a `square` procedure.
+   *
+   * Its own testids throughout, never `tree-item`/`tree-label`: those name a
+   * *relation*, which the UI suite reads schema groups by (`treeLabelsIn`, the
+   * tables-above-views ordering check) -- a function folded into a schema
+   * group under those same ids would read as one more relation and land after
+   * every view, breaking "the view is last in its group" the moment a schema
+   * holds both.
+   */
+  const renderFunctionRow = (func: FunctionInfo, db: string, pad: number) => {
+    const label = func.args === undefined ? func.name : `${func.name}(${func.args})`;
+    return (
+      <div key={func.id ?? `${func.schema ?? ''}.${func.name}:${func.kind}`} data-testid="tree-function-item">
+        <div data-testid="tree-function-row" style={{ display: 'flex', alignItems: 'center', height: t.ROW_H_DENSE, borderRadius: t.RADIUS, paddingLeft: pad }}
+          onContextMenu={(e) => { e.preventDefault(); setMenu({ kind: 'function', func, x: e.clientX, y: e.clientY }); }}>
+          <button data-testid="tree-function-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, height: '100%', padding: '0 6px 0 0', border: 'none', background: 'none', color: t.TEXT, font: 'inherit', fontSize: t.TEXT_BADGE, textAlign: 'left', cursor: 'pointer' }}
+            onClick={() => onShowFunctionDefinition(db, func)} title={`${label} — click to view definition`}>
+            <FunctionIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
+            <span data-testid="tree-function-label" style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+            <span style={{ flex: '0 999 auto', minWidth: 0, marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: t.TEXT_MUTED, fontSize: '0.85em' }}>{func.kind}</span>
+          </button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  /*
+   * Functions sit behind one row rather than loose among the relations, and it
+   * starts shut.
+   *
+   * A schema's functions are not a handful: an extension, or one audit trigger
+   * per table, puts dozens of them under the same heading the tables are under
+   * -- and drawn inline they read as part of the relation list, pushing the
+   * tables that *are* being looked for off the bottom of the tree. One row that
+   * says how many says the same thing in a line, and opening it is the same
+   * gesture as opening a table.
+   *
+   * A filter opens it, for the reason `schemaOpen` gives: the node is built from
+   * the filtered list, so drawn at all means there is a hit inside, and a shut
+   * node over a match reads as "nothing found".
+   */
+  const renderFunctions = (schema: string, list: FunctionInfo[], db: string, indented: boolean) => {
+    const open = query !== '' || openFunctions.has(schema);
+    return (
+      <div data-testid="tree-functions">
+        <button data-testid="tree-functions-row" style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', height: t.ROW_H_DENSE, padding: '0 6px 0 0', paddingLeft: indented ? 12 : 0, border: 'none', background: 'none', color: t.TEXT_MUTED, font: 'inherit', fontSize: t.TEXT_BADGE, textAlign: 'left', cursor: 'pointer', borderRadius: t.RADIUS }}
+          onClick={() => toggleFunctions(schema)} aria-expanded={open}
+          title={`${list.length} ${list.length === 1 ? 'function' : 'functions'}`}>
+          <DisclosureIcon style={{ ...iconSvg, flex: 'none', color: t.TEXT_FAINT, transition: 'transform 0.12s ease', ...(open ? { transform: 'rotate(90deg)' } : {}) }} aria-hidden="true" />
+          <FunctionIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
+          <span>Functions</span>
+          <span style={{ marginLeft: 'auto', paddingRight: 6, color: t.TEXT_FAINT }}>{list.length}</span>
+        </button>
+        {open && list.map((func) => renderFunctionRow(func, db, indented ? 42 : 30))}
+      </div>
+    );
+  };
 
   return (
     <aside data-testid="sidebar" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, borderRight: `1px solid ${t.BORDER}` }}>
@@ -441,7 +510,7 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
                 <span data-testid="tree-schema-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{schema}</span>
               </button>
               {open && group.map((table) => renderRow(table, database, true))}
-              {open && schemaFunctions.map((func) => renderFunctionRow(func, database, true))}
+              {open && schemaFunctions.length > 0 && renderFunctions(schema, schemaFunctions, database, true)}
             </div>
           );
         })}
@@ -449,20 +518,13 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
         {database && !grouped && unpinned?.map((table) => renderRow(table, database, false))}
 
         {/*
-          * Only reached when nothing schema-groups functions above -- flat mode,
-          * or an engine with no schema layer (MySQL). There each function has no
-          * heading of its own to fold under, so this is the one place it still
-          * earns one.
+          * Only reached when nothing schema-groups functions above -- an engine
+          * with no schema layer (MySQL), whose database *is* its schema. The
+          * node is the same one a schema group gets; what it folds under here is
+          * the database itself, which is why its key is the empty schema.
           */}
-        {database && !grouped && functions && functions.length > 0 && (
-          <div data-testid="tree-functions" style={{ marginTop: t.GAP_SM, paddingTop: t.GAP_SM, borderTop: `1px solid ${t.BORDER}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', height: t.ROW_H_DENSE, padding: '0 6px', color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE }}>
-              <FunctionIcon style={{ ...iconSvg, color: t.TEXT_MUTED }} aria-hidden="true" />
-              <span>Functions</span>
-            </div>
-            {functions.map((func) => renderFunctionRow(func, database, false))}
-          </div>
-        )}
+        {database && !grouped && visibleFunctions && visibleFunctions.length > 0 &&
+          renderFunctions('', visibleFunctions, database, false)}
       </nav>
 
       {menu && database && menu.kind === 'table' && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.table, database)} onClose={() => setMenu(null)} />}

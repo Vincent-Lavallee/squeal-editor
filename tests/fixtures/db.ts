@@ -33,6 +33,12 @@
  * -- so it is the proof that the schema travels as a field rather than as a
  * prefix, and the two together are the pair a wrong split confuses.
  *
+ * `square` is defined **twice** on Postgres, over `int` and over `text`. It is
+ * the overload pair: two functions alike in name, schema and kind, which is the
+ * case that has no answer unless a row carries the catalog's own id -- and the
+ * one that had the tree drawing duplicate React keys and opening whichever
+ * definition the catalog happened to return first.
+ *
  * `users."eventType"` is deliberately mixed-case: it is what exposed the filter
  * bar quoting an identifier as `eventType` instead of `"eventType"`, which
  * Postgres folds to `eventtype` and then cannot find. MySQL's own case
@@ -92,6 +98,11 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION square(x int) RETURNS int AS $$
 BEGIN
   RETURN x * x;
+END;
+$$ LANGUAGE plpgsql;
+CREATE FUNCTION square(x text) RETURNS text AS $$
+BEGIN
+  RETURN x || x;
 END;
 $$ LANGUAGE plpgsql;
 CREATE FUNCTION audit_trigger() RETURNS TRIGGER AS $$

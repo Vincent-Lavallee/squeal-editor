@@ -233,8 +233,8 @@ const COMMANDS: Handlers = {
     return { functions: await getConnection(connectionId).listFunctions(database) };
   },
 
-  async 'db.functionDdl'({ connectionId, database, function: func, schema, kind }) {
-    return { ddl: await getConnection(connectionId).functionDdl(database, func, kind, schema) };
+  async 'db.functionDdl'({ connectionId, database, func }) {
+    return { ddl: await getConnection(connectionId).functionDdl(database, func) };
   },
 
   async 'db.drop'({ connectionId, database, table, schema, kind }) {

@@ -475,12 +475,13 @@ export const fetchTriggerDdl = createAppThunk(
   }
 );
 
-/** Argument for fetching a function's DDL. */
+/**
+ * Argument for fetching a function's DDL: the whole tree row, because an
+ * overload is not addressable by name -- see `FunctionInfo`.
+ */
 interface FunctionDdlArg {
   database: string;
-  function: string;
-  kind: 'function' | 'procedure';
-  schema?: string;
+  func: FunctionInfo;
 }
 
 /**
@@ -488,11 +489,11 @@ interface FunctionDdlArg {
  */
 export const fetchFunctionDdl = createAppThunk(
   'explorer/fetchFunctionDdl',
-  async ({ database, function: func, kind, schema }: FunctionDdlArg, { getState, rejectWithValue }) => {
+  async ({ database, func }: FunctionDdlArg, { getState, rejectWithValue }) => {
     const connectionId = getState().session.activeConnectionId;
     if (!connectionId) return rejectWithValue('Not connected.');
     try {
-      const { ddl } = await call('db.functionDdl', { connectionId, database, function: func, kind, schema });
+      const { ddl } = await call('db.functionDdl', { connectionId, database, func });
       return { ddl };
     } catch (err) {
       return rejectWithValue(errorMessage(err));

@@ -293,17 +293,20 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     }));
   },
 
-  async functionDdl(client, _database, func, kind) {
+  async functionDdl(client, _database, func) {
     // `kind` decides the verb rather than trying FUNCTION and falling back:
     // `SHOW CREATE FUNCTION` on a name that is actually a procedure throws
     // ER_SP_DOES_NOT_EXIST outright, leaving nothing to fall back from.
-    const verb = kind === 'procedure' ? 'SHOW CREATE PROCEDURE' : 'SHOW CREATE FUNCTION';
-    const [rows] = (await client.query({ sql: `${verb} ${this.quoteIdent(func)}`, rowsAsArray: true })) as [
+    //
+    // `id` and `args` go unread: MySQL has no overloads, so a routine name is
+    // already the whole address within a database.
+    const verb = func.kind === 'procedure' ? 'SHOW CREATE PROCEDURE' : 'SHOW CREATE FUNCTION';
+    const [rows] = (await client.query({ sql: `${verb} ${this.quoteIdent(func.name)}`, rowsAsArray: true })) as [
       unknown[][],
       FieldPacket[],
     ];
     const ddl = rows[0]?.[2];
-    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of ${func}.`);
+    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of ${func.name}.`);
     return ddl;
   },
 

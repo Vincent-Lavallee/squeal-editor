@@ -17,6 +17,7 @@ import type {
   ConnectionConfig,
   DiagramTable,
   FilterCondition,
+  FunctionInfo,
   QueryResult,
   SortOrder,
   TableFilter,
@@ -827,6 +828,55 @@ describe.each([
     // Qualified in the output too, so the statement it prints is one that runs
     // wherever search_path happens to point.
     expect(ddl).toContain('reporting');
+  });
+
+  const listFunctions = async (): Promise<FunctionInfo[]> =>
+    ((await h.ok('db.functions', { connectionId, database: fixtureDb })) as { functions: FunctionInfo[] }).functions;
+
+  const functionDdlOf = async (func: FunctionInfo): Promise<string> =>
+    ((await h.ok('db.functionDdl', { connectionId, database: fixtureDb, func })) as { ddl: string }).ddl;
+
+  test('lists functions and procedures, or nothing on an engine that has none', async () => {
+    const functions = await listFunctions();
+    // SQLite has no server-side routines, and an empty list is the whole answer
+    // -- the tree draws no node rather than an error.
+    if (label === 'sqlite') {
+      expect(functions).toEqual([]);
+      return;
+    }
+    // Both server engines seed a function and a procedure, under names of their
+    // own (`log_note` against `count_rows`) -- what has to be symmetric is that
+    // each kind comes back labelled, not what either one is called.
+    expect(functions.map((f) => f.name)).toContain('square');
+    expect(functions.find((f) => f.name === 'square')?.kind).toBe('function');
+    expect(functions.some((f) => f.kind === 'procedure')).toBe(true);
+  });
+
+  test.if(label !== 'sqlite')('renders a function definition, and a procedure through the other verb', async () => {
+    const functions = await listFunctions();
+    const square = functions.find((f) => f.name === 'square')!;
+    expect(await functionDdlOf(square)).toMatch(/function/i);
+
+    // MySQL's SHOW CREATE FUNCTION throws outright on a procedure name, so the
+    // kind carried on the row is what picks the verb -- guessing cannot recover.
+    const procedure = functions.find((f) => f.kind === 'procedure');
+    if (procedure) expect(await functionDdlOf(procedure)).toMatch(/procedure/i);
+  });
+
+  test.if(expectSchemaQualified)('tells two overloads of one name apart, and opens the one asked for', async () => {
+    // `square` is defined over int and over text. Name, schema and kind are
+    // identical across the pair, so anything keyed on those three sees one
+    // function -- which is what drew duplicate React keys in the tree and made
+    // "open definition" answer about whichever row the catalog returned first.
+    const squares = (await listFunctions()).filter((f) => f.name === 'square');
+    expect(squares).toHaveLength(2);
+    expect(new Set(squares.map((f) => f.id)).size).toBe(2);
+    expect(squares.map((f) => f.args).sort()).toEqual(['x integer', 'x text']);
+
+    const overInt = squares.find((f) => f.args === 'x integer')!;
+    const overText = squares.find((f) => f.args === 'x text')!;
+    expect(await functionDdlOf(overInt)).toContain('x * x');
+    expect(await functionDdlOf(overText)).toContain("x || x");
   });
 
   test.if(expectSchemaQualified)('drops a relation in another schema, and only that one', async () => {

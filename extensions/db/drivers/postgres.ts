@@ -528,13 +528,20 @@ export const postgresDriver: Driver<pg.Client> = {
   },
 
   async listFunctions(client, _database) {
+    // The oid and the identity arguments are what make an overload addressable:
+    // `public.f` can be several functions here, alike in every other column.
+    // Identity arguments rather than `pg_get_function_arguments`, because the
+    // latter renders defaults (`x integer DEFAULT 1`) -- a sentence about how
+    // the function may be *called*, where the row needs what it *is*.
     const res = await client.query({
       text: `SELECT p.proname, n.nspname,
-                    CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END
+                    CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END,
+                    p.oid::text,
+                    pg_get_function_identity_arguments(p.oid)
                FROM pg_proc p
                JOIN pg_namespace n ON n.oid = p.pronamespace
               WHERE n.nspname <> ALL($1)
-              ORDER BY n.nspname, p.proname`,
+              ORDER BY n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)`,
       values: [PG_SYSTEM_SCHEMAS],
       rowMode: 'array',
     });
@@ -542,29 +549,39 @@ export const postgresDriver: Driver<pg.Client> = {
       name: r[0] as string,
       schema: r[1] as string,
       kind: r[2] as 'function' | 'procedure',
+      id: r[3] as string,
+      args: r[4] as string,
     }));
   },
 
-  async functionDdl(client, _database, func, _kind, schema) {
+  async functionDdl(client, _database, func) {
     // `kind` goes unread: pg_get_functiondef renders either uniformly, unlike
     // MySQL's two distinct SHOW CREATE verbs.
-    const { schema: funcSchema, relation: funcName } = splitRelation({ table: func, schema });
-    // pg_get_functiondef takes a single oid, not a schema-qualified name --
-    // found by the pg_proc/pg_namespace pair listFunctions already reads.
-    // LIMIT 1 rather than resolving overloads: neither this nor listFunctions
-    // disambiguates by argument types, so "open definition" on an overloaded
-    // name is already an approximation.
-    const res = await client.query({
-      text: `SELECT pg_get_functiondef(p.oid)
-               FROM pg_proc p
-               JOIN pg_namespace n ON n.oid = p.pronamespace
-              WHERE n.nspname = $1 AND p.proname = $2
-              LIMIT 1`,
-      values: [funcSchema, funcName],
-      rowMode: 'array',
-    });
+    //
+    // pg_get_functiondef takes a single oid, so `id` is not merely the faster
+    // route -- it is the only exact one. Resolving by name instead can be a
+    // dozen rows, and picking one of them means "open definition" answers about
+    // a function nobody clicked. The name lookup stays as the fallback for a
+    // caller holding a row from before `id` existed, and keeps its old LIMIT 1.
+    const { schema: funcSchema, relation: funcName } = splitRelation({ table: func.name, schema: func.schema });
+    const res =
+      func.id !== undefined
+        ? await client.query({
+            text: `SELECT pg_get_functiondef($1::oid)`,
+            values: [func.id],
+            rowMode: 'array',
+          })
+        : await client.query({
+            text: `SELECT pg_get_functiondef(p.oid)
+                     FROM pg_proc p
+                     JOIN pg_namespace n ON n.oid = p.pronamespace
+                    WHERE n.nspname = $1 AND p.proname = $2
+                    LIMIT 1`,
+            values: [funcSchema, funcName],
+            rowMode: 'array',
+          });
     const ddl = (res.rows[0] as string[] | undefined)?.[0];
-    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of ${func}.`);
+    if (typeof ddl !== 'string') throw new Error(`Could not read the definition of ${func.name}.`);
     return ddl;
   },
 

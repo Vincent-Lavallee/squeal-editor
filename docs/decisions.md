@@ -6354,3 +6354,56 @@ directions first — the tab moving the tree, and the sidebar's picker moving th
 tab — then turns the toggle off and carries on. The relaunch test is what proves
 the preference is stored: it asserts the *non-default* value survives, since the
 default surviving would prove only that nothing was read.
+
+## Functions moved behind a node of their own, and a name stopped being an address
+
+**The report was "why are the functions in the middle of the table list?"** —
+a `public` group holding fifteen function rows drawn among the relations, all
+named some variant of `_d`/`_m`/`_s`, none of them tables and none of them
+distinguishable from each other.
+
+**Two separate faults, and the visible one was the smaller.**
+
+**Functions were rendered inline, after a schema's relations.** That reads fine
+for the four the test fixture has and badly for anything real: a schema with an
+extension in it, or with one audit trigger function per table, puts dozens of
+unfamiliar names under the same heading the tables are under. They are not
+sorted in with the relations — they never were — but sitting in the same run
+they look like they are, and they push the tables being looked for off the
+bottom of the tree. They now hang behind one **Functions** row that says how
+many, shut by default, opened by a filter that matched inside it. *Rejected:
+sorting them in among the relations* — that would make the report literally
+true. *Rejected: a heading with no disclosure*, which is what the flat/MySQL
+case had: it costs the same vertical space as the rows it labels.
+
+**A Postgres function is not identified by its name.** `pg_proc` allows
+overloads, so `public.square` was two rows alike in name, schema and kind. The
+tree keyed its rows on the name, which meant React was handed duplicate keys —
+unsupported, and free to drop or reuse rows on the next render. The driver had
+the same hole from the other side, and had written it down rather than fixed
+it: `functionDdl` resolved by name with `LIMIT 1`, so "open definition" on any
+overload answered about whichever the catalog returned first.
+
+**`FunctionInfo` now carries `id` (the oid, as a string) and `args`.** The oid
+is the row's identity — the React key, and what `pg_get_functiondef` actually
+takes. `args` is `pg_get_function_identity_arguments`, which is what makes the
+pair readable on screen: `square(x integer)` beside `square(x text)`. Identity
+arguments rather than `pg_get_function_arguments`, whose `DEFAULT` clauses
+describe how a function may be *called* rather than what it *is*. Both are
+absent on MySQL, where a routine name is already unique within a database.
+
+**`db.functionDdl` takes the whole row now**, rather than a name plus a growing
+tail of optional arguments — the reasoning `Relation` already carries. `kind`
+was on it for MySQL's benefit, `id` is on it for Postgres', and the next engine
+will want something else again. The name lookup stayed as the fallback for a
+caller without an `id`, keeping its old `LIMIT 1` and its old approximation.
+
+**The filter reaches functions.** It matched relations only, so filtering for a
+table left every function in the database sitting under it — a search answering
+about half the tree. `hasSchemas` still reads the unfiltered list on purpose:
+whether an engine has a schema layer is not a fact a filter may change.
+
+**The fixture defines `square` twice on Postgres.** An overload pair cannot be
+mocked into existence usefully — the whole question is what the catalog reports
+about two functions that agree on everything a name can express — so the suite
+asserts against two real ones, over `int` and over `text`.

@@ -64,6 +64,16 @@ const treeLabelsIn = (schema: string) => `
     .find(e => e.querySelector('[data-testid="tree-schema-label"]').textContent === ${JSON.stringify(schema)})
     .querySelectorAll('[data-testid="tree-label"]')].map(e => e.textContent)`;
 
+/**
+ * The function rows drawn anywhere in the tree. They answer to testids of their
+ * own, never `tree-label`, so `treeLabelsIn` above stays a question about
+ * relations -- which is what its tables-above-views assertion depends on.
+ */
+const functionLabels = `[...document.querySelectorAll('[data-testid="tree-function-label"]')].map(e => e.textContent)`;
+
+const toggleFunctions = `
+  document.querySelector('[data-testid="tree-functions-row"]').click(); true;`;
+
 const toggleSchema = (schema: string) => `
   [...document.querySelectorAll('[data-testid="tree-schema-row"]')]
     .find(e => e.querySelector('[data-testid="tree-schema-label"]').textContent === ${JSON.stringify(schema)})
@@ -647,6 +657,49 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // icon tells them apart. Grouped, "last" is per group rather than overall.
       const publicLabels = await app.evaluate<string[]>(treeLabelsIn('public'));
       expect(publicLabels[publicLabels.length - 1]).toBe('active_users');
+    });
+
+    test('functions sit behind one node that starts shut, and never among the relations', async () => {
+      // The symptom this exists for: `shop` holds a handful of functions, and a
+      // schema with an extension or a trigger function per table holds dozens.
+      // Drawn inline they read as part of the relation list and push the tables
+      // being looked for off the bottom of the tree.
+      expect(await app.evaluate<string[]>(functionLabels)).toEqual([]);
+      expect(await app.evaluate<string[]>(treeLabelsIn('public'))).not.toContain('square');
+
+      await app.evaluate(toggleFunctions);
+      await Bun.sleep(300);
+
+      // Overloads: `square` is defined over int and over text, alike in name,
+      // schema and kind. The argument list is what tells the two rows apart --
+      // without it they are two identical rows opening the same definition.
+      const labels = await app.evaluate<string[]>(functionLabels);
+      expect(labels).toContain('square(x integer)');
+      expect(labels).toContain('square(x text)');
+      expect(new Set(labels).size).toBe(labels.length);
+
+      await app.evaluate(toggleFunctions);
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(functionLabels)).toEqual([]);
+    });
+
+    test('a filter opens the functions node over what it matched', async () => {
+      // Same rule the schema headings follow: the node is built from the
+      // filtered list, so drawn at all means there is a hit inside it, and a
+      // shut node over a match reads as "nothing found".
+      await app.evaluate(setFilter('square'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(functionLabels)).toContain('square(x integer)');
+
+      // And the filter reaches functions at all: filtering for a table used to
+      // leave every function in the database sitting under it.
+      await app.evaluate(setFilter('daily'));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(functionLabels)).toEqual([]);
+
+      await app.evaluate(setFilter(''));
+      await Bun.sleep(400);
+      expect(await app.evaluate<string[]>(functionLabels)).toEqual([]);
     });
 
     test('a table expands in place to show its columns, marking the primary key', async () => {

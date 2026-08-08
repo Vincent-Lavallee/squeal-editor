@@ -777,3 +777,16 @@ This is a record, not a plan. Nothing here is waiting on anything.
   back somewhere it was left. The cost, stated because it is a deletion: the tree
   now always groups where the relations name a schema, and the flat-list escape
   hatch is gone with the control that offered it.
+
+- **2026-08-07** — **Functions in the tree, behind a node and told apart** — A
+  schema's functions were drawn loose among its relations, so a `public` holding
+  a few dozen — one extension, or one audit trigger function per table — read as
+  an unfamiliar run interrupting the tables being looked for. They now hang
+  behind a single **Functions** row that says how many, shut by default and
+  opened by a filter that matched inside it; the filter reaches function names at
+  all, which it did not before. Separately, a Postgres overload was not
+  addressable: `public.square` over `int` and over `text` agree on name, schema
+  and kind, so the tree handed React duplicate keys and every one of the rows
+  opened the same definition. `FunctionInfo` now carries the oid and the identity
+  argument list, so the rows read `square(x integer)` and `square(x text)` and
+  "open definition" resolves the exact one clicked.

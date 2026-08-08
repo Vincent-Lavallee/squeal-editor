@@ -259,14 +259,16 @@ export interface Commands {
   /**
    * A function's or procedure's definition, for "open definition" in the tree.
    *
-   * The UI names a function and its schema (if applicable); the extension
-   * queries per-engine. `kind` is the `db.functions` row's own, carried back
-   * rather than guessed: MySQL's `SHOW CREATE FUNCTION` throws outright on a
-   * name that is actually a procedure (`ER_SP_DOES_NOT_EXIST`), so there is no
-   * empty answer to fall back from -- the caller already knows which one it is.
+   * **The whole `db.functions` row travels back, rather than a name and a
+   * schema.** Every field of it is load-bearing and none of them can be
+   * recovered here: `kind` picks the verb, because MySQL's `SHOW CREATE
+   * FUNCTION` throws outright on a name that is actually a procedure
+   * (`ER_SP_DOES_NOT_EXIST`), leaving no empty answer to fall back from; and
+   * `id` picks the *overload*, which a name and a schema cannot -- see
+   * `FunctionInfo`.
    */
   'db.functionDdl': {
-    req: { connectionId: string; database: string; function: string; schema?: string; kind: 'function' | 'procedure' };
+    req: { connectionId: string; database: string; func: FunctionInfo };
     res: { ddl: string };
   };
   /**

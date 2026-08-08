@@ -3082,20 +3082,45 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   state, with no tab open at all, is not a special case: a connection pointed
   at nothing has an empty tree and nothing to run, and if the picker is
   disabled too, the only way out of the app's own empty state is to reconnect.
-- **Triggers nest under their table; functions fold into their schema's own
-  heading rather than earning one of their own.** A trigger belongs to exactly
-  one table, so it renders inside that table's expanded row, lazily fetched the
-  same way columns are (`triggersFor`/`loadTableTriggers`, the same
-  asked-vs-answered `null` marker `columns` already uses). A function is not
-  scoped to a table but it *is* scoped to a schema on an engine that has one —
-  `functionsBySchema` groups them the same way `grouped` groups tables, and a
-  schema's functions render after that schema's tables under the heading
-  already there. A schema holding functions but no tables still gets a group
-  for exactly this reason (`grouped`'s loop over `functionsBySchema.keys()`).
-  Only when nothing schema-groups them — flat mode, or MySQL, whose database
-  *is* its schema — does a flat **Functions** section with its own heading
-  appear at the bottom, because there each function has nowhere else to fold
-  into.
+- **Triggers nest under their table; functions nest behind a *Functions* node
+  inside their schema's group.** A trigger belongs to exactly one table, so it
+  renders inside that table's expanded row, lazily fetched the same way columns
+  are (`triggersFor`/`loadTableTriggers`, the same asked-vs-answered `null`
+  marker `columns` already uses). A function is not scoped to a table but it
+  *is* scoped to a schema on an engine that has one — `functionsBySchema` groups
+  them the same way `grouped` groups tables, and a schema holding functions but
+  no tables still gets a group for exactly this reason (`grouped`'s loop over
+  `functionsBySchema.keys()`). On an engine with no schema layer (MySQL, whose
+  database *is* its schema) the same node hangs off the database instead, keyed
+  by the empty schema.
+
+  **The node starts shut, and that is the point of it.** A schema's functions
+  are not a handful: an extension, or one audit trigger function per table, puts
+  dozens of them under the heading the tables are under. Rendered inline they
+  read as part of the relation list — a run of unfamiliar names interrupting the
+  tables actually being looked for, pushing those off the bottom of the tree.
+  One row saying how many says the same thing in a line, and opening it is the
+  same gesture as opening a table. A filter opens it, for the reason `schemaOpen`
+  gives: the node is built from the filtered list, so drawn at all means there is
+  a hit inside it.
+
+  Its open/shut state lives in `openFunctionsByDb`, held apart from `expanded`
+  (which is keyed by qualified relation name) so a schema holding a table called
+  `functions` does not open both at once.
+
+  **The filter reaches function names too** (`visibleFunctions`), and
+  `filteredEverythingOut` counts them, so a query matching only a function is not
+  reported as "No matches". `hasSchemas` deliberately still reads the
+  *unfiltered* list: whether an engine has a schema layer is not a fact a filter
+  may change.
+
+  **A row is keyed and labelled by `id` and `args`, never by name.** Postgres
+  overloads share a name, a schema and a kind, so a name is neither a unique
+  React key nor an address: keyed by name the tree handed React duplicate keys,
+  and a dozen identical rows all opened the same definition. The label is
+  `square(x integer)` beside `square(x text)`, and the click carries the whole
+  `FunctionInfo` through `fetchFunctionDdl`, so the extension can resolve the
+  exact overload — see `docs/extension.md`.
 
   **Function rows carry their own testids, never `tree-item`/`tree-label`.**
   Those name a *relation*, which the UI suite reads a schema group's contents

@@ -290,11 +290,31 @@ export interface TriggerInfo {
   schema?: string;
 }
 
-/** A function or stored procedure in the tree, at the top level. */
+/**
+ * A function or stored procedure in the tree, under its schema.
+ *
+ * **A name and a schema do not identify one.** Postgres allows overloads, so
+ * `public.f` can be a dozen different functions differing only in their
+ * arguments -- which is why `id` and `args` exist. Without them the tree draws a
+ * dozen identical rows that all open the same definition, and React sees a dozen
+ * duplicate keys.
+ */
 export interface FunctionInfo {
   name: string;
   /** Schema for Postgres; absent for MySQL. SQLite has no functions. */
   schema?: string;
   /** 'function' or 'procedure' for Postgres; 'function' for MySQL. */
   kind: 'function' | 'procedure';
+  /**
+   * The catalog's own handle on this one -- Postgres' oid, as a string, because
+   * an oid past 2^31 is a number JS should not be rounding. Absent for MySQL,
+   * where a routine name is already unique within a database.
+   */
+  id?: string;
+  /**
+   * The argument list as the engine renders it (`x integer, y text`), which is
+   * what tells two overloads apart on screen. Absent where there is nothing to
+   * tell apart.
+   */
+  args?: string;
 }

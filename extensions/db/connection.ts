@@ -3,6 +3,7 @@ import type {
   ColumnInfo,
   ConnectionConfig,
   DiagramTable,
+  FunctionInfo,
   RowDelete,
   RowEdit,
   SortOrder,
@@ -104,9 +105,9 @@ export interface ConnectionHandle {
   /** A trigger's definition. */
   triggerDdl(database: string, relation: Relation, trigger: string): Promise<string>;
   /** Functions and stored procedures in a database. */
-  listFunctions(database: string): Promise<Array<{ name: string; schema?: string; kind: 'function' | 'procedure' }>>;
-  /** A function's or procedure's definition. */
-  functionDdl(database: string, func: string, kind: 'function' | 'procedure', schema?: string): Promise<string>;
+  listFunctions(database: string): Promise<FunctionInfo[]>;
+  /** A function's or procedure's definition, for the row `listFunctions` reported. */
+  functionDdl(database: string, func: FunctionInfo): Promise<string>;
   /** Drop a relation. Not undoable -- the UI guards it behind a typed confirmation. */
   dropRelation(database: string, relation: Relation, kind: 'table' | 'view'): Promise<void>;
   /**
@@ -411,8 +412,8 @@ function build<C>(
       return useClient(database, (client) => driver.listFunctions(client, database));
     },
 
-    async functionDdl(database, func, kind, schema) {
-      return useClient(database, (client) => driver.functionDdl(client, database, func, kind, schema));
+    async functionDdl(database, func) {
+      return useClient(database, (client) => driver.functionDdl(client, database, func));
     },
 
     async dropRelation(database, relation, kind) {
