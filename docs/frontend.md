@@ -98,7 +98,8 @@ that lives apart from its values is two sources for one fact.
 | which pane's database list is open (`pickerPane`) | `Shell` local state | never left |
 | which database the tree is pinned to, **per connection** (`treeDatabases`), for when it is not following the tab | `Shell` local state | never left |
 | whether the tree follows the tab at all (`tree.syncWithTab`) | `settings` slice | crossed |
-| the tree's expansion, schema flips and filter text, **per database** | `Sidebar` local state | never left |
+| the tree's expansion, schema flips and search *draft*, **per database** | `Sidebar` local state | never left, until it settles |
+| the search the tree's rows answer, and those rows | `explorer` slice (`tableSearch`) | crossed |
 | `tabs`, `activeTabId`, `secondaryActiveTabId`, `kind`, `pane`, `title`, a grid tab's `filter` seed, an editor tab's `savedQueryId` | `tabs` slice | never left, but see above |
 | `databases`, `tables`, `columns`, `stars`, `relationships` | `explorer` slice | crossed |
 | that a diagram has been *asked for*, as a counter | `App` local state | never left, and is an event rather than a state |
@@ -131,7 +132,7 @@ that lives apart from its values is two sources for one fact.
 | `adding` (the connect screen, with connections open) | `App` local state | never left |
 | which connect screen is showing, and which workspace it is inside | `ConnectScreen` local state | never left |
 | `maximized`, the open menu | `titlebar` local state | never left |
-| which tree rows are expanded, which schema groups are collapsed, and the tree's filter text | `Sidebar` local state | never left |
+| which tree rows are expanded, which schema groups are collapsed, and the tree's search draft | `Sidebar` local state | never left, until it settles |
 | the sidebar's width and the results panel's height, per pane | `Shell` local state | never left |
 | the split's own width, which tab is being dragged, and which pane last held focus | `Shell` local state | never left |
 | whether the colour picker is expanded, and whether a submit has already looked for missing fields | `ConnectionForm` local state | never left |
@@ -847,6 +848,92 @@ it could only ever state one of the two and mislead about the other.
 value, so two panes on two databases warm two different column caches instead of
 both warming one. Registration stays single (`useSqlCompletion(workingDatabase)`
 in `ShellLayout`), unchanged.
+
+## A listing is capped, and the search is how you get past it
+
+Every table listing the UI holds is cut to `CATALOG_LIMIT` (500, in
+`explorerSlice`), and the sidebar's bar is a **server-side search** rather than a
+filter over the rows already drawn. A database of thousands used to be asked for
+whole: slow to answer, slow to carry, and unusable once drawn.
+
+**Both readers of the cache are capped, because there is one cache.** The tree
+draws it and the editor completes against it, so capping the fetch caps the
+popup with it and no second limit exists to disagree. A database past the cap
+suggests the names that fit and no others — the honest failure, and the only one
+available once the whole catalog is off the table.
+
+**Filtering what already arrived stops being a search at exactly the point the
+cap starts.** Under the cap the two are the same answer; over it, a local filter
+answers about the arbitrary first five hundred names and quietly reports nothing
+about every table beyond them — which is precisely the database the feature is
+for. So the narrowing is `db.tables`' `search`, assembled per engine on the
+server; see `docs/extension.md`. `truncated` comes back **answered from a spare
+row, never inferred** — a listing that exactly fills the cap is not evidence
+anything was left out, the same trap `hasMore` already documents for paging.
+
+**Two listings are held, not one, and this is the load-bearing part.**
+`explorer.tables[connectionId][database]` is the *unsearched* listing; the
+search's answer lands in a single `tableSearch` slot beside it. Letting the
+search land in the map is the obvious shape and it is wrong: that map is what
+`useSqlCompletion` reads and what `resolveSchema` resolves a bare name's schema
+against, so typing in the sidebar would decide what the editor suggests and
+which key a table's columns are filed under. A tree gesture silently narrowing a
+different feature — and the UI suite pins it.
+
+The slot is singular for `loadingTables`' reason (one tree is drawn at a time)
+and names its connection, database and search for that field's other reason: the
+answer that lands is not always the one the tree is still waiting for. It is
+never cleared on the way *out* of a search, because the tree only reads it while
+something is typed — a slot left behind is unreachable rather than stale, and
+keeping it is what lets the previous matches stay on screen while the next ones
+are fetched. Holding it in a map keyed by every search typed was the alternative
+and buys nothing: nothing ever asks for a search twice.
+
+**The debounce is `useExplorer`'s, not the bar's, and the split inside it is the
+point.** *That* a search is happening takes effect on the keystroke — the tree
+switches to the slot's rows at once — while only the asking is held back
+(`SEARCH_DEBOUNCE_MS`, 200). So the first search of a database draws the skeleton
+immediately and the tree never sits showing the unsearched listing under text
+that has already been typed. Retyping keeps the previous matches with the
+refresh icon turning, which is `firstLoad`'s existing "a refresh keeps its rows"
+rule arriving at the same answer for a second reason. The settled value carries
+the database it settled for, so switching database applies *that* database's
+remembered text at once rather than asking it for the previous one's word.
+
+**Functions are still narrowed locally, and that is not this rule bent.**
+`db.functions` answers a whole database at once and is not capped, so what is in
+hand *is* the list — the objection to filtering the relations here was that past
+the cap it no longer is. They therefore narrow on the keystroke while the tables
+wait for the round trip.
+
+**The note goes above the rows.** A tree that is only the first few hundred names
+of a database looks exactly like a tree that is all of them, and the reader who
+would find out by scrolling to the bottom is the one who has already concluded
+their table is missing. It says which of the two cuts happened — *First 500 of
+more — search to reach the rest* against *First 500 matches — narrow the search*
+— and carries its own testid, for `tree-skeleton`'s reason: the suite has to be
+able to assert its **absence** on a database that fits, which "no note" would
+also be true of when the tree failed to draw at all.
+
+**The cap is what made a star earn its relation.** The pinned group used to be
+the starred rows picked out of the listing, which was the same set right up until
+the listing grew a cap — and the table starred *because* a database of thousands
+made it hard to find is exactly the one likely to sit past 500, so reading the
+pins out of the listing loses the pins that matter most. So `explorer.stars` now
+holds the `Relation` where it held a placeholder `true`, and a star the listing
+does not carry is drawn from that. **Only when the listing was truncated**:
+absence from a complete listing means the table is gone and a pin that outlived
+its table must not be a row you can click, while absence from a cut one means
+nothing at all. Recovering the relation by splitting the star's key on a dot was
+the tempting shortcut and is the guess `Relation` exists to remove. Its cost,
+accepted: a starred *view* past the cap is drawn with a table's icon, since only
+the listing knows a relation's `kind` — a wrong glyph rather than a missing row.
+
+`dropTable.fulfilled` now deletes the star along with the row. It used to look
+after itself, because a star whose table had gone simply matched nothing in the
+listing; with the group built from the stars, one left behind is a row pointing
+at a table this app has just dropped. The cache only — the stored row costs
+nothing, and a drop is not the moment to fire a write that could fail on its own.
 
 ## Running several statements
 
@@ -1999,7 +2086,7 @@ entire keyboard.
 | Connection | Disconnect | `Ctrl+Shift+W` |
 | View | Toggle sidebar | `Ctrl+B` |
 | View | Keep the tree on the tab's database | `Ctrl+Shift+B` |
-| View | Filter tables | `Ctrl+Shift+F` |
+| View | Search tables | `Ctrl+Shift+F` |
 | View | New assistant chat | `Ctrl+Shift+A` |
 
 And Monaco's own, from here down — `command` is the action id, `when` is the
@@ -2090,7 +2177,7 @@ key it is taking is the webview's *reload*. Both listeners `preventDefault`
 first, and what happens next is the tab's kind — see *Refreshing what a tab is
 showing*.
 
-**`Ctrl+Shift+F` puts focus in the tree's filter, and unfolds the sidebar first
+**`Ctrl+Shift+F` puts focus in the tree's search, and unfolds the sidebar first
 if it is folded away** — focus cannot enter `display: none`, so a command that
 only focused would silently do nothing exactly when the field is hardest to
 reach with the mouse. `Shell` owns both halves because it owns the collapse, and
@@ -2098,7 +2185,7 @@ what reaches `Sidebar` is a **counter**, not a flag: focusing is an event, and a
 boolean has no "off" for the second press to return from. The two updates are
 one batch, so by the time `Sidebar`'s effect runs the bar is on screen; `0` is
 the launch value and is skipped, or the app would steal focus before anyone
-asked. It selects as well as focuses, so pressing it again over a filter already
+asked. It selects as well as focuses, so pressing it again over a search already
 typed replaces it. `Input` is `forwardRef` for this and only this.
 
 **Close tab and Disconnect act on what is in front; their menus act on what was
@@ -2985,14 +3072,15 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   screenshot read by eye — a scaled or zoomed capture shifts font hinting
   enough to disagree with the native-scale layout it was supposed to be
   checking.
-- **The tree's filter matches names only, and hides rows and nothing else.**
+- **The tree's search matches names only, and hides rows and nothing else.**
   Ordering, tables-above-views, which rows are expanded and the context menu all
-  behave exactly as they do unfiltered. It deliberately does not match columns:
+  behave exactly as they do unsearched. It deliberately does not match columns:
   those are fetched lazily per expanded table, so matching them would find hits
   in whatever you happen to have open and silently miss every table you do not —
-  a filter whose answer depends on what you expanded earlier. A filter that
+  a search whose answer depends on what you expanded earlier. A search that
   matches nothing says *No matches*, which is a different fact from a database
-  with *No tables* and reads as one.
+  with *No tables* and reads as one. What it asks and where it asks it is *A
+  listing is capped, and the search is how you get past it*, below.
 - **The skeleton is for a tree with nothing behind it, never for a refresh.**
   `useExplorer` answers two questions off one `loadingTables` marker: `loading`
   is "a fetch is in flight for this node", which is what turns the refresh icon

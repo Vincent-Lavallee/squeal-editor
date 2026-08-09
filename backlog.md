@@ -17,16 +17,6 @@ Things that already work, but not well enough.
 
 Things that are wrong.
 
-- **Unbounded table listing** — The tree and autocomplete still ask `db.tables`
-  for every table in the database, so one holding thousands is slow to query and
-  renders an unusable tree. **The mechanism they need already exists**: `db.tables`
-  takes a `search` and a `limit`, narrows on the server in every driver, and
-  answers `truncated` from a spare row rather than guessing — built for the
-  assistant's `searchTables` and covered by contract tests on all three engines.
-  What is left is the callers: cap the tree's fetch with a note in it that more
-  exist, point the filter bar at the server-side search instead of filtering what
-  it already has, and hold autocomplete to the same cap.
-
 - **Closing a grid tab discards its staged edits silently** — A browsed grid can
   hold cell edits and row deletes that have not been saved yet, and closing the
   tab throws them away with no warning — while closing an editor tab holding

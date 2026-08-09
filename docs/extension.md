@@ -1565,8 +1565,13 @@ work — `Driver.listTables` takes a `TableSearch`, and `tableSearchClause` in
 case-insensitively, and stop at N" is three chances to disagree about what a
 search means, on a listing the UI treats as interchangeable between engines.
 
-Omitting both is the unbounded listing it has always been, which is what the tree
-still asks for.
+Omitting both is still the unbounded listing, and **nothing in the app asks for
+it any more**: the tree, the editor's completion and the assistant all send a
+`limit`, and the tree sends a `search` the moment its bar has anything in it. It
+stays available because "every relation in this database" is a question the
+command should still be able to answer — `db.relationships` is the caller that
+means it, by way of its own command. See *A listing is capped, and the search is
+how you get past it* in `docs/frontend.md` for the UI's half.
 
 Three rules carried over from elsewhere in this file, each because the same trap
 is here:

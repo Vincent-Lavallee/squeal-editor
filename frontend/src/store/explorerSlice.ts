@@ -7,18 +7,55 @@ import type { RootState } from './index.ts';
 import { disconnect, sessionOpened } from './sessionSlice.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
-/** Which tree node a fetch is about. Neither half identifies it alone. */
+/**
+ * How many relations one listing may carry.
+ *
+ * Every listing this slice holds is capped, and both readers of the cache are
+ * therefore capped with it -- the tree draws them and the editor completes
+ * against them. A database of thousands is slow to answer, slow to carry and
+ * unusable once drawn; past this many the way to a table is the search, which is
+ * what `truncated` exists to say.
+ */
+export const CATALOG_LIMIT = 500;
+
+/** The text a search actually asks about. Trimmed here, once, so the cache key
+ *  and the request can never disagree about what was typed. */
+const searchText = (search?: string): string => search?.trim() ?? '';
+
+/**
+ * Which listing a fetch is about. No two of the three identify it alone: the
+ * same database name lives on two servers, and one database answers a different
+ * list per search.
+ */
 interface TablesRequest {
   connectionId: string;
   database: string;
+  /** `''` is the unsearched listing -- the one the completion reads. */
+  search: string;
 }
 
-/** `loadTables`' arg: the database, and whether the tree's refresh button asked
+/** `loadTables`' arg: which listing, and whether the tree's refresh button asked
  *  for it -- see `condition` below. */
 interface LoadTablesArg {
   database: string;
+  search?: string;
   force?: boolean;
 }
+
+/**
+ * A listing as it came back: the rows, and whether the cap cut them off.
+ *
+ * The two are one value because they are one fact. A reader holding the rows
+ * without the flag draws a partial catalog exactly as it would draw a whole one,
+ * which is the failure the cap would otherwise introduce.
+ */
+interface TableListing {
+  tables: TableInfo[];
+  truncated: boolean;
+}
+
+/** What the tree's current search matched, and which listing it answers. */
+interface TableSearchResult extends TablesRequest, TableListing {}
 
 interface TablesError extends TablesRequest {
   message: string;
@@ -40,8 +77,8 @@ interface ExplorerState {
   /** Per connection, as its own connect reported them. */
   databases: Record<string, string[]>;
   /**
-   * Tables, keyed connection -> database. A database absent from a connection's
-   * map has never been opened.
+   * The unsearched listing, keyed connection -> database. A database absent from
+   * a connection's map has never been opened.
    *
    * **This used to be keyed by database alone**, which was coherent only while
    * one connection could be open: it carried no connection, so it had to be
@@ -51,8 +88,14 @@ interface ExplorerState {
    * `app` would have read each other's tables outright. So it moved to the shape
    * `columns` already had, which is what the note on that field promised would
    * happen. The two caches agree about what identifies a database again.
+   *
+   * **A search never lands here**, and that is the whole reason the slot below
+   * exists rather than this map simply holding whatever came back last. This is
+   * what the completion reads and what resolves a bare name to its schema, so a
+   * search typed in the tree would otherwise decide what the editor suggests --
+   * a tree gesture silently narrowing a different feature.
    */
-  tables: Record<string, Record<string, TableInfo[]>>;
+  tables: Record<string, Record<string, TableListing>>;
   /**
    * Columns, keyed connection -> database -> table.
    *
@@ -71,10 +114,16 @@ interface ExplorerState {
    * connections holding a database called `app` must not read each other's.
    *
    * Presence is the whole answer -- there is no `false` entry, because
-   * unstarring removes the key rather than writing one that means "no". `true`
-   * is the value only because a map needs one; nothing ever reads it.
+   * unstarring removes the key rather than writing one that means "no".
+   *
+   * **The value is the relation, and the cap is what made it earn one.** It
+   * used to be `true`, a placeholder a map needed and nothing read, because the
+   * tree found a star's row in the listing and the star only said which. Past
+   * `CATALOG_LIMIT` the listing no longer holds every starred table, so the
+   * star has to be able to name its own relation -- and recovering one by
+   * splitting the key on a dot is the guess `Relation` exists to remove.
    */
-  stars: Record<string, Record<string, Record<string, true>>>;
+  stars: Record<string, Record<string, Record<string, Relation>>>;
   /**
    * Triggers, keyed connection -> database -> table.
    * `null` means asked (in flight or failed), undefined means not asked.
@@ -96,6 +145,19 @@ interface ExplorerState {
    */
   relationships: Record<string, Record<string, DiagramTable[]>>;
   /**
+   * What the tree's search matched, and which listing it answers. Singular for
+   * `loadingTables`' reason -- one tree is drawn at a time -- and it names its
+   * request for that field's other reason: the answer that lands is not always
+   * the one the tree is still waiting for.
+   *
+   * It is never cleared on the way *out* of a search. The tree reads it only
+   * while it has something typed, so a slot left behind by a search since
+   * abandoned is unreachable rather than stale, and holding onto it is what
+   * lets the previous matches stay on screen while the next ones are fetched
+   * instead of the tree blanking on every keystroke.
+   */
+  tableSearch: TableSearchResult | null;
+  /**
    * The tree's in-flight fetch, and its failure. Singular because one tree is
    * drawn at a time -- but each names its connection, because the fetch that
    * lands is not always the one the tree is still waiting for.
@@ -112,15 +174,23 @@ const initialState: ExplorerState = {
   triggers: {},
   functions: {},
   relationships: {},
+  tableSearch: null,
   loadingTables: null,
   error: null,
 };
 
 const sameRequest = (a: TablesRequest | null, b: TablesRequest): boolean =>
-  a !== null && a.connectionId === b.connectionId && a.database === b.database;
+  a !== null && a.connectionId === b.connectionId && a.database === b.database && a.search === b.search;
 
 /**
- * List a database's tables for the tree.
+ * List a database's relations for the tree, capped, and narrowed on the server
+ * when the tree's bar has something typed in it.
+ *
+ * **The narrowing is the server's, not a filter over what already arrived.**
+ * That is the whole point of the cap: past `CATALOG_LIMIT` the rows the tree
+ * holds are not the database, so filtering them would answer about the arbitrary
+ * first few hundred names and quietly miss every table beyond them. Asking the
+ * server is the only reading of "search" that stays true once a listing is cut.
  *
  * The start and the failure are both carried by markers this dispatches, rather
  * than reduced from `pending` and `rejected`. The reason is `loadColumns`'
@@ -133,31 +203,49 @@ const sameRequest = (a: TablesRequest | null, b: TablesRequest): boolean =>
  */
 export const loadTables = createAppThunk(
   'explorer/loadTables',
-  async ({ database }: LoadTablesArg, { getState, dispatch, rejectWithValue }) => {
+  async ({ database, search }: LoadTablesArg, { getState, dispatch, rejectWithValue }) => {
     const connectionId = getState().session.activeConnectionId;
     if (!connectionId) return rejectWithValue('Not connected.');
 
-    dispatch(tablesRequested({ connectionId, database }));
+    const text = searchText(search);
+    dispatch(tablesRequested({ connectionId, database, search: text }));
 
     try {
-      const res = await call('db.tables', { connectionId, database });
-      return { connectionId, database, tables: res.tables };
+      // Omitted rather than sent empty: the extension reads an absent `search`
+      // as the unnarrowed listing, and `''` would reach `LIKE '%%'` instead --
+      // the same answer by a longer route, and one more thing to keep agreeing.
+      const res = await call('db.tables', {
+        connectionId,
+        database,
+        search: text === '' ? undefined : text,
+        limit: CATALOG_LIMIT,
+      });
+      return { connectionId, database, search: text, tables: res.tables, truncated: res.truncated };
     } catch (err) {
       const message = errorMessage(err);
-      dispatch(tablesFailed({ connectionId, database, message }));
+      dispatch(tablesFailed({ connectionId, database, search: text, message }));
       return rejectWithValue(message);
     }
   },
   {
-    // The tree's cache, expressed once, and now naming the connection it is
-    // true of. Callers just ask for the tables and the already-fetched case
-    // never reaches the bridge -- unless `force` is set, which is the tree's
-    // refresh button asking past the cache on purpose.
-    condition: ({ database, force }, { getState }) => {
+    // The tree's cache, expressed once, and naming the whole of what identifies
+    // a listing. Callers just ask and the already-fetched case never reaches the
+    // bridge -- unless `force` is set, which is the tree's refresh button asking
+    // past the cache on purpose.
+    //
+    // A search is deduped against the slot holding the last one *and* against
+    // the fetch in flight, because a search re-asked while its own answer is
+    // still coming has nothing cached yet to be caught by the first test.
+    condition: ({ database, search, force }, { getState }) => {
       if (force) return true;
       const { session, explorer } = getState();
-      if (!session.activeConnectionId) return false;
-      return explorer.tables[session.activeConnectionId]?.[database] === undefined;
+      const connectionId = session.activeConnectionId;
+      if (!connectionId) return false;
+      const request = { connectionId, database, search: searchText(search) };
+      if (sameRequest(explorer.loadingTables, request)) return false;
+      return request.search === ''
+        ? explorer.tables[connectionId]?.[database] === undefined
+        : !sameRequest(explorer.tableSearch, request);
     },
   }
 );
@@ -191,7 +279,10 @@ interface ColumnsArg extends Relation {
 /** The catalog's answer for a relation named without a schema -- see `resolveRelation`. */
 function resolveSchema(state: RootState, database: string, ref: Relation): Relation {
   const connectionId = state.session.activeConnectionId;
-  return resolveRelation(connectionId ? state.explorer.tables[connectionId]?.[database] : undefined, ref);
+  // The unsearched listing, never the search's: this decides the key a table's
+  // columns are filed under, and a key that moved with whatever the tree happens
+  // to have typed would file one table under two entries.
+  return resolveRelation(connectionId ? state.explorer.tables[connectionId]?.[database]?.tables : undefined, ref);
 }
 
 /**
@@ -556,12 +647,20 @@ const explorerSlice = createSlice({
         delete state.triggers[connectionId];
         delete state.functions[connectionId];
         delete state.relationships[connectionId];
+        if (state.tableSearch?.connectionId === connectionId) state.tableSearch = null;
         if (state.loadingTables?.connectionId === connectionId) state.loadingTables = null;
         if (state.error?.connectionId === connectionId) state.error = null;
       })
       .addCase(loadTables.fulfilled, (state, action) => {
-        const { connectionId, database, tables } = action.payload;
-        (state.tables[connectionId] ??= {})[database] = tables;
+        const { connectionId, database, search, tables, truncated } = action.payload;
+        // A disconnect that landed first dropped the connection; writing here
+        // anyway would resurrect it with nothing left to ever collect it -- the
+        // guard `loadStars` and `loadRelationships` already make.
+        if (!(connectionId in state.databases)) return;
+        // A search answers the slot, never the cache: see `tables` above for
+        // what reads the unsearched listing and why it must not move.
+        if (search === '') (state.tables[connectionId] ??= {})[database] = { tables, truncated };
+        else state.tableSearch = action.payload;
         if (sameRequest(state.loadingTables, action.payload)) state.loadingTables = null;
       })
       .addCase(loadDatabases.fulfilled, (state, action) => {
@@ -595,21 +694,44 @@ const explorerSlice = createSlice({
         //
         // Matched on both halves: two schemas may each hold a table of the same
         // name, and dropping one of them must not take the other out of the tree.
-        const list = state.tables[connectionId]?.[database];
-        if (list) {
-          state.tables[connectionId]![database] = list.filter((t) => !(t.name === table && t.schema === schema));
+        //
+        // The search's own rows are dropped from too, and they have to be: a
+        // drop from a searched tree is the case where the row on screen is the
+        // slot's rather than the cache's, so forgetting only the cache would
+        // leave the table you just dropped sitting there.
+        const dropped = (t: TableInfo) => t.name === table && t.schema === schema;
+        const listing = state.tables[connectionId]?.[database];
+        if (listing) listing.tables = listing.tables.filter((t) => !dropped(t));
+        if (state.tableSearch?.connectionId === connectionId && state.tableSearch.database === database) {
+          state.tableSearch.tables = state.tableSearch.tables.filter((t) => !dropped(t));
         }
+        const key = relationName({ table, schema });
         const byTable = state.columns[connectionId]?.[database];
-        if (byTable) delete byTable[relationName({ table, schema })];
+        if (byTable) delete byTable[key];
+        /*
+         * And its star, which used to look after itself: the pinned group was
+         * built by picking the starred rows out of the listing, so a star whose
+         * table had gone simply matched nothing. The group is built from the
+         * stars now (see `stars` above), so a star left behind here is a row
+         * pointing at a table this app has just dropped.
+         *
+         * Only the cache. The store keeps the row until the next `db.stars.set`,
+         * and it costs nothing there -- nothing reads a star for a table that
+         * does not exist, and a drop is not the moment to fire a write that
+         * could fail on its own.
+         */
+        const starred = state.stars[connectionId]?.[database];
+        if (starred) delete starred[key];
       })
       .addCase(loadStars.fulfilled, (state, action) => {
         const { connectionId, stars } = action.payload;
         // A disconnect that lands first drops the connection outright; writing
         // here anyway would resurrect it with nothing left to ever collect it.
         if (!(connectionId in state.databases)) return;
-        const byDatabase: Record<string, Record<string, true>> = {};
+        const byDatabase: Record<string, Record<string, Relation>> = {};
         for (const s of stars) {
-          (byDatabase[s.database] ??= {})[relationName({ table: s.table, schema: s.schema })] = true;
+          const relation = { table: s.table, schema: s.schema };
+          (byDatabase[s.database] ??= {})[relationName(relation)] = relation;
         }
         state.stars[connectionId] = byDatabase;
       })
@@ -618,7 +740,7 @@ const explorerSlice = createSlice({
         const byDatabase = (state.stars[connectionId] ??= {});
         const byTable = (byDatabase[database] ??= {});
         const key = relationName({ table, schema });
-        if (starred) byTable[key] = true;
+        if (starred) byTable[key] = { table, schema };
         else delete byTable[key];
       })
       .addCase(loadTriggers.fulfilled, (state, action) => {

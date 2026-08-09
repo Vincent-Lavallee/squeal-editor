@@ -47,9 +47,17 @@ export function useSqlCompletion(database: string | null): void {
   const { connectionId, dialect, defaultSchema } = useSession();
   const { tables, columns } = useAppSelector((s) => s.explorer);
 
-  // A connection pointed at nothing, or a database whose tables have not
-  // landed yet: both are "no tables to offer", which is not the same as a bug.
-  const listed = (connectionId && database ? tables[connectionId]?.[database] : undefined) ?? EMPTY;
+  /*
+   * A connection pointed at nothing, or a database whose tables have not
+   * landed yet: both are "no tables to offer", which is not the same as a bug.
+   *
+   * The unsearched listing, which is capped like every listing this app holds
+   * (`CATALOG_LIMIT`) -- so a database past the cap suggests the names that fit
+   * and no others. Deliberately not the tree's *search* result: what the editor
+   * offers is a fact about the database, and reading the tree's bar here would
+   * make it a fact about what someone typed into a sidebar.
+   */
+  const listed = (connectionId && database ? tables[connectionId]?.[database]?.tables : undefined) ?? EMPTY;
 
   /*
    * The provider is registered once per dialect and lives across every

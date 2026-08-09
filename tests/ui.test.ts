@@ -79,9 +79,18 @@ const toggleSchema = (schema: string) => `
     .find(e => e.querySelector('[data-testid="tree-schema-label"]').textContent === ${JSON.stringify(schema)})
     .click(); true;`;
 
-/** Type into the tree's filter, or clear it with an empty string. */
+/**
+ * Type into the tree's search, or clear it with an empty string.
+ *
+ * It reaches the server now rather than sifting the rows already drawn, so
+ * every wait after one of these has to cover the debounce *and* a round trip --
+ * a sleep sized for a re-render will read the tree before the answer lands.
+ */
 const setFilter = (text: string) =>
   `${REACT_SETTERS} setNative(document.querySelector('[data-testid="sidebar-filter"]'), ${JSON.stringify(text)}); true;`;
+
+/** The tree saying its listing was cut off by the cap. */
+const truncatedNoteShown = `!!document.querySelector('[data-testid="tree-truncated"]')`;
 
 /**
  * The sidebar's *keep the tree on the tab's database* toggle. `aria-pressed` is
@@ -643,12 +652,28 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // `daily_stats` lives in the shut group, so a heading that stayed shut over
       // it would read as "no matches" about a search that found one.
       await app.evaluate(setFilter('daily'));
-      await Bun.sleep(400);
+      await Bun.sleep(600);
       expect(await app.evaluate<string[]>(treeLabelsIn('reporting'))).toContain('daily_stats');
 
       await app.evaluate(setFilter(''));
-      await Bun.sleep(400);
+      await Bun.sleep(600);
       expect(await app.evaluate<string[]>(treeLabelsIn('reporting'))).toEqual([]);
+    });
+
+    test('a listing that fits says nothing about being cut off', async () => {
+      // The note is drawn from the `truncated` the server answered, never from
+      // the row count reaching a number up here -- so a fixture well under the
+      // cap must not carry it, searched or not. Wire it to the wrong thing and
+      // it appears over every tree in the app, which is exactly the claim
+      // ("there are more tables than these") that must not be made falsely.
+      expect(await app.evaluate<boolean>(truncatedNoteShown)).toBe(false);
+
+      await app.evaluate(setFilter('users'));
+      await Bun.sleep(600);
+      expect(await app.evaluate<boolean>(truncatedNoteShown)).toBe(false);
+
+      await app.evaluate(setFilter(''));
+      await Bun.sleep(600);
     });
 
     test('orders every table above every view, inside each group', async () => {
@@ -1921,6 +1946,31 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       // `user|` to the bare.
       expect(await suggest('SELECT * FROM public|')).toContain('public.users');
       expect(await suggest('SELECT * FROM user|')).toContain('users');
+    });
+
+    test('searching the tree does not narrow what the editor suggests', async () => {
+      /*
+       * The tree's search and the editor's catalog read one cache, and the
+       * search asks the server -- so the obvious implementation, letting the
+       * answer land where the listing lives, has typing in the sidebar decide
+       * what the popup knows. `daily` matches no `users`, so had the search
+       * overwritten the listing the editor would be completing against a
+       * catalog of two relations, and `users` would be gone from a query nobody
+       * touched.
+       */
+      await app.evaluate(setFilter('daily'));
+      await Bun.sleep(600);
+      // Every label in the tree, not one group's: a search this narrow leaves
+      // `public` with no matches at all, so the group is not drawn and asking
+      // it for its rows would throw rather than answer "not there".
+      const narrowed = await app.evaluate<string[]>(treeLabels);
+      expect(narrowed).toContain('daily_stats');
+      expect(narrowed).not.toContain('users');
+
+      expect(await suggest('SELECT * FROM user|')).toContain('users');
+
+      await app.evaluate(setFilter(''));
+      await Bun.sleep(600);
     });
 
     test('a table\'s columns are suggested after its alias and a dot', async () => {

@@ -139,10 +139,12 @@ export interface Driver<C> {
    * expensive to carry, so narrowing after the fact has already paid every cost
    * the narrowing exists to avoid.
    *
-   * Omitted, this is the unbounded listing it has always been -- the tree asks
-   * for everything and gets everything. `text` matches anywhere in the name and
-   * is matched case-insensitively, since a caller searching for a table does not
-   * know how it was capitalised.
+   * Omitted, this is the unbounded listing it has always been. No caller in the
+   * app leaves it off any more -- every one of them sends a `limit` -- and it
+   * stays because "every relation in this database" is a question this should
+   * still be able to answer. `text` matches anywhere in the name and is matched
+   * case-insensitively, since a caller searching for a table does not know how
+   * it was capitalised.
    */
   listTables(client: C, database: string, search?: TableSearch): Promise<TableMeta[]>;
   /**

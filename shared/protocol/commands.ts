@@ -81,7 +81,10 @@ export interface Commands {
   };
   /**
    * A database's relations. `search` narrows and caps them **on the server**,
-   * and omitting it is the unbounded listing the tree still asks for.
+   * and omitting both is the unbounded listing -- which nothing in the app asks
+   * for any more: the tree, the editor's completion and the assistant all send
+   * a `limit`, and the tree sends a `search` as soon as its bar has anything in
+   * it. See *A listing is capped* in `docs/frontend.md`.
    *
    * Filtering here rather than in the caller is the same rule `db.browse`'s
    * `filter` follows: a database with thousands of tables is expensive to answer

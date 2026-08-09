@@ -63,18 +63,30 @@ function describeTables(state: RootState): string[] {
   const database = state.tabs.tabs.find((tab) => tab.connectionId === id && tab.database)?.database;
   if (!database) return [];
 
-  const tables = state.explorer.tables[id]?.[database] ?? [];
+  const listing = state.explorer.tables[id]?.[database];
+  const tables = listing?.tables ?? [];
   if (!tables.length) return [];
 
   const shown = tables.slice(0, TABLE_LIMIT);
   const names = shown.map((table) => (table.schema ? `${table.schema}.${table.name}` : table.name)).join(', ');
 
-  // A capped list that did not say it was capped would have the model concluding
-  // a table does not exist because it fell off the end of a listing it was never
-  // told was partial.
+  /*
+   * A capped list that did not say it was capped would have the model concluding
+   * a table does not exist because it fell off the end of a listing it was never
+   * told was partial.
+   *
+   * Two cuts, and the second is why the total is hedged: this budget takes the
+   * first `TABLE_LIMIT` of what the cache holds, and the cache itself only ever
+   * held the first `CATALOG_LIMIT` of the database. Where the second one bit,
+   * the count in hand is a floor rather than a total, and stating it flat would
+   * tell the model a database of thousands has exactly `CATALOG_LIMIT` tables.
+   */
+  const cutByThisBudget = tables.length > shown.length;
+  const cutBeforeItArrived = listing?.truncated ?? false;
+  const total = cutBeforeItArrived ? `more than ${tables.length}` : `${tables.length}`;
   const note =
-    tables.length > shown.length
-      ? ` (${shown.length} of ${tables.length} — use searchTables to find the rest)`
+    cutByThisBudget || cutBeforeItArrived
+      ? ` (${shown.length} of ${total} — use searchTables to find the rest)`
       : '';
   return [`Tables in ${database}${note}: ${names}`];
 }

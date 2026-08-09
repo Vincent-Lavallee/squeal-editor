@@ -64,7 +64,9 @@ export const SHORTCUTS = [
   { id: 'syncTree', group: 'View', label: "Keep the tree on the tab's database", defaultChord: 'Ctrl+Shift+B' },
   // Reveals the sidebar first if it is folded away, since a field nobody can
   // see is not one focus can be put into.
-  { id: 'filterTables', group: 'View', label: 'Filter tables', defaultChord: 'Ctrl+Shift+F' },
+  // The `id` keeps its old spelling on purpose: it is the key a rebound chord is
+  // stored under, and renaming it would silently drop every override already saved.
+  { id: 'filterTables', group: 'View', label: 'Search tables', defaultChord: 'Ctrl+Shift+F' },
   { id: 'newAssistantChat', group: 'View', label: 'New assistant chat', defaultChord: 'Ctrl+Shift+A' },
 
   /*

@@ -790,3 +790,16 @@ This is a record, not a plan. Nothing here is waiting on anything.
   opened the same definition. `FunctionInfo` now carries the oid and the identity
   argument list, so the rows read `square(x integer)` and `square(x text)` and
   "open definition" resolves the exact one clicked.
+
+- **2026-08-08** — **Unbounded table listing** — The tree and autocomplete asked
+  `db.tables` for every table in the database, so one holding thousands was slow
+  to query and rendered an unusable tree. The mechanism was already there and
+  unused: `db.tables` takes a `search` and a `limit`, narrows on the server in
+  every driver, and answers `truncated` from a spare row rather than guessing.
+  Every listing the UI holds is now capped at 500, with a note above the rows
+  saying so and which way it was cut; the sidebar's bar became a server-side
+  search rather than a filter over the rows already drawn; and autocomplete,
+  which reads the same cache, is capped with it. The search lands in a slot of
+  its own so that narrowing the tree cannot narrow what the editor suggests, and
+  a starred table past the cap is drawn from the star itself — otherwise the cap
+  would have quietly disabled starring for exactly the databases it was for.

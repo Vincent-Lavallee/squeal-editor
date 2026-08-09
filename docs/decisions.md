@@ -6407,3 +6407,77 @@ whether an engine has a schema layer is not a fact a filter may change.
 mocked into existence usefully — the whole question is what the catalog reports
 about two functions that agree on everything a name can express — so the suite
 asserts against two real ones, over `int` and over `text`.
+
+---
+
+## The tree's bar became a search, and every listing grew a cap
+
+**The report.** A database of thousands of tables was slow to query and rendered
+an unusable tree. `db.tables` was asked for everything, every time, by the tree
+and — through the same cache — by the editor's completion.
+
+**The mechanism already existed and nothing used it.** `db.tables` had taken a
+`search` and a `limit` since the assistant's `searchTables`, narrowing on the
+server in every driver and answering `truncated` from a spare row rather than
+guessing, with contract tests on all three engines. What was missing was
+callers. That is the whole shape of this change: the extension is untouched.
+
+**`CATALOG_LIMIT` is 500 and it is one number for both readers**, because there
+is one cache. Capping the fetch caps the popup with it, and a second limit
+somewhere else would be a second thing to keep agreeing.
+
+**Rejected: filtering the rows already in hand, which is what the bar used to
+do.** Under the cap a local filter and a server search are the same answer; over
+it, the local one answers about the arbitrary first five hundred names and
+reports nothing at all about every table past them — silently, and precisely on
+the databases the cap exists for. A bar that stops being able to find things
+exactly when the database gets big is worse than no bar.
+
+**Rejected: letting the search land in the tables cache.** The obvious shape,
+and it makes the sidebar decide what the editor knows: that map is what the
+completion reads and what resolves a bare name's schema, so a search would
+narrow the popup and move the key a table's columns are filed under. The search
+gets a slot of its own (`tableSearch`) and the unsearched listing stays put.
+There is a UI test for it, because the failure is invisible in the tree — the
+feature that breaks is the other one.
+
+**Rejected: a map of every search typed.** It answers the same question as one
+slot, at the cost of growing forever, and nothing ever asks for a search twice.
+One slot also gives the stale-while-revalidate for free: the last matches stay
+on screen while the next ones are fetched.
+
+**The debounce is in `useExplorer`, and it is split.** *That* a search is
+happening lands on the keystroke; only the asking waits 200ms. Debouncing the
+value the component passes down was the first cut and it showed the unsearched
+tree under text already typed for a fifth of a second — the bar visibly doing
+nothing, then a skeleton, then rows. Three states for one keystroke.
+
+**Functions still narrow locally.** `db.functions` is uncapped and answers a
+whole database, so what is in hand is the list. The objection above was never
+"filtering is wrong", it was "the rows in hand are not the database".
+
+**A star had to learn its own relation, and that was the surprise.** The pinned
+group was the starred rows picked out of the listing — the same set until the
+listing grew a cap, and then not: the table you starred *because* a database of
+thousands made it hard to find is the one most likely to sit past 500, so the
+cap would have quietly disabled starring for exactly the users it was written
+for. `explorer.stars` now holds the `Relation` where it held a placeholder
+`true`, and a star missing from the listing is drawn from that **only when the
+listing was truncated** — absence from a complete listing means the table is
+gone, and a pin outliving its table must not be a clickable row. *Rejected:
+recovering the relation by splitting the star's key on a dot*, which is the
+guess `Relation` exists to remove. *Cost, accepted:* a starred view past the cap
+draws with a table's icon, since only the listing knows a relation's `kind`.
+
+Dropping a relation now deletes its star from the cache too. It used to look
+after itself — a star whose table had gone matched nothing in the listing — and
+with the group built from the stars it would have been a row pointing at a table
+the app had just dropped.
+
+**Verified against a real 640-table Postgres database**, not a mock: 500 rows
+and the note, a search finding `zz_bulk_0640` from a tree that never held it,
+and a star on that table surviving the search being cleared. The permanent
+suites cannot carry it — 640 tables in the fixture would slow every run and
+break the tree assertions everywhere — so the UI suite pins the wiring (the note
+stays away on a listing that fits; the search does not narrow the completion)
+and the extension suite keeps the mechanism.

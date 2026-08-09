@@ -4,6 +4,7 @@ import type { FunctionInfo, TableInfo, TriggerInfo } from '../../../../shared/pr
 import { relationLabel, relationName, relationOf } from '../../common/db/relation.ts';
 import { CopiedIcon, DisclosureIcon, FunctionIcon, KeyIcon, RefreshIcon, SchemaIcon, SidebarFoldIcon, SidebarUnfoldIcon, StarIcon, SyncTreeIcon, TableIcon, TriggerIcon, ViewIcon } from '../../common/icons/icons.ts';
 import DropTableConfirm from './DropTableConfirm.tsx';
+import { CATALOG_LIMIT } from '../../store/explorerSlice.ts';
 import { useExplorer } from './useExplorer.ts';
 import Badge from '../../common/components/Badge.tsx';
 import Button from '../../common/components/Button.tsx';
@@ -55,8 +56,6 @@ interface Props {
 }
 
 export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectTable, onSelectDatabase, onShowDefinition, onShowTriggerDefinition, onShowFunctionDefinition, collapsed, onToggleCollapse, focusFilter }: Props) {
-  const { databases, database, tables, columnsFor, loadTableColumns, triggersFor, loadTableTriggers, functionsFor, dropTable, isStarred, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, firstLoad, error } = useExplorer(shownDatabase);
-
   /*
    * The shape you left each database's tree in, kept per database.
    *
@@ -67,8 +66,12 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
    * next, and everything else came back collapsed. Coming back to a database
    * should find its tree the way it was left, which means the key has to be
    * the database.
+   *
+   * Read off the prop rather than off `useExplorer`'s answer, which is the same
+   * value: the search below is derived from this and the hook now takes the
+   * search, so keying on what the hook returns would be a cycle.
    */
-  const treeKey = database ?? '';
+  const treeKey = shownDatabase ?? '';
   const [expandedByDb, setExpandedByDb] = useState<Record<string, ReadonlySet<string>>>({});
   const [flippedByDb, setFlippedByDb] = useState<Record<string, ReadonlySet<string>>>({});
   const [openFunctionsByDb, setOpenFunctionsByDb] = useState<Record<string, ReadonlySet<string>>>({});
@@ -81,7 +84,12 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
   const filter = filterByDb[treeKey] ?? '';
   const setFilter = (value: string) => setFilterByDb((prev) => ({ ...prev, [treeKey]: value }));
 
-  // Selected as well as focused, so pressing the key again over a filter you
+  // The text as typed, not a debounced copy of it: what reaches the bridge is
+  // `useExplorer`'s to pace, since the bridge is what it talks to. This side
+  // only says what is being looked for.
+  const { databases, database, tables, truncated, columnsFor, loadTableColumns, triggersFor, loadTableTriggers, functionsFor, dropTable, isStarred, starredIn, toggleStar, refreshDatabases, refreshTables, readOnly, defaultSchema, loading, firstLoad, error } = useExplorer(shownDatabase, filter);
+
+  // Selected as well as focused, so pressing the key again over a search you
   // have already typed replaces it rather than appending to it.
   const filterInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -187,41 +195,68 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
     [tables]
   );
 
-  // Names only. Columns are fetched lazily per expanded table, so matching them
-  // would find hits in whatever happens to be open and silently miss every table
-  // that is not -- a filter that answers differently depending on what you expanded.
-  const query = filter.trim().toLowerCase();
-  const visible = useMemo(
-    () => (sorted && query ? sorted.filter((table) => table.name.toLowerCase().includes(query)) : sorted),
-    [sorted, query]
-  );
-
   const functions = database ? functionsFor(database) : undefined;
 
-  // The filter reaches functions too. It used to match relations only, so
-  // filtering for one table left every function in the database sitting under
-  // it -- a search that answers about half the tree reads as a broken search.
+  /*
+   * The filter reaches functions too. It used to match relations only, so
+   * filtering for one table left every function in the database sitting under
+   * it -- a search that answers about half the tree reads as a broken search.
+   *
+   * These are still narrowed here rather than on the server, and that is not the
+   * relations' rule being bent: `db.functions` answers a whole database at once
+   * and is not capped, so what is in hand *is* the list -- the objection to
+   * filtering the relations locally was that past the cap it no longer is.
+   * `query` is the text as typed rather than the settled search, so the
+   * functions narrow on the keystroke while the tables wait for the round trip.
+   */
+  const query = filter.trim().toLowerCase();
   const visibleFunctions = useMemo(
     () => (functions && query ? functions.filter((func) => func.name.toLowerCase().includes(query)) : functions),
     [functions, query]
   );
 
-  const filteredEverythingOut =
-    query !== '' && visible?.length === 0 && (visibleFunctions?.length ?? 0) === 0 && (sorted?.length ?? 0) > 0;
+  /*
+   * Nothing matched, as opposed to a database with nothing in it -- the two read
+   * identically on screen and mean different things, so they are told apart by
+   * whether anything is being searched for rather than by the empty list.
+   *
+   * `sorted !== null` is the third state and it is the one that shows: a search
+   * whose answer has not landed has no rows either, and saying "No matches" over
+   * the skeleton answers a question the server has not been asked yet.
+   */
+  const nothingMatched =
+    query !== '' && sorted !== null && sorted.length === 0 && (visibleFunctions?.length ?? 0) === 0;
 
   /*
    * Starred tables lift into their own group at the top and drop out of the
    * list below rather than repeating in it -- `unpinned` is what every schema
    * grouping and the flat fallback below actually renders. Both keep the sort
    * above's tables-over-views order, since filtering preserves it.
+   *
+   * A star the listing does not hold is added back, and only when the listing
+   * was **truncated**. Absence from a complete listing means the table is gone
+   * -- dropped by someone else, or renamed -- and a pin that outlived its table
+   * should not be drawn as a row you can click. Absence from a cut one means
+   * nothing at all, which is exactly the case the cap introduced: the table you
+   * starred because a database of thousands made it hard to find is the one
+   * most likely to sit past the cap. It keeps `kind` where the listing can say,
+   * and reads as a table where it cannot -- a starred view drawn with a table's
+   * icon, which is a wrong glyph rather than a missing row.
    */
-  const pinned = useMemo(
-    () => (visible && database ? visible.filter((table) => isStarred(database, relationOf(table))) : null),
-    [visible, database, isStarred]
-  );
+  const pinned = useMemo(() => {
+    if (!sorted || !database) return null;
+    const inListing = sorted.filter((table) => isStarred(database, relationOf(table)));
+    if (!truncated) return inListing;
+
+    const drawn = new Set(inListing.map((table) => relationName(relationOf(table))));
+    const missing = starredIn(database)
+      .filter((relation) => !drawn.has(relationName(relation)) && relation.table.toLowerCase().includes(query))
+      .map((relation): TableInfo => ({ name: relation.table, schema: relation.schema, kind: 'table' }));
+    return [...inListing, ...missing];
+  }, [sorted, database, truncated, isStarred, starredIn, query]);
   const unpinned = useMemo(
-    () => (visible && database ? visible.filter((table) => !isStarred(database, relationOf(table))) : visible),
-    [visible, database, isStarred]
+    () => (sorted && database ? sorted.filter((table) => !isStarred(database, relationOf(table))) : sorted),
+    [sorted, database, isStarred]
   );
 
   /*
@@ -443,8 +478,13 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
       </div>
 
       <div data-testid="sidebar-filter-bar" style={{ display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: t.GAP_XS, height: t.TAB_H, padding: '0 6px', borderBottom: `1px solid ${t.BORDER}`, flex: 'none' }}>
+        {/*
+          * "Search", not "Filter": it asks the server rather than sifting the
+          * rows on screen, so it reaches the tables the cap left out -- which is
+          * the whole reason it changed, and the word is the only thing that says so.
+          */}
         <Input ref={filterInput} variant="bare" value={filter} onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter tables…" aria-label="Filter tables"
+          placeholder="Search tables…" aria-label="Search tables"
           data-testid="sidebar-filter" style={{ flex: 1, minWidth: 0 }} />
 
         {/*
@@ -483,8 +523,28 @@ export default function Sidebar({ shownDatabase, synced, onToggleSync, onSelectT
       <nav style={{ flex: 1, overflowY: 'auto', padding: `${t.GAP_SM}px 6px`, display: collapsed ? 'none' : undefined }}>
         {firstLoad && <TreeSkeleton />}
         {error && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.RED_TEXT }}>{error}</div>}
-        {sorted?.length === 0 && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No tables</div>}
-        {filteredEverythingOut && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No matches</div>}
+        {query === '' && sorted?.length === 0 && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No tables</div>}
+        {nothingMatched && <div data-testid="tree-note" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>No matches</div>}
+
+        {/*
+          * Above the rows and not below them, because it is a caveat about
+          * everything under it: a tree that is only the first few hundred names
+          * of a database looks exactly like a tree that is all of them, and the
+          * reader who scrolls to the bottom to find that out is the one who has
+          * already concluded their table is missing.
+          *
+          * Its own testid rather than the `tree-note` its siblings share, for
+          * `tree-skeleton`'s reason: the suite has to be able to assert the note
+          * is *absent* on a database that fits, which "no note" would also be
+          * true of when the tree failed to draw at all.
+          */}
+        {truncated && (
+          <div data-testid="tree-truncated" style={{ padding: '5px 8px', fontSize: t.TEXT_BADGE, color: t.TEXT_MUTED }}>
+            {query === ''
+              ? `First ${CATALOG_LIMIT} of more — search to reach the rest.`
+              : `First ${CATALOG_LIMIT} matches — narrow the search.`}
+          </div>
+        )}
 
         {database && pinned && pinned.length > 0 && (
           <div data-testid="tree-pinned" style={{ marginBottom: t.GAP_SM, paddingBottom: t.GAP_SM, borderBottom: `1px solid ${t.BORDER}` }}>
