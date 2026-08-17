@@ -195,6 +195,23 @@ input::placeholder { color: var(--text-faint); }
    instead, which is why sorting one never moves anything either. */
 .grid thead th .grid__sort-hint { visibility: hidden; }
 .grid thead th.grid__th--sortable:hover .grid__sort-hint { visibility: visible; }
+/* The resize grip is invisible until pointed at, then it is the column's own
+   1px border in accent -- drawn as a pseudo-element inside the strip so what
+   lights up is the line being moved, not the 7px target around it. It has to
+   outlive the pointer during a drag, hence the `--active` class: the cursor
+   leaves the strip the instant the column starts following it. */
+.grid thead th .grid__resize::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1px;
+  height: 100%;
+  background: var(--accent);
+  opacity: 0;
+}
+.grid thead th .grid__resize:hover::after,
+.grid thead th .grid__resize--active::after { opacity: 1; }
 
 /* ---- Grid tab hides the editor box (Monaco stays mounted) ---- */
 .main--grid .editor { display: none; }

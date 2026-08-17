@@ -602,6 +602,23 @@ export function useResults(tab: Tab | null) {
       [activeTabId, rowsKey, view]
     ),
 
+    // How wide the user dragged each column, by name. Not keyed on `rowsKey`
+    // like the two above: a width belongs to the column, not to the rows under
+    // it, so paging and re-running keep it.
+    columnWidths: activeTabId ? view.columnWidthsFor(activeTabId) : {},
+    setColumnWidth: useCallback(
+      (column: string, width: number) => {
+        if (activeTabId) view.setColumnWidth(activeTabId, column, width);
+      },
+      [activeTabId, view]
+    ),
+    clearColumnWidth: useCallback(
+      (column: string) => {
+        if (activeTabId) view.clearColumnWidth(activeTabId, column);
+      },
+      [activeTabId, view]
+    ),
+
     // The sort surface. `sort` is what the result on screen was fetched with,
     // which is what the header draws its arrow from; `canSort` is which headers
     // may offer one at all.
