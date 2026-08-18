@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.16.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.15.0...v0.16.0) (2026-08-18)
+
+
+### Features
+
+* Fn folder ([453c191](https://github.com/Vincent-Lavallee/squeal-editor/commit/453c1917e3de554ef9debcfea3bcf2cc0a234c2f))
+* Resizable result grid columns ([#33](https://github.com/Vincent-Lavallee/squeal-editor/issues/33)) ([25f4e7b](https://github.com/Vincent-Lavallee/squeal-editor/commit/25f4e7be91f27ddc5725ffe1c8ca2565519ca9b8))
+* Saved chats ([093cab3](https://github.com/Vincent-Lavallee/squeal-editor/commit/093cab372a2c49172eaeecc25c46501bce3c45cd))
+
+
+### Bug Fixes
+
+* Cap table list limit for auto-complete and tree ([392186d](https://github.com/Vincent-Lavallee/squeal-editor/commit/392186de3629b447c6108d225b8ce411ff72276f))
+* Sync tab to tree by default ([5eb0f44](https://github.com/Vincent-Lavallee/squeal-editor/commit/5eb0f44bd93044008263409ade0b59ed76f30b1d))
+
 ## [0.15.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.14.0...v0.15.0) (2026-08-07)
 
 
