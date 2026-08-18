@@ -110,6 +110,7 @@ that lives apart from its values is two sources for one fact.
 | staged cell edits + row deletes, per tab (+ `saving`, `saveError`) | `results` context | never left, until Save |
 | the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Search |
 | where the result grid is scrolled to, per tab | `results` context (a ref) | never left, and a restored session refetches its rows |
+| how wide a grid column was dragged, by column name, per tab | `results` context | never left, and a new tab starts at the default sizing |
 | saved connections | `saved` slice | crossed |
 | saved queries | `savedQueries` slice | crossed |
 | whether closing a tab would destroy text (`unsaved`) | `tabs` slice | never left, but it is a fact about a tab, and tabs live here |
@@ -1069,6 +1070,39 @@ Not state because a scroll fires once a frame and nothing renders from it, so
 state would re-render a pane per wheel tick to no effect. It is keyed by tab like
 everything else there, and pruned in the same diff-the-list effect — in place,
 since a ref has no setter.
+
+## Column widths
+
+**A grid column is dragged by the strip on the right edge of its header**, and
+double-clicking that strip gives the column back to the browser's sizing. The
+widths live in `ResultsContext` beside the staging and the scroll offset — they
+have not crossed the bridge, so they are not a slice — but as **state**, not a
+ref like the offset: the grid renders from them, so a drag has to paint.
+
+**They are keyed by column *name*, and deliberately not by `rowsKey`.** A width
+is a fact about the column, not about the rows under it, so paging, filtering,
+sorting and re-running all keep it — which is the point, since a column widened
+to read one value should still be that wide on the next page. That is the
+opposite rule from its two neighbours in the same context, and the reason is the
+same one that gives them theirs: nothing here is anchored to a row index.
+
+**A width is three CSS properties, not one** (`columnSize` in
+`ResultsTable.tsx`). The grid is an *auto-layout* table whose cells are
+`nowrap`, so a column's content minimum is its longest value and plain `width`
+is only a suggestion the browser overrules. `maxWidth` is what actually holds
+the column — the same property that caps an *unsized* column at
+`DEFAULT_MAX_COL_W`, which is why the two cases are one function — and
+`minWidth` stops a short column collapsing under it. The header and every cell
+in the column get the same set; there is no `<colgroup>`.
+
+**The drag is tracked on the window, and the new width is start + delta.** The
+cursor outruns an 8px strip immediately, and widening a column moves that strip
+out from under the pointer by definition, so a handler on the strip itself would
+drop the gesture. Reading the cursor's own `x` instead of the delta would jump
+the edge to wherever inside the strip the press landed. A full-screen overlay
+keeps the `col-resize` cursor for the length of the drag, and the strip's
+mousedown and click are both stopped — the header underneath it sorts, and a
+resize is not a sort.
 
 ## The editable grid
 

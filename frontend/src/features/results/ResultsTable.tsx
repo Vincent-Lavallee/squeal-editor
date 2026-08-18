@@ -69,6 +69,51 @@ const sortTitle = (column: string, sortedBy: 'asc' | 'desc' | null): string =>
 /** The weight of the line the selected rectangle is outlined in. */
 const SELECT_EDGE = '1.5px';
 
+/**
+ * A column narrower than this cannot be grabbed again -- the handle would have
+ * no header left to sit on -- so the drag stops here rather than at zero.
+ */
+const MIN_COL_W = 48;
+/**
+ * The cap a column keeps until it is dragged. Long text is ellipsised at this
+ * width so one `description` cannot push every other column off screen; a drag
+ * replaces it in both directions, which is the whole of what "resizable" buys.
+ */
+const DEFAULT_MAX_COL_W = 380;
+
+/**
+ * The grab strip on a header's right edge -- see `residual.css` for the line it
+ * lights up. Wholly inside the header rather than straddling its border: the
+ * header clips (it ellipsises long names), so anything hanging past the edge is
+ * simply cut off and the target would be half the width it claims.
+ */
+const resizeHandle: React.CSSProperties = {
+  position: 'absolute',
+  top: 0,
+  right: 0,
+  width: 8,
+  height: '100%',
+  zIndex: 2,
+  cursor: 'col-resize',
+  userSelect: 'none',
+};
+
+/**
+ * A column's width as three properties rather than one.
+ *
+ * The grid is an auto-layout table, where `width` alone is a suggestion the
+ * browser is free to overrule with the content's own minimum -- and the content
+ * is `nowrap`, so that minimum is the whole of the longest value. `maxWidth` is
+ * what actually holds the column at the dragged size (the same property that
+ * caps an unsized column at `DEFAULT_MAX_COL_W`), and `minWidth` is what stops
+ * a short column from collapsing under it.
+ */
+const columnSize = (width: number | undefined): React.CSSProperties =>
+  width === undefined ? { maxWidth: DEFAULT_MAX_COL_W } : { width, minWidth: width, maxWidth: width };
+
+/** A drag in flight: which column, where it was grabbed, and how wide it was then. */
+interface Resize { column: string; startX: number; startWidth: number; }
+
 interface Cell { row: number; col: number; }
 /**
  * A rectangle of selected cells, held as the two corners the gestures name
@@ -97,7 +142,9 @@ const gridTable: React.CSSProperties = { borderCollapse: 'separate', borderSpaci
 // `userSelect: 'none'` is what makes click-and-drag select cells instead of
 // sweeping the browser's own text selection across them; see `docs/decisions.md`
 // for the tradeoff it accepts. The cell editor's input opts back in.
-const cellBase: React.CSSProperties = { height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}`, textAlign: 'left', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' };
+// No width of its own: every column carries its own through `columnSize`, so
+// the cap and the dragged size are one property set in one place.
+const cellBase: React.CSSProperties = { height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}`, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none' };
 const thStyle: React.CSSProperties = { ...cellBase, position: 'sticky', top: 0, zIndex: 1, background: t.BG, color: t.TEXT_MUTED, fontWeight: 600, fontSize: t.TEXT_BADGE };
 const gutterStyle: React.CSSProperties = { position: 'sticky', left: 0, zIndex: 1, background: t.BG, color: t.TEXT_FAINT, textAlign: 'right', userSelect: 'none', fontSize: t.TEXT_BADGE, height: t.ROW_H_DENSE, padding: '0 10px', borderRight: `1px solid ${t.BORDER}`, borderBottom: `1px solid ${t.BORDER}` };
 const gutterHeadStyle: React.CSSProperties = { ...gutterStyle, zIndex: 2, fontWeight: 600, top: 0 };
@@ -125,7 +172,7 @@ interface Props {
 }
 
 export default function ResultsTable({ tab, onDiagnose, databases, onSelectDatabase, pickerOpen, onPickerOpenChange }: Props) {
-  const { result, browse, error, errorSql, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey, sort, toggleSort, canSort, rowsKey, rememberScroll, recallScroll } = useResults(tab);
+  const { result, browse, error, errorSql, running, startedAt, next, prev, editable, readOnlyReason, missingKeyHint, keyColumns, columnInfo, pending, setCell, clearCell, toggleDelete, discard, save, copyRows, copyRowsAsSql, canCopyAsSql, dirtyCount, saving, saveError, filterActive, clearFilter, navigateForeignKey, sort, toggleSort, canSort, rowsKey, rememberScroll, recallScroll, columnWidths, setColumnWidth, clearColumnWidth } = useResults(tab);
   const activeTabId = tab?.id ?? null;
   /*
    * The database a grid tab reads from, named here and nowhere else on screen.
@@ -153,6 +200,36 @@ export default function ResultsTable({ tab, onDiagnose, databases, onSelectDatab
   // `missingKeyHint` changing on its own -- an unattempted edit says nothing.
   const [editBlockedHint, setEditBlockedHint] = useState<string | null>(null);
   const editBlockedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [resizing, setResizing] = useState<Resize | null>(null);
+
+  /*
+   * A resize is tracked on the window, not on the handle: the cursor outruns an
+   * 8px strip the moment the drag is quick, and a column being widened moves
+   * that strip out from under it by definition. The grab is where it started
+   * plus the distance travelled -- never the cursor's own x, which would jump
+   * the edge to wherever inside the handle the press landed.
+   */
+  useEffect(() => {
+    if (!resizing) return;
+    const onMove = (e: MouseEvent) => {
+      setColumnWidth(resizing.column, Math.max(MIN_COL_W, Math.round(resizing.startWidth + e.clientX - resizing.startX)));
+    };
+    const onUp = () => setResizing(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [resizing, setColumnWidth]);
+
+  const startResize = (column: string) => (e: React.MouseEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    // Stopped here rather than swallowed on click: the handle sits inside a
+    // header that sorts, and a press that becomes a drag must not also be a
+    // click on the column it is widening.
+    e.preventDefault();
+    e.stopPropagation();
+    const header = e.currentTarget.parentElement;
+    setResizing({ column, startX: e.clientX, startWidth: header?.getBoundingClientRect().width ?? MIN_COL_W });
+  };
 
   useEffect(() => {
     setSelected(new Set()); setCells(null); setEditing(null); setJsonEditing(null); setMenu(null); anchor.current = null;
@@ -534,7 +611,7 @@ export default function ResultsTable({ tab, onDiagnose, databases, onSelectDatab
                 return (
                   <th key={i} data-testid="grid-col" data-sort={sortedBy ?? undefined}
                     className={sortable ? 'grid__th--sortable' : undefined}
-                    style={{ ...thStyle, ...(sortable ? { cursor: 'pointer', userSelect: 'none' } : {}) }}
+                    style={{ ...thStyle, ...columnSize(columnWidths[col]), ...(sortable ? { cursor: 'pointer', userSelect: 'none' } : {}) }}
                     // The whole header is the target rather than a button inside
                     // it: the name and the type are one label for one column, so
                     // a click anywhere along it means the same thing. The grid's
@@ -558,6 +635,15 @@ export default function ResultsTable({ tab, onDiagnose, databases, onSelectDatab
                     ) : sortable ? (
                       <SortAscIcon className="grid__sort-hint" data-testid="grid-sort-hint" style={sortMark(t.TEXT_FAINT)} aria-hidden="true" />
                     ) : null}
+                    {/* The click is swallowed because the header under it
+                        sorts, and a resize is not a sort. */}
+                    <span data-testid="grid-col-resize"
+                      className={resizing?.column === col ? 'grid__resize grid__resize--active' : 'grid__resize'}
+                      style={resizeHandle}
+                      onMouseDown={startResize(col)}
+                      onClick={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => { e.stopPropagation(); clearColumnWidth(col); }}
+                      title="Drag to resize, double-click to reset" />
                   </th>
                 );
               })}
@@ -582,7 +668,7 @@ export default function ResultsTable({ tab, onDiagnose, databases, onSelectDatab
                       dirty && 'grid__cell--dirty',
                     ].filter(Boolean).join(' ') || undefined;
                     return (
-                      <td key={c} className={cellCls} style={{ ...cellBase, boxShadow: cellMarks(r, c, isEditing, dirty) }}
+                      <td key={c} className={cellCls} style={{ ...cellBase, ...columnSize(columnWidths[result.columns[c] ?? '']), boxShadow: cellMarks(r, c, isEditing, dirty) }}
                         onMouseDown={(e) => !isEditing && armCellDrag(r, c, e)}
                         onMouseEnter={(e) => !isEditing && dragCellTo(r, c, e)}
                         onClick={(e) => !isEditing && selectCell(r, c, e.shiftKey)}
@@ -611,6 +697,10 @@ export default function ResultsTable({ tab, onDiagnose, databases, onSelectDatab
           </tbody>
         </table>
       </div>
+
+      {/* While a column is being dragged the cursor is `col-resize` everywhere,
+          not only over the 8px strip it left behind on the first fast move. */}
+      {resizing && <div style={{ position: 'fixed', inset: 0, zIndex: 50, cursor: 'col-resize' }} />}
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
 

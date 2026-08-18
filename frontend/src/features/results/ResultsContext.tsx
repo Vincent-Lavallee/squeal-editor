@@ -72,6 +72,20 @@ export interface GridScroll {
   left: number;
 }
 
+/**
+ * A tab's hand-set column widths, in pixels, keyed by column *name*.
+ *
+ * Keyed by name and not by index, and deliberately not stamped with a `rowsKey`
+ * the way the staging and the scroll offset are: a width is a fact about the
+ * column, not about the rows under it. Paging, filtering, sorting and re-running
+ * all keep it, which is the whole point -- widening `description` once should
+ * survive the next page rather than snapping back. A column the next result no
+ * longer has simply goes unread; nothing here has to notice.
+ */
+export type ColumnWidths = Record<string, number>;
+
+const NO_WIDTHS: ColumnWidths = Object.freeze({});
+
 interface ResultsView {
   /** The staging for a tab's current page, or the empty one when it is stale/absent. */
   pendingFor: (tabId: string, page: string) => Pending;
@@ -111,6 +125,15 @@ interface ResultsView {
    */
   rememberScroll: (tabId: string, scroll: GridScroll) => void;
   recallScroll: (tabId: string, key: string) => GridScroll | null;
+  /**
+   * The widths a tab's grid columns were dragged to. State, not a ref like the
+   * scroll offset beside it: the grid *renders* from these, so a drag has to
+   * paint.
+   */
+  columnWidthsFor: (tabId: string) => ColumnWidths;
+  setColumnWidth: (tabId: string, column: string, width: number) => void;
+  /** Give a column back to the browser's sizing -- the double-click on a handle. */
+  clearColumnWidth: (tabId: string, column: string) => void;
 }
 
 const ResultsViewContext = createContext<ResultsView | null>(null);
@@ -120,6 +143,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
   const [saving, setSavingState] = useState<Record<string, boolean>>({});
   const [saveError, setSaveErrorState] = useState<Record<string, string | null>>({});
   const [filterDraft, setFilterDraftState] = useState<Record<string, FilterDraft>>({});
+  const [widthsByTab, setWidthsByTab] = useState<Record<string, ColumnWidths>>({});
   const scrollByTab = useRef<Record<string, GridScroll>>({});
   const tabs = useAppSelector((s) => s.tabs.tabs);
 
@@ -207,6 +231,24 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     return remembered && remembered.key === key ? remembered : null;
   }, []);
 
+  const columnWidthsFor = useCallback((tabId: string): ColumnWidths => widthsByTab[tabId] ?? NO_WIDTHS, [widthsByTab]);
+  const setColumnWidth = useCallback((tabId: string, column: string, width: number) => {
+    setWidthsByTab((prev) => {
+      const cur = prev[tabId] ?? NO_WIDTHS;
+      if (cur[column] === width) return prev;
+      return { ...prev, [tabId]: { ...cur, [column]: width } };
+    });
+  }, []);
+  const clearColumnWidth = useCallback((tabId: string, column: string) => {
+    setWidthsByTab((prev) => {
+      const cur = prev[tabId];
+      if (!cur || !(column in cur)) return prev;
+      const next = { ...cur };
+      delete next[column];
+      return { ...prev, [tabId]: next };
+    });
+  }, []);
+
   /*
    * Forget the staging of tabs that are gone -- the same diff-the-list prune the
    * editor's text uses, so "close others", a disconnect, and whatever closes a
@@ -222,6 +264,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     setSavingState((prev) => prune(prev));
     setSaveErrorState((prev) => prune(prev));
     setFilterDraftState((prev) => prune(prev));
+    setWidthsByTab((prev) => prune(prev));
     // The scroll offsets are a ref, so they are pruned in place rather than
     // through a setter -- same list, same rule, no render.
     for (const id of Object.keys(scrollByTab.current)) if (!live.has(id)) delete scrollByTab.current[id];
@@ -243,6 +286,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       clearFilterDraft,
       rememberScroll,
       recallScroll,
+      columnWidthsFor,
+      setColumnWidth,
+      clearColumnWidth,
     }),
     [
       pendingFor,
@@ -259,6 +305,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
       clearFilterDraft,
       rememberScroll,
       recallScroll,
+      columnWidthsFor,
+      setColumnWidth,
+      clearColumnWidth,
     ]
   );
 
