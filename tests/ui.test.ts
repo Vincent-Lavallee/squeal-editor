@@ -2457,16 +2457,17 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
      * make -- the `Query N` counter has been moved by earlier tests, so each tab
      * created here is read back rather than assumed.
      */
-    test('right-clicking a tab offers close, duplicate and the three bulk closes', async () => {
+    test('right-clicking a tab offers rename, save, duplicate and the four closes', async () => {
       await app.evaluate(rightClickTab('Query 3'));
       await Bun.sleep(200);
 
       // Asserted as one list for the same reason the tree's menu is: the menu
-      // being the whole surface is the point. `Close` leads it — it is the item
-      // the menu was reached for, and its absence read as the tab having no way
-      // to be closed at all.
+      // being the whole surface is the point. What the tab *is* comes first,
+      // then what to do with it, then the closes — `Close` heading that group
+      // rather than the menu, since its absence, not its position, is what read
+      // as the tab having no way to be closed at all.
       expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
-        'Close', 'Duplicate', 'Close others', 'Close Tabs to the Right', 'Close All',
+        'Rename', 'Save', 'Duplicate', 'Close', 'Close others', 'Close Tabs to the Right', 'Close All',
       ]);
 
       // One tab open: there is nothing to close except it, and nothing to its
@@ -2568,6 +2569,27 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(setDraft('Query 3'));
       await Bun.sleep(150);
       await app.evaluate(pressKey('Enter'));
+      await Bun.sleep(300);
+      expect(await app.evaluate<string[]>(tabLabels)).toContain('Query 3');
+    });
+
+    /*
+     * The menu's *Rename* is the discoverable way into the same inline editor
+     * the double-click opens -- one rename mode, two ways to reach it, so what
+     * is asserted here is that the input appears at all.
+     */
+    test('the tab menu opens the inline rename editor', async () => {
+      const renameInput = `document.querySelector('[data-testid="tab-rename-input"]')`;
+
+      await app.evaluate(rightClickTab('Query 3'));
+      await Bun.sleep(200);
+      await app.evaluate(clickContextItem('Rename'));
+      await Bun.sleep(300);
+
+      expect(await app.evaluate<number>(`document.querySelectorAll('[data-testid="tab-rename-input"]').length`)).toBe(1);
+      expect(await app.evaluate<string>(`${renameInput}.value`)).toBe('Query 3');
+
+      await app.evaluate(`${renameInput}.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true;`);
       await Bun.sleep(300);
       expect(await app.evaluate<string[]>(tabLabels)).toContain('Query 3');
     });
@@ -2831,7 +2853,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       await app.evaluate(rightClickTab(first!));
       await Bun.sleep(300);
       expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
-        'Close', 'Duplicate', 'Close others', 'Close Tabs to the Right', 'Close All',
+        'Rename', 'Save', 'Duplicate', 'Close', 'Close others', 'Close Tabs to the Right', 'Close All',
       ]);
 
       await app.evaluate(clickContextItem('Close'));

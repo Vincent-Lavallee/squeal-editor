@@ -62,6 +62,14 @@ interface Props {
    */
   onDuplicateTab?: (tabId: string) => void;
   /**
+   * Save an editor tab's text as a named query -- the menu's route to what
+   * Ctrl+S does. The text is the editor's, not the tab's, so like duplicate it
+   * is wired in the composition root and arrives here as a prop. It takes an id
+   * rather than acting on the active tab, because the menu can be summoned on a
+   * tab that is not in front.
+   */
+  onSaveTab?: (tabId: string) => void;
+  /**
    * The id of whatever tab is being dragged, from *either* strip -- a
    * controlled prop, not local state, because a drop has to be accepted by
    * the strip it lands on even when the drag started in the other one, and
@@ -74,7 +82,7 @@ interface Props {
   onDragTab: (id: string | null) => void;
 }
 
-export default function TabStrip({ tabs: tabList, activeTabId, onActivate, onClose, onCloseOthers, onCloseToTheRight, onCloseAll, onMove, onRename, onNewTab, onDuplicateTab, draggingId, onDragTab }: Props) {
+export default function TabStrip({ tabs: tabList, activeTabId, onActivate, onClose, onCloseOthers, onCloseToTheRight, onCloseAll, onMove, onRename, onNewTab, onDuplicateTab, onSaveTab, draggingId, onDragTab }: Props) {
   const [hoveredTabId, setHoveredTabId] = useState<string | null>(null);
   const [hoveredCloseId, setHoveredCloseId] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -239,14 +247,20 @@ export default function TabStrip({ tabs: tabList, activeTabId, onActivate, onClo
 
   const menuItems = (id: string): MenuItem[] => {
     const index = tabList.findIndex((tab) => tab.id === id);
+    const tab = tabList[index];
     const only = tabList.length === 1;
     const last = index === tabList.length - 1;
+    const holdsText = tab?.kind === 'editor';
     return [
-      // First, and the reason the menu grew it: the × is a hover target on the
-      // tab itself, so a right-click that offered only "close others" read as
-      // there being no way to close *this* one.
-      { label: 'Close', onSelect: () => onClose(id) },
+      // What this tab is, then what to do with it, then the closes. `Close`
+      // heads that last group rather than the menu: the × is a hover target on
+      // the tab itself, so a menu offering only "close others" read as there
+      // being no way to close *this* one, and that is answered by the item
+      // existing, not by it being first.
+      { label: 'Rename', onSelect: () => setRenaming({ id, draft: tab?.title ?? '' }) },
+      { label: 'Save', disabled: !holdsText || !onSaveTab, title: holdsText ? undefined : 'Only a query tab has text to save', onSelect: () => onSaveTab?.(id) },
       { label: 'Duplicate', disabled: !onDuplicateTab, onSelect: () => onDuplicateTab?.(id) },
+      { label: 'Close', onSelect: () => onClose(id) },
       { label: 'Close others', disabled: only, onSelect: () => onCloseOthers(id) },
       { label: 'Close Tabs to the Right', disabled: last, onSelect: () => onCloseToTheRight(id) },
       { label: 'Close All', onSelect: () => onCloseAll() },
