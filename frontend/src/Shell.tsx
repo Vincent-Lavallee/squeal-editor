@@ -706,6 +706,13 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
     setNamingTab({ id: tabId, title: tab.title, sql });
   }, [peekSql, queries, saveQuery, markTabSaved]);
 
+  // The strip's menu can be summoned on a tab that is not in front, so it names
+  // the tab it acts on rather than relying on which one is active.
+  const saveTab = useCallback(
+    (id: string) => saveQueryForTab(connectionTabs.find((tab) => tab.id === id) ?? null),
+    [saveQueryForTab, connectionTabs],
+  );
+
   const saveActiveQuery = useCallback(() => saveQueryForTab(activeTab), [saveQueryForTab, activeTab]);
   const saveSecondaryQuery = useCallback(() => saveQueryForTab(secondaryActiveTab), [saveQueryForTab, secondaryActiveTab]);
 
@@ -792,7 +799,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
                 onCloseOthers={(id) => requestClose({ kind: 'others', id })} onCloseToTheRight={(id) => requestClose({ kind: 'right', id })}
                 onCloseAll={() => requestClose({ kind: 'all', pane: 'primary' })}
                 onMove={(id, beforeId) => moveTab(id, beforeId, 'primary')} onRename={renameTab}
-                onNewTab={() => openEditorTab(undefined, undefined, treeDatabase, 'primary')} onDuplicateTab={duplicateTab}
+                onNewTab={() => openEditorTab(undefined, undefined, treeDatabase, 'primary')} onDuplicateTab={duplicateTab} onSaveTab={saveTab}
                 draggingId={draggingId} onDragTab={setDraggingId} />
               <SavedQueriesButton onOpen={(query) => openSavedQuery(query, 'primary')} />
             </div>
@@ -844,7 +851,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
                   onCloseOthers={(id) => requestClose({ kind: 'others', id })} onCloseToTheRight={(id) => requestClose({ kind: 'right', id })}
                   onCloseAll={() => requestClose({ kind: 'all', pane: 'secondary' })}
                   onMove={(id, beforeId) => moveTab(id, beforeId, 'secondary')} onRename={renameTab}
-                  onNewTab={() => openEditorTab(undefined, undefined, treeDatabase, 'secondary')} onDuplicateTab={duplicateTab}
+                  onNewTab={() => openEditorTab(undefined, undefined, treeDatabase, 'secondary')} onDuplicateTab={duplicateTab} onSaveTab={saveTab}
                   draggingId={draggingId} onDragTab={setDraggingId} />
                 <SavedQueriesButton onOpen={(query) => openSavedQuery(query, 'secondary')} />
               </div>

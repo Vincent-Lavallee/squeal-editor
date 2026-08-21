@@ -5206,6 +5206,12 @@ it would teach the key, but it costs an accelerator field on the shared
 and the complaint being answered was "the item is not there", not "I did not know
 the key". The Preferences screen already lists every chord.
 
+**`Close` later stopped leading the menu, and that does not reverse this.** The
+menu since grew *Rename* and *Save* above it, so it now reads as what the tab is,
+then what to do with it, then the closes. What was wrong before was that the item
+did not exist; being second in a list of seven is not the same complaint, and the
+closes still read as one group with `Close` at its head.
+
 **Left undone, on purpose: a browsed grid tab's staged cell edits and row deletes
 are still discarded silently on close.** Same class of loss, different owner —
 they live in `ResultsContext`, a feature context, and `Shell` reaching into it to
