@@ -1271,12 +1271,43 @@ without its signing assets is not offered. The one manual step the feature has �
 run `keygen.ts`, commit the public key, set the secret — keeps the private key out
 of the repo entirely, which is the whole point of splitting the pair.
 
-**Why Windows-only for now.** The swap-on-restart flow leans on the Inno
-installer, and Windows is the only platform that installer, and the app itself,
-are verified for. Off Windows `update.check` reports `supported: false` and the
-banner never appears — the same shape as `window.matchFrame`'s `applied: false`,
-a capability quietly absent rather than an error. macOS and Linux get an updater
-when they get a verified build to update.
+**Why Windows and macOS, and not Linux.** The swap needs something that
+outlives the app, and each platform gets a different answer: Windows leans on the
+Inno installer it already ships, macOS on the .dmg it already ships plus a script
+that mounts and swaps it. Linux ships no installable artifact at all yet, so
+`update.check` reports `supported: false` there and the banner never appears —
+the same shape as `window.matchFrame`'s `applied: false`, a capability quietly
+absent rather than an error. A platform gets an updater when it gets a verified
+build to update.
+
+**Why the macOS swap is a script the app writes, and why it is defensive out of
+proportion to its length.** There is no installer to delegate to, so
+`applyUpdateDarwin` is one: wait for the app to exit, mount the .dmg, `ditto` the
+new bundle over the running one, reopen it. What makes it worth spelling out is
+that **every step of it runs after the only process that could report a failure
+is gone.** A swap that stops halfway leaves a user with an app that closed and
+never came back, and no way to find out why. So:
+
+- **The script is orphaned onto launchd (`nohup … &`) before the app exits**, not
+  left as a plain child. A child stays in the app's process group and dies with
+  anything that signals the group as a whole.
+- **It `cd /` first**, because the extension's working directory is inside the
+  bundle the script is about to delete.
+- **Waiting for the app is a precondition, not a pause.** The wait ends in one of
+  two ways: the app exited, or the swap is abandoned. Proceeding anyway — the
+  obvious reading of "wait up to N seconds" — deletes a live app's bundle, which
+  is precisely how an update ends with nothing running.
+- **The relaunch is retried and then falls back to running the bundle's launcher
+  directly.** `open` goes through LaunchServices, which can refuse a bundle that
+  was replaced at a path it still holds a record for; treating one refusal as
+  final is the difference between an update and a machine with no app on it.
+- **The run is traced to `update.log` in the data directory.** Discarding the
+  script's output is what made the first failures unattributable: the swap
+  either happened or it didn't, and there was nothing to read either way.
+
+*Verified against a stand-in bundle* — a real signed `.app` launched, swapped out
+from under itself and reopened, plus the abandon path — because the real thing
+cannot be rehearsed without shipping a release.
 
 **Why the current version is injected, not read at runtime.** The compiled
 extension carries no `neutralino.config.json`, so it has no version to read. Vite
@@ -2481,22 +2512,26 @@ works at all only because the bundle is ad-hoc signed without hardened runtime;
 a future Developer ID build would need the
 `com.apple.security.cs.allow-dyld-environment-variables` entitlement.
 
-**The window must never be borderless at any instant, so the dylib intercepts
-`setStyleMask:` rather than restyling after the fact.** The first shipped
-version watched `NSWindowDidUpdateNotification` and restyled the window once it
-appeared — and produced a white, unresponsive app: changing the style mask
-under a live WKWebView rebuilds the window's frame view the webview is already
-rendering into. The current version swaps `NSWindow`'s `setStyleMask:`
-implementation at load (dyld runs the constructor before `main`, before any
-window exists). Neutralino creates the window *titled* and strips `Titled`
-during startup, before the window is shown; the intercept catches exactly that
-titled-to-borderless transition, keeps `Titled`, adds `FullSizeContentView`,
-and hides the titlebar instead — so the webview is born into, and only ever
-lives in, a stable titled window. Every other `setStyleMask:` call (WKWebView's
-borderless dropdown popups never had `Titled`; fullscreen transitions keep it)
-passes through untouched. `SQUEAL_NO_WINDOW_CHROME=1` at launch disables the
-intercept entirely, for telling a chrome bug from an app bug on hardware CI
-cannot reach.
+**The restyle is driven by `NSWindowDidUpdateNotification`, and which windows
+it may touch is the whole difficulty.** dyld runs the dylib's constructor before
+`main`, so no window exists yet to restyle, and Neutralino applies its borderless
+mask partway through its own startup — hence an observer rather than a one-shot.
+The observer fires constantly and for every window in the process, so it restyles
+only what passes three guards, each excluding something specific:
+
+- **`FullSizeContentView` already set** marks a window this code has restyled.
+  Nothing else in the process sets it, so each window is restyled exactly once
+  and the notification's own frequency costs nothing.
+- **Closable, at normal window level**, and **no parent window**. Both exclude
+  the same thing from different directions: WKWebView builds its dropdowns,
+  autocomplete and autofill popups as separate `NSWindow`s, and one of those
+  handed a titlebar with the traffic lights hidden on it is a native panel
+  redrawn as a stray frame over the page.
+
+*Not verified on the alternative:* intercepting `setStyleMask:` instead — so the
+window is born titled and never spends an instant borderless — is the shape that
+would remove the guessing about *when* the observer fires. It has never been
+built or measured against this.
 
 **Rejected: patching Neutralino and building the shell from source.** It is the
 "proper" fix and the wrong trade: a fork of the shell to maintain and a C++

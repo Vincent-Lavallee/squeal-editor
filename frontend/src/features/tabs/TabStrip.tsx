@@ -306,6 +306,14 @@ export default function TabStrip({ tabs: tabList, activeTabId, onActivate, onClo
               <input
                 data-testid="tab-rename-input"
                 ref={renameInputRef}
+                // A tab's name is a label, not prose: macOS otherwise offers
+                // autofill, spelling and its own text substitutions over a
+                // 200px-wide strip, each of them a native popup drawn outside
+                // the webview and over the tabs beside it.
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
                 value={renaming.draft}
                 onChange={(e) => setRenaming({ id: tab.id, draft: e.target.value })}
                 onBlur={commitRename}

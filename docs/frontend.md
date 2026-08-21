@@ -361,6 +361,14 @@ typed so far, the way typing over a selected word does. `useEffect(..., [renamin
 runs once when rename mode is entered for a given tab and not again while its
 draft changes, which is the fix.
 
+**The rename field turns the platform's suggestions off — all four of them.**
+`autoComplete`, `autoCorrect`, `autoCapitalize` and `spellCheck` are set on it
+explicitly, the way the shared `Input` already defaults `autoComplete` off. A
+tab's name is a label, not prose: macOS otherwise offers autofill, spelling and
+its own text substitutions over a strip 200px wide, each drawn as a native popup
+outside the webview and over the tabs beside it — and a substitution would be
+editing a name the user typed.
+
 **The strip scrolls to whatever tab is now in front.** A tab arriving — `+`, a
 table, a definition, a duplicate, a saved query, a tab docked from the other
 pane — is appended and made active, so on a strip that already overflows it is
@@ -1206,7 +1214,10 @@ original) rather than `copyRows`' raw row: a copy should match what is
 highlighted on screen. A NULL cell copies as an empty string, never the word the
 grid draws for it. Delete/Backspace still only touches row selection: a selected
 cell is not a selected row, so nothing stages a delete from it. Right-clicking
-clears the range, because the menu it opens is row-level throughout.
+clears the range, because the menu it opens is row-level throughout. **The key
+handler is the scroller's, so pressing a cell focuses the scroller outright** —
+and on macOS that keystroke arrives only because the window-chrome dylib replays
+it; see *Keyboard shortcuts* below.
 
 **The range is one outline around its boundary, and no fill.** `cellMarks` in
 `ResultsTable.tsx` gives each cell only the sides that lie on the rectangle's
@@ -2208,6 +2219,29 @@ the suite drives this one through `app.press`, which is `Input.dispatchKeyEvent`
 and goes in where a physical key does. WebView2 lets it through: it closes the
 tab, and the window is still there afterwards, which is half of what that test
 asserts. See `docs/testing.md`.
+
+**On macOS, `Cmd+C/V/X/A/Z` reach the dylib before they reach the page, and only
+the ones it replays are answered.** `scripts/macos-window-chrome.m` installs an
+`NSEvent` monitor for those five: once a menu bar exists and no Edit menu claims
+them, they resolve to nothing and no-op in every native `<input>` the webview
+hosts, so the monitor sends the standard edit action itself. It then *swallows*
+the event — letting it through as well is what beeped — which means the keydown
+never reaches the DOM at all. Anything the app answers in JS rather than through
+a DOM selection therefore stops happening: Monaco's model-level select-all and
+undo, and the results grid's Copy, which works off a selected cell rectangle
+held in React state with no DOM selection anywhere. All five are replayed into
+the page as a synthetic keydown for that reason (a synthetic event moves the JS
+handlers and is ignored by the browser's own editing, so it cannot double up).
+**A JS handler for one of those five is written in two places or it is
+Windows-only** — the same rule the File menu has, for the same reason.
+
+**Which is why the grid takes focus outright when a cell is pressed.** A cell is
+a plain `<td>`; whether pressing one lands focus on the scroller carrying the
+key handler is the engine's own heuristic, and the replayed keydown above is
+dispatched at `document.activeElement` — so on macOS a guess about focus is a
+guess about whether Copy works at all. `ResultsTable` focuses the scroller in
+the cell's `onMouseDown` and the gutter's row select, rather than leaving it to
+the click.
 
 **`Ctrl+D` opens a picker rather than doing anything itself**, and it is
 the reason `Select` grew a controlled `open`: a picker that owned its own open

@@ -29,7 +29,7 @@ not an objection.
 | `migrations/` | the store's schema, one file per change, plus the runner that brings a file up to it |
 | `chrome.ts` | the window frame's colour and the maximise clamp, over `bun:ffi`. Windows-only, best-effort |
 | `log.ts` | levelled, timestamped logging to a bounded file on disk |
-| `updater.ts` | the user-initiated updater: the release check, the verified download, and launching the installer. Windows-only |
+| `updater.ts` | the user-initiated updater: the release check, the verified download, and the swap — Windows' installer, macOS' own script |
 | `updateKey.ts` | the committed ed25519 public key the download's signature is checked against |
 | `assistant.ts` | the assistant's half that cannot live in the webview: the API key in the keychain, the four providers, the catalog, and one streaming turn |
 
@@ -1407,13 +1407,19 @@ connections — see `docs/testing.md`.
 The app checks for a newer release on launch and, only if the user says yes,
 downloads and applies it. All of that is native work the webview cannot do —
 reaching GitHub, streaming to disk, verifying, launching a process — so it lives
-here, the same reason connections and the frame paint do. Windows-only for now;
-`update.check` reports `supported: false` everywhere else and returns before it
-reaches the network. That guard is load-bearing, not a formality: the assets it
-would find are `squeal-editor-v*.exe` and `applyUpdate` hands its download
-to `cmd /c start`, so a macOS build that got past it would verify a Windows
-installer's signature and then try to run it. The UI reads `supported` and says
-so — a platform with no update path is a third answer, not a failed check.
+here, the same reason connections and the frame paint do. Windows and macOS
+only; `update.check` reports `supported: false` everywhere else and returns
+before it reaches the network. That guard is load-bearing, not a formality:
+`INSTALLER_PATTERNS` is what names the asset a platform can even use, and a
+platform that got past it with no entry would verify another OS' installer and
+then try to run it. The UI reads `supported` and says so — a platform with no
+update path is a third answer, not a failed check.
+
+**The two platforms do not share an asset or a checksums file.** Windows takes
+`squeal-editor-v*.exe` against `SHA256SUMS`; macOS takes
+`squeal-editor-macos-arm64-v*.dmg` against `SHA256SUMS-macos`, its own file so
+that CI leg — running on its own runner, in parallel — can never race the
+other's upload and clobber it.
 
 Three commands, and a module-level `pending` slot (the app is one instance, like
 the connection registry) that `check` fills and `download`/`apply` read:
@@ -1441,10 +1447,40 @@ the connection registry) that `check` fills and `download`/`apply` read:
   ed25519 signature** — both must pass or the temp dir is discarded and it throws.
   Order matters: the checksum is the cheap catch for a truncated download, the
   signature is the proof of origin. Nothing unverified is ever staged for apply.
-- **`update.apply`** launches the staged installer detached (`cmd /c start`, so
-  it outlives the app it is about to replace) with `/SILENT /CLOSEAPPLICATIONS
+- **`update.apply`** hands the swap to something that outlives the app, which is
+  a different thing per platform. **Windows** launches the staged installer
+  detached (`cmd /c start`) with `/SILENT /CLOSEAPPLICATIONS
   /RESTARTAPPLICATIONS`; Inno's Restart Manager closes this app and its extension,
-  swaps every file, and relaunches. The UI calls `app.exit()` once this returns.
+  swaps every file, and relaunches. **macOS** has no installer to hand it to, so
+  `applyUpdateDarwin` *is* the installer: a detached `/bin/sh` script that waits
+  for the app to exit, mounts the .dmg, `ditto`s the new `Squeal Editor.app` over
+  the running bundle — found by walking up from `process.execPath`, so it works
+  wherever the user put the app — and reopens it. The UI calls `app.exit()` once
+  this returns, on both.
+
+  **Four things about that script are load-bearing, because nobody can watch it
+  run.** The process that would have reported a failure is the one being
+  replaced, so each of these fails silently by default:
+
+  - It is spawned through `nohup … &`, orphaned onto launchd before the app goes
+    away. A plain child stays in the app's own process group and dies with
+    anything that signals the group.
+  - It `cd /` first. The extension's working directory is the bundle's
+    `Contents/Resources` (the launcher shim puts it there), which the `rm -rf`
+    is about to delete out from under the running script.
+  - Waiting for the app to exit is a **preflight, not a delay**: if the app is
+    still alive when the wait runs out, the swap is abandoned rather than
+    performed underneath it. Deleting a live app's bundle is how an update ends
+    with nothing left running.
+  - `open` is retried, then falls back to executing the bundle's launcher
+    directly. LaunchServices can refuse a bundle replaced at a path it still
+    holds a record for, and a refusal there is the difference between an update
+    and a machine with no app on it.
+
+  The whole run is traced to **`update.log` in `dataDir()`** — the directory the
+  About menu's *Open app data* already opens — truncated per attempt, so it
+  always describes the last one. It is the only evidence an update that stopped
+  halfway leaves behind.
 
 **Signature verification fails closed.** `verifyEd25519` returns false — never
 throws its way to true — on a bad key, a bad signature, or the empty baked key.

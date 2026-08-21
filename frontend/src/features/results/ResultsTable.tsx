@@ -448,6 +448,7 @@ export default function ResultsTable({ tab, onDiagnose, databases, onSelectDatab
   const setNull = (row: number, col: number) => { applyNull(row, col); setEditing(null); };
 
   const selectRow = (r: number, e: React.MouseEvent) => {
+    grid.current?.focus({ preventScroll: true });
     setCells(null);
     if (e.shiftKey && anchor.current !== null) { const [lo, hi] = [Math.min(anchor.current, r), Math.max(anchor.current, r)]; const range = new Set<number>(); for (let i = lo; i <= hi; i++) range.add(i); setSelected(range); }
     else if (e.ctrlKey || e.metaKey) { setSelected((prev) => { const next = new Set(prev); if (next.has(r)) next.delete(r); else next.add(r); return next; }); anchor.current = r; }
@@ -465,6 +466,11 @@ export default function ResultsTable({ tab, onDiagnose, databases, onSelectDatab
 
   const armCellDrag = (r: number, c: number, e: React.MouseEvent) => {
     if (e.button !== 0) return;
+    // Focus taken outright rather than left to the click: a cell is a plain
+    // `<td>`, so whether pressing one lands focus on the scroller that carries
+    // the key handler is the engine's own heuristic to make, and Copy is not
+    // allowed to depend on which engine is asked.
+    grid.current?.focus({ preventScroll: true });
     // A shift-press widens the rectangle already on screen rather than starting
     // a new one under the cursor, so the drag has to inherit its anchor.
     dragFrom.current = e.shiftKey && cells ? cells.anchor : { row: r, col: c };

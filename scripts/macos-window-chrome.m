@@ -228,17 +228,23 @@ static void installMenuBar(void) {
  * real Edit menu), and beeps as if the shortcut were entirely unhandled, even
  * though -sendAction: already performed it correctly.
  *
- * copy:/paste:/cut: only need -sendAction:, since WKWebView forwards those
- * straight to the system pasteboard regardless of what's focused. selectAll:/
- * undo:/redo: are different: Monaco keeps its own model-level selection and
- * undo stack via a JS keydown listener, which -sendAction:'s AppKit-level
- * selectAll:/undo:/redo: knows nothing about. Swallowing the real event would
- * silently break Monaco's shortcuts, so those three are additionally
- * replayed as a synthetic DOM keydown at the focused element — Monaco's own
- * listener reacts to that exactly as it would to the real one, while native
- * <input>s simply ignore it (browsers only apply built-in editing behavior to
- * trusted, physically-originated key events, never to script-dispatched
- * ones), leaving -sendAction:'s result as their only effect.
+ * paste:/cut: only need -sendAction:, since WKWebView forwards those straight
+ * to the system pasteboard regardless of what's focused. copy:, selectAll:,
+ * undo: and redo: are different, because a DOM text selection is not the only
+ * thing in this app those words can mean: Monaco keeps its own model-level
+ * selection and undo stack, and the results grid keeps its selected cell
+ * rectangle — app state, with no DOM selection anywhere — and both read the
+ * keystroke off a JS keydown listener. -sendAction: knows about neither, so
+ * Cmd+C over a block of selected cells copied nothing at all: the webview had
+ * no selection to hand the pasteboard, and swallowing the event meant the
+ * grid's own handler never ran.
+ *
+ * So those four are additionally replayed as a synthetic DOM keydown at the
+ * focused element — the JS listeners react to that exactly as they would to
+ * the real one, while native <input>s simply ignore it (browsers only apply
+ * built-in editing behavior to trusted, physically-originated key events,
+ * never to script-dispatched ones), leaving -sendAction:'s result as their
+ * only effect.
  */
 static void replayKeydownAtFocusedElement(NSString *key, NSString *code, int keyCode, BOOL shift) {
   NSWindow *window = NSApp.keyWindow ?: NSApp.mainWindow ?: NSApp.windows.firstObject;
@@ -263,7 +269,11 @@ static void installEditShortcuts(void) {
 
     NSString *key = event.charactersIgnoringModifiers;
 
-    if (!shift && [key isEqualToString:@"c"]) return [NSApp sendAction:@selector(copy:) to:nil from:nil] ? nil : event;
+    if (!shift && [key isEqualToString:@"c"]) {
+      [NSApp sendAction:@selector(copy:) to:nil from:nil];
+      replayKeydownAtFocusedElement(@"c", @"KeyC", 67, NO);
+      return nil;
+    }
     if (!shift && [key isEqualToString:@"v"]) return [NSApp sendAction:@selector(paste:) to:nil from:nil] ? nil : event;
     if (!shift && [key isEqualToString:@"x"]) return [NSApp sendAction:@selector(cut:) to:nil from:nil] ? nil : event;
 
@@ -296,7 +306,11 @@ __attribute__((constructor)) static void squealWindowChromeInit(void) {
    * - FullSizeContentView is the already-restyled marker; nothing else in the
    *   process ever sets it, so each window is restyled exactly once.
    * - Closable + normal level excludes the borderless child windows WKWebView
-   *   creates for dropdowns and autocomplete, which must stay borderless.
+   *   creates for dropdowns and autocomplete, which must stay borderless. So
+   *   does having no parent window: a popup attached to the app window that
+   *   did arrive styled like one would otherwise be handed a titlebar and have
+   *   traffic lights hidden on it — a native panel redrawn as a stray frame
+   *   over the page.
    */
   [[NSNotificationCenter defaultCenter]
       addObserverForName:NSWindowDidUpdateNotification
@@ -308,7 +322,8 @@ __attribute__((constructor)) static void squealWindowChromeInit(void) {
                     (window.styleMask & NSWindowStyleMaskFullSizeContentView) != 0;
                 BOOL isAppWindow =
                     (window.styleMask & NSWindowStyleMaskClosable) != 0 &&
-                    window.level == NSNormalWindowLevel;
+                    window.level == NSNormalWindowLevel &&
+                    window.parentWindow == nil;
                 if (isAppWindow && !restyled) restyle(window);
               }];
 
