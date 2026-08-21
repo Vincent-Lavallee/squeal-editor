@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.16.0...v0.17.0) (2026-08-21)
+
+
+### Features
+
+* Rename and Save in the tab context menu ([#34](https://github.com/Vincent-Lavallee/squeal-editor/issues/34)) ([753a933](https://github.com/Vincent-Lavallee/squeal-editor/commit/753a93302ef12baefbf9f9bf0cf897155346ebdd))
+
 ## [0.16.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.15.0...v0.16.0) (2026-08-18)
 
 
