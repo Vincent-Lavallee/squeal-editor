@@ -844,3 +844,10 @@ This is a record, not a plan. Nothing here is waiting on anything.
   would report the failure is the thing being replaced — Windows had no such
   trace, which is why "it never launched" had no evidence behind it, and it
   needed one.
+
+- **2026-08-22** — **The assistant says it is thinking in plain text** — A running
+  query gets the thinking orb in the result tabs and the grid, but the assistant's
+  waiting state was the bare word `Thinking…` — the same fact about the same app,
+  drawn two different ways. The orb belongs before the word, in the one moment that
+  is genuinely silent: after the turn starts and before any answer text arrives.
+  Streaming text is its own evidence of life and does not need it.

@@ -13,13 +13,6 @@ Items name features, never files or functions. Files move; the feature doesn't.
 
 Things that already work, but not well enough.
 
-- **The assistant says it is thinking in plain text** — A running query gets
-  the thinking orb in the result tabs and the grid, but the assistant's waiting
-  state is the bare word `Thinking…` — the same fact about the same app, drawn
-  two different ways. Put the orb before the word, in the one moment that is
-  genuinely silent: after the turn starts and before any answer text arrives.
-  Streaming text is its own evidence of life and does not need it.
-
 - **Naming the conversation leaves a tool row nobody needs** — The assistant
   names its own tab on its first reply, and that call draws a row like every
   other, so the first thing in every thread is the assistant announcing what it

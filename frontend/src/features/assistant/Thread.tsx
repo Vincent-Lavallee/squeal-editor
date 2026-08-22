@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { ThinkingOrb } from 'thinking-orbs';
 
 import Badge from '../../common/components/Badge.tsx';
 import Button from '../../common/components/Button.tsx';
@@ -48,7 +49,12 @@ export default function Thread({ messages, tools, streaming, running, pending, e
       ))}
 
       {streaming ? <Prose text={streaming} /> : null}
-      {running && !streaming && !pending ? <div style={{ color: t.TEXT_FAINT, fontSize: t.TEXT_BODY }}>Thinking…</div> : null}
+      {running && !streaming && !pending ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, color: t.TEXT_FAINT, fontSize: t.TEXT_BODY }}>
+          <ThinkingOrb state="shaping" size={20} theme="dark" aria-label="Thinking" />
+          Thinking…
+        </div>
+      ) : null}
       {pending ? <ApprovalCard pending={pending} onApprove={onApprove} onReject={onReject} /> : null}
       {error ? <Callout>{error}</Callout> : null}
 
