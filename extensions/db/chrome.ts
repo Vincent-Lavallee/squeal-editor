@@ -14,11 +14,23 @@
  * area is the same shape of favour: window placement against monitor geometry
  * is a native fact the webview cannot read or set.
  *
- * Entirely best-effort. Older Windows has no such attribute, and every failure
- * here just leaves the band as it was. Nothing in this file can break a query.
+ * `installWindowChrome` is the one that removes the band rather than painting
+ * it, and it is the odd one out here: the fix is an answer to WM_NCCALCSIZE,
+ * which is delivered to the window's own thread and cannot be given from
+ * outside the process at all. So this file does not make that call -- it gets a
+ * DLL into the app that can (scripts/windows-window-chrome.c), which is the
+ * same move macOS already makes with an injected dylib. The paint and the clamp
+ * stay because they are what a run without that DLL still gets.
+ *
+ * Entirely best-effort. Older Windows has no such attribute, a machine with no
+ * C compiler has no DLL to inject, and every failure here just leaves the band
+ * as it was. Nothing in this file can break a query.
  */
 
 import { dlopen, FFIType, ptr, type Pointer } from 'bun:ffi';
+import { dirname, join } from 'node:path';
+
+import type { ResizeEdge } from '../../shared/protocol/index.ts';
 
 // DWM window attributes, Windows 11 build 22000+. Earlier Windows fails the call
 // and keeps its own frame colour, which is the honest fallback.
@@ -34,7 +46,39 @@ const MONITOR_DEFAULTTONEAREST = 2;
 const SWP_NOZORDER = 0x0004;
 const SWP_NOACTIVATE = 0x0010;
 
+const GWL_STYLE = -16;
+const WS_CAPTION = 0x00c00000;
+
+// The hook that fires on a *sent* message, which is what lets the send below
+// double as "the DLL has had its chance to run by now".
+const WH_CALLWNDPROC = 4;
+const SMTO_ABORTIFHUNG = 0x0002;
+const INSTALL_TIMEOUT_MS = 2000;
+
+// Named by scripts/windows-window-chrome.c, computed the same both sides by
+// RegisterWindowMessageW -- that is the whole reason the names are strings.
+const INSTALL_MESSAGE = 'SquealEditorInstallWindowChrome';
+const RESIZE_MESSAGE = 'SquealEditorBeginWindowResize';
+const CHROME_DLL = 'squeal-window-chrome.dll';
+const CHROME_HOOK = 'SquealChromeHook';
+
+const HIT_TEST: Record<ResizeEdge, number> = { top: 12, 'top-left': 13, 'top-right': 14 };
+
+function utf16(text: string) {
+  return Buffer.from(`${text}\0`, 'utf16le');
+}
+
+// GetProcAddress is the one call here that never had a W variant: the export
+// name is bytes, not text.
+function ascii(text: string) {
+  return Buffer.from(`${text}\0`, 'latin1');
+}
+
 function open() {
+  const kernel32 = dlopen('kernel32.dll', {
+    LoadLibraryW: { args: [FFIType.ptr], returns: FFIType.ptr },
+    GetProcAddress: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.ptr },
+  });
   const user32 = dlopen('user32.dll', {
     FindWindowExW: {
       args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
@@ -61,6 +105,29 @@ function open() {
       ],
       returns: FFIType.i32,
     },
+    GetWindowLongW: { args: [FFIType.ptr, FFIType.i32], returns: FFIType.i32 },
+    RegisterWindowMessageW: { args: [FFIType.ptr], returns: FFIType.u32 },
+    SetWindowsHookExW: {
+      args: [FFIType.i32, FFIType.ptr, FFIType.ptr, FFIType.u32],
+      returns: FFIType.ptr,
+    },
+    UnhookWindowsHookEx: { args: [FFIType.ptr], returns: FFIType.i32 },
+    SendMessageTimeoutW: {
+      args: [
+        FFIType.ptr,
+        FFIType.u32,
+        FFIType.ptr,
+        FFIType.ptr,
+        FFIType.u32,
+        FFIType.u32,
+        FFIType.ptr,
+      ],
+      returns: FFIType.ptr,
+    },
+    PostMessageW: {
+      args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr],
+      returns: FFIType.i32,
+    },
   });
   const dwmapi = dlopen('dwmapi.dll', {
     DwmSetWindowAttribute: {
@@ -68,7 +135,7 @@ function open() {
       returns: FFIType.i32,
     },
   });
-  return { user32, dwmapi };
+  return { kernel32, user32, dwmapi };
 }
 
 type Libs = ReturnType<typeof open>;
@@ -241,5 +308,133 @@ export function fitMaximizedToWorkArea(pid: number): boolean {
     );
   } catch {
     return false; // Same category as above: a cosmetic loss, never an error.
+  }
+}
+
+/**
+ * Whether this process has already got the chrome DLL into the app.
+ *
+ * Kept because `beginWindowResize` is meaningless without it: the grab strips
+ * exist to replace a top border that is only gone once the DLL has reclaimed
+ * it, and a resize request arriving before that would be asking the app to
+ * start a sizing loop for an edge it still has.
+ */
+let chromeInstalled = false;
+
+/**
+ * Inject scripts/windows-window-chrome.c into the app process, so the window
+ * can answer its own WM_NCCALCSIZE and keep WS_CAPTION.
+ *
+ * The two bugs this fixes -- minimise and maximise not animating, and the dead
+ * ~7px band above the titlebar -- are one missing caption bit and one
+ * unanswered message. Neither can be supplied from here: a window procedure
+ * lives at an address only its own process has mapped, so `SetWindowLongPtr`
+ * pointing at anything in *this* binary would be handing the app a pointer into
+ * nowhere. What crosses the boundary is the DLL, and the OS is what carries it:
+ * a thread-scoped `SetWindowsHookEx` maps it into the app the next time that
+ * thread dispatches a sent message, which is why one is sent immediately
+ * afterwards rather than waiting for the app to be used.
+ *
+ * The hook comes straight back off. It exists only as the delivery van, the DLL
+ * pins itself once it has subclassed, and leaving a hook on the app's UI thread
+ * would put this code in the path of every message the app ever sends.
+ *
+ * `SetWindowsHookEx` was chosen over `CreateRemoteThread` + `LoadLibrary`
+ * deliberately: both get a DLL into another process, but the first is the
+ * documented mechanism accessibility tools and IMEs use, and the second is the
+ * shape antivirus heuristics are actually written against.
+ *
+ * Returns whether the window came back captioned, which is the only receipt
+ * worth having -- nothing else in the app sets that bit.
+ */
+export function installWindowChrome(pid: number): boolean {
+  if (process.platform !== 'win32') return false;
+
+  try {
+    libs ??= open();
+    const { kernel32, user32 } = libs;
+
+    const hwnd = findWindow(user32, pid);
+    if (!hwnd) return false;
+
+    // Beside the extension binary, which is where scripts/build-window-chrome.ts
+    // puts it and where `neu build` copies it from. A build made on a machine
+    // with no C compiler simply has no file here, and the app keeps the frame it
+    // has always had.
+    const dll = kernel32.symbols.LoadLibraryW(
+      ptr(utf16(join(dirname(process.execPath), CHROME_DLL)))
+    );
+    if (!dll) return false;
+
+    const hook = kernel32.symbols.GetProcAddress(dll, ptr(ascii(CHROME_HOOK)));
+    if (!hook) return false;
+
+    const thread = user32.symbols.GetWindowThreadProcessId(hwnd, null);
+    if (!thread) return false;
+
+    const installed = user32.symbols.SetWindowsHookExW(WH_CALLWNDPROC, hook, dll, thread);
+    if (!installed) return false;
+
+    // A failed registration answers 0, which is WM_NULL: the DLL guards against
+    // being installed by one, so sending it would leave the hook in place with
+    // nothing to trigger it.
+    const message = user32.symbols.RegisterWindowMessageW(ptr(utf16(INSTALL_MESSAGE)));
+    if (!message) {
+      user32.symbols.UnhookWindowsHookEx(installed);
+      return false;
+    }
+
+    // A hung app must not hang this one behind it: the send is on the startup
+    // path, and there is nothing to do about a window that will not answer
+    // except carry on without the chrome.
+    user32.symbols.SendMessageTimeoutW(
+      hwnd,
+      message,
+      null,
+      null,
+      SMTO_ABORTIFHUNG,
+      INSTALL_TIMEOUT_MS,
+      null
+    );
+    user32.symbols.UnhookWindowsHookEx(installed);
+
+    chromeInstalled =
+      (user32.symbols.GetWindowLongW(hwnd, GWL_STYLE) & WS_CAPTION) === WS_CAPTION;
+    return chromeInstalled;
+  } catch {
+    return false; // Same category as the paint: a cosmetic loss, never an error.
+  }
+}
+
+/**
+ * Ask the app to start an OS resize from the top edge, or a top corner.
+ *
+ * Reclaiming the top of the non-client area is what removes the band, and it
+ * costs the border Windows was hit-testing there: the webview is sized to the
+ * client area, so it now covers those pixels and the window never sees the
+ * mouse over them. The UI draws grab strips instead and names the edge here.
+ *
+ * This posts a message rather than sending `WM_NCLBUTTONDOWN` itself, because
+ * that message enters the OS sizing loop in whichever thread handles it, and it
+ * has to be the app's -- the DLL turns the post back into a send on the far
+ * side. Posting also means this returns immediately instead of blocking the
+ * extension for as long as the user holds the mouse down.
+ */
+export function beginWindowResize(pid: number, edge: ResizeEdge): boolean {
+  if (process.platform !== 'win32' || !chromeInstalled) return false;
+
+  try {
+    libs ??= open();
+    const { user32 } = libs;
+
+    const hwnd = findWindow(user32, pid);
+    if (!hwnd) return false;
+
+    const message = user32.symbols.RegisterWindowMessageW(ptr(utf16(RESIZE_MESSAGE)));
+    if (!message) return false;
+
+    return user32.symbols.PostMessageW(hwnd, message, HIT_TEST[edge], null) !== 0;
+  } catch {
+    return false;
   }
 }

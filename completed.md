@@ -803,3 +803,31 @@ This is a record, not a plan. Nothing here is waiting on anything.
   its own so that narrowing the tree cannot narrow what the editor suggests, and
   a starred table past the cap is drawn from the star itself — otherwise the cap
   would have quietly disabled starring for exactly the databases it was for.
+
+- **2026-08-21** — **Maximise and minimise do not animate on Windows** — The
+  window grew and shrank by teleporting: no OS animation either way, while
+  ordinary edge resizes were fine. The cause was the style the custom titlebar
+  rests on — thickframe kept, caption dropped — and Windows hangs the min/max
+  animation off the caption. Answered the way the entry expected and the macOS
+  titlebar already is: a library injected into the app process, which is the
+  only place the window's own `WM_NCCALCSIZE` can be answered. The DLL keeps
+  `WS_CAPTION` for the animations and takes the non-client area back so none of
+  it is drawn, which is the same fix as the 7px band below — the two bugs were
+  one. Injection is a thread-scoped `SetWindowsHookEx` from the extension rather
+  than a remote thread, and the DLL is built in CI and shipped in the installer;
+  a build made without a C compiler simply has no DLL and draws the window as
+  before.
+
+- **2026-08-21** — **A dead 7px band sits above the titlebar unless the window
+  is maximised** — The resize frame the window keeps so Aero Snap works was
+  drawn outside anything the app could paint, so a restored window carried ~7px
+  of unusable height above the menu row: not a visible band (the extension
+  paints it `--bg`) but the titlebar sitting too low, and gone when maximised,
+  which is what made it look like a mistake rather than a frame. The cheap
+  avenue the entry hoped for does not exist — overshooting a *restored* window's
+  placement only hides the frame when the window happens to sit at a screen
+  edge — so it was answered with the injected DLL above, which reclaims the top
+  of the non-client area outright. Only the top: the other three edges keep the
+  border Windows hit-tests for resize, and the top's goes with the band, so the
+  titlebar draws three grab strips that ask the DLL to start the real OS sizing
+  loop.

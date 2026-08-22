@@ -41,6 +41,16 @@ import type { SavedQuery } from './queries.ts';
 import type { UpdateStatus } from './updater.ts';
 
 /**
+ * Which top edge a grab strip is asking to resize from.
+ *
+ * Only the top three, because they are the only ones the window loses: see
+ * `window.beginResize`. It is declared here rather than in a domain file
+ * because the window is not one of the six nouns that travel -- and one union
+ * is not worth a seventh file to keep it company.
+ */
+export type ResizeEdge = 'top' | 'top-left' | 'top-right';
+
+/**
  * Every command the UI may issue, with its request and response shape.
  * `bridge.call` is typed from this map, so a typo or a wrong payload is a
  * compile error rather than a silent timeout.
@@ -741,6 +751,45 @@ export interface Commands {
    */
   'window.fitMaximized': {
     req: { pid: number };
+    res: { applied: boolean };
+  };
+
+  /**
+   * Get the window chrome DLL into the app process, which is the only place the
+   * window's own `WM_NCCALCSIZE` can be answered from.
+   *
+   * This is not a third instance of the `window.matchFrame` rule but the end of
+   * it: the paint and the clamp both work *around* a caption-less window, and
+   * this one gives the caption back. With it applied the OS animates minimise
+   * and maximise again, and the ~7px band above the titlebar is reclaimed
+   * rather than merely recoloured.
+   *
+   * `pid` is `NL_PID`, for `window.matchFrame`'s reason. `applied` is false off
+   * Windows, on a build made without a C compiler (there is then no DLL to
+   * inject), and any time the injection does not take -- none of which is an
+   * error, and all of which leave the window exactly as previous versions drew
+   * it. The UI reads it to decide whether to draw the top grab strips, which
+   * exist only because applying this costs the top resize border.
+   */
+  'window.installChrome': {
+    req: { pid: number };
+    res: { applied: boolean };
+  };
+
+  /**
+   * Start an OS resize from the top edge or a top corner, on behalf of a grab
+   * strip in the UI.
+   *
+   * Only meaningful once `window.installChrome` has applied: reclaiming the top
+   * of the non-client area is what removes the band, and it hands those pixels
+   * to the webview, so Windows stops hit-testing a resize border there. The
+   * other three edges keep theirs and need nothing.
+   *
+   * `applied` is false when the chrome was never installed, which is the same
+   * condition under which the UI does not draw the strips in the first place.
+   */
+  'window.beginResize': {
+    req: { pid: number; edge: ResizeEdge };
     res: { applied: boolean };
   };
 

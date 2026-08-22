@@ -150,6 +150,18 @@ webview cannot reach, so the UI asks the extension to recolour it (`window.match
 That is the second reason the extension exists at all: it makes the native calls
 the webview cannot — a TCP socket is one, `dwmapi` is another.
 
+Recolouring is what a build gets when it cannot do better. Removing that band —
+and getting the minimise and maximise animations back, which Windows hangs off
+the `WS_CAPTION` borderless dropped — needs `WM_NCCALCSIZE` answered, and that
+message reaches only the window's own thread. So `window.installChrome` injects
+`scripts/windows-window-chrome.c` (a DLL, via a thread-scoped `SetWindowsHookEx`
+from the extension) which subclasses the window in-process. It is built by
+`scripts/build-window-chrome.ts` beside the extension binary, required in the
+release and skipped with a warning on a machine with no C compiler — a build
+without it runs exactly as it did before there was one. Any of `cl`, `clang`,
+`gcc` or `zig cc` will do; `winget install zig.zig` is the cheapest way to get
+a local build, since CI has MSVC and a dev box usually has nothing.
+
 On macOS the extension cannot play that role — an NSWindow is untouchable from
 another process — and a borderless Neutralino window can never become the key
 window, so it never receives keyboard input. The packaged `.app` therefore

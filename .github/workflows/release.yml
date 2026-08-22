@@ -76,13 +76,22 @@ jobs:
       - name: Compile the extension
         run: bun run build:ext
 
+      # `build:ext` already tries to build this and shrugs when the machine has
+      # no C compiler, which is right for a dev box and wrong for a release: an
+      # installer that quietly lost the window chrome looks like the two bugs it
+      # fixes coming back. --required turns the shrug into a failure. The runner
+      # image ships MSVC, so the only way this fails is a genuine one.
+      - name: Build the window chrome DLL
+        if: runner.os == 'Windows'
+        run: bun run scripts/build-window-chrome.ts --required
+
       # With everything now inside the compiled binary, the raw source and its
       # symlinked node_modules are dead weight — and copying those symlinks is what
       # forced `neu build` to run elevated on Windows. Dropping them first makes the
       # bundle self-contained and the copy work without admin.
       - name: Slim the extension folder
         shell: bash
-        run: find extensions/db -mindepth 1 -maxdepth 1 ! -name 'squeal-db-ext' ! -name 'squeal-db-ext.exe' -exec rm -rf {} +
+        run: find extensions/db -mindepth 1 -maxdepth 1 ! -name 'squeal-db-ext' ! -name 'squeal-db-ext.exe' ! -name 'squeal-window-chrome.dll' -exec rm -rf {} +
 
       # macOS used to run this with --embed-resources, packing resources.neu into
       # the binary via postject so no loose data file had to sit in Contents/MacOS

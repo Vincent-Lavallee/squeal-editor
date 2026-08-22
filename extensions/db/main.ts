@@ -27,7 +27,7 @@ import {
   type QueryResult,
   type SqlDialect,
 } from '../../shared/protocol/index.ts';
-import { fitMaximizedToWorkArea, matchWindowFrame } from './chrome.ts';
+import { beginWindowResize, fitMaximizedToWorkArea, installWindowChrome, matchWindowFrame } from './chrome.ts';
 import { cancel as cancelTurn, connect as connectAssistant, disconnect as disconnectAssistant, models as assistantModels, send as sendTurn, status as assistantStatus } from './assistant.ts';
 import { credentialStatus, ssoLogin } from './iam.ts';
 import { applyUpdate, checkForUpdate, downloadUpdate } from './updater.ts';
@@ -367,6 +367,14 @@ const COMMANDS: Handlers = {
 
   async 'window.fitMaximized'({ pid }) {
     return { applied: fitMaximizedToWorkArea(pid) };
+  },
+
+  async 'window.installChrome'({ pid }) {
+    return { applied: installWindowChrome(pid) };
+  },
+
+  async 'window.beginResize'({ pid, edge }) {
+    return { applied: beginWindowResize(pid, edge) };
   },
 
   /* -- Saved queries (the same store, and about no connection either) --- */

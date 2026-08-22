@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { ResizeEdge } from '../../../../shared/protocol/index.ts';
 import { call } from '../../common/bridge/bridge.ts';
 
 /**
@@ -27,6 +28,7 @@ const IS_MACOS = typeof NL_OS !== 'undefined' && NL_OS === 'Darwin';
 
 export function useWindowChrome() {
   const [maximized, setMaximized] = useState(false);
+  const [chromeInstalled, setChromeInstalled] = useState(false);
 
   /*
    * Two halves of one idea: keep the OS frame, stop it looking like the OS frame.
@@ -45,6 +47,15 @@ export function useWindowChrome() {
    * tokens.css rather than being written twice, and the pid has to be sent
    * because Neutralino spawns extensions through a shell -- the extension's own
    * parent is that shell, not this window.
+   *
+   * `installChrome` is what removes that band instead of recolouring it, and
+   * what gives the window back the minimise and maximise animations Windows
+   * hangs off WS_CAPTION. It is a third call rather than part of either of the
+   * two above because it happens somewhere else entirely: a DLL injected into
+   * the app process, since WM_NCCALCSIZE is answered by the window's own thread
+   * and by nothing else. Every call here stays, in this order, because a build
+   * without that DLL -- no C compiler on the machine that made it -- is still a
+   * build that has to draw a window.
    *
    * On macOS neither the WS_THICKFRAME trick nor the frame paint apply. The
    * borderless window there cannot become the key window at all — AppKit
@@ -90,6 +101,13 @@ export function useWindowChrome() {
       // Best-effort chrome: a window that keeps its own frame colour is a
       // cosmetic loss, and not something to fail startup or shout about.
       await call('window.matchFrame', { pid: NL_PID, colour: bg.trim() }).catch(() => undefined);
+
+      /* Last, because it is the one that changes the client area: the nudge
+       * above has to have happened against the frame the window started with.
+       * The answer decides whether the grab strips are drawn -- they replace
+       * the top resize border, which only goes away if this applied. */
+      const chrome = await call('window.installChrome', { pid: NL_PID }).catch(() => ({ applied: false }));
+      setChromeInstalled(chrome.applied);
     })();
   }, []);
 
@@ -109,6 +127,13 @@ export function useWindowChrome() {
      * The clamp itself resizes the window once more, so sync runs again; the
      * extension no-ops on a window already fitted, which is what stops that
      * echo from becoming a loop.
+     *
+     * It is still called unconditionally once the chrome DLL is in, and that is
+     * not an oversight: a captioned window is maximised onto the work area by
+     * the OS itself, so the clamp measures a window already where it wants it
+     * and the same no-op check returns without touching it. Branching on the
+     * DLL here would buy one skipped call and cost the guarantee that the
+     * window is right whether or not the injection took.
      *
      * macOS has its own native zoom behaviour and does not need this clamp.
      */
@@ -187,11 +212,32 @@ export function useWindowChrome() {
     origin.current = null;
   }, []);
 
+  /*
+   * Resize starts on the press, unlike drag.
+   *
+   * The strips are a dedicated zone rather than a shared one -- a press there
+   * can mean nothing else -- so there is no second gesture to tell it apart
+   * from, and the travel threshold that keeps a click a click on the bar would
+   * only make the window feel stuck to the first few pixels here.
+   */
+  const beginResize = useCallback((edge: ResizeEdge): void => {
+    void call('window.beginResize', { pid: NL_PID, edge }).catch(() => undefined);
+  }, []);
+
   return {
     maximized,
     minimize,
     toggleMaximize,
     close,
+    beginResize,
+    /**
+     * Whether the window lost its top resize border to the injected chrome, and
+     * therefore whether the bar has to draw its own grab strips. False on
+     * macOS, on a build with no DLL, and any time the injection did not take --
+     * in all of which the native border is still there and drawing strips over
+     * it would be drawing a second one.
+     */
+    needsTopResizeStrips: chromeInstalled,
     /** Spread onto whatever area of the bar should move the window. */
     dragProps: { onPointerDown, onPointerMove, onPointerUp, onDoubleClick: toggleMaximize },
   };

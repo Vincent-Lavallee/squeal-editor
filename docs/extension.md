@@ -11,7 +11,9 @@ restart the app, done.
 Databases are the reason it exists, but not the definition. It is **the process
 that makes the native calls the webview cannot**: Neutralino's runtime cannot open
 a TCP socket, so connections live here — and it cannot call `dwmapi` either, so
-painting the window frame lives here too (`chrome.ts`).
+painting the window frame lives here too (`chrome.ts`) — as does getting a DLL
+into the app process, since the one thing this process cannot do for the window
+is answer its messages.
 
 That is the test for anything new. "Can the webview do this itself?" If yes, it
 belongs in the frontend. If no, it belongs here, and being unrelated to SQL is
@@ -27,7 +29,7 @@ not an objection.
 | `store.ts` | workspaces and saved connections: the SQLite file, the rows, and the password encryption |
 | `transfer.ts` | the connections file: what an export writes, what an import reads, and the validation between |
 | `migrations/` | the store's schema, one file per change, plus the runner that brings a file up to it |
-| `chrome.ts` | the window frame's colour and the maximise clamp, over `bun:ffi`. Windows-only, best-effort |
+| `chrome.ts` | the window frame: its colour, the maximise clamp, and injecting the chrome DLL that reclaims the non-client area — all over `bun:ffi`. Windows-only, best-effort |
 | `log.ts` | levelled, timestamped logging to a bounded file on disk |
 | `updater.ts` | the user-initiated updater: the release check, the verified download, and the swap — Windows' installer, macOS' own script |
 | `updateKey.ts` | the committed ed25519 public key the download's signature is checked against |

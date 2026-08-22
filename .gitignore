@@ -11,6 +11,11 @@ frontend/public/js/
 extensions/db/squeal-db-ext
 extensions/db/squeal-db-ext.exe
 
+# The injected window chrome, compiled from scripts/windows-window-chrome.c by
+# the same `bun run build:ext`. Windows-only, and absent on a machine with no C
+# compiler — which is a working build, just one without the chrome.
+extensions/db/squeal-window-chrome.dll
+
 # The SQLite test fixture; regenerate with `bun run test:db:up`. It is seeded
 # from SQLITE_SEED the same way the containers are, so it is output, not source.
 tests/fixtures/shop.db

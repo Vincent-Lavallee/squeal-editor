@@ -76,7 +76,7 @@ export type { SavedQuery } from './queries.ts';
 
 export type { UpdateProgress, UpdateStatus } from './updater.ts';
 
-export type { CommandName, CommandReq, CommandRes, Commands } from './commands.ts';
+export type { CommandName, CommandReq, CommandRes, Commands, ResizeEdge } from './commands.ts';
 
 export type { AiDelta, AwsSsoPrompt, ConnectionState, ConnectProgress, DbResponse } from './events.ts';
 export {

@@ -13,9 +13,36 @@ Items name features, never files or functions. Files move; the feature doesn't.
 
 Things that already work, but not well enough.
 
+- **The assistant says it is thinking in plain text** — A running query gets
+  the thinking orb in the result tabs and the grid, but the assistant's waiting
+  state is the bare word `Thinking…` — the same fact about the same app, drawn
+  two different ways. Put the orb before the word, in the one moment that is
+  genuinely silent: after the turn starts and before any answer text arrives.
+  Streaming text is its own evidence of life and does not need it.
+
+- **Naming the conversation leaves a tool row nobody needs** — The assistant
+  names its own tab on its first reply, and that call draws a row like every
+  other, so the first thing in every thread is the assistant announcing what it
+  called itself. The rule that every call leaves a row exists for calls whose
+  effect is invisible — a read especially — and this one's effect is the tab
+  title changing in front of you. Let a tool declare that it draws no row, the
+  way it already declares that it mutates, so the exception is a property beside
+  the definition rather than a name the thread happens to skip.
+
 ## Bugs
 
 Things that are wrong.
+
+- **A stopped turn leaves the conversation unsendable** — Hitting the tool-call
+  cap ends the turn part-way through the model's list of calls, so the ones
+  never run get no result, and the notice telling you to ask again is pushed as
+  another assistant message right behind them. Every later message replays that
+  history and the provider rejects the whole conversation — the thread is dead,
+  and the notice invites you to keep using it. Stopping a turn by hand exits at
+  the same two points and leaves the same wreck, so the cap is one door out of
+  two. Whatever ends a turn early has to answer every call the model made
+  first, saying why it was stopped, so the transcript stays well formed and the
+  model can read that it ran out of budget rather than being asked to guess.
 
 - **Closing a grid tab discards its staged edits silently** — A browsed grid can
   hold cell edits and row deletes that have not been saved yet, and closing the
@@ -26,6 +53,18 @@ Things that are wrong.
   means carrying that state across the boundary the feature split exists to keep.
   Whatever the shape, the confirm has to end up one dialog for the whole gesture,
   not one per tab kind.
+
+- **The Windows update handoff is blind at both ends** — Restarting to update
+  often does nothing the first time — the installer never appears — and when it
+  does run, the app is not brought back afterwards. Both come from the same
+  handoff: the installer is launched fire-and-forget and the app exits itself
+  immediately, so nothing confirms the installer actually started, and the
+  installer's restart-applications flag has nothing to restart because the app
+  closed before it ever saw it running. macOS already answers this shape by
+  relaunching explicitly rather than trusting the OS to do it. It also traces
+  the whole swap to a log in the data directory, because the app that would
+  report the failure is the thing being replaced — Windows has no such trace,
+  which is why "it never launched" has no evidence behind it, and it needs one.
 
 - **Update ignores custom install path on Windows** — The Windows installer
   lets you choose an install location, but a later update reinstalls to the
@@ -46,6 +85,17 @@ Things that do not exist yet.
   extension produces the rows, since the UI cannot read a database, and every
   value is emitted exactly as the server sent it, quoted per engine — never
   reformatted through a JS `Date` or `Number`.
+
+- **Say how much context a conversation is holding** — A thread grows a schema,
+  a result and every tool answer at a time, and nothing on screen says how heavy
+  it has become until a turn fails for being too long. Show the tokens the last
+  turn actually sent, per conversation, in the composer footer beside the model
+  picker — the model is what the number depends on, so it belongs next to it.
+  Both wire formats report usage and neither is read today, so the number
+  travels with the turn rather than being counted a second time in the webview.
+  It is a bare count and not a fraction: no provider catalog gives a window size
+  worth trusting, and the table it would take is one more list that goes stale
+  every time a model ships.
 
 - **Light theme** — The design system is Radix dark and nothing else: no token
   has a light value, so the app is dark or it is broken. Give every token a light
@@ -83,6 +133,16 @@ Things that do not exist yet.
   exists to hold, and neither exists yet. It arrives with whichever of Light theme
   or French/English UI lands first, as that feature's own screen rather than as an
   empty shell waiting for one.
+
+- **Turn off the update banner** — The launch check is silent when it finds
+  nothing, but when it finds something the strip is back at every launch and
+  dismissing it only lasts the run. Add a remembered preference that stops the
+  app raising it on its own. It is about being told, not about the lookup:
+  "Check for updates" in the About menu keeps working with the setting off,
+  because asking for a check is still asking, and a switch that removed it too
+  would leave no way to update at all. It needs the Settings screen, which does
+  not exist yet — a second reason to build it, and the first one that is not a
+  theme or a language.
 
 - **Command palette** — Every action is reachable exactly one way: a menu, a
   button, or a keybinding you already have to know. Put the common ones behind a

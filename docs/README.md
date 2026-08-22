@@ -28,6 +28,7 @@ reading the others first, except `architecture.md`, which is the map.
 | touching what one *Run* sends, or how a tab is cut into statements | `frontend.md` + `decisions.md` |
 | touching saved queries, or anything a tab remembers about where its text came from | `frontend.md` + `extension.md` |
 | touching the titlebar, window controls, dragging, resizing or the frame's colour | `frontend.md` + `decisions.md` |
+| touching the window's native frame — the injected chrome DLL, the resize strips | `frontend.md` + `extension.md` + `decisions.md` |
 | writing any markup or CSS, adding a component, picking a colour or an icon | `design-system.md` |
 | redrawing the app icon | `design-system.md` + `architecture.md` |
 | adding tests, or verifying a change | `testing.md` |

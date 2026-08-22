@@ -304,7 +304,10 @@ cosmetic loss and not an error worth showing anyone.
 **Still rejected: patching the framework.** Handling `WM_NCCALCSIZE` in a fork is
 what Electron does and is the only way to remove even the 1px. It also means
 building and vendoring seven platform binaries that `neu update` fetches today,
-and maintaining a C++ fork, for chrome.
+and maintaining a C++ fork, for chrome. **The band is answered without that
+fork** — `WM_NCCALCSIZE` is handled in the app process by an injected DLL rather
+than in a patched shell; see *Windows gets its titlebar from an injected DLL*
+below. The paint here still runs, and is what a build without that DLL gets.
 
 **Rejected: `setDraggableRegion`.** Neutralino's own draggable-region API calls
 `beginDrag` on *pointerdown*, and `beginDrag` hands the window to the OS move
@@ -1800,6 +1803,12 @@ snap-to-top still runs the real OS maximise underneath it, so the gesture the
 button cannot see stayed broken. The clamp keeps the OS owning maximise and
 corrects the one thing it gets wrong.
 
+**The clamp still runs once the chrome DLL is in, and finds nothing to do.** A
+captioned window is maximised onto the work area by Windows itself, so the rect
+it measures already equals the rect it would set and the no-op check returns.
+That is why nothing here branches on the injection — see *Windows gets its
+titlebar from an injected DLL* below.
+
 **Verified against the real window**, because "it maximises correctly" is exactly
 the claim a webview screenshot cannot make — the content looks identical whether
 or not the window hangs off-screen. Maximised through the live app (the webview's
@@ -1809,6 +1818,126 @@ client and DWM-visible bounds land on `0,30..1920,1200` — the work area to the
 pixel, taskbar visible, on a top-taskbar machine. Restore returns to the exact
 prior rect, a second maximise clamps identically, and the rect holds still
 afterwards — the no-op guard observed doing its job.
+
+---
+
+## Windows gets its titlebar from an injected DLL, because a caption cannot be faked from outside
+
+**This closes the borderless trap rather than working around it again.** The
+three entries above each answer one face of the same missing bit: the frame
+paint recolours a band it cannot remove, the clamp corrects a maximise the OS
+gets wrong, and the startup nudge refits a webview nobody told about the frame.
+All three exist because the window is `WS_THICKFRAME` without `WS_CAPTION`. Two
+bugs were filed separately and are the same fact stated twice: **minimise and
+maximise do not animate** (Windows hangs those animations off the caption), and
+**~7px of dead frame sits above the titlebar** (nothing answers `WM_NCCALCSIZE`,
+so nothing reclaims the non-client area). Keep the caption bit *and* answer that
+message and both go, which is exactly Electron's frameless window.
+
+**Why the extension could not do it, unlike the paint and the clamp.**
+`SetWindowLongPtr`, `SetWindowPos` and `DwmSetWindowAttribute` all cross a
+process boundary. A *window procedure* cannot: the pointer would name an address
+the app has never mapped, and `WM_NCCALCSIZE` is delivered to the window's own
+thread and to nothing else. So the same shape as macOS — code injected into the
+shell — for the opposite reason: there AppKit refuses to be touched from
+outside, here one specific message refuses to be answered from outside.
+
+**Injection is `SetWindowsHookEx`, scoped to the app's UI thread.** The
+extension `LoadLibrary`s the DLL for its `HMODULE`, hooks `WH_CALLWNDPROC` on
+the window's thread, and *sends* a registered message — `WH_CALLWNDPROC` fires
+on sent messages, so the send is also the receipt that the DLL has had its turn.
+Then it unhooks immediately: the hook is a delivery van, and leaving it in place
+would put this code in the path of every message the app sends. The DLL pins
+itself (`GET_MODULE_HANDLE_EX_FLAG_PIN`) before subclassing, because an unhook
+that unloaded it would leave `GWLP_WNDPROC` pointing into freed memory — a
+crash, not a missing feature.
+
+**Rejected: `CreateRemoteThread` + `LoadLibrary`.** It gets the same DLL into
+the same process and is the shape antivirus heuristics are actually written
+against. A launcher `.exe` that starts the app suspended and injects is worse
+again — it is textbook, and it would replace the shipped artifact. Windows has
+no `DYLD_INSERT_LIBRARIES`, so the macOS answer does not port; a thread-scoped
+hook is the documented mechanism accessibility tools and IMEs use, and is the
+mildest thing that works. **The AV exposure is accepted, not dismissed**: this
+is an unsigned DLL being mapped into another process, and an installer that
+trips a scanner is a real failure mode to watch on the first releases.
+
+**The `WM_NCCALCSIZE` answer defers to the default and overrides one edge.**
+Calling the base proc first is what measures the frame at this DPI on this
+monitor without carrying a metrics table — `client.left - window.left` *is* the
+resize border. Its *top* is the part rejected, because with `WS_CAPTION` on it
+holds the caption height too. Restored, the top becomes the window's own edge
+(the band is gone). Maximised, it becomes the edge plus the frame, because the
+OS maximise of a captioned window overshoots the work area by exactly that —
+the same overshoot the clamp entry measured, now arriving for free.
+
+**Only the top edge is reclaimed, and that is a choice with a price.** The
+webview is sized to the client area, so any edge given to the client is an edge
+Windows stops hit-testing for resize. Left, right and bottom therefore keep
+their inset: their 7px reads as window padding and nobody has ever filed it.
+The top is the one that reads as a mistake, so it is the one taken — and the
+top resize border goes with it. `WindowResizeTop` draws three grab strips (edge
+plus both corners) that ask `window.beginResize` for the real thing: the DLL
+turns that into `WM_NCLBUTTONDOWN` **on the app's own thread**, so the OS sizing
+loop runs where it can pump the right queue, and the drag snaps like the three
+untouched edges. *Rejected: reclaiming all four edges* — it removes 21 more
+pixels nobody was complaining about and costs three more borders. *Rejected:
+copying the macOS strips*, which drive `setSize` from pointermove: that is a
+reimplementation of resize, and reimplementing OS window gestures in JS is how
+everyone else gets snapping wrong.
+
+**`WM_STYLECHANGING` puts the caption bit back, every time.** Neutralino
+rewrites the whole style word on `setSize`, which the UI calls at startup twice
+and which is not going to learn about our bit. Without that line the animations
+come back off at the first resize — and would look like an intermittent bug
+rather than a lost flag.
+
+**Nothing above replaces the three older answers, and that is deliberate.** The
+frame paint, the clamp and the nudge all still run, unconditionally. A build
+made on a machine with no C compiler has no DLL (`build:ext` warns and carries
+on; the release passes `--required` so it cannot ship that way), the injection
+can fail, and the app still has to draw a window. The clamp in particular is
+left uncalled-for rather than branched away: with the DLL in, a captioned window
+is already maximised onto the work area, so the clamp measures a window where it
+wants it and its existing no-op check returns without touching it. Branching on
+the DLL would buy one skipped call and cost the guarantee.
+
+**The UI is told whether it applied**, because the grab strips are the one thing
+that must not be drawn otherwise — over a live native border they would be a
+second, worse copy of it.
+
+**Verified against the real window**, the same way the maximise clamp was and
+for the same reason: whether the band is gone is a fact about the non-client
+area, and a webview screenshot cannot see it. Measured on a live `bun run dev`
+window by an external process, with the app's own buttons never touched:
+
+- **The caption bit is on and stays on.** Style `0x140F0000` → `0x14CF0000`; the
+  delta is exactly `WS_CAPTION` (`0x00C00000`), read *after* startup — so it
+  survived both of the UI's `setSize` calls, which is the `WM_STYLECHANGING`
+  guard doing its job. That bit is what the animations hang off.
+- **Restored, the top inset is 0** — window rect `436,147..1716,862`, client
+  `444,147..1708,854`. The dead band is gone, and the other three insets are
+  `8` (not 7 — this machine's frame; the code derives it rather than assuming,
+  which is why it is right on both), so their resize borders are untouched.
+- **Maximised by an external `SC_MAXIMIZE`**, the window lands at
+  `-8,22..1928,1208` and the client on `0,30..1920,1200` — the work area to the
+  pixel, taskbar visible, on a top-taskbar machine. Restore returns to the
+  byte-identical prior rect.
+- **Both `WM_NCCALCSIZE` branches** are exercised by that: top inset `0`
+  restored, `8` maximised.
+- **The three strips render** at `top: 0`, 5px tall, 16px corners carrying
+  `nwse-`/`nesw-resize` around a `ns-resize` middle — which is also the UI
+  suite's `titlebar` assertion, keyed on the DLL being present so a machine
+  without a compiler passes by drawing none.
+
+`bun test` (466) and the full Windows UI suite (165) pass both with the DLL and
+without it — the uninjected path is what a build made without a C compiler runs,
+and it had to stay unregressed.
+
+**Two things remain unverified.** The animation itself is a visual and was not
+watched; the caption bit is the documented mechanism and is present. And the
+strips' *drag* — `WM_NCLBUTTONDOWN` entering the OS sizing loop — needs a real
+held mouse button, so it has been reasoned and not driven.
 
 ---
 

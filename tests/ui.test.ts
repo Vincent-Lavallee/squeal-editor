@@ -15,7 +15,7 @@
 
 import { $ } from 'bun';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -3428,6 +3428,49 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
           });
         })()`);
       expect(applied).toBe(true);
+    });
+
+    /*
+     * The grab strips are the visible half of the injected window chrome, and
+     * the only half the DOM can see at all: whether the dead band above the
+     * titlebar is gone is a fact about the non-client area, and whether
+     * minimise animates is a fact about a bit in the style word.
+     *
+     * What makes this worth asserting is that the strips must appear *exactly*
+     * when the chrome did. Drawn without it they sit on top of a live native
+     * resize border and take the top 5px of the menu row for nothing; missing
+     * with it, the top edge cannot be resized at all. So the DLL on disk is the
+     * condition, not a skip: a machine with no C compiler builds no DLL and
+     * must render no strips, and that is as much a passing run as the other.
+     */
+    test('the top grab strips are drawn exactly when the chrome DLL is there', async () => {
+      const found = `
+        [...document.querySelectorAll('[data-testid="window-resize-top"]')].map((el) => ({
+          top: Math.round(el.getBoundingClientRect().top),
+          cursor: getComputedStyle(el).cursor,
+        }))`;
+
+      if (!existsSync('extensions/db/squeal-window-chrome.dll')) {
+        expect(await app.evaluate<unknown[]>(found)).toHaveLength(0);
+        return;
+      }
+
+      /*
+       * Waited for, not sampled: the strips appear when `window.installChrome`
+       * answers, and that is the last of five bridge round trips the startup
+       * effect makes. Sampling instead read an empty DOM and failed -- which is
+       * worth leaving written down, because "the chrome is not instant" is the
+       * only surprising thing about it.
+       */
+      const strips = await app.waitFor<Array<{ top: number; cursor: string }>>(
+        `(() => { const s = ${found}; return s.length === 3 ? s : null; })()`,
+        20000,
+      );
+
+      // The edge and both corners, each against the window's own top.
+      expect(strips.every((strip) => strip.top === 0)).toBe(true);
+      expect(strips.map((strip) => strip.cursor).sort())
+        .toEqual(['nesw-resize', 'ns-resize', 'nwse-resize']);
     });
 
     /*

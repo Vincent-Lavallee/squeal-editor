@@ -45,6 +45,7 @@ src/features/
                         useSavedConnections, useWorkspaces
   titlebar/             Titlebar, Menu, AboutDialog, EnvironmentsDialog, ShortcutsDialog,
                         ExportConnectionsDialog + ImportConnectionsDialog,
+                        WindowResizeEdge (the app's own resize strips),
                         useAbout, useWindowChrome
   rail/                 ConnectionRail: the open connections, the way between, and Disconnect
   tabs/                 TabStrip: the strip, its menu, and its drag; CloseTabsConfirm
@@ -2881,7 +2882,7 @@ The window is borderless and the titlebar is a React component, so `App.tsx`
 renders `<Titlebar />` above the router rather than inside `Shell`: the window
 needs a way to move, maximise and close whether or not a connection is open.
 
-`useWindowChrome` is the whole surface, and five things in it are load-bearing
+`useWindowChrome` is the whole surface, and six things in it are load-bearing
 while looking like none:
 
 - `setSize({ resizable: true })` at startup is what keeps **Aero Snap and edge
@@ -2910,11 +2911,25 @@ while looking like none:
   maximise would). It hangs off `sync` rather than off the button so the OS's
   own gestures (snap-to-top, Win+Up) are covered too; the extension no-ops on
   an already-fitted window, which is what keeps the resize it causes from
-  looping.
+  looping. It is still called once the chrome below is installed, and finds
+  nothing to do: a captioned window is maximised onto the work area by Windows
+  itself, so the no-op check returns.
+- `window.installChrome` runs **last**, because it is the one that changes the
+  client area and the nudge above has to have happened against the frame the
+  window started with. It gets a DLL into the app process, which is the only
+  place `WM_NCCALCSIZE` can be answered: with it, the window keeps `WS_CAPTION`
+  (so minimise and maximise animate) and the 7px above the titlebar is
+  reclaimed rather than merely recoloured. It answers whether it applied, and
+  that answer is `needsTopResizeStrips` — reclaiming the top costs the resize
+  border Windows was hit-testing there, so `WindowResizeTop` draws three grab
+  strips over it that ask `window.beginResize` for the real OS sizing loop. The
+  other three edges keep their border and no strips. False on a build made
+  without a C compiler, which is a build that draws the window exactly as the
+  five calls above leave it.
 
-Read the `decisions.md` entry before touching any of them; all three cost real
+Read the `decisions.md` entry before touching any of them; every one cost real
 digging, and Neutralino's own `setDraggableRegion` is the wrong answer to the
-second.
+third.
 
 ### The two titlebars
 
