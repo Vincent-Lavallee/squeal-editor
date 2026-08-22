@@ -3491,6 +3491,39 @@ database — a model looping on `getSchema` would hammer the server for as long 
 nobody was watching, and nobody watching is the normal state of a panel behind a
 collapsed toggle.
 
+### Every call the model made gets an answer, whatever ends the turn
+
+**The invariant, and it is the thread's life:** a provider rejects a whole
+conversation holding a call with no result, so a turn that walks away from the
+calls it did not run does not spoil that turn — it kills every message after it,
+under a notice inviting the user to keep typing. The ceiling and the Cancel are
+the same door: both land part-way through a list the model sent as one.
+
+So the loop keeps the calls it has not reached (`unanswered`) and every exit —
+the ceiling, a cancel, a throw — goes through `stopRemaining` first, which
+answers each of them with a `stopped` record saying why. The cap's answer names
+the ceiling, so the model reads that it ran out of budget rather than guessing
+from silence, and the notice is pushed *after* those results rather than in front
+of them.
+
+**`stopped` is its own outcome, not `failed`.** Nothing was attempted, and the
+row says *not run*: a red badge in front of a call that was never made is the
+transcript blaming a database for a decision the app took.
+
+**A thread already on disk with a gap in it is repaired when it is read back**,
+in `parseConversation` — a body written by a build without the above, or by a
+quit that landed mid-turn, otherwise comes back dead forever. The repair inserts
+each missing result directly after the call, which is what both wire formats
+require; appending at the end would satisfy neither.
+
+**A quit is not flushed, and the gap is the ordinary state of a slow turn.**
+`windowClose` calls `app.exit()`, so whatever the 600ms debounce in
+`conversationSyncListener` has not written is simply lost — and what it *has*
+written can hold the gap, because any tool call slower than that debounce lets
+the save fire between the assistant message and its results. Alt+F4, a kill and a
+power cut all arrive the same way, which is why the repair is on the read rather
+than a promise to write more carefully.
+
 ### Where it sits: a tab, not a panel
 
 **The assistant is the fourth tab kind**, beside `editor`, `grid` and `diagram`.

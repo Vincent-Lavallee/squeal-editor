@@ -851,3 +851,14 @@ This is a record, not a plan. Nothing here is waiting on anything.
   drawn two different ways. The orb belongs before the word, in the one moment that
   is genuinely silent: after the turn starts and before any answer text arrives.
   Streaming text is its own evidence of life and does not need it.
+
+- **2026-08-22** — **A stopped turn leaves the conversation unsendable** — Hitting
+  the tool-call cap ended the turn part-way through the model's list of calls, so
+  the ones never run got no result, and the notice telling you to ask again was
+  pushed as another assistant message right behind them. Every later message
+  replayed that history and the provider rejected the whole conversation — the
+  thread was dead, and the notice invited you to keep using it. Stopping a turn by
+  hand exited at the same two points and left the same wreck, so the cap was one
+  door out of two. Whatever ends a turn early has to answer every call the model
+  made first, saying why it was stopped, so the transcript stays well formed and
+  the model can read that it ran out of budget rather than being asked to guess.

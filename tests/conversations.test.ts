@@ -107,3 +107,65 @@ describe('reading one back', () => {
     expect(parseConversation('{"messages":[]}')).toEqual({ messages: [], tools: {} });
   });
 });
+
+/*
+ * The failure this guards against is the whole thread, not one turn: a provider
+ * refuses a conversation holding a call with no result, so a body written down
+ * with a gap in it comes back unsendable forever -- and it comes back under a
+ * notice inviting the user to type into it. The loop closes its own exits now;
+ * this is for the bodies already on disk, and for a quit that lands mid-turn.
+ */
+describe('a conversation written down with a call left unanswered', () => {
+  const gap: StoredConversation = {
+    messages: [
+      { role: 'user', content: 'describe every table' },
+      { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'getSchema', arguments: '{"database":"shop"}' }] },
+      { role: 'tool', toolCallId: 'call-1', content: '{"tables":[]}' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [
+          { id: 'call-2', name: 'getSchema', arguments: '{"database":"orders"}' },
+          { id: 'call-3', name: 'getSchema', arguments: '{"database":"users"}' },
+        ],
+      },
+      { role: 'assistant', content: 'Stopped after 30 tool calls. Ask again to continue.' },
+    ],
+    tools: {
+      'call-1': { name: 'getSchema', target: 'shop · local', outcome: 'ran', args: '{"database":"shop"}', result: '{"tables":[]}' },
+    },
+  };
+
+  const repaired = parseConversation(JSON.stringify(gap))!;
+
+  test('every call the model made has a result once it is read back', () => {
+    const answered = repaired.messages.flatMap((message) => (message.role === 'tool' ? [message.toolCallId] : []));
+
+    expect(answered).toEqual(['call-1', 'call-2', 'call-3']);
+  });
+
+  test('each answer follows the call it answers, which is what the wire requires', () => {
+    // Anthropic wants the results in the turn straight after the `tool_use`, and
+    // OpenAI wants each `tool` message after the assistant message that asked.
+    // Appending them at the end would satisfy neither.
+    expect(repaired.messages[4]).toEqual({ role: 'tool', toolCallId: 'call-2', content: expect.any(String) });
+    expect(repaired.messages[5]).toEqual({ role: 'tool', toolCallId: 'call-3', content: expect.any(String) });
+  });
+
+  test('the row says the call never ran rather than that it failed', () => {
+    // `failed` is a database that was asked and said no. These were never asked.
+    expect(repaired.tools['call-2']!.outcome).toBe('stopped');
+    expect(repaired.tools['call-2']!.args).toBe('{"database":"orders"}');
+  });
+
+  test('an answer already recorded is not written over', () => {
+    expect(repaired.tools['call-1']).toEqual(gap.tools['call-1']!);
+    expect(repaired.messages[2]).toEqual(gap.messages[2]!);
+  });
+
+  test('a well-formed conversation is returned untouched', () => {
+    const whole = toStored(rows('call-1', '1 rows of users(id, email)'));
+
+    expect(parseConversation(JSON.stringify(whole))).toEqual(whole);
+  });
+});

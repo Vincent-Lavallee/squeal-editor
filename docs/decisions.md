@@ -6726,3 +6726,49 @@ arriving in the log; the relaunch firing on both; the log directory being create
 under a path with accents and an apostrophe; and — the one that matters —
 the script completing a full install *after* the process that spawned it had
 already exited.
+
+## A stopped turn answers the calls it never ran
+
+The loop had four ways out and three of them walked away from work the model had
+already asked for. A turn that calls tools sends its calls as one list; hitting
+the 30-call ceiling, cancelling, or throwing part-way through left the rest of
+that list with no result — and **a provider refuses a conversation holding a call
+that was never answered**, so the damage was never the one turn. It was every
+message after it: the thread was dead, and the app's own notice ("Ask again to
+continue") was sitting underneath inviting the user to type into it.
+
+**The cap and the Cancel button are one door, not two.** They read as opposites —
+one is the app protecting a server, the other is the user changing their mind —
+but both land in the same place, part-way down a list that has to be answered
+whole. Fixing only the cap, which is what the report was about, would have left
+the identical wreck one keystroke away.
+
+**Why a result rather than dropping the call.** Deleting the unrun calls off the
+assistant message would also produce a well-formed transcript, and it is worse in
+two ways: it rewrites what the model said, which is the one thing a transcript
+must not do, and it destroys the evidence — the next turn would see a model that
+had inexplicably stopped, with nothing saying it had been cut off. The answer
+carries the reason instead, so the model can read that it ran out of budget and
+say what it had left to do.
+
+**Why `stopped` is a fourth outcome.** `failed` was there and would have needed
+no new code. It means a call was made and something said no; these were never
+made. The row would have shown a red badge blaming the database for a decision
+the app took, and the model would have read a tool error where it should read a
+budget. A `rejected` reused the same way would have claimed the user declined
+something they were never shown.
+
+**Why the repair is at decode and not only in the loop.** Fixing the exits helps
+nobody whose conversation is already broken — it is on disk, it reopens from the
+picker, and it stays unsendable for as long as it exists. `parseConversation`
+backfills a missing result on the way in, and the next save writes the repair
+down. It also covers the door the loop cannot close: a quit that lands between a
+call and its answer, where the debounced write has already been given the gap.
+
+*Verified by the shape of what would be sent*, in `tests/conversations.test.ts`,
+which is where the assistant can be tested at all without somebody's billable
+key: every call answered after a read-back, each answer inserted **after the call
+it answers** rather than appended — Anthropic wants the results in the turn
+straight after the `tool_use` block, OpenAI wants each `tool` message after the
+assistant message that asked, and appending satisfies neither — and an answer
+already recorded left alone.

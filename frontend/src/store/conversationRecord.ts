@@ -12,7 +12,14 @@ export interface ToolRecord {
   name: string;
   /** "orders · prod-replica" -- what the row and the approval card are about. */
   target: string;
-  outcome: 'ran' | 'failed' | 'rejected';
+  /**
+   * `stopped` is the call the model asked for that never ran -- the turn ended
+   * on its ceiling, on a cancel or on an error while this one was still queued.
+   * It is not `failed`: nothing was attempted, and a red badge in front of a
+   * call that was never made is the transcript blaming the database for a
+   * decision the app took.
+   */
+  outcome: 'ran' | 'failed' | 'rejected' | 'stopped';
   args: string;
   result: string;
   /**
@@ -83,17 +90,51 @@ export function toStored({ messages, tools }: StoredConversation): StoredConvers
   };
 }
 
+const NEVER_ANSWERED = 'The turn ended before this call ran, and nothing recorded why.';
+
+/**
+ * Every call the model made, answered.
+ *
+ * **The invariant the whole thread rests on**: a provider rejects a conversation
+ * holding a call with no result, so one gap anywhere in the history kills every
+ * message after it, not just the turn the gap is in. The loop closes its own
+ * exits (`assistantSlice`), but a thread written down by a build that did not is
+ * still on disk and comes back dead, under a notice inviting the user to keep
+ * typing into it. Repairing here is what lets one reopen and answer; the next
+ * save writes the repair down.
+ */
+function withEveryCallAnswered({ messages, tools }: StoredConversation): StoredConversation {
+  const answered = new Set(messages.flatMap((message) => (message.role === 'tool' && message.toolCallId ? [message.toolCallId] : [])));
+  const repaired: AiMessage[] = [];
+  const records: Record<string, ToolRecord> = { ...tools };
+
+  for (const message of messages) {
+    repaired.push(message);
+    for (const call of message.toolCalls ?? []) {
+      if (answered.has(call.id)) continue;
+      answered.add(call.id);
+      repaired.push({ role: 'tool', toolCallId: call.id, content: NEVER_ANSWERED });
+      records[call.id] ??= { name: call.name, target: '—', outcome: 'stopped', args: call.arguments, result: NEVER_ANSWERED };
+    }
+  }
+
+  return { messages: repaired, tools: records };
+}
+
 /**
  * Decode a stored conversation, or `null` for a body that does not parse.
  *
  * `parseSnapshot`'s reason, and its answer: the store hands back the string this
  * side wrote, so a parse failure is only reachable across a format change, and
  * an empty thread beats refusing to open the tab.
+ *
+ * What comes back is not always byte-for-byte what went in: see
+ * `withEveryCallAnswered`.
  */
 export function parseConversation(raw: string): StoredConversation | null {
   try {
     const parsed = JSON.parse(raw) as StoredConversation;
-    return Array.isArray(parsed.messages) ? { messages: parsed.messages, tools: parsed.tools ?? {} } : null;
+    return Array.isArray(parsed.messages) ? withEveryCallAnswered({ messages: parsed.messages, tools: parsed.tools ?? {} }) : null;
   } catch {
     return null;
   }

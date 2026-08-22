@@ -132,6 +132,13 @@ const Prose = ({ text }: { text: string }) => <Markdown text={text} />;
  * on a `tool` message somewhere after it, and re-pairing them by id on every
  * render is work the slice already did once.
  */
+/**
+ * What the second half of an expanded row is called. A stopped call's "result"
+ * is the app saying why it never ran, and *Received* over that would read as an
+ * answer from a database that was never asked.
+ */
+const RESULT_LABEL: Record<ToolRecord['outcome'], string> = { ran: 'Received', rejected: 'Received', failed: 'Error', stopped: 'Not run' };
+
 function ToolRow({ record, name }: { record: ToolRecord | undefined; name: string }) {
   const [open, setOpen] = useState(false);
   const outcome = record?.outcome;
@@ -149,13 +156,14 @@ function ToolRow({ record, name }: { record: ToolRecord | undefined; name: strin
         <span style={{ flex: 'none', fontFamily: t.MONO }}>{record?.name ?? name}</span>
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', color: t.TEXT_FAINT, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record?.target}</span>
         {outcome === 'rejected' ? <Badge kind="neutral">declined</Badge> : null}
+        {outcome === 'stopped' ? <Badge kind="neutral">not run</Badge> : null}
         {outcome === 'failed' ? <Badge kind="red">failed</Badge> : null}
       </button>
 
       {open && record ? (
         <div data-testid="ai-tool-detail" style={{ display: 'flex', flexDirection: 'column', gap: t.GAP_XS, margin: `${t.GAP_XS}px 0 0 ${t.ICON + t.GAP_SM}px`, paddingLeft: t.GAP_SM, borderLeft: `1px solid ${t.BORDER}` }}>
           <Snippet label="Sent" text={record.args} />
-          <Snippet label={outcome === 'failed' ? 'Error' : 'Received'} text={record.result} tone={outcome === 'failed' ? 'error' : 'normal'} />
+          <Snippet label={RESULT_LABEL[record.outcome]} text={record.result} tone={outcome === 'failed' ? 'error' : 'normal'} />
         </div>
       ) : null}
     </div>

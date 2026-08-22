@@ -26,17 +26,6 @@ Things that already work, but not well enough.
 
 Things that are wrong.
 
-- **A stopped turn leaves the conversation unsendable** — Hitting the tool-call
-  cap ends the turn part-way through the model's list of calls, so the ones
-  never run get no result, and the notice telling you to ask again is pushed as
-  another assistant message right behind them. Every later message replays that
-  history and the provider rejects the whole conversation — the thread is dead,
-  and the notice invites you to keep using it. Stopping a turn by hand exits at
-  the same two points and leaves the same wreck, so the cap is one door out of
-  two. Whatever ends a turn early has to answer every call the model made
-  first, saying why it was stopped, so the transcript stays well formed and the
-  model can read that it ran out of budget rather than being asked to guess.
-
 - **Closing a grid tab discards its staged edits silently** — A browsed grid can
   hold cell edits and row deletes that have not been saved yet, and closing the
   tab throws them away with no warning — while closing an editor tab holding

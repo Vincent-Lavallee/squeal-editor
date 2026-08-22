@@ -445,6 +445,18 @@ export const sendMessage = createAppThunk(
     };
 
     let calls = 0;
+    // The calls the model has asked for and not been answered yet: this one and
+    // everything queued behind it. Every way out of the loop below goes through
+    // `stopRemaining` first -- see its comment for why that is not tidiness.
+    let unanswered: AiToolCall[] = [];
+
+    const stopRemaining = (reason: string) => {
+      for (const toolCall of unanswered) {
+        dispatch(toolAnswered({ tabId, callId: toolCall.id, name: toolCall.name, target: '—', outcome: 'stopped', args: prettyArgs(toolCall.arguments), content: reason }));
+      }
+      unanswered = [];
+    };
+
     try {
       for (;;) {
         if (cancelled.has(tabId)) return true;
@@ -459,20 +471,29 @@ export const sendMessage = createAppThunk(
         );
         dispatch(assistantSaid({ tabId, message }));
 
-        if (!message.toolCalls?.length || cancelled.has(tabId)) return true;
+        const toolCalls = message.toolCalls ?? [];
+        if (!toolCalls.length) return true;
 
-        for (const toolCall of message.toolCalls) {
-          if (cancelled.has(tabId)) return true;
+        for (const [index, toolCall] of toolCalls.entries()) {
+          unanswered = toolCalls.slice(index);
 
+          if (cancelled.has(tabId)) {
+            stopRemaining('The user stopped this turn before this call ran.');
+            return true;
+          }
           if (calls >= MAX_TOOL_CALLS) {
+            stopRemaining(`This turn reached its ceiling of ${MAX_TOOL_CALLS} tool calls and was stopped before this one ran. Say what you had left to do; the user has been told to ask again to continue.`);
             dispatch(noticed({ tabId, text: `Stopped after ${MAX_TOOL_CALLS} tool calls. Ask again to continue.` }));
             return true;
           }
+
           calls += 1;
           await runOneCall(tabId, toolCall, toolContext, dispatch);
         }
+        unanswered = [];
       }
     } catch (err) {
+      stopRemaining('The turn ended with an error before this call ran.');
       return rejectWithValue(errorMessage(err));
     }
   }
