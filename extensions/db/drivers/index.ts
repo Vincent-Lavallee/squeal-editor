@@ -48,15 +48,15 @@ export { sqliteDriver } from './sqlite.ts';
  * without the driver's client type leaking into the registry.
  */
 export function withDriver<R>(type: EngineType, use: <C>(driver: Driver<C>) => R): R {
-  switch (type) {
-    case 'mysql':
-      return use(mysqlDriver);
-    case 'postgres':
-      return use(postgresDriver);
-    case 'sqlite':
-      return use(sqliteDriver);
-    default:
-      // Unreachable per the type, but `type` arrives from user-supplied JSON.
-      throw new Error(`Unsupported database type: ${String(type)}`);
-  }
+    switch (type) {
+        case 'mysql':
+            return use(mysqlDriver);
+        case 'postgres':
+            return use(postgresDriver);
+        case 'sqlite':
+            return use(sqliteDriver);
+        default:
+            // Unreachable per the type, but `type` arrives from user-supplied JSON.
+            throw new Error(`Unsupported database type: ${String(type)}`);
+    }
 }

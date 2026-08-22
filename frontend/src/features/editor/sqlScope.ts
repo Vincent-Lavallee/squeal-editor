@@ -26,8 +26,8 @@ const PART = String.raw`\`[^\`]+\`|"[^"]+"|[A-Za-z_][\w$]*`;
 const RELATION = String.raw`(?:${PART})(?:\.(?:${PART}))?`;
 
 const FROM_OR_JOIN = new RegExp(
-  String.raw`\b(?:FROM|JOIN)\s+(${RELATION})(?:\s+(?:AS\s+)?([A-Za-z_]\w*))?`,
-  'gi'
+    String.raw`\b(?:FROM|JOIN)\s+(${RELATION})(?:\s+(?:AS\s+)?([A-Za-z_]\w*))?`,
+    'gi',
 );
 
 /**
@@ -39,17 +39,46 @@ const FROM_OR_JOIN = new RegExp(
  * nothing will ever type a dot after.
  */
 const NOT_AN_ALIAS = new Set([
-  'WHERE', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'OUTER', 'NATURAL',
-  'ON', 'USING', 'GROUP', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'FETCH', 'WINDOW',
-  'UNION', 'INTERSECT', 'EXCEPT', 'SET', 'VALUES', 'RETURNING', 'FOR', 'INTO',
-  'SELECT', 'WITH', 'LATERAL', 'TABLESAMPLE', 'PARTITION', 'STRAIGHT_JOIN', 'AS',
+    'WHERE',
+    'JOIN',
+    'INNER',
+    'LEFT',
+    'RIGHT',
+    'FULL',
+    'CROSS',
+    'OUTER',
+    'NATURAL',
+    'ON',
+    'USING',
+    'GROUP',
+    'ORDER',
+    'HAVING',
+    'LIMIT',
+    'OFFSET',
+    'FETCH',
+    'WINDOW',
+    'UNION',
+    'INTERSECT',
+    'EXCEPT',
+    'SET',
+    'VALUES',
+    'RETURNING',
+    'FOR',
+    'INTO',
+    'SELECT',
+    'WITH',
+    'LATERAL',
+    'TABLESAMPLE',
+    'PARTITION',
+    'STRAIGHT_JOIN',
+    'AS',
 ]);
 
 export interface SqlScope {
-  /** Tables named in a FROM or a JOIN, in the order they appear, deduped. */
-  tables: string[];
-  /** Lower-cased alias -> the table it stands for, from `FROM users u`. */
-  aliases: Map<string, string>;
+    /** Tables named in a FROM or a JOIN, in the order they appear, deduped. */
+    tables: string[];
+    /** Lower-cased alias -> the table it stands for, from `FROM users u`. */
+    aliases: Map<string, string>;
 }
 
 const EMPTY: SqlScope = { tables: [], aliases: new Map() };
@@ -75,23 +104,23 @@ const unquote = (name: string): string => name.replace(/[`"]/g, '');
  * parser this file exists not to be.
  */
 export function scanScope(sql: string): SqlScope {
-  if (!sql) return EMPTY;
+    if (!sql) return EMPTY;
 
-  const tables: string[] = [];
-  const aliases = new Map<string, string>();
+    const tables: string[] = [];
+    const aliases = new Map<string, string>();
 
-  for (const [, relation, alias] of sql.matchAll(FROM_OR_JOIN)) {
-    if (!relation) continue;
+    for (const [, relation, alias] of sql.matchAll(FROM_OR_JOIN)) {
+        if (!relation) continue;
 
-    const table = unquote(relation);
-    if (!tables.includes(table)) tables.push(table);
+        const table = unquote(relation);
+        if (!tables.includes(table)) tables.push(table);
 
-    if (alias && !NOT_AN_ALIAS.has(alias.toUpperCase())) {
-      aliases.set(alias.toLowerCase(), table);
+        if (alias && !NOT_AN_ALIAS.has(alias.toUpperCase())) {
+            aliases.set(alias.toLowerCase(), table);
+        }
     }
-  }
 
-  return { tables, aliases };
+    return { tables, aliases };
 }
 
 /**
@@ -108,8 +137,8 @@ export function scanScope(sql: string): SqlScope {
 const QUALIFIER = new RegExp(String.raw`(${RELATION})\.["\`]?[\w$]*$`);
 
 export function qualifierAt(line: string): string | null {
-  const qualifier = QUALIFIER.exec(line)?.[1];
-  return qualifier === undefined ? null : unquote(qualifier);
+    const qualifier = QUALIFIER.exec(line)?.[1];
+    return qualifier === undefined ? null : unquote(qualifier);
 }
 
 /**
@@ -133,11 +162,11 @@ export function qualifierAt(line: string): string | null {
  * stopping would leave the completion silent on text the server is happy with.
  */
 export function resolveQualifier(qualifier: string, scope: SqlScope): string | null {
-  const alias = scope.aliases.get(qualifier.toLowerCase());
-  if (alias) return alias;
+    const alias = scope.aliases.get(qualifier.toLowerCase());
+    if (alias) return alias;
 
-  if (scope.tables.includes(qualifier)) return qualifier;
+    if (scope.tables.includes(qualifier)) return qualifier;
 
-  const lower = qualifier.toLowerCase();
-  return scope.tables.find((table) => table.toLowerCase() === lower) ?? null;
+    const lower = qualifier.toLowerCase();
+    return scope.tables.find((table) => table.toLowerCase() === lower) ?? null;
 }

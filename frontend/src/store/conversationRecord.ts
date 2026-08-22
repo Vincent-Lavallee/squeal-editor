@@ -9,32 +9,32 @@ import type { AiMessage } from '../../../shared/protocol/index.ts';
  * its answer on a `tool` message somewhere after it.
  */
 export interface ToolRecord {
-  name: string;
-  /** "orders · prod-replica" -- what the row and the approval card are about. */
-  target: string;
-  /**
-   * `stopped` is the call the model asked for that never ran -- the turn ended
-   * on its ceiling, on a cancel or on an error while this one was still queued.
-   * It is not `failed`: nothing was attempted, and a red badge in front of a
-   * call that was never made is the transcript blaming the database for a
-   * decision the app took.
-   */
-  outcome: 'ran' | 'failed' | 'rejected' | 'stopped';
-  args: string;
-  result: string;
-  /**
-   * What this call's answer looks like once it is **written down**, for a call
-   * whose answer carried database values -- `128 rows of users(id, email,
-   * created_at)`. Absent on every other call, which is written down as it
-   * stands.
-   *
-   * The tool that returned the values is what produced this, at the moment it
-   * answered; see `Tool.summarise` in `features/assistant/tools.ts`. Keeping it
-   * beside the real result rather than replacing it is what lets the thread on
-   * screen go on showing what the model was actually given, while the copy that
-   * reaches the disk is the shape.
-   */
-  stored?: string;
+    name: string;
+    /** "orders · prod-replica" -- what the row and the approval card are about. */
+    target: string;
+    /**
+     * `stopped` is the call the model asked for that never ran -- the turn ended
+     * on its ceiling, on a cancel or on an error while this one was still queued.
+     * It is not `failed`: nothing was attempted, and a red badge in front of a
+     * call that was never made is the transcript blaming the database for a
+     * decision the app took.
+     */
+    outcome: 'ran' | 'failed' | 'rejected' | 'stopped';
+    args: string;
+    result: string;
+    /**
+     * What this call's answer looks like once it is **written down**, for a call
+     * whose answer carried database values -- `128 rows of users(id, email,
+     * created_at)`. Absent on every other call, which is written down as it
+     * stands.
+     *
+     * The tool that returned the values is what produced this, at the moment it
+     * answered; see `Tool.summarise` in `features/assistant/tools.ts`. Keeping it
+     * beside the real result rather than replacing it is what lets the thread on
+     * screen go on showing what the model was actually given, while the copy that
+     * reaches the disk is the shape.
+     */
+    stored?: string;
 }
 
 /**
@@ -49,8 +49,8 @@ export interface ToolRecord {
  * What it holds is the conversation **minus its values**: see `toStored`.
  */
 export interface StoredConversation {
-  messages: AiMessage[];
-  tools: Record<string, ToolRecord>;
+    messages: AiMessage[];
+    tools: Record<string, ToolRecord>;
 }
 
 /**
@@ -73,21 +73,21 @@ export interface StoredConversation {
  * set, which is where the bulk of it would otherwise be.
  */
 export function toStored({ messages, tools }: StoredConversation): StoredConversation {
-  const shapeOf = (callId: string | undefined): string | undefined =>
-    callId === undefined ? undefined : tools[callId]?.stored;
+    const shapeOf = (callId: string | undefined): string | undefined =>
+        callId === undefined ? undefined : tools[callId]?.stored;
 
-  return {
-    messages: messages.map((message) => {
-      const shape = message.role === 'tool' ? shapeOf(message.toolCallId) : undefined;
-      return shape === undefined ? message : { ...message, content: shape };
-    }),
-    tools: Object.fromEntries(
-      Object.entries(tools).map(([callId, { stored, ...record }]) => [
-        callId,
-        stored === undefined ? record : { ...record, result: stored },
-      ])
-    ),
-  };
+    return {
+        messages: messages.map((message) => {
+            const shape = message.role === 'tool' ? shapeOf(message.toolCallId) : undefined;
+            return shape === undefined ? message : { ...message, content: shape };
+        }),
+        tools: Object.fromEntries(
+            Object.entries(tools).map(([callId, { stored, ...record }]) => [
+                callId,
+                stored === undefined ? record : { ...record, result: stored },
+            ]),
+        ),
+    };
 }
 
 const NEVER_ANSWERED = 'The turn ended before this call ran, and nothing recorded why.';
@@ -104,21 +104,31 @@ const NEVER_ANSWERED = 'The turn ended before this call ran, and nothing recorde
  * save writes the repair down.
  */
 function withEveryCallAnswered({ messages, tools }: StoredConversation): StoredConversation {
-  const answered = new Set(messages.flatMap((message) => (message.role === 'tool' && message.toolCallId ? [message.toolCallId] : [])));
-  const repaired: AiMessage[] = [];
-  const records: Record<string, ToolRecord> = { ...tools };
+    const answered = new Set(
+        messages.flatMap((message) =>
+            message.role === 'tool' && message.toolCallId ? [message.toolCallId] : [],
+        ),
+    );
+    const repaired: AiMessage[] = [];
+    const records: Record<string, ToolRecord> = { ...tools };
 
-  for (const message of messages) {
-    repaired.push(message);
-    for (const call of message.toolCalls ?? []) {
-      if (answered.has(call.id)) continue;
-      answered.add(call.id);
-      repaired.push({ role: 'tool', toolCallId: call.id, content: NEVER_ANSWERED });
-      records[call.id] ??= { name: call.name, target: '—', outcome: 'stopped', args: call.arguments, result: NEVER_ANSWERED };
+    for (const message of messages) {
+        repaired.push(message);
+        for (const call of message.toolCalls ?? []) {
+            if (answered.has(call.id)) continue;
+            answered.add(call.id);
+            repaired.push({ role: 'tool', toolCallId: call.id, content: NEVER_ANSWERED });
+            records[call.id] ??= {
+                name: call.name,
+                target: '—',
+                outcome: 'stopped',
+                args: call.arguments,
+                result: NEVER_ANSWERED,
+            };
+        }
     }
-  }
 
-  return { messages: repaired, tools: records };
+    return { messages: repaired, tools: records };
 }
 
 /**
@@ -132,10 +142,12 @@ function withEveryCallAnswered({ messages, tools }: StoredConversation): StoredC
  * `withEveryCallAnswered`.
  */
 export function parseConversation(raw: string): StoredConversation | null {
-  try {
-    const parsed = JSON.parse(raw) as StoredConversation;
-    return Array.isArray(parsed.messages) ? withEveryCallAnswered({ messages: parsed.messages, tools: parsed.tools ?? {} }) : null;
-  } catch {
-    return null;
-  }
+    try {
+        const parsed = JSON.parse(raw) as StoredConversation;
+        return Array.isArray(parsed.messages)
+            ? withEveryCallAnswered({ messages: parsed.messages, tools: parsed.tools ?? {} })
+            : null;
+    } catch {
+        return null;
+    }
 }

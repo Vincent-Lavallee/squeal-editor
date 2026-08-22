@@ -20,18 +20,18 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type {
-  AiConversation,
-  AiConversationSummary,
-  ConnectionColorId,
-  ConnectionImportSummary,
-  EngineType,
-  Environment,
-  EnvironmentDef,
-  PasswordUpdate,
-  SavedConnection,
-  ServerConfig,
-  Workspace,
-  WorkspaceIconId,
+    AiConversation,
+    AiConversationSummary,
+    ConnectionColorId,
+    ConnectionImportSummary,
+    EngineType,
+    Environment,
+    EnvironmentDef,
+    PasswordUpdate,
+    SavedConnection,
+    ServerConfig,
+    Workspace,
+    WorkspaceIconId,
 } from '../../shared/protocol/index.ts';
 import { isFileEngine } from '../../shared/protocol/index.ts';
 import { runMigrations } from './migrations/runner.ts';
@@ -49,16 +49,16 @@ const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
 export function dataDir(): string {
-  const override = process.env.SQUEAL_DATA_DIR;
-  if (override) return override;
+    const override = process.env.SQUEAL_DATA_DIR;
+    if (override) return override;
 
-  if (process.platform === 'win32') {
-    return join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'squeal-editor');
-  }
-  if (process.platform === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'squeal-editor');
-  }
-  return join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'squeal-editor');
+    if (process.platform === 'win32') {
+        return join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'squeal-editor');
+    }
+    if (process.platform === 'darwin') {
+        return join(homedir(), 'Library', 'Application Support', 'squeal-editor');
+    }
+    return join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'squeal-editor');
 }
 
 /*
@@ -82,63 +82,63 @@ const DEFAULT_ENVIRONMENTS = ['local', 'dev', 'qa', 'production'];
 const DEFAULT_CONNECTION_COLOR: ConnectionColorId = 'slate';
 
 interface Row {
-  id: string;
-  workspace_id: string;
-  name: string;
-  engine: string;
-  host: string;
-  port: number;
-  username: string;
-  default_database: string | null;
-  environment: string;
-  /** SQLite has no boolean; 0 or 1. `toSaved` is the only place that reads it. */
-  ssl: number;
-  /** SQLite has no boolean; 0 or 1. Open the connection refusing writes. */
-  read_only: number;
-  /**
-   * Both null for a password connection; both set for an IAM one. Their presence
-   * is the auth method -- there is no separate flag, because a third column
-   * saying what these two already say is two sources for one fact. An IAM row
-   * stores no password, so `password` stays null and `hasPassword` is false.
-   */
-  aws_profile: string | null;
-  aws_region: string | null;
-  password: Uint8Array | null;
-  color: string;
+    id: string;
+    workspace_id: string;
+    name: string;
+    engine: string;
+    host: string;
+    port: number;
+    username: string;
+    default_database: string | null;
+    environment: string;
+    /** SQLite has no boolean; 0 or 1. `toSaved` is the only place that reads it. */
+    ssl: number;
+    /** SQLite has no boolean; 0 or 1. Open the connection refusing writes. */
+    read_only: number;
+    /**
+     * Both null for a password connection; both set for an IAM one. Their presence
+     * is the auth method -- there is no separate flag, because a third column
+     * saying what these two already say is two sources for one fact. An IAM row
+     * stores no password, so `password` stays null and `hasPassword` is false.
+     */
+    aws_profile: string | null;
+    aws_region: string | null;
+    password: Uint8Array | null;
+    color: string;
 }
 
 interface WorkspaceRow {
-  id: string;
-  name: string;
-  icon: string;
+    id: string;
+    name: string;
+    icon: string;
 }
 
 interface EnvironmentRow {
-  id: string;
-  name: string;
-  position: number;
+    id: string;
+    name: string;
+    position: number;
 }
 
 let db: Database | null = null;
 
 function open(): Database {
-  if (db) return db;
-  mkdirSync(dataDir(), { recursive: true });
-  db = new Database(join(dataDir(), 'squeal.db'));
+    if (db) return db;
+    mkdirSync(dataDir(), { recursive: true });
+    db = new Database(join(dataDir(), 'squeal.db'));
 
-  // Off by default in SQLite, and per-connection rather than stored in the file,
-  // so it has to be set on every open or the REFERENCES clause is decoration.
-  // Before the migrations, so a rebuild among them runs under the same rules the
-  // app does.
-  db.run('PRAGMA foreign_keys = ON');
-  runMigrations(db);
+    // Off by default in SQLite, and per-connection rather than stored in the file,
+    // so it has to be set on every open or the REFERENCES clause is decoration.
+    // Before the migrations, so a rebuild among them runs under the same rules the
+    // app does.
+    db.run('PRAGMA foreign_keys = ON');
+    runMigrations(db);
 
-  // A data invariant rather than a schema one, so it lives here and not in a
-  // migration: the migration that introduced workspaces made the first one, but
-  // "there is always at least one" has to hold on every launch, not once.
-  ensureDefaultWorkspace(db);
-  ensureDefaultEnvironments(db);
-  return db;
+    // A data invariant rather than a schema one, so it lives here and not in a
+    // migration: the migration that introduced workspaces made the first one, but
+    // "there is always at least one" has to hold on every launch, not once.
+    ensureDefaultWorkspace(db);
+    ensureDefaultEnvironments(db);
+    return db;
 }
 
 /**
@@ -147,14 +147,16 @@ function open(): Database {
  * last one is refused rather than handled by recreating this on next launch.
  */
 function ensureDefaultWorkspace(database: Database): void {
-  const existing = database.query('SELECT id FROM workspaces LIMIT 1').get() as { id: string } | null;
-  if (existing) return;
+    const existing = database.query('SELECT id FROM workspaces LIMIT 1').get() as {
+        id: string;
+    } | null;
+    if (existing) return;
 
-  database.run('INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)', [
-    randomUUID(),
-    DEFAULT_WORKSPACE_NAME,
-    DEFAULT_WORKSPACE_ICON,
-  ]);
+    database.run('INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)', [
+        randomUUID(),
+        DEFAULT_WORKSPACE_NAME,
+        DEFAULT_WORKSPACE_ICON,
+    ]);
 }
 
 /**
@@ -164,12 +166,18 @@ function ensureDefaultWorkspace(database: Database): void {
  * store; this is the safety net for a store some other path left empty.
  */
 function ensureDefaultEnvironments(database: Database): void {
-  const existing = database.query('SELECT id FROM environments LIMIT 1').get() as { id: string } | null;
-  if (existing) return;
+    const existing = database.query('SELECT id FROM environments LIMIT 1').get() as {
+        id: string;
+    } | null;
+    if (existing) return;
 
-  DEFAULT_ENVIRONMENTS.forEach((name, position) => {
-    database.run('INSERT INTO environments (id, name, position) VALUES (?, ?, ?)', [randomUUID(), name, position]);
-  });
+    DEFAULT_ENVIRONMENTS.forEach((name, position) => {
+        database.run('INSERT INTO environments (id, name, position) VALUES (?, ?, ?)', [
+            randomUUID(),
+            name,
+            position,
+        ]);
+    });
 }
 
 /* ------------------------------------------------------------------ *
@@ -184,30 +192,41 @@ function ensureDefaultEnvironments(database: Database): void {
 let keyPromise: Promise<Buffer> | null = null;
 
 function encryptionKey(): Promise<Buffer> {
-  keyPromise ??= (async () => {
-    const existing = await Bun.secrets.get({ service: KEYCHAIN_SERVICE, name: KEY_NAME });
-    if (existing) return Buffer.from(existing, 'base64');
+    keyPromise ??= (async () => {
+        const existing = await Bun.secrets.get({ service: KEYCHAIN_SERVICE, name: KEY_NAME });
+        if (existing) return Buffer.from(existing, 'base64');
 
-    const key = randomBytes(32);
-    await Bun.secrets.set({ service: KEYCHAIN_SERVICE, name: KEY_NAME, value: key.toString('base64') });
-    return key;
-  })();
-  return keyPromise;
+        const key = randomBytes(32);
+        await Bun.secrets.set({
+            service: KEYCHAIN_SERVICE,
+            name: KEY_NAME,
+            value: key.toString('base64'),
+        });
+        return key;
+    })();
+    return keyPromise;
 }
 
 async function encrypt(plain: string): Promise<Buffer> {
-  const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv('aes-256-gcm', await encryptionKey(), iv);
-  const body = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
-  return Buffer.concat([iv, cipher.getAuthTag(), body]);
+    const iv = randomBytes(IV_BYTES);
+    const cipher = createCipheriv('aes-256-gcm', await encryptionKey(), iv);
+    const body = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+    return Buffer.concat([iv, cipher.getAuthTag(), body]);
 }
 
 /** GCM authenticates, so an edited row fails here rather than yielding garbage. */
 async function decrypt(blob: Uint8Array): Promise<string> {
-  const buf = Buffer.from(blob);
-  const decipher = createDecipheriv('aes-256-gcm', await encryptionKey(), buf.subarray(0, IV_BYTES));
-  decipher.setAuthTag(buf.subarray(IV_BYTES, IV_BYTES + TAG_BYTES));
-  return Buffer.concat([decipher.update(buf.subarray(IV_BYTES + TAG_BYTES)), decipher.final()]).toString('utf8');
+    const buf = Buffer.from(blob);
+    const decipher = createDecipheriv(
+        'aes-256-gcm',
+        await encryptionKey(),
+        buf.subarray(0, IV_BYTES),
+    );
+    decipher.setAuthTag(buf.subarray(IV_BYTES, IV_BYTES + TAG_BYTES));
+    return Buffer.concat([
+        decipher.update(buf.subarray(IV_BYTES + TAG_BYTES)),
+        decipher.final(),
+    ]).toString('utf8');
 }
 
 /* ------------------------------------------------------------------ *
@@ -215,36 +234,38 @@ async function decrypt(blob: Uint8Array): Promise<string> {
  * ------------------------------------------------------------------ */
 
 const toSaved = (row: Row): SavedConnection => ({
-  id: row.id,
-  workspaceId: row.workspace_id,
-  name: row.name,
-  config: {
-    type: row.engine as EngineType,
-    host: row.host,
-    port: row.port,
-    user: row.username,
-    database: row.default_database ?? undefined,
-    ssl: row.ssl !== 0,
-    // Both columns are set together or not at all, so profile alone is the test.
-    ...(row.aws_profile ? { iam: { profile: row.aws_profile, region: row.aws_region ?? '' } } : {}),
-  },
-  environment: row.environment as Environment,
-  color: row.color as ConnectionColorId,
-  readOnly: row.read_only !== 0,
-  // An IAM row stores no password, so this is false for it -- but the UI must not
-  // read that as "prompt for one": there is nothing to prompt for. `config.iam`
-  // is what tells the two apart. See ConnectScreen's `pick`.
-  hasPassword: row.password !== null,
+    id: row.id,
+    workspaceId: row.workspace_id,
+    name: row.name,
+    config: {
+        type: row.engine as EngineType,
+        host: row.host,
+        port: row.port,
+        user: row.username,
+        database: row.default_database ?? undefined,
+        ssl: row.ssl !== 0,
+        // Both columns are set together or not at all, so profile alone is the test.
+        ...(row.aws_profile
+            ? { iam: { profile: row.aws_profile, region: row.aws_region ?? '' } }
+            : {}),
+    },
+    environment: row.environment as Environment,
+    color: row.color as ConnectionColorId,
+    readOnly: row.read_only !== 0,
+    // An IAM row stores no password, so this is false for it -- but the UI must not
+    // read that as "prompt for one": there is nothing to prompt for. `config.iam`
+    // is what tells the two apart. See ConnectScreen's `pick`.
+    hasPassword: row.password !== null,
 });
 
 const findRow = (id: string): Row | null =>
-  open().query('SELECT * FROM saved_connections WHERE id = ?').get(id) as Row | null;
+    open().query('SELECT * FROM saved_connections WHERE id = ?').get(id) as Row | null;
 
 export function listSaved(): SavedConnection[] {
-  const rows = open()
-    .query('SELECT * FROM saved_connections ORDER BY name COLLATE NOCASE')
-    .all() as Row[];
-  return rows.map(toSaved);
+    const rows = open()
+        .query('SELECT * FROM saved_connections ORDER BY name COLLATE NOCASE')
+        .all() as Row[];
+    return rows.map(toSaved);
 }
 
 /* ------------------------------------------------------------------ *
@@ -252,50 +273,52 @@ export function listSaved(): SavedConnection[] {
  * ------------------------------------------------------------------ */
 
 const toWorkspace = (row: WorkspaceRow): Workspace => ({
-  id: row.id,
-  name: row.name,
-  icon: row.icon as WorkspaceIconId,
+    id: row.id,
+    name: row.name,
+    icon: row.icon as WorkspaceIconId,
 });
 
 export function listWorkspaces(): Workspace[] {
-  const rows = open().query('SELECT * FROM workspaces ORDER BY name COLLATE NOCASE').all() as WorkspaceRow[];
-  return rows.map(toWorkspace);
+    const rows = open()
+        .query('SELECT * FROM workspaces ORDER BY name COLLATE NOCASE')
+        .all() as WorkspaceRow[];
+    return rows.map(toWorkspace);
 }
 
 export interface WorkspaceInput {
-  id?: string;
-  name: string;
-  icon: WorkspaceIconId;
+    id?: string;
+    name: string;
+    icon: WorkspaceIconId;
 }
 
 export function saveWorkspace({ id, name, icon }: WorkspaceInput): Workspace {
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error('A workspace needs a name.');
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('A workspace needs a name.');
 
-  const existing = id
-    ? (open().query('SELECT id FROM workspaces WHERE id = ?').get(id) as { id: string } | null)
-    : null;
-  if (id && !existing) throw new Error('That workspace no longer exists.');
+    const existing = id
+        ? (open().query('SELECT id FROM workspaces WHERE id = ?').get(id) as { id: string } | null)
+        : null;
+    if (id && !existing) throw new Error('That workspace no longer exists.');
 
-  // Checked rather than left to the UNIQUE constraint, for the same reason the
-  // connection list checks its own: a raw SQLite error names a column.
-  const clash = open()
-    .query('SELECT id FROM workspaces WHERE name = ? COLLATE NOCASE AND id IS NOT ?')
-    .get(trimmed, id ?? null) as { id: string } | null;
-  if (clash) throw new Error(`A workspace named "${trimmed}" already exists.`);
+    // Checked rather than left to the UNIQUE constraint, for the same reason the
+    // connection list checks its own: a raw SQLite error names a column.
+    const clash = open()
+        .query('SELECT id FROM workspaces WHERE name = ? COLLATE NOCASE AND id IS NOT ?')
+        .get(trimmed, id ?? null) as { id: string } | null;
+    if (clash) throw new Error(`A workspace named "${trimmed}" already exists.`);
 
-  const row: WorkspaceRow = {
-    id: id ?? randomUUID(),
-    name: trimmed,
-    icon,
-  };
-  open().run(
-    `INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)
+    const row: WorkspaceRow = {
+        id: id ?? randomUUID(),
+        name: trimmed,
+        icon,
+    };
+    open().run(
+        `INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET name = excluded.name, icon = excluded.icon`,
-    [row.id, row.name, row.icon]
-  );
+        [row.id, row.name, row.icon],
+    );
 
-  return toWorkspace(row);
+    return toWorkspace(row);
 }
 
 /**
@@ -308,15 +331,15 @@ export function saveWorkspace({ id, name, icon }: WorkspaceInput): Workspace {
  * actually good at -- making an orphaned `workspace_id` unwritable by any bug.
  */
 export function deleteWorkspace(id: string): void {
-  const database = open();
+    const database = open();
 
-  const remaining = database.query('SELECT COUNT(*) AS n FROM workspaces').get() as { n: number };
-  if (remaining.n <= 1) throw new Error('The last workspace cannot be deleted.');
+    const remaining = database.query('SELECT COUNT(*) AS n FROM workspaces').get() as { n: number };
+    if (remaining.n <= 1) throw new Error('The last workspace cannot be deleted.');
 
-  database.transaction(() => {
-    database.run('DELETE FROM saved_connections WHERE workspace_id = ?', [id]);
-    database.run('DELETE FROM workspaces WHERE id = ?', [id]);
-  })();
+    database.transaction(() => {
+        database.run('DELETE FROM saved_connections WHERE workspace_id = ?', [id]);
+        database.run('DELETE FROM workspaces WHERE id = ?', [id]);
+    })();
 }
 
 /* ------------------------------------------------------------------ *
@@ -325,35 +348,43 @@ export function deleteWorkspace(id: string): void {
  * ------------------------------------------------------------------ */
 
 const toEnvironment = (row: EnvironmentRow): EnvironmentDef => ({
-  id: row.id,
-  name: row.name,
-  position: row.position,
+    id: row.id,
+    name: row.name,
+    position: row.position,
 });
 
 export function listEnvironments(): EnvironmentDef[] {
-  const rows = open().query('SELECT * FROM environments ORDER BY position ASC').all() as EnvironmentRow[];
-  return rows.map(toEnvironment);
+    const rows = open()
+        .query('SELECT * FROM environments ORDER BY position ASC')
+        .all() as EnvironmentRow[];
+    return rows.map(toEnvironment);
 }
 
 export function addEnvironment(name: string): EnvironmentDef {
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error('An environment needs a name.');
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('An environment needs a name.');
 
-  // Checked here rather than left to the UNIQUE constraint, the same reason
-  // `saveWorkspace` checks its own: a raw SQLite error names a column, not
-  // something the user can act on.
-  const clash = open().query('SELECT id FROM environments WHERE name = ? COLLATE NOCASE').get(trimmed) as
-    | { id: string }
-    | null;
-  if (clash) throw new Error(`An environment named "${trimmed}" already exists.`);
+    // Checked here rather than left to the UNIQUE constraint, the same reason
+    // `saveWorkspace` checks its own: a raw SQLite error names a column, not
+    // something the user can act on.
+    const clash = open()
+        .query('SELECT id FROM environments WHERE name = ? COLLATE NOCASE')
+        .get(trimmed) as { id: string } | null;
+    if (clash) throw new Error(`An environment named "${trimmed}" already exists.`);
 
-  const { next } = open().query('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM environments').get() as {
-    next: number;
-  };
+    const { next } = open()
+        .query('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM environments')
+        .get() as {
+        next: number;
+    };
 
-  const row: EnvironmentRow = { id: randomUUID(), name: trimmed, position: next };
-  open().run('INSERT INTO environments (id, name, position) VALUES (?, ?, ?)', [row.id, row.name, row.position]);
-  return toEnvironment(row);
+    const row: EnvironmentRow = { id: randomUUID(), name: trimmed, position: next };
+    open().run('INSERT INTO environments (id, name, position) VALUES (?, ?, ?)', [
+        row.id,
+        row.name,
+        row.position,
+    ]);
+    return toEnvironment(row);
 }
 
 /**
@@ -362,12 +393,14 @@ export function addEnvironment(name: string): EnvironmentDef {
  * this table, so nothing here can orphan or cascade into one.
  */
 export function deleteEnvironment(id: string): void {
-  const database = open();
+    const database = open();
 
-  const remaining = database.query('SELECT COUNT(*) AS n FROM environments').get() as { n: number };
-  if (remaining.n <= 1) throw new Error('The last environment cannot be deleted.');
+    const remaining = database.query('SELECT COUNT(*) AS n FROM environments').get() as {
+        n: number;
+    };
+    if (remaining.n <= 1) throw new Error('The last environment cannot be deleted.');
 
-  database.run('DELETE FROM environments WHERE id = ?', [id]);
+    database.run('DELETE FROM environments WHERE id = ?', [id]);
 }
 
 /**
@@ -375,80 +408,82 @@ export function deleteEnvironment(id: string): void {
  * nothing to keep, so it stores none -- the UI only sends `keep` when editing.
  */
 async function nextPassword(update: PasswordUpdate, existing: Row | null): Promise<Buffer | null> {
-  switch (update.mode) {
-    case 'store':
-      return encrypt(update.password);
-    case 'none':
-      return null;
-    case 'keep':
-      return existing?.password ? Buffer.from(existing.password) : null;
-  }
+    switch (update.mode) {
+        case 'store':
+            return encrypt(update.password);
+        case 'none':
+            return null;
+        case 'keep':
+            return existing?.password ? Buffer.from(existing.password) : null;
+    }
 }
 
 export interface SaveInput {
-  id?: string;
-  workspaceId: string;
-  name: string;
-  config: ServerConfig;
-  environment: Environment;
-  readOnly: boolean;
-  password: PasswordUpdate;
-  /** Optional for hand/JSON callers; defaulted to the neutral swatch. */
-  color?: ConnectionColorId;
+    id?: string;
+    workspaceId: string;
+    name: string;
+    config: ServerConfig;
+    environment: Environment;
+    readOnly: boolean;
+    password: PasswordUpdate;
+    /** Optional for hand/JSON callers; defaulted to the neutral swatch. */
+    color?: ConnectionColorId;
 }
 
 export async function saveConnection({
-  id,
-  workspaceId,
-  name,
-  config,
-  environment,
-  readOnly,
-  password,
-  color,
-}: SaveInput): Promise<SavedConnection> {
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error('A saved connection needs a name.');
-
-  const existing = id ? findRow(id) : null;
-  if (id && !existing) throw new Error('That connection no longer exists.');
-
-  // Caught here rather than as a foreign-key failure, which would surface as
-  // "FOREIGN KEY constraint failed" and name nothing the user can act on.
-  const workspace = open().query('SELECT id FROM workspaces WHERE id = ?').get(workspaceId) as { id: string } | null;
-  if (!workspace) throw new Error('That workspace no longer exists.');
-
-  // Nothing checks the name against its neighbours. A connection's name is a
-  // label rather than a key -- two rows may honestly be the same server twice,
-  // a reader and a writer -- and `connection-names-not-unique` removed the
-  // constraint that used to say otherwise. A workspace's name is still unique;
-  // that one *is* how the picker addresses it.
-
-  const row: Row = {
-    id: id ?? randomUUID(),
-    workspace_id: workspaceId,
-    name: trimmed,
-    engine: config.type,
-    host: config.host,
-    port: config.port,
-    username: config.user,
-    default_database: config.database ?? null,
+    id,
+    workspaceId,
+    name,
+    config,
     environment,
-    ssl: config.ssl ? 1 : 0,
-    read_only: readOnly ? 1 : 0,
-    aws_profile: config.iam?.profile ?? null,
-    aws_region: config.iam?.region ?? null,
-    // An IAM connection carries no password, so whatever `password` update the UI
-    // sent is moot -- nextPassword resolves `none` to null, which is what the UI
-    // sends for it. Kept as one call rather than a special case, since the result
-    // is the same null either way.
-    password: config.iam ? null : await nextPassword(password, existing),
-    color: color ?? DEFAULT_CONNECTION_COLOR,
-  };
+    readOnly,
+    password,
+    color,
+}: SaveInput): Promise<SavedConnection> {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('A saved connection needs a name.');
 
-  writeConnection(open(), row);
+    const existing = id ? findRow(id) : null;
+    if (id && !existing) throw new Error('That connection no longer exists.');
 
-  return toSaved(row);
+    // Caught here rather than as a foreign-key failure, which would surface as
+    // "FOREIGN KEY constraint failed" and name nothing the user can act on.
+    const workspace = open().query('SELECT id FROM workspaces WHERE id = ?').get(workspaceId) as {
+        id: string;
+    } | null;
+    if (!workspace) throw new Error('That workspace no longer exists.');
+
+    // Nothing checks the name against its neighbours. A connection's name is a
+    // label rather than a key -- two rows may honestly be the same server twice,
+    // a reader and a writer -- and `connection-names-not-unique` removed the
+    // constraint that used to say otherwise. A workspace's name is still unique;
+    // that one *is* how the picker addresses it.
+
+    const row: Row = {
+        id: id ?? randomUUID(),
+        workspace_id: workspaceId,
+        name: trimmed,
+        engine: config.type,
+        host: config.host,
+        port: config.port,
+        username: config.user,
+        default_database: config.database ?? null,
+        environment,
+        ssl: config.ssl ? 1 : 0,
+        read_only: readOnly ? 1 : 0,
+        aws_profile: config.iam?.profile ?? null,
+        aws_region: config.iam?.region ?? null,
+        // An IAM connection carries no password, so whatever `password` update the UI
+        // sent is moot -- nextPassword resolves `none` to null, which is what the UI
+        // sends for it. Kept as one call rather than a special case, since the result
+        // is the same null either way.
+        password: config.iam ? null : await nextPassword(password, existing),
+        color: color ?? DEFAULT_CONNECTION_COLOR,
+    };
+
+    writeConnection(open(), row);
+
+    return toSaved(row);
 }
 
 /**
@@ -462,9 +497,11 @@ export async function saveConnection({
  * quietly clearing it.
  */
 function writeConnection(database: Database, row: Row, keepExistingPassword = false): void {
-  const password = keepExistingPassword ? 'COALESCE(excluded.password, saved_connections.password)' : 'excluded.password';
-  database.run(
-    `INSERT INTO saved_connections
+    const password = keepExistingPassword
+        ? 'COALESCE(excluded.password, saved_connections.password)'
+        : 'excluded.password';
+    database.run(
+        `INSERT INTO saved_connections
        (id, workspace_id, name, engine, host, port, username, default_database, environment, ssl, read_only, aws_profile, aws_region, password, color)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
@@ -475,28 +512,28 @@ function writeConnection(database: Database, row: Row, keepExistingPassword = fa
        aws_profile = excluded.aws_profile, aws_region = excluded.aws_region,
        password = ${password},
        color = excluded.color`,
-    [
-      row.id,
-      row.workspace_id,
-      row.name,
-      row.engine,
-      row.host,
-      row.port,
-      row.username,
-      row.default_database,
-      row.environment,
-      row.ssl,
-      row.read_only,
-      row.aws_profile,
-      row.aws_region,
-      row.password,
-      row.color,
-    ]
-  );
+        [
+            row.id,
+            row.workspace_id,
+            row.name,
+            row.engine,
+            row.host,
+            row.port,
+            row.username,
+            row.default_database,
+            row.environment,
+            row.ssl,
+            row.read_only,
+            row.aws_profile,
+            row.aws_region,
+            row.password,
+            row.color,
+        ],
+    );
 }
 
 export function deleteSaved(id: string): void {
-  open().run('DELETE FROM saved_connections WHERE id = ?', [id]);
+    open().run('DELETE FROM saved_connections WHERE id = ?', [id]);
 }
 
 /* ------------------------------------------------------------------ *
@@ -506,21 +543,21 @@ export function deleteSaved(id: string): void {
 /** A workspace as an exported file describes it. `icon` is optional for the same
  *  reason `SaveInput.color` is: an absent one takes this file's default. */
 export interface ImportedWorkspace {
-  id: string;
-  name: string;
-  icon?: WorkspaceIconId;
+    id: string;
+    name: string;
+    icon?: WorkspaceIconId;
 }
 
 export interface ImportedConnection {
-  id: string;
-  workspaceId: string;
-  name: string;
-  config: ServerConfig;
-  environment: Environment;
-  readOnly: boolean;
-  color?: ConnectionColorId;
-  /** Absent when the file carried none, which leaves an existing row's alone. */
-  password?: string;
+    id: string;
+    workspaceId: string;
+    name: string;
+    config: ServerConfig;
+    environment: Environment;
+    readOnly: boolean;
+    color?: ConnectionColorId;
+    /** Absent when the file carried none, which leaves an existing row's alone. */
+    password?: string;
 }
 
 /**
@@ -547,80 +584,88 @@ export interface ImportedConnection {
  * is synchronous, and a batch that could pause in the middle is not one anyway.
  */
 export async function importAddressBook(
-  workspaces: ImportedWorkspace[],
-  connections: ImportedConnection[]
+    workspaces: ImportedWorkspace[],
+    connections: ImportedConnection[],
 ): Promise<ConnectionImportSummary> {
-  const database = open();
+    const database = open();
 
-  const workspaceTarget = new Map<string, string>();
-  const newWorkspaces: ImportedWorkspace[] = [];
-  for (const workspace of workspaces) {
-    const existing =
-      (database.query('SELECT id FROM workspaces WHERE id = ?').get(workspace.id) as { id: string } | null) ??
-      (database.query('SELECT id FROM workspaces WHERE name = ? COLLATE NOCASE').get(workspace.name) as
-        | { id: string }
-        | null) ??
-      // A file naming one workspace twice would otherwise insert it twice and
-      // fail its own UNIQUE constraint -- the same merge, applied within the file.
-      newWorkspaces.find((w) => w.name.toLowerCase() === workspace.name.toLowerCase());
+    const workspaceTarget = new Map<string, string>();
+    const newWorkspaces: ImportedWorkspace[] = [];
+    for (const workspace of workspaces) {
+        const existing =
+            (database.query('SELECT id FROM workspaces WHERE id = ?').get(workspace.id) as {
+                id: string;
+            } | null) ??
+            (database
+                .query('SELECT id FROM workspaces WHERE name = ? COLLATE NOCASE')
+                .get(workspace.name) as { id: string } | null) ??
+            // A file naming one workspace twice would otherwise insert it twice and
+            // fail its own UNIQUE constraint -- the same merge, applied within the file.
+            newWorkspaces.find((w) => w.name.toLowerCase() === workspace.name.toLowerCase());
 
-    workspaceTarget.set(workspace.id, existing?.id ?? workspace.id);
-    if (!existing) newWorkspaces.push(workspace);
-  }
-
-  const secrets = new Map<string, Buffer>();
-  for (const connection of connections) {
-    if (connection.password !== undefined) secrets.set(connection.id, await encrypt(connection.password));
-  }
-
-  const known = new Set(
-    (database.query('SELECT id FROM saved_connections').all() as { id: string }[]).map((row) => row.id)
-  );
-
-  database.transaction(() => {
-    for (const workspace of newWorkspaces) {
-      database.run('INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)', [
-        workspace.id,
-        workspace.name,
-        workspace.icon ?? DEFAULT_WORKSPACE_ICON,
-      ]);
+        workspaceTarget.set(workspace.id, existing?.id ?? workspace.id);
+        if (!existing) newWorkspaces.push(workspace);
     }
 
+    const secrets = new Map<string, Buffer>();
     for (const connection of connections) {
-      const workspaceId = workspaceTarget.get(connection.workspaceId);
-      if (!workspaceId) throw new Error(`"${connection.name}" belongs to a workspace this file does not describe.`);
-
-      const { config } = connection;
-      writeConnection(
-        database,
-        {
-          id: connection.id,
-          workspace_id: workspaceId,
-          name: connection.name,
-          engine: config.type,
-          host: config.host,
-          port: config.port,
-          username: config.user,
-          default_database: config.database ?? null,
-          environment: connection.environment,
-          ssl: config.ssl ? 1 : 0,
-          read_only: connection.readOnly ? 1 : 0,
-          aws_profile: config.iam?.profile ?? null,
-          aws_region: config.iam?.region ?? null,
-          password: secrets.get(connection.id) ?? null,
-          color: connection.color ?? DEFAULT_CONNECTION_COLOR,
-        },
-        true
-      );
+        if (connection.password !== undefined)
+            secrets.set(connection.id, await encrypt(connection.password));
     }
-  })();
 
-  return {
-    workspacesAdded: newWorkspaces.length,
-    connectionsAdded: connections.filter((c) => !known.has(c.id)).length,
-    connectionsUpdated: connections.filter((c) => known.has(c.id)).length,
-    passwords: secrets.size,
-  };
+    const known = new Set(
+        (database.query('SELECT id FROM saved_connections').all() as { id: string }[]).map(
+            (row) => row.id,
+        ),
+    );
+
+    database.transaction(() => {
+        for (const workspace of newWorkspaces) {
+            database.run('INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)', [
+                workspace.id,
+                workspace.name,
+                workspace.icon ?? DEFAULT_WORKSPACE_ICON,
+            ]);
+        }
+
+        for (const connection of connections) {
+            const workspaceId = workspaceTarget.get(connection.workspaceId);
+            if (!workspaceId)
+                throw new Error(
+                    `"${connection.name}" belongs to a workspace this file does not describe.`,
+                );
+
+            const { config } = connection;
+            writeConnection(
+                database,
+                {
+                    id: connection.id,
+                    workspace_id: workspaceId,
+                    name: connection.name,
+                    engine: config.type,
+                    host: config.host,
+                    port: config.port,
+                    username: config.user,
+                    default_database: config.database ?? null,
+                    environment: connection.environment,
+                    ssl: config.ssl ? 1 : 0,
+                    read_only: connection.readOnly ? 1 : 0,
+                    aws_profile: config.iam?.profile ?? null,
+                    aws_region: config.iam?.region ?? null,
+                    password: secrets.get(connection.id) ?? null,
+                    color: connection.color ?? DEFAULT_CONNECTION_COLOR,
+                },
+                true,
+            );
+        }
+    })();
+
+    return {
+        workspacesAdded: newWorkspaces.length,
+        connectionsAdded: connections.filter((c) => !known.has(c.id)).length,
+        connectionsUpdated: connections.filter((c) => known.has(c.id)).length,
+        passwords: secrets.size,
+    };
 }
 
 /**
@@ -635,41 +680,42 @@ export async function importAddressBook(
  * you reach anything.
  */
 export async function resolveSaved(
-  id: string,
-  supplied?: string
+    id: string,
+    supplied?: string,
 ): Promise<{
-  config: ServerConfig;
-  password: string;
-  name: string;
-  environment: Environment;
-  workspaceId: string;
-  color: ConnectionColorId;
-  readOnly: boolean;
+    config: ServerConfig;
+    password: string;
+    name: string;
+    environment: Environment;
+    workspaceId: string;
+    color: ConnectionColorId;
+    readOnly: boolean;
 }> {
-  const row = findRow(id);
-  if (!row) throw new Error('That connection no longer exists.');
+    const row = findRow(id);
+    if (!row) throw new Error('That connection no longer exists.');
 
-  const { config, name, environment, workspaceId, color, readOnly } = toSaved(row);
+    const { config, name, environment, workspaceId, color, readOnly } = toSaved(row);
 
-  // Two kinds of connection have no password to resolve, and for both the empty
-  // string stands in for a field the drivers never read on this path:
-  //
-  //   - an IAM connection, where the extension mints a token at connect time
-  //     from the profile and region in `config.iam`;
-  //   - a file engine, which has no authentication at all -- reaching it is
-  //     opening a path, and the OS has already decided whether that is allowed.
-  //
-  // Missing either one turns `hasPassword: false` into a refusal to connect,
-  // which is the same misreading the UI makes if it prompts for one. That is
-  // exactly why `isFileEngine` is in the protocol and not written out twice.
-  if (config.iam || isFileEngine(config.type)) {
-    return { config, password: '', name, environment, workspaceId, color, readOnly };
-  }
+    // Two kinds of connection have no password to resolve, and for both the empty
+    // string stands in for a field the drivers never read on this path:
+    //
+    //   - an IAM connection, where the extension mints a token at connect time
+    //     from the profile and region in `config.iam`;
+    //   - a file engine, which has no authentication at all -- reaching it is
+    //     opening a path, and the OS has already decided whether that is allowed.
+    //
+    // Missing either one turns `hasPassword: false` into a refusal to connect,
+    // which is the same misreading the UI makes if it prompts for one. That is
+    // exactly why `isFileEngine` is in the protocol and not written out twice.
+    if (config.iam || isFileEngine(config.type)) {
+        return { config, password: '', name, environment, workspaceId, color, readOnly };
+    }
 
-  const password = supplied ?? (row.password ? await decrypt(row.password) : null);
-  if (password === null) throw new Error(`"${row.name}" does not store a password; one is needed to connect.`);
+    const password = supplied ?? (row.password ? await decrypt(row.password) : null);
+    if (password === null)
+        throw new Error(`"${row.name}" does not store a password; one is needed to connect.`);
 
-  return { config, password, name, environment, workspaceId, color, readOnly };
+    return { config, password, name, environment, workspaceId, color, readOnly };
 }
 
 /**
@@ -683,10 +729,11 @@ export async function resolveSaved(
  * toward the bridge.
  */
 export async function storedPassword(id: string): Promise<string> {
-  const row = findRow(id);
-  if (!row) throw new Error('That connection no longer exists.');
-  if (!row.password) throw new Error(`"${row.name}" does not store a password; type one to test it.`);
-  return decrypt(row.password);
+    const row = findRow(id);
+    if (!row) throw new Error('That connection no longer exists.');
+    if (!row.password)
+        throw new Error(`"${row.name}" does not store a password; type one to test it.`);
+    return decrypt(row.password);
 }
 
 /* -- User settings. The same file, and about nobody's server. ------------ */
@@ -700,45 +747,48 @@ export async function storedPassword(id: string): Promise<string> {
  * so a caller's own default is the only default there is.
  */
 export function listSettings(): Record<string, string> {
-  const rows = open().query('SELECT key, value FROM settings').all() as { key: string; value: string }[];
-  return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+    const rows = open().query('SELECT key, value FROM settings').all() as {
+        key: string;
+        value: string;
+    }[];
+    return Object.fromEntries(rows.map((row) => [row.key, row.value]));
 }
 
 /** Write one setting, inserting it or replacing what is there. */
 export function setSetting(key: string, value: string): void {
-  open().run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', [
-    key,
-    value,
-  ]);
+    open().run(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+        [key, value],
+    );
 }
 
 /* -- Starred tables. Keyed by the saved connection, never the runtime one. --- */
 
 interface StarRow {
-  database: string;
-  schema: string;
-  table_name: string;
+    database: string;
+    schema: string;
+    table_name: string;
 }
 
 export interface StarredTable {
-  database: string;
-  /** `''` becomes `undefined` here, the same convention `toSaved` uses for `iam`. */
-  schema?: string;
-  table: string;
+    database: string;
+    /** `''` becomes `undefined` here, the same convention `toSaved` uses for `iam`. */
+    schema?: string;
+    table: string;
 }
 
 const toStarred = (row: StarRow): StarredTable => ({
-  database: row.database,
-  schema: row.schema || undefined,
-  table: row.table_name,
+    database: row.database,
+    schema: row.schema || undefined,
+    table: row.table_name,
 });
 
 /** Every star a saved connection holds, across every database it has open. */
 export function listStars(connectionId: string): StarredTable[] {
-  const rows = open()
-    .query('SELECT database, schema, table_name FROM stars WHERE connection_id = ?')
-    .all(connectionId) as StarRow[];
-  return rows.map(toStarred);
+    const rows = open()
+        .query('SELECT database, schema, table_name FROM stars WHERE connection_id = ?')
+        .all(connectionId) as StarRow[];
+    return rows.map(toStarred);
 }
 
 /**
@@ -747,40 +797,40 @@ export function listStars(connectionId: string): StarredTable[] {
  * or not, rather than erroring on a row that is or is not already there.
  */
 export function setStar(
-  connectionId: string,
-  database: string,
-  schema: string | undefined,
-  table: string,
-  starred: boolean
+    connectionId: string,
+    database: string,
+    schema: string | undefined,
+    table: string,
+    starred: boolean,
 ): void {
-  const schemaKey = schema ?? '';
-  if (starred) {
-    open().run(
-      `INSERT INTO stars (id, connection_id, database, schema, table_name) VALUES (?, ?, ?, ?, ?)
+    const schemaKey = schema ?? '';
+    if (starred) {
+        open().run(
+            `INSERT INTO stars (id, connection_id, database, schema, table_name) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT (connection_id, database, schema, table_name) DO NOTHING`,
-      [randomUUID(), connectionId, database, schemaKey, table]
-    );
-  } else {
-    open().run('DELETE FROM stars WHERE connection_id = ? AND database = ? AND schema = ? AND table_name = ?', [
-      connectionId,
-      database,
-      schemaKey,
-      table,
-    ]);
-  }
+            [randomUUID(), connectionId, database, schemaKey, table],
+        );
+    } else {
+        open().run(
+            'DELETE FROM stars WHERE connection_id = ? AND database = ? AND schema = ? AND table_name = ?',
+            [connectionId, database, schemaKey, table],
+        );
+    }
 }
 
 /* -- Saved queries. Named statements, belonging to nobody's server. ------ */
 
 export interface SavedQuery {
-  id: string;
-  name: string;
-  sql: string;
+    id: string;
+    name: string;
+    sql: string;
 }
 
 /** Every saved query, by name -- the order the picker draws them in. */
 export function listQueries(): SavedQuery[] {
-  return open().query('SELECT id, name, sql FROM saved_queries ORDER BY name COLLATE NOCASE').all() as SavedQuery[];
+    return open()
+        .query('SELECT id, name, sql FROM saved_queries ORDER BY name COLLATE NOCASE')
+        .all() as SavedQuery[];
 }
 
 /**
@@ -792,26 +842,40 @@ export function listQueries(): SavedQuery[] {
  * it -- a resurrected query would come back holding whatever a tab still had open
  * long after someone deleted it on purpose.
  */
-export function saveQuery({ id, name, sql }: { id?: string; name: string; sql: string }): SavedQuery {
-  const db = open();
-  const clash = db
-    .query('SELECT id FROM saved_queries WHERE name = ? COLLATE NOCASE AND id IS NOT ?')
-    .get(name, id ?? null);
-  if (clash) throw new Error(`A saved query named "${name}" already exists.`);
+export function saveQuery({
+    id,
+    name,
+    sql,
+}: {
+    id?: string;
+    name: string;
+    sql: string;
+}): SavedQuery {
+    const db = open();
+    const clash = db
+        .query('SELECT id FROM saved_queries WHERE name = ? COLLATE NOCASE AND id IS NOT ?')
+        .get(name, id ?? null);
+    if (clash) throw new Error(`A saved query named "${name}" already exists.`);
 
-  if (!id) {
-    const created = { id: randomUUID(), name, sql };
-    db.run('INSERT INTO saved_queries (id, name, sql) VALUES (?, ?, ?)', [created.id, created.name, created.sql]);
-    return created;
-  }
+    if (!id) {
+        const created = { id: randomUUID(), name, sql };
+        db.run('INSERT INTO saved_queries (id, name, sql) VALUES (?, ?, ?)', [
+            created.id,
+            created.name,
+            created.sql,
+        ]);
+        return created;
+    }
 
-  const changes = Number(db.run('UPDATE saved_queries SET name = ?, sql = ? WHERE id = ?', [name, sql, id]).changes);
-  if (changes === 0) throw new Error('That saved query no longer exists.');
-  return { id, name, sql };
+    const changes = Number(
+        db.run('UPDATE saved_queries SET name = ?, sql = ? WHERE id = ?', [name, sql, id]).changes,
+    );
+    if (changes === 0) throw new Error('That saved query no longer exists.');
+    return { id, name, sql };
 }
 
 export function deleteQuery(id: string): void {
-  open().run('DELETE FROM saved_queries WHERE id = ?', [id]);
+    open().run('DELETE FROM saved_queries WHERE id = ?', [id]);
 }
 
 /* -- Saved sessions. One opaque snapshot per saved connection. ----------- */
@@ -825,19 +889,19 @@ export function deleteQuery(id: string): void {
  * id, which is what outlives the session that wrote it.
  */
 export function getSession(connectionId: string): string | null {
-  const row = open()
-    .query('SELECT snapshot FROM connection_sessions WHERE connection_id = ?')
-    .get(connectionId) as { snapshot: string } | null;
-  return row?.snapshot ?? null;
+    const row = open()
+        .query('SELECT snapshot FROM connection_sessions WHERE connection_id = ?')
+        .get(connectionId) as { snapshot: string } | null;
+    return row?.snapshot ?? null;
 }
 
 /** Store a connection's session snapshot, replacing whatever was there. */
 export function setSession(connectionId: string, snapshot: string): void {
-  open().run(
-    `INSERT INTO connection_sessions (connection_id, snapshot) VALUES (?, ?)
+    open().run(
+        `INSERT INTO connection_sessions (connection_id, snapshot) VALUES (?, ?)
      ON CONFLICT (connection_id) DO UPDATE SET snapshot = excluded.snapshot`,
-    [connectionId, snapshot]
-  );
+        [connectionId, snapshot],
+    );
 }
 
 /* -- Assistant conversations. Opaque bodies, named and dated rows. ------- */
@@ -851,16 +915,18 @@ export function setSession(connectionId: string, snapshot: string): void {
  * the one that was picked.
  */
 export function listConversations(): AiConversationSummary[] {
-  return open()
-    .query('SELECT id, title, updated_at AS updatedAt FROM conversations ORDER BY updated_at DESC')
-    .all() as AiConversationSummary[];
+    return open()
+        .query(
+            'SELECT id, title, updated_at AS updatedAt FROM conversations ORDER BY updated_at DESC',
+        )
+        .all() as AiConversationSummary[];
 }
 
 /** One conversation, or null for an id no row answers to -- see `conversations.get`. */
 export function getConversation(id: string): AiConversation | null {
-  return open()
-    .query('SELECT id, title, updated_at AS updatedAt, body FROM conversations WHERE id = ?')
-    .get(id) as AiConversation | null;
+    return open()
+        .query('SELECT id, title, updated_at AS updatedAt, body FROM conversations WHERE id = ?')
+        .get(id) as AiConversation | null;
 }
 
 /**
@@ -874,23 +940,31 @@ export function getConversation(id: string): AiConversation | null {
  * milliseconds is our own bookkeeping and nothing a server sent — the rule that
  * keeps values away from JS numbers is about the other kind.
  */
-export function saveConversation({ id, title, body }: { id: string; title: string; body: string }): number {
-  const updatedAt = Date.now();
-  open().run(
-    `INSERT INTO conversations (id, title, updated_at, body) VALUES (?, ?, ?, ?)
+export function saveConversation({
+    id,
+    title,
+    body,
+}: {
+    id: string;
+    title: string;
+    body: string;
+}): number {
+    const updatedAt = Date.now();
+    open().run(
+        `INSERT INTO conversations (id, title, updated_at, body) VALUES (?, ?, ?, ?)
      ON CONFLICT (id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at, body = excluded.body`,
-    [id, title, updatedAt, body]
-  );
-  return updatedAt;
+        [id, title, updatedAt, body],
+    );
+    return updatedAt;
 }
 
 export function deleteConversation(id: string): void {
-  open().run('DELETE FROM conversations WHERE id = ?', [id]);
+    open().run('DELETE FROM conversations WHERE id = ?', [id]);
 }
 
 /** Tests only: the store is a process-lifetime singleton in the app itself. */
 export function closeStore(): void {
-  db?.close();
-  db = null;
-  keyPromise = null;
+    db?.close();
+    db = null;
+    keyPromise = null;
 }

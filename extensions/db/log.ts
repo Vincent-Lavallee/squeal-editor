@@ -27,50 +27,50 @@ type Level = 'info' | 'warn' | 'error';
 let dirReady = false;
 
 function logPath(): string {
-  if (!dirReady) {
-    mkdirSync(dataDir(), { recursive: true });
-    dirReady = true;
-  }
-  return join(dataDir(), LOG_FILE);
+    if (!dirReady) {
+        mkdirSync(dataDir(), { recursive: true });
+        dirReady = true;
+    }
+    return join(dataDir(), LOG_FILE);
 }
 
 function rotateIfNeeded(path: string): void {
-  let size: number;
-  try {
-    size = statSync(path).size;
-  } catch {
-    return; // Nothing written yet.
-  }
-  if (size < MAX_BYTES) return;
-  try {
-    unlinkSync(`${path}.old`);
-  } catch {
-    // Nothing to delete -- fine, there was no previous rotation yet.
-  }
-  try {
-    renameSync(path, `${path}.old`);
-  } catch {
-    // Best effort -- a failed rotation should not stop logging.
-  }
+    let size: number;
+    try {
+        size = statSync(path).size;
+    } catch {
+        return; // Nothing written yet.
+    }
+    if (size < MAX_BYTES) return;
+    try {
+        unlinkSync(`${path}.old`);
+    } catch {
+        // Nothing to delete -- fine, there was no previous rotation yet.
+    }
+    try {
+        renameSync(path, `${path}.old`);
+    } catch {
+        // Best effort -- a failed rotation should not stop logging.
+    }
 }
 
 function write(level: Level, message: string): void {
-  const line = `${new Date().toISOString()} [${level}] ${message}\n`;
-  // Stays visible in dev (`bun start` inherits this process's stderr); the
-  // file below is what survives once the app is packaged and there is no
-  // terminal watching it.
-  process.stderr.write(line);
-  try {
-    const path = logPath();
-    rotateIfNeeded(path);
-    appendFileSync(path, line);
-  } catch {
-    // The file destination is best effort; stderr above already carries it.
-  }
+    const line = `${new Date().toISOString()} [${level}] ${message}\n`;
+    // Stays visible in dev (`bun start` inherits this process's stderr); the
+    // file below is what survives once the app is packaged and there is no
+    // terminal watching it.
+    process.stderr.write(line);
+    try {
+        const path = logPath();
+        rotateIfNeeded(path);
+        appendFileSync(path, line);
+    } catch {
+        // The file destination is best effort; stderr above already carries it.
+    }
 }
 
 export const log = {
-  info: (message: string) => write('info', message),
-  warn: (message: string) => write('warn', message),
-  error: (message: string) => write('error', message),
+    info: (message: string) => write('info', message),
+    warn: (message: string) => write('warn', message),
+    error: (message: string) => write('error', message),
 };

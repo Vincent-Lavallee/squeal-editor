@@ -24,12 +24,14 @@ const privateB64 = privateKey.export({ format: 'der', type: 'pkcs8' }).toString(
 const keyFile = fileURLToPath(new URL('../extensions/db/updateKey.ts', import.meta.url));
 const before = readFileSync(keyFile, 'utf8');
 const after = before.replace(
-  /export const UPDATE_PUBLIC_KEY = '[^']*';/,
-  `export const UPDATE_PUBLIC_KEY = '${publicB64}';`
+    /export const UPDATE_PUBLIC_KEY = '[^']*';/,
+    `export const UPDATE_PUBLIC_KEY = '${publicB64}';`,
 );
 if (after === before) {
-  console.error('Could not find UPDATE_PUBLIC_KEY in extensions/db/updateKey.ts — did the file change shape?');
-  process.exit(1);
+    console.error(
+        'Could not find UPDATE_PUBLIC_KEY in extensions/db/updateKey.ts — did the file change shape?',
+    );
+    process.exit(1);
 }
 writeFileSync(keyFile, after);
 

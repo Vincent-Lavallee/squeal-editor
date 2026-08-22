@@ -23,72 +23,115 @@ import { providerLabel } from '../../../../shared/protocol/index.ts';
 import * as t from '../../common/tokens';
 
 export default function AssistantStatus() {
-  const { status, anyRunning, forgetKey } = useAssistantAccount();
-  const { openAssistantTab } = useTabs();
-  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
-  const [hovered, setHovered] = useState(false);
+    const { status, anyRunning, forgetKey } = useAssistantAccount();
+    const { openAssistantTab } = useTabs();
+    const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+    const [hovered, setHovered] = useState(false);
 
-  // Nothing at all until the launch read lands, rather than a segment that says
-  // "checking" and then changes width under the controls beside it.
-  if (status === null) return null;
+    // Nothing at all until the launch read lands, rather than a segment that says
+    // "checking" and then changes width under the controls beside it.
+    if (status === null) return null;
 
-  const connected = status.state === 'ready';
-  // The provider's name, because that is the fact worth a segment: *which* model
-  // is answering is chosen per conversation and stated in the composer, but who
-  // is being billed is true of the whole window.
-  const provider = status.provider ? providerLabel(status.provider) : null;
-  const label = connected && provider ? provider : 'Assistant';
-  const title = connected
-    ? `Assistant: using your ${provider ?? 'stored'} API key`
-    : status.state === 'unavailable'
-      ? `The stored API key could not be read: ${status.reason ?? 'the keychain would not answer'}`
-      : 'No API key yet';
+    const connected = status.state === 'ready';
+    // The provider's name, because that is the fact worth a segment: *which* model
+    // is answering is chosen per conversation and stated in the composer, but who
+    // is being billed is true of the whole window.
+    const provider = status.provider ? providerLabel(status.provider) : null;
+    const label = connected && provider ? provider : 'Assistant';
+    const title = connected
+        ? `Assistant: using your ${provider ?? 'stored'} API key`
+        : status.state === 'unavailable'
+          ? `The stored API key could not be read: ${status.reason ?? 'the keychain would not answer'}`
+          : 'No API key yet';
 
-  return (
-    <>
-      <button type="button" data-testid="statusbar-assistant"
-        style={{
-          display: 'flex', alignItems: 'center', gap: t.GAP_XS, height: '100%', padding: `0 ${t.GAP}px`,
-          border: 'none', borderLeft: `1px solid ${t.BORDER}`, background: hovered ? t.HOVER : 'none',
-          // Grayscale like every other segment here: having a key is a state,
-          // not a status, so it spends no hue. The dot below is the exception and
-          // it is `--accent` because it means "this is happening now".
-          color: hovered ? t.TEXT : connected ? t.TEXT_MUTED : t.TEXT_FAINT,
-          font: 'inherit', fontSize: t.TEXT_BADGE, cursor: 'pointer',
-        }}
-        onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-        onClick={(e) => setMenuAt({ x: e.clientX, y: e.currentTarget.getBoundingClientRect().top })}
-        title={title}>
-        <AssistantIcon style={{ flex: 'none', width: t.ICON, height: t.ICON }} />
-        <span style={{ overflow: 'hidden', maxWidth: 140, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-        {anyRunning && (
-          <span data-testid="statusbar-assistant-busy" aria-hidden="true"
-            style={{ flex: 'none', width: 5, height: 5, borderRadius: t.RADIUS_PILL, background: t.ACCENT }} />
-        )}
-      </button>
+    return (
+        <>
+            <button
+                type="button"
+                data-testid="statusbar-assistant"
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: t.GAP_XS,
+                    height: '100%',
+                    padding: `0 ${t.GAP}px`,
+                    border: 'none',
+                    borderLeft: `1px solid ${t.BORDER}`,
+                    background: hovered ? t.HOVER : 'none',
+                    // Grayscale like every other segment here: having a key is a state,
+                    // not a status, so it spends no hue. The dot below is the exception and
+                    // it is `--accent` because it means "this is happening now".
+                    color: hovered ? t.TEXT : connected ? t.TEXT_MUTED : t.TEXT_FAINT,
+                    font: 'inherit',
+                    fontSize: t.TEXT_BADGE,
+                    cursor: 'pointer',
+                }}
+                onMouseEnter={() => setHovered(true)}
+                onMouseLeave={() => setHovered(false)}
+                onClick={(e) =>
+                    setMenuAt({ x: e.clientX, y: e.currentTarget.getBoundingClientRect().top })
+                }
+                title={title}
+            >
+                <AssistantIcon style={{ flex: 'none', width: t.ICON, height: t.ICON }} />
+                <span
+                    style={{
+                        overflow: 'hidden',
+                        maxWidth: 140,
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                    }}
+                >
+                    {label}
+                </span>
+                {anyRunning && (
+                    <span
+                        data-testid="statusbar-assistant-busy"
+                        aria-hidden="true"
+                        style={{
+                            flex: 'none',
+                            width: 5,
+                            height: 5,
+                            borderRadius: t.RADIUS_PILL,
+                            background: t.ACCENT,
+                        }}
+                    />
+                )}
+            </button>
 
-      {menuAt && (
-        <ContextMenu x={menuAt.x} y={menuAt.y} onClose={() => setMenuAt(null)}
-          items={
-            connected
-              ? [
-                  { label: `Using your ${provider ?? 'stored'} API key`, disabled: true, onSelect: () => undefined },
-                  { label: 'Remove the API key', danger: true, onSelect: forgetKey },
-                ]
-              : [
-                  { label: title, disabled: true, onSelect: () => undefined },
-                  /*
-                   * Adding a key *starts* here and *happens* in a tab. The form is
-                   * a provider, a field and a warning about which product sells
-                   * one, and a 26px strip has nowhere to put any of that -- so
-                   * this opens the tab that already draws it rather than growing a
-                   * second copy of that screen.
-                   */
-                  { label: 'Add an API key', onSelect: openAssistantTab },
-                ]
-          }
-        />
-      )}
-    </>
-  );
+            {menuAt && (
+                <ContextMenu
+                    x={menuAt.x}
+                    y={menuAt.y}
+                    onClose={() => setMenuAt(null)}
+                    items={
+                        connected
+                            ? [
+                                  {
+                                      label: `Using your ${provider ?? 'stored'} API key`,
+                                      disabled: true,
+                                      onSelect: () => undefined,
+                                  },
+                                  {
+                                      label: 'Remove the API key',
+                                      danger: true,
+                                      onSelect: forgetKey,
+                                  },
+                              ]
+                            : [
+                                  { label: title, disabled: true, onSelect: () => undefined },
+                                  /*
+                                   * Adding a key *starts* here and *happens* in a tab. The form is
+                                   * a provider, a field and a warning about which product sells
+                                   * one, and a 26px strip has nowhere to put any of that -- so
+                                   * this opens the tab that already draws it rather than growing a
+                                   * second copy of that screen.
+                                   */
+                                  { label: 'Add an API key', onSelect: openAssistantTab },
+                              ]
+                    }
+                />
+            )}
+        </>
+    );
 }

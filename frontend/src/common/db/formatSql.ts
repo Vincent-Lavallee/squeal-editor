@@ -26,9 +26,9 @@ import type { SqlDialect } from '../../../../shared/protocol/index.ts';
  * generic `sql` is the right thing to hand it -- neither side invents a dialect.
  */
 const LANGUAGE: Record<SqlDialect, SqlLanguage> = {
-  mysql: 'mysql',
-  pgsql: 'postgresql',
-  sql: 'sql',
+    mysql: 'mysql',
+    pgsql: 'postgresql',
+    sql: 'sql',
 };
 
 /**
@@ -46,9 +46,9 @@ const LANGUAGE: Record<SqlDialect, SqlLanguage> = {
  * the setting the rest of the document is typed under.
  */
 export function formatSql(sql: string, dialect: SqlDialect): string | null {
-  try {
-    return format(sql, { language: LANGUAGE[dialect], tabWidth: 2, keywordCase: 'upper' });
-  } catch {
-    return null;
-  }
+    try {
+        return format(sql, { language: LANGUAGE[dialect], tabWidth: 2, keywordCase: 'upper' });
+    } catch {
+        return null;
+    }
 }

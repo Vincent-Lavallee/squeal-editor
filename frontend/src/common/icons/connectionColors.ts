@@ -18,15 +18,15 @@ import * as t from '../tokens';
  * layout by accident. Same argument as `WORKSPACE_ICONS`.
  */
 export const CONNECTION_COLORS: { id: ConnectionColorId; value: string }[] = [
-  { id: 'slate', value: t.CONN_SLATE },
-  { id: 'blue', value: t.CONN_BLUE },
-  { id: 'cyan', value: t.CONN_CYAN },
-  { id: 'green', value: t.CONN_GREEN },
-  { id: 'amber', value: t.CONN_AMBER },
-  { id: 'orange', value: t.CONN_ORANGE },
-  { id: 'red', value: t.CONN_RED },
-  { id: 'pink', value: t.CONN_PINK },
-  { id: 'purple', value: t.CONN_PURPLE },
+    { id: 'slate', value: t.CONN_SLATE },
+    { id: 'blue', value: t.CONN_BLUE },
+    { id: 'cyan', value: t.CONN_CYAN },
+    { id: 'green', value: t.CONN_GREEN },
+    { id: 'amber', value: t.CONN_AMBER },
+    { id: 'orange', value: t.CONN_ORANGE },
+    { id: 'red', value: t.CONN_RED },
+    { id: 'pink', value: t.CONN_PINK },
+    { id: 'purple', value: t.CONN_PURPLE },
 ];
 
 /** The neutral swatch a new connection wears until the user picks otherwise. */
@@ -38,4 +38,4 @@ export const DEFAULT_CONNECTION_COLOR: ConnectionColorId = 'slate';
  * connection's mark over a colour it does not recognise.
  */
 export const connectionColor = (id: ConnectionColorId): string =>
-  CONNECTION_COLORS.find((c) => c.id === id)?.value ?? CONNECTION_COLORS[0]!.value;
+    CONNECTION_COLORS.find((c) => c.id === id)?.value ?? CONNECTION_COLORS[0]!.value;

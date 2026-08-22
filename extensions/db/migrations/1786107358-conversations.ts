@@ -16,11 +16,11 @@ import type { Migration } from './migration.ts';
  * costs nothing to avoid.
  */
 export const migration: Migration = {
-  version: 1786107358,
-  name: 'conversations',
+    version: 1786107358,
+    name: 'conversations',
 
-  up: (db) =>
-    db.run(`CREATE TABLE conversations (
+    up: (db) =>
+        db.run(`CREATE TABLE conversations (
       id         TEXT PRIMARY KEY,
       title      TEXT NOT NULL,
       updated_at INTEGER NOT NULL,

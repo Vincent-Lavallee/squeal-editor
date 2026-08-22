@@ -9,9 +9,9 @@ import type { TableInfo } from '../../../../shared/protocol/index.ts';
  * these plus a `kind`.
  */
 export interface Relation {
-  table: string;
-  /** Absent for MySQL, which has no schema layer, and for a name with no catalog row behind it. */
-  schema?: string;
+    table: string;
+    /** Absent for MySQL, which has no schema layer, and for a name with no catalog row behind it. */
+    schema?: string;
 }
 
 export const relationOf = ({ name, schema }: TableInfo): Relation => ({ table: name, schema });
@@ -25,7 +25,8 @@ export const relationOf = ({ name, schema }: TableInfo): Relation => ({ table: n
  * be unambiguous: two schemas may each hold a `users`, and a key that dropped
  * the common one would file them both under the same entry.
  */
-export const relationName = ({ table, schema }: Relation): string => (schema ? `${schema}.${table}` : table);
+export const relationName = ({ table, schema }: Relation): string =>
+    schema ? `${schema}.${table}` : table;
 
 /**
  * How a relation reads on screen, with the schema that goes without saying left
@@ -42,7 +43,9 @@ export const relationName = ({ table, schema }: Relation): string => (schema ? `
  * goes without saying, so everything is spelled out.
  */
 export const relationLabel = (relation: Relation, defaultSchema?: string): string =>
-  relation.schema !== undefined && relation.schema === defaultSchema ? relation.table : relationName(relation);
+    relation.schema !== undefined && relation.schema === defaultSchema
+        ? relation.table
+        : relationName(relation);
 
 /**
  * Fill in the schema of a relation named without one, from the relations the
@@ -61,7 +64,9 @@ export const relationLabel = (relation: Relation, defaultSchema?: string): strin
  * be the guess coming back in through the side door.
  */
 export function resolveRelation(listed: TableInfo[] | undefined, ref: Relation): Relation {
-  if (ref.schema !== undefined) return ref;
-  const match = listed?.find((t) => t.name === ref.table || relationName(relationOf(t)) === ref.table);
-  return match ? relationOf(match) : ref;
+    if (ref.schema !== undefined) return ref;
+    const match = listed?.find(
+        (t) => t.name === ref.table || relationName(relationOf(t)) === ref.table,
+    );
+    return match ? relationOf(match) : ref;
 }

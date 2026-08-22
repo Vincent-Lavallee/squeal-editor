@@ -1,198 +1,198 @@
 name: Release
 
 on:
-  push:
-    branches: [dev]
+    push:
+        branches: [dev]
 
 permissions:
-  contents: write
-  pull-requests: write
+    contents: write
+    pull-requests: write
 
 jobs:
-  # Reads conventional commits off dev, keeps the version + changelog, and cuts
-  # the GitHub Release. It only opens/updates a release PR most of the time;
-  # release_created is true only on the run where that PR merged and the tag was
-  # made.
-  release-please:
-    runs-on: ubuntu-latest
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-    steps:
-      - uses: googleapis/release-please-action@v4
-        id: release
-        with:
-          target-branch: dev
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+    # Reads conventional commits off dev, keeps the version + changelog, and cuts
+    # the GitHub Release. It only opens/updates a release PR most of the time;
+    # release_created is true only on the run where that PR merged and the tag was
+    # made.
+    release-please:
+        runs-on: ubuntu-latest
+        outputs:
+            release_created: ${{ steps.release.outputs.release_created }}
+            tag_name: ${{ steps.release.outputs.tag_name }}
+        steps:
+            - uses: googleapis/release-please-action@v4
+              id: release
+              with:
+                  target-branch: dev
+                  config-file: release-please-config.json
+                  manifest-file: .release-please-manifest.json
 
-  # Rides the same run as the release. It cannot be an `on: release` workflow: a
-  # Release cut by the default GITHUB_TOKEN does not trigger further workflows
-  # (GitHub's recursion guard), so that build would silently never fire.
-  build:
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    permissions:
-      contents: write
-    # Job-level so the step `if:` below can read it: a step's own `env` is not in
-    # scope for its own condition. Empty until the maintainer sets the secret,
-    # which is what lets the sign steps skip cleanly rather than fail.
-    env:
-      UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-    strategy:
-      # One platform failing must not withhold the others — packaging is still
-      # unsolved and mac/Linux are unverified (see docs/architecture.md).
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            name: windows
-          - os: macos-latest
-            name: macos
-          - os: ubuntu-latest
-            name: linux
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-
-      # postinstall runs `neu update`, which fetches the Neutralino binaries that
-      # `neu build` needs.
-      - name: Install dependencies
-        run: bun install
-
-      # The frontend has to be built into resources/ before neu bundles it —
-      # resources/ is the build output neu ships, icon.png included.
-      - name: Build frontend
-        run: bun run build
-
-      # The extension can't ship as raw TypeScript: it shells out to `bun` on the
-      # user's PATH and its deps live in symlinked node_modules that don't survive
-      # the copy into the bundle, so the packaged app used to hang with the
-      # extension dead. Compiling folds the Bun runtime and every dep into one
-      # native binary the config points at directly. Runs on each matrix OS, so
-      # each bundle carries a binary for its own platform.
-      - name: Compile the extension
-        run: bun run build:ext
-
-      # `build:ext` already tries to build this and shrugs when the machine has
-      # no C compiler, which is right for a dev box and wrong for a release: an
-      # installer that quietly lost the window chrome looks like the two bugs it
-      # fixes coming back. --required turns the shrug into a failure. The runner
-      # image ships MSVC, so the only way this fails is a genuine one.
-      - name: Build the window chrome DLL
-        if: runner.os == 'Windows'
-        run: bun run scripts/build-window-chrome.ts --required
-
-      # With everything now inside the compiled binary, the raw source and its
-      # symlinked node_modules are dead weight — and copying those symlinks is what
-      # forced `neu build` to run elevated on Windows. Dropping them first makes the
-      # bundle self-contained and the copy work without admin.
-      - name: Slim the extension folder
-        shell: bash
-        run: find extensions/db -mindepth 1 -maxdepth 1 ! -name 'squeal-db-ext' ! -name 'squeal-db-ext.exe' ! -name 'squeal-window-chrome.dll' -exec rm -rf {} +
-
-      # macOS used to run this with --embed-resources, packing resources.neu into
-      # the binary via postject so no loose data file had to sit in Contents/MacOS
-      # (codesign reads everything there as nested code and fails an unsigned data
-      # file as a subcomponent). But postject-embedded resources are found via the
-      # process reading its own Mach-O file back off disk, and that self-lookup
-      # breaks the instant DYLD_INSERT_LIBRARIES puts a second image in front of
-      # it — which is exactly what the window-chrome dylib does (see
-      # scripts/package-macos.sh). So macOS needs the plain build too:
-      # package-macos.sh now keeps resources.neu/config as loose files, homed in
-      # Contents/Resources instead of Contents/MacOS to stay codesign-safe.
-      - name: Package the app
-        run: bunx neu build
-
-      # Linux still builds and packages here for verification (see the
-      # fail-fast comment above), but ships nothing to the release for now: a
-      # raw zip with no desktop integration is a worse first run than no
-      # download at all. Revisit once the AppImage backlog item lands.
-
-      # macOS ships a .dmg instead of a zip: the raw neu output is a bare
-      # executable and a resources folder, which is not something macOS knows how
-      # to install. The script builds the .app bundle neu does not.
-      - name: Package the macOS app
-        if: runner.os == 'macOS'
-        run: |
-          version="${{ needs.release-please.outputs.tag_name }}"
-          bash scripts/package-macos.sh "${version#v}"
-
-      # `neu build` names the binary it patches "A Neutralinojs application",
-      # which is what Task Manager then shows above the app's other processes.
-      # Rewriting the resource names the whole group "Squeal Editor". The
-      # extension binary is already named by `bun build --compile` above.
-      - name: Name the Windows binary
-        if: runner.os == 'Windows'
-        run: bun run scripts/stamp-version-info.ts
-
-      # The installer is the only Windows download: it's the path the
-      # auto-updater leans on, and a second, unsigned way to run the app is one
-      # more support question for zero benefit. Inno Setup usually ships on the
-      # runner image; install it if not, so the build never depends on that. The
-      # version comes off the release tag with its leading `v` stripped, which
-      # Inno wants numeric.
-      - name: Build the Windows installer
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
-          $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
-          & $iscc "/DAppVersion=$version" installer\squeal-editor.iss
-
-      - name: Attach the macOS disk image to the release
-        if: runner.os == 'macOS'
+    # Rides the same run as the release. It cannot be an `on: release` workflow: a
+    # Release cut by the default GITHUB_TOKEN does not trigger further workflows
+    # (GitHub's recursion guard), so that build would silently never fire.
+    build:
+        needs: release-please
+        if: needs.release-please.outputs.release_created == 'true'
+        permissions:
+            contents: write
+        # Job-level so the step `if:` below can read it: a step's own `env` is not in
+        # scope for its own condition. Empty until the maintainer sets the secret,
+        # which is what lets the sign steps skip cleanly rather than fail.
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          version="${{ needs.release-please.outputs.tag_name }}"
-          gh release upload "$version" "squeal-editor-macos-arm64-v${version#v}.dmg" --clobber
+            UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        strategy:
+            # One platform failing must not withhold the others — packaging is still
+            # unsolved and mac/Linux are unverified (see docs/architecture.md).
+            fail-fast: false
+            matrix:
+                include:
+                    - os: windows-latest
+                      name: windows
+                    - os: macos-latest
+                      name: macos
+                    - os: ubuntu-latest
+                      name: linux
+        runs-on: ${{ matrix.os }}
+        steps:
+            - uses: actions/checkout@v4
 
-      - name: Attach the installer to the release
-        if: runner.os == 'Windows'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
-          gh release upload "${{ needs.release-please.outputs.tag_name }}" "installer\squeal-editor-v$version.exe" --clobber
+            - uses: oven-sh/setup-bun@v2
 
-      # The in-app updater will not apply a build it cannot prove is genuine, so
-      # the release must carry the proof: a detached ed25519 signature over the
-      # installer and a SHA256SUMS for the cheaper corruption check. Skipped
-      # (not failed) until the maintainer sets UPDATE_SIGNING_KEY — a release
-      # still cuts, it just offers no update until the key exists.
-      - name: Sign the update assets
-        if: runner.os == 'Windows' && env.UPDATE_SIGNING_KEY != ''
-        shell: pwsh
-        run: |
-          $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
-          bun run scripts/sign-release.ts "installer\squeal-editor-v$version.exe"
+            # postinstall runs `neu update`, which fetches the Neutralino binaries that
+            # `neu build` needs.
+            - name: Install dependencies
+              run: bun install
 
-      - name: Attach the update assets to the release
-        if: runner.os == 'Windows' && env.UPDATE_SIGNING_KEY != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
-          gh release upload "${{ needs.release-please.outputs.tag_name }}" "installer\squeal-editor-v$version.exe.sig" "SHA256SUMS" --clobber
+            # The frontend has to be built into resources/ before neu bundles it —
+            # resources/ is the build output neu ships, icon.png included.
+            - name: Build frontend
+              run: bun run build
 
-      # macOS has no separate installer: the updater downloads and verifies the
-      # same .dmg already attached above, so it's what gets signed here. The
-      # checksums file gets its own name (SHA256SUMS-macos, not SHA256SUMS) so
-      # this leg's upload can never race Windows' — see scripts/sign-release.ts.
-      - name: Sign the update assets (macOS)
-        if: runner.os == 'macOS' && env.UPDATE_SIGNING_KEY != ''
-        run: |
-          version="${{ needs.release-please.outputs.tag_name }}"
-          bun run scripts/sign-release.ts "squeal-editor-macos-arm64-v${version#v}.dmg" SHA256SUMS-macos
+            # The extension can't ship as raw TypeScript: it shells out to `bun` on the
+            # user's PATH and its deps live in symlinked node_modules that don't survive
+            # the copy into the bundle, so the packaged app used to hang with the
+            # extension dead. Compiling folds the Bun runtime and every dep into one
+            # native binary the config points at directly. Runs on each matrix OS, so
+            # each bundle carries a binary for its own platform.
+            - name: Compile the extension
+              run: bun run build:ext
 
-      - name: Attach the update assets to the release (macOS)
-        if: runner.os == 'macOS' && env.UPDATE_SIGNING_KEY != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          version="${{ needs.release-please.outputs.tag_name }}"
-          gh release upload "$version" "squeal-editor-macos-arm64-v${version#v}.dmg.sig" "SHA256SUMS-macos" --clobber
+            # `build:ext` already tries to build this and shrugs when the machine has
+            # no C compiler, which is right for a dev box and wrong for a release: an
+            # installer that quietly lost the window chrome looks like the two bugs it
+            # fixes coming back. --required turns the shrug into a failure. The runner
+            # image ships MSVC, so the only way this fails is a genuine one.
+            - name: Build the window chrome DLL
+              if: runner.os == 'Windows'
+              run: bun run scripts/build-window-chrome.ts --required
+
+            # With everything now inside the compiled binary, the raw source and its
+            # symlinked node_modules are dead weight — and copying those symlinks is what
+            # forced `neu build` to run elevated on Windows. Dropping them first makes the
+            # bundle self-contained and the copy work without admin.
+            - name: Slim the extension folder
+              shell: bash
+              run: find extensions/db -mindepth 1 -maxdepth 1 ! -name 'squeal-db-ext' ! -name 'squeal-db-ext.exe' ! -name 'squeal-window-chrome.dll' -exec rm -rf {} +
+
+            # macOS used to run this with --embed-resources, packing resources.neu into
+            # the binary via postject so no loose data file had to sit in Contents/MacOS
+            # (codesign reads everything there as nested code and fails an unsigned data
+            # file as a subcomponent). But postject-embedded resources are found via the
+            # process reading its own Mach-O file back off disk, and that self-lookup
+            # breaks the instant DYLD_INSERT_LIBRARIES puts a second image in front of
+            # it — which is exactly what the window-chrome dylib does (see
+            # scripts/package-macos.sh). So macOS needs the plain build too:
+            # package-macos.sh now keeps resources.neu/config as loose files, homed in
+            # Contents/Resources instead of Contents/MacOS to stay codesign-safe.
+            - name: Package the app
+              run: bunx neu build
+
+            # Linux still builds and packages here for verification (see the
+            # fail-fast comment above), but ships nothing to the release for now: a
+            # raw zip with no desktop integration is a worse first run than no
+            # download at all. Revisit once the AppImage backlog item lands.
+
+            # macOS ships a .dmg instead of a zip: the raw neu output is a bare
+            # executable and a resources folder, which is not something macOS knows how
+            # to install. The script builds the .app bundle neu does not.
+            - name: Package the macOS app
+              if: runner.os == 'macOS'
+              run: |
+                  version="${{ needs.release-please.outputs.tag_name }}"
+                  bash scripts/package-macos.sh "${version#v}"
+
+            # `neu build` names the binary it patches "A Neutralinojs application",
+            # which is what Task Manager then shows above the app's other processes.
+            # Rewriting the resource names the whole group "Squeal Editor". The
+            # extension binary is already named by `bun build --compile` above.
+            - name: Name the Windows binary
+              if: runner.os == 'Windows'
+              run: bun run scripts/stamp-version-info.ts
+
+            # The installer is the only Windows download: it's the path the
+            # auto-updater leans on, and a second, unsigned way to run the app is one
+            # more support question for zero benefit. Inno Setup usually ships on the
+            # runner image; install it if not, so the build never depends on that. The
+            # version comes off the release tag with its leading `v` stripped, which
+            # Inno wants numeric.
+            - name: Build the Windows installer
+              if: runner.os == 'Windows'
+              shell: pwsh
+              run: |
+                  $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+                  if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
+                  $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
+                  & $iscc "/DAppVersion=$version" installer\squeal-editor.iss
+
+            - name: Attach the macOS disk image to the release
+              if: runner.os == 'macOS'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  version="${{ needs.release-please.outputs.tag_name }}"
+                  gh release upload "$version" "squeal-editor-macos-arm64-v${version#v}.dmg" --clobber
+
+            - name: Attach the installer to the release
+              if: runner.os == 'Windows'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
+                  gh release upload "${{ needs.release-please.outputs.tag_name }}" "installer\squeal-editor-v$version.exe" --clobber
+
+            # The in-app updater will not apply a build it cannot prove is genuine, so
+            # the release must carry the proof: a detached ed25519 signature over the
+            # installer and a SHA256SUMS for the cheaper corruption check. Skipped
+            # (not failed) until the maintainer sets UPDATE_SIGNING_KEY — a release
+            # still cuts, it just offers no update until the key exists.
+            - name: Sign the update assets
+              if: runner.os == 'Windows' && env.UPDATE_SIGNING_KEY != ''
+              shell: pwsh
+              run: |
+                  $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
+                  bun run scripts/sign-release.ts "installer\squeal-editor-v$version.exe"
+
+            - name: Attach the update assets to the release
+              if: runner.os == 'Windows' && env.UPDATE_SIGNING_KEY != ''
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  $version = "${{ needs.release-please.outputs.tag_name }}" -replace '^v', ''
+                  gh release upload "${{ needs.release-please.outputs.tag_name }}" "installer\squeal-editor-v$version.exe.sig" "SHA256SUMS" --clobber
+
+            # macOS has no separate installer: the updater downloads and verifies the
+            # same .dmg already attached above, so it's what gets signed here. The
+            # checksums file gets its own name (SHA256SUMS-macos, not SHA256SUMS) so
+            # this leg's upload can never race Windows' — see scripts/sign-release.ts.
+            - name: Sign the update assets (macOS)
+              if: runner.os == 'macOS' && env.UPDATE_SIGNING_KEY != ''
+              run: |
+                  version="${{ needs.release-please.outputs.tag_name }}"
+                  bun run scripts/sign-release.ts "squeal-editor-macos-arm64-v${version#v}.dmg" SHA256SUMS-macos
+
+            - name: Attach the update assets to the release (macOS)
+              if: runner.os == 'macOS' && env.UPDATE_SIGNING_KEY != ''
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  version="${{ needs.release-please.outputs.tag_name }}"
+                  gh release upload "$version" "squeal-editor-macos-arm64-v${version#v}.dmg.sig" "SHA256SUMS-macos" --clobber

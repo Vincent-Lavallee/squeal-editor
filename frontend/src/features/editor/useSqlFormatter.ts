@@ -20,14 +20,14 @@ import { sqlFormattingProvider } from './format.ts';
 import { monaco } from './monaco.ts';
 
 export function useSqlFormatter(dialect: SqlDialect): void {
-  useEffect(() => {
-    // One provider per language, disposed on dialect change -- two on one
-    // language would both answer and Monaco would run them in turn. Same rule
-    // as the completion provider next door.
-    const registration = monaco.languages.registerDocumentFormattingEditProvider(
-      dialect,
-      sqlFormattingProvider(dialect)
-    );
-    return () => registration.dispose();
-  }, [dialect]);
+    useEffect(() => {
+        // One provider per language, disposed on dialect change -- two on one
+        // language would both answer and Monaco would run them in turn. Same rule
+        // as the completion provider next door.
+        const registration = monaco.languages.registerDocumentFormattingEditProvider(
+            dialect,
+            sqlFormattingProvider(dialect),
+        );
+        return () => registration.dispose();
+    }, [dialect]);
 }

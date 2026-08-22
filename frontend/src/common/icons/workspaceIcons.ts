@@ -1,14 +1,14 @@
 import type { WorkspaceIconId } from '../../../../shared/protocol/index.ts';
 import {
-  BuildingIcon,
-  CartIcon,
-  ChartIcon,
-  CubeIcon,
-  FlaskIcon,
-  GlobeIcon,
-  LeafIcon,
-  RocketIcon,
-  StackIcon,
+    BuildingIcon,
+    CartIcon,
+    ChartIcon,
+    CubeIcon,
+    FlaskIcon,
+    GlobeIcon,
+    LeafIcon,
+    RocketIcon,
+    StackIcon,
 } from './icons.ts';
 
 type Glyph = typeof StackIcon;
@@ -34,15 +34,15 @@ type Glyph = typeof StackIcon;
  * be carrying the layout by accident.
  */
 export const WORKSPACE_ICONS: { id: WorkspaceIconId; Glyph: Glyph }[] = [
-  { id: 'stack', Glyph: StackIcon },
-  { id: 'cube', Glyph: CubeIcon },
-  { id: 'rocket', Glyph: RocketIcon },
-  { id: 'flask', Glyph: FlaskIcon },
-  { id: 'building', Glyph: BuildingIcon },
-  { id: 'cart', Glyph: CartIcon },
-  { id: 'chart', Glyph: ChartIcon },
-  { id: 'globe', Glyph: GlobeIcon },
-  { id: 'leaf', Glyph: LeafIcon },
+    { id: 'stack', Glyph: StackIcon },
+    { id: 'cube', Glyph: CubeIcon },
+    { id: 'rocket', Glyph: RocketIcon },
+    { id: 'flask', Glyph: FlaskIcon },
+    { id: 'building', Glyph: BuildingIcon },
+    { id: 'cart', Glyph: CartIcon },
+    { id: 'chart', Glyph: ChartIcon },
+    { id: 'globe', Glyph: GlobeIcon },
+    { id: 'leaf', Glyph: LeafIcon },
 ];
 
 /** What a new workspace wears until the user picks otherwise. */
@@ -54,4 +54,4 @@ export const DEFAULT_WORKSPACE_ICON: WorkspaceIconId = 'stack';
  * screen over a mark.
  */
 export const workspaceGlyph = (id: WorkspaceIconId): Glyph =>
-  WORKSPACE_ICONS.find((i) => i.id === id)?.Glyph ?? StackIcon;
+    WORKSPACE_ICONS.find((i) => i.id === id)?.Glyph ?? StackIcon;

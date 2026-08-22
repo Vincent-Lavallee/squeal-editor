@@ -33,18 +33,25 @@ import { keybindingFor, monaco } from './monaco.ts';
  * `useSqlCompletion` and `useSqlFormatter`, and for the same reason.
  */
 export function useEditorKeybindings(bindings: Bindings): void {
-  useEffect(() => {
-    const rules = EDITOR_COMMANDS.flatMap((editorCommand) => {
-      const chord = bindings[editorCommand.id];
-      if (chord === editorCommand.monacoChord) return [];
-      return [
-        ...keybindingFor(editorCommand.monacoChord).map((keybinding) => ({ keybinding, command: `-${editorCommand.command}` })),
-        ...keybindingFor(chord).map((keybinding) => ({ keybinding, command: editorCommand.command, when: editorCommand.when })),
-      ];
-    });
-    if (rules.length === 0) return;
+    useEffect(() => {
+        const rules = EDITOR_COMMANDS.flatMap((editorCommand) => {
+            const chord = bindings[editorCommand.id];
+            if (chord === editorCommand.monacoChord) return [];
+            return [
+                ...keybindingFor(editorCommand.monacoChord).map((keybinding) => ({
+                    keybinding,
+                    command: `-${editorCommand.command}`,
+                })),
+                ...keybindingFor(chord).map((keybinding) => ({
+                    keybinding,
+                    command: editorCommand.command,
+                    when: editorCommand.when,
+                })),
+            ];
+        });
+        if (rules.length === 0) return;
 
-    const registered = monaco.editor.addKeybindingRules(rules);
-    return () => registered.dispose();
-  }, [bindings]);
+        const registered = monaco.editor.addKeybindingRules(rules);
+        return () => registered.dispose();
+    }, [bindings]);
 }

@@ -25,12 +25,12 @@ const installerPath = process.argv[2];
 const checksumsName = process.argv[3] ?? 'SHA256SUMS';
 
 if (!keyB64) {
-  console.error('UPDATE_SIGNING_KEY is not set — nothing to sign with.');
-  process.exit(1);
+    console.error('UPDATE_SIGNING_KEY is not set — nothing to sign with.');
+    process.exit(1);
 }
 if (!installerPath) {
-  console.error('Usage: bun run scripts/sign-release.ts <installer> [checksumsName]');
-  process.exit(1);
+    console.error('Usage: bun run scripts/sign-release.ts <installer> [checksumsName]');
+    process.exit(1);
 }
 
 const key = createPrivateKey({ key: Buffer.from(keyB64, 'base64'), format: 'der', type: 'pkcs8' });

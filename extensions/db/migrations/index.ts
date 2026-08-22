@@ -66,22 +66,22 @@ import { migration as conversations } from './1786107358-conversations.ts';
 
 /** Oldest first. Append only. */
 export const MIGRATIONS: Migration[] = [
-  savedConnections,
-  workspaces,
-  connectionSsl,
-  connectionReadOnly,
-  connectionAwsIam,
-  workspaceColour,
-  settings,
-  stars,
-  connectionSessions,
-  environmentQa,
-  connectionColour,
-  dropWorkspaceColour,
-  environments,
-  connectionNamesNotUnique,
-  savedQueries,
-  conversations,
+    savedConnections,
+    workspaces,
+    connectionSsl,
+    connectionReadOnly,
+    connectionAwsIam,
+    workspaceColour,
+    settings,
+    stars,
+    connectionSessions,
+    environmentQa,
+    connectionColour,
+    dropWorkspaceColour,
+    environments,
+    connectionNamesNotUnique,
+    savedQueries,
+    conversations,
 ];
 
 /*
@@ -92,13 +92,13 @@ export const MIGRATIONS: Migration[] = [
  * the list that caused them. Failing here names the actual problem.
  */
 MIGRATIONS.forEach((migration, i) => {
-  const previous = MIGRATIONS[i - 1];
-  if (previous && migration.version <= previous.version) {
-    throw new Error(
-      `Migrations are out of order: ${migration.name} (${migration.version}) ` +
-        `must come after ${previous.name} (${previous.version}).`
-    );
-  }
+    const previous = MIGRATIONS[i - 1];
+    if (previous && migration.version <= previous.version) {
+        throw new Error(
+            `Migrations are out of order: ${migration.name} (${migration.version}) ` +
+                `must come after ${previous.name} (${previous.version}).`,
+        );
+    }
 });
 
 export type { Migration };

@@ -26,46 +26,102 @@ import { useResults } from './useResults.ts';
  * running state to hang a Cancel off.
  */
 export default function StatementTabs({ tab }: { tab: Tab | null }) {
-  const { statements, statementCount, activeStatement, selectStatement, tabRunning } = useResults(tab);
-  const activeTabId = tab?.id ?? null;
+    const { statements, statementCount, activeStatement, selectStatement, tabRunning } =
+        useResults(tab);
+    const activeTabId = tab?.id ?? null;
 
-  if (statementCount <= 1) return null;
+    if (statementCount <= 1) return null;
 
-  const notRun = statementCount - statements.length;
+    const notRun = statementCount - statements.length;
 
-  return (
-    <div data-testid="statement-tabs" role="tablist"
-      style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', height: t.TAB_H, padding: `0 ${t.GAP_SM}px`, borderBottom: `1px solid ${t.BORDER}`, overflowX: 'auto', scrollbarWidth: 'none' }}>
-      {statements.map((part, index) => {
-        const active = index === activeStatement;
-        return (
-          <button key={index} data-testid="statement-tab" role="tab" aria-selected={active}
-            onClick={() => selectStatement(index)}
-            style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, flex: 'none', height: 24, padding: `0 ${t.GAP_SM}px`, border: 'none', borderRadius: t.RADIUS, background: active ? t.SELECTED : 'transparent', color: active ? t.ACCENT : t.TEXT_MUTED, font: 'inherit', fontSize: t.TEXT_BADGE, cursor: 'pointer' }}>
-            Result {index + 1}
-            {part.running && <ThinkingOrb state="shaping" size={20} theme="dark" aria-label="Running" />}
-            {/* Semantic, the one place a hue is allowed in the chrome: a failed
+    return (
+        <div
+            data-testid="statement-tabs"
+            role="tablist"
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: t.GAP_XS,
+                flex: 'none',
+                height: t.TAB_H,
+                padding: `0 ${t.GAP_SM}px`,
+                borderBottom: `1px solid ${t.BORDER}`,
+                overflowX: 'auto',
+                scrollbarWidth: 'none',
+            }}
+        >
+            {statements.map((part, index) => {
+                const active = index === activeStatement;
+                return (
+                    <button
+                        key={index}
+                        data-testid="statement-tab"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => selectStatement(index)}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: t.GAP_XS,
+                            flex: 'none',
+                            height: 24,
+                            padding: `0 ${t.GAP_SM}px`,
+                            border: 'none',
+                            borderRadius: t.RADIUS,
+                            background: active ? t.SELECTED : 'transparent',
+                            color: active ? t.ACCENT : t.TEXT_MUTED,
+                            font: 'inherit',
+                            fontSize: t.TEXT_BADGE,
+                            cursor: 'pointer',
+                        }}
+                    >
+                        Result {index + 1}
+                        {part.running && (
+                            <ThinkingOrb
+                                state="shaping"
+                                size={20}
+                                theme="dark"
+                                aria-label="Running"
+                            />
+                        )}
+                        {/* Semantic, the one place a hue is allowed in the chrome: a failed
                 statement is why the batch stopped, and the strip is where you
                 are looking when you wonder which one it was. */}
-            {part.error !== null && (
-              <span data-testid="statement-failed" role="img" aria-label="Failed"
-                style={{ width: 6, height: 6, borderRadius: t.RADIUS_PILL, background: t.RED }} />
+                        {part.error !== null && (
+                            <span
+                                data-testid="statement-failed"
+                                role="img"
+                                aria-label="Failed"
+                                style={{
+                                    width: 6,
+                                    height: 6,
+                                    borderRadius: t.RADIUS_PILL,
+                                    background: t.RED,
+                                }}
+                            />
+                        )}
+                    </button>
+                );
+            })}
+
+            {notRun > 0 && (
+                <span
+                    data-testid="statements-not-run"
+                    style={{ flex: 'none', color: t.TEXT_FAINT, fontSize: t.TEXT_BADGE }}
+                >
+                    {notRun} not run
+                </span>
             )}
-          </button>
-        );
-      })}
 
-      {notRun > 0 && (
-        <span data-testid="statements-not-run" style={{ flex: 'none', color: t.TEXT_FAINT, fontSize: t.TEXT_BADGE }}>
-          {notRun} not run
-        </span>
-      )}
-
-      {tabRunning && activeTabId && (
-        <Button variant="ghost" style={{ height: 24, padding: '0 8px', marginLeft: 'auto' }} onClick={() => cancelQuery(activeTabId)}>
-          Cancel
-        </Button>
-      )}
-    </div>
-  );
+            {tabRunning && activeTabId && (
+                <Button
+                    variant="ghost"
+                    style={{ height: 24, padding: '0 8px', marginLeft: 'auto' }}
+                    onClick={() => cancelQuery(activeTabId)}
+                >
+                    Cancel
+                </Button>
+            )}
+        </div>
+    );
 }

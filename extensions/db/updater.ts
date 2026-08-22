@@ -43,7 +43,10 @@ const USER_AGENT = 'squeal-editor-updater';
 // server without caring when this module was first imported. Nothing in
 // production sets it -- the same test seam as `SQUEAL_DATA_DIR` in store.ts.
 function latestReleaseUrl(): string {
-  return process.env.SQUEAL_UPDATE_RELEASE_URL ?? `https://api.github.com/repos/${REPO}/releases/latest`;
+    return (
+        process.env.SQUEAL_UPDATE_RELEASE_URL ??
+        `https://api.github.com/repos/${REPO}/releases/latest`
+    );
 }
 
 /**
@@ -54,12 +57,12 @@ function latestReleaseUrl(): string {
  * upload and clobber it.
  */
 const INSTALLER_PATTERNS: Partial<Record<NodeJS.Platform, RegExp>> = {
-  win32: /^squeal-editor-v.*\.exe$/,
-  darwin: /^squeal-editor-macos-arm64-v.*\.dmg$/,
+    win32: /^squeal-editor-v.*\.exe$/,
+    darwin: /^squeal-editor-macos-arm64-v.*\.dmg$/,
 };
 const CHECKSUMS_NAMES: Partial<Record<NodeJS.Platform, string>> = {
-  win32: 'SHA256SUMS',
-  darwin: 'SHA256SUMS-macos',
+    win32: 'SHA256SUMS',
+    darwin: 'SHA256SUMS-macos',
 };
 
 /** The `Squeal Editor.app` bundle's own name, both inside the mounted .dmg and on disk. */
@@ -70,26 +73,26 @@ const APP_EXECUTABLE_NAME = 'squeal-editor';
 const APP_EXECUTABLE_WIN = 'squeal-editor-win_x64.exe';
 
 interface Asset {
-  name: string;
-  browser_download_url: string;
+    name: string;
+    browser_download_url: string;
 }
 
 interface GitHubRelease {
-  tag_name: string;
-  draft?: boolean;
-  prerelease?: boolean;
-  body?: string | null;
-  assets?: Asset[];
+    tag_name: string;
+    draft?: boolean;
+    prerelease?: boolean;
+    body?: string | null;
+    assets?: Asset[];
 }
 
 interface PendingUpdate {
-  version: string;
-  installerName: string;
-  installerUrl: string;
-  signatureUrl: string;
-  checksumsUrl: string;
-  /** Set only once the download is on disk and has passed both checks. */
-  stagedPath?: string;
+    version: string;
+    installerName: string;
+    installerUrl: string;
+    signatureUrl: string;
+    checksumsUrl: string;
+    /** Set only once the download is on disk and has passed both checks. */
+    stagedPath?: string;
 }
 
 // The app is a single instance, so one module-level slot is enough -- the same
@@ -108,14 +111,14 @@ let pending: PendingUpdate | null = null;
  * safer than refusing to compare.
  */
 export function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
-  const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i++) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (diff !== 0) return diff < 0 ? -1 : 1;
-  }
-  return 0;
+    const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
+    const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
+    const len = Math.max(pa.length, pb.length);
+    for (let i = 0; i < len; i++) {
+        const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+        if (diff !== 0) return diff < 0 ? -1 : 1;
+    }
+    return 0;
 }
 
 /**
@@ -124,50 +127,54 @@ export function compareVersions(a: string, b: string): number {
  * signature, or an empty baked key -- verification fails closed, always.
  */
 export function verifyEd25519(bytes: Buffer, signatureB64: string, publicKeyB64: string): boolean {
-  if (!publicKeyB64) return false;
-  try {
-    const key = createPublicKey({
-      key: Buffer.from(publicKeyB64, 'base64'),
-      format: 'der',
-      type: 'spki',
-    });
-    return cryptoVerify(null, bytes, key, Buffer.from(signatureB64, 'base64'));
-  } catch {
-    return false;
-  }
+    if (!publicKeyB64) return false;
+    try {
+        const key = createPublicKey({
+            key: Buffer.from(publicKeyB64, 'base64'),
+            format: 'der',
+            type: 'spki',
+        });
+        return cryptoVerify(null, bytes, key, Buffer.from(signatureB64, 'base64'));
+    } catch {
+        return false;
+    }
 }
 
 /** Find the three assets an update needs among a release's asset list, for `platform`. */
 export function selectAssets(
-  assets: Asset[],
-  platform: NodeJS.Platform
+    assets: Asset[],
+    platform: NodeJS.Platform,
 ): {
-  installer?: Asset;
-  signature?: Asset;
-  checksums?: Asset;
+    installer?: Asset;
+    signature?: Asset;
+    checksums?: Asset;
 } {
-  const installerPattern = INSTALLER_PATTERNS[platform];
-  const checksumsName = CHECKSUMS_NAMES[platform];
-  const installer = installerPattern ? assets.find((a) => installerPattern.test(a.name)) : undefined;
-  const signature = installer ? assets.find((a) => a.name === `${installer.name}.sig`) : undefined;
-  const checksums = checksumsName ? assets.find((a) => a.name === checksumsName) : undefined;
-  return { installer, signature, checksums };
+    const installerPattern = INSTALLER_PATTERNS[platform];
+    const checksumsName = CHECKSUMS_NAMES[platform];
+    const installer = installerPattern
+        ? assets.find((a) => installerPattern.test(a.name))
+        : undefined;
+    const signature = installer
+        ? assets.find((a) => a.name === `${installer.name}.sig`)
+        : undefined;
+    const checksums = checksumsName ? assets.find((a) => a.name === checksumsName) : undefined;
+    return { installer, signature, checksums };
 }
 
 /** Pull the expected hex digest for `name` out of a `SHA256SUMS` body. */
 export function parseChecksum(sums: string, name: string): string | null {
-  for (const line of sums.split('\n')) {
-    // `<hex>  <name>`, sha256sum style; the `*` marks a binary-mode entry.
-    const match = line.trim().match(/^([0-9a-fA-F]{64})\s+\*?(.+)$/);
-    if (!match) continue;
-    const [, hex, file] = match;
-    if (hex && file && file.trim() === name) return hex.toLowerCase();
-  }
-  return null;
+    for (const line of sums.split('\n')) {
+        // `<hex>  <name>`, sha256sum style; the `*` marks a binary-mode entry.
+        const match = line.trim().match(/^([0-9a-fA-F]{64})\s+\*?(.+)$/);
+        if (!match) continue;
+        const [, hex, file] = match;
+        if (hex && file && file.trim() === name) return hex.toLowerCase();
+    }
+    return null;
 }
 
 function sha256Hex(bytes: Buffer): string {
-  return createHash('sha256').update(bytes).digest('hex');
+    return createHash('sha256').update(bytes).digest('hex');
 }
 
 /* ------------------------------------------------------------------ *
@@ -175,95 +182,98 @@ function sha256Hex(bytes: Buffer): string {
  * ------------------------------------------------------------------ */
 
 export async function checkForUpdate(currentVersion: string): Promise<UpdateStatus> {
-  const platform = process.platform;
-  const base: UpdateStatus = {
-    supported: platform in INSTALLER_PATTERNS,
-    checked: false,
-    currentVersion,
-    latestVersion: null,
-    hasUpdate: false,
-  };
-  if (!base.supported) return base;
+    const platform = process.platform;
+    const base: UpdateStatus = {
+        supported: platform in INSTALLER_PATTERNS,
+        checked: false,
+        currentVersion,
+        latestVersion: null,
+        hasUpdate: false,
+    };
+    if (!base.supported) return base;
 
-  try {
-    const res = await fetch(latestReleaseUrl(), {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/vnd.github+json' },
-    });
-    if (!res.ok) return base;
+    try {
+        const res = await fetch(latestReleaseUrl(), {
+            headers: { 'User-Agent': USER_AGENT, Accept: 'application/vnd.github+json' },
+        });
+        if (!res.ok) return base;
 
-    // Past here the check reached the releases and got an answer, so it counts
-    // as checked even when the answer is "nothing for you".
-    const checked = true;
-    const release = (await res.json()) as GitHubRelease;
-    if (release.draft || release.prerelease) return { ...base, checked };
+        // Past here the check reached the releases and got an answer, so it counts
+        // as checked even when the answer is "nothing for you".
+        const checked = true;
+        const release = (await res.json()) as GitHubRelease;
+        if (release.draft || release.prerelease) return { ...base, checked };
 
-    const latestVersion = release.tag_name.replace(/^v/, '');
-    const { installer, signature, checksums } = selectAssets(release.assets ?? [], platform);
-    // Newer *and* fully shippable: a newer tag whose signing assets are missing
-    // (a release cut before the signing key was set) is not offered, so the
-    // download step can never find itself without something to verify against.
-    const hasUpdate =
-      compareVersions(latestVersion, currentVersion) > 0 && !!installer && !!signature && !!checksums;
+        const latestVersion = release.tag_name.replace(/^v/, '');
+        const { installer, signature, checksums } = selectAssets(release.assets ?? [], platform);
+        // Newer *and* fully shippable: a newer tag whose signing assets are missing
+        // (a release cut before the signing key was set) is not offered, so the
+        // download step can never find itself without something to verify against.
+        const hasUpdate =
+            compareVersions(latestVersion, currentVersion) > 0 &&
+            !!installer &&
+            !!signature &&
+            !!checksums;
 
-    pending =
-      hasUpdate && installer && signature && checksums
-        ? {
-            version: latestVersion,
-            installerName: installer.name,
-            installerUrl: installer.browser_download_url,
-            signatureUrl: signature.browser_download_url,
-            checksumsUrl: checksums.browser_download_url,
-          }
-        : null;
+        pending =
+            hasUpdate && installer && signature && checksums
+                ? {
+                      version: latestVersion,
+                      installerName: installer.name,
+                      installerUrl: installer.browser_download_url,
+                      signatureUrl: signature.browser_download_url,
+                      checksumsUrl: checksums.browser_download_url,
+                  }
+                : null;
 
-    return { ...base, checked, latestVersion, hasUpdate, notes: release.body ?? undefined };
-  } catch {
-    // Offline, rate-limited, or a shape we did not expect: a check never nags.
-    return base;
-  }
+        return { ...base, checked, latestVersion, hasUpdate, notes: release.body ?? undefined };
+    } catch {
+        // Offline, rate-limited, or a shape we did not expect: a check never nags.
+        return base;
+    }
 }
 
 export async function downloadUpdate(onProgress: (p: UpdateProgress) => void): Promise<void> {
-  if (!pending) throw new Error('No update to download -- check for one first.');
-  const staged = pending;
+    if (!pending) throw new Error('No update to download -- check for one first.');
+    const staged = pending;
 
-  const dir = await mkdtemp(join(tmpdir(), 'squeal-update-'));
-  const installerPath = join(dir, staged.installerName);
-  try {
-    const bytes = await downloadWithProgress(staged.installerUrl, onProgress);
+    const dir = await mkdtemp(join(tmpdir(), 'squeal-update-'));
+    const installerPath = join(dir, staged.installerName);
+    try {
+        const bytes = await downloadWithProgress(staged.installerUrl, onProgress);
 
-    // Corruption first: cheap, and it catches a truncated download before the
-    // signature check has to care about it.
-    const expected = parseChecksum(await fetchText(staged.checksumsUrl), staged.installerName);
-    if (!expected) throw new Error('The update is missing its checksum.');
-    if (sha256Hex(bytes) !== expected) {
-      throw new Error('The update failed its checksum -- the download was corrupted.');
+        // Corruption first: cheap, and it catches a truncated download before the
+        // signature check has to care about it.
+        const expected = parseChecksum(await fetchText(staged.checksumsUrl), staged.installerName);
+        if (!expected) throw new Error('The update is missing its checksum.');
+        if (sha256Hex(bytes) !== expected) {
+            throw new Error('The update failed its checksum -- the download was corrupted.');
+        }
+
+        // Then authenticity: proves the bytes came from the maintainer's key.
+        const signature = (await fetchText(staged.signatureUrl)).trim();
+        if (!verifyEd25519(bytes, signature, UPDATE_PUBLIC_KEY)) {
+            throw new Error('The update failed signature verification and will not be applied.');
+        }
+
+        await writeFile(installerPath, bytes);
+        staged.stagedPath = installerPath;
+    } catch (err) {
+        // An unverified or failed download leaves nothing behind to be applied.
+        await rm(dir, { recursive: true, force: true });
+        throw err;
     }
-
-    // Then authenticity: proves the bytes came from the maintainer's key.
-    const signature = (await fetchText(staged.signatureUrl)).trim();
-    if (!verifyEd25519(bytes, signature, UPDATE_PUBLIC_KEY)) {
-      throw new Error('The update failed signature verification and will not be applied.');
-    }
-
-    await writeFile(installerPath, bytes);
-    staged.stagedPath = installerPath;
-  } catch (err) {
-    // An unverified or failed download leaves nothing behind to be applied.
-    await rm(dir, { recursive: true, force: true });
-    throw err;
-  }
 }
 
 export async function applyUpdate(): Promise<void> {
-  if (!pending?.stagedPath) throw new Error('No verified update is staged.');
+    if (!pending?.stagedPath) throw new Error('No verified update is staged.');
 
-  if (process.platform === 'darwin') {
-    applyUpdateDarwin(pending.stagedPath);
-    return;
-  }
+    if (process.platform === 'darwin') {
+        applyUpdateDarwin(pending.stagedPath);
+        return;
+    }
 
-  await applyUpdateWindows(pending.stagedPath);
+    await applyUpdateWindows(pending.stagedPath);
 }
 
 /**
@@ -275,13 +285,13 @@ export async function applyUpdate(): Promise<void> {
  * it throws before anything has been spawned or the app has been asked to exit.
  */
 function findAppExecutable(startPath: string): string {
-  let dir = dirname(startPath);
-  while (dir !== dirname(dir)) {
-    const candidate = join(dir, APP_EXECUTABLE_WIN);
-    if (existsSync(candidate)) return candidate;
-    dir = dirname(dir);
-  }
-  throw new Error(`Could not find ${APP_EXECUTABLE_WIN} above ${startPath}.`);
+    let dir = dirname(startPath);
+    while (dir !== dirname(dir)) {
+        const candidate = join(dir, APP_EXECUTABLE_WIN);
+        if (existsSync(candidate)) return candidate;
+        dir = dirname(dir);
+    }
+    throw new Error(`Could not find ${APP_EXECUTABLE_WIN} above ${startPath}.`);
 }
 
 /** One tick is roughly a second: `ping -n 2` is how a redirected batch sleeps. */
@@ -304,65 +314,65 @@ const HANDOFF_POLL_MS = 100;
  * Exported for the unit tests, which is also why the tick count is a parameter.
  */
 export function buildWindowsApplyScript(waitTicks: number = WINDOWS_WAIT_TICKS): string {
-  return [
-    '@echo off',
-    'setlocal',
-    // The extension's working directory is inside the install the installer is
-    // about to replace, and a live working directory is a lock on it.
-    'cd /d "%SystemRoot%"',
-    'for %%p in ("%SQUEAL_UPDATE_LOG%") do if not exist "%%~dpp" mkdir "%%~dpp"',
-    'call :apply > "%SQUEAL_UPDATE_LOG%" 2>&1',
-    'exit /b',
-    '',
-    ':apply',
-    'for %%p in ("%SQUEAL_UPDATE_APP%") do set "APP_DIR=%%~dpp"',
-    'for %%p in ("%SQUEAL_UPDATE_APP%") do set "APP_IMAGE=%%~nxp"',
-    'if "%APP_DIR:~-1%"=="\\" set "APP_DIR=%APP_DIR:~0,-1%"',
-    // This first line is also the handshake: `applyUpdateWindows` waits for the
-    // log to appear before it lets the app exit, so a script that never ran
-    // reads as a failed apply rather than as a restart into the same version.
-    'echo [%date% %time%] applying the update',
-    'echo installer "%SQUEAL_UPDATE_INSTALLER%"',
-    'echo app       "%SQUEAL_UPDATE_APP%"',
-    'echo [%date% %time%] waiting for %APP_IMAGE% (%SQUEAL_UPDATE_APP_PID%) and %SQUEAL_UPDATE_EXT_IMAGE% (%SQUEAL_UPDATE_EXT_PID%) to exit',
-    `for /l %%t in (1,1,${waitTicks}) do (`,
-    '  call :running "%SQUEAL_UPDATE_APP_PID%" "%APP_IMAGE%" || call :running "%SQUEAL_UPDATE_EXT_PID%" "%SQUEAL_UPDATE_EXT_IMAGE%" || goto :closed',
-    '  ping -n 2 127.0.0.1 >nul',
-    ')',
-    // Unlike the macOS swap, running out of patience here is survivable: the
-    // installer closes what is still holding a file through Restart Manager,
-    // which is a swap performed properly, not one performed underneath a live
-    // app. So the wait is a courtesy and the deadline is not an abort.
-    'echo [%date% %time%] they are still up; leaving them for the installer to close',
-    ':closed',
-    'echo [%date% %time%] running the installer',
-    // Inno is told to restart nothing. It only brings back what it closed
-    // itself, and the app has almost always exited on its own by now -- which
-    // is exactly why trusting it left the user staring at nothing. The relaunch
-    // below is unconditional instead, so there is one path back and it is this
-    // script's.
-    '"%SQUEAL_UPDATE_INSTALLER%" /SILENT /CLOSEAPPLICATIONS /NORESTARTAPPLICATIONS',
-    'set "CODE=%ERRORLEVEL%"',
-    'echo [%date% %time%] the installer exited with %CODE%',
-    'if not "%CODE%"=="0" echo it did not finish, so what is on disk is whatever it replaced before it stopped',
-    // Relaunched even after a failed install: the installer closes the app
-    // before it can fail, and leaving the user with nothing running is worse
-    // than leaving them on the version they already had.
-    'echo [%date% %time%] relaunching "%SQUEAL_UPDATE_APP%"',
-    'start "" /d "%APP_DIR%" "%SQUEAL_UPDATE_APP%"',
-    'echo [%date% %time%] done',
-    'exit /b',
-    '',
-    // CSV, because tasklist's table format truncates an image name at the
-    // column width and the app's is longer than that. Matching the name as well
-    // as the PID is what keeps a recycled PID from reading as still running,
-    // and matching the echoed name rather than the "no tasks" notice is what
-    // keeps this working on a Windows that is not in English.
-    ':running',
-    'tasklist /fi "PID eq %~1" /fi "IMAGENAME eq %~2" /nh /fo csv 2>nul | find /i "%~2" >nul',
-    'exit /b %ERRORLEVEL%',
-    '',
-  ].join('\r\n');
+    return [
+        '@echo off',
+        'setlocal',
+        // The extension's working directory is inside the install the installer is
+        // about to replace, and a live working directory is a lock on it.
+        'cd /d "%SystemRoot%"',
+        'for %%p in ("%SQUEAL_UPDATE_LOG%") do if not exist "%%~dpp" mkdir "%%~dpp"',
+        'call :apply > "%SQUEAL_UPDATE_LOG%" 2>&1',
+        'exit /b',
+        '',
+        ':apply',
+        'for %%p in ("%SQUEAL_UPDATE_APP%") do set "APP_DIR=%%~dpp"',
+        'for %%p in ("%SQUEAL_UPDATE_APP%") do set "APP_IMAGE=%%~nxp"',
+        'if "%APP_DIR:~-1%"=="\\" set "APP_DIR=%APP_DIR:~0,-1%"',
+        // This first line is also the handshake: `applyUpdateWindows` waits for the
+        // log to appear before it lets the app exit, so a script that never ran
+        // reads as a failed apply rather than as a restart into the same version.
+        'echo [%date% %time%] applying the update',
+        'echo installer "%SQUEAL_UPDATE_INSTALLER%"',
+        'echo app       "%SQUEAL_UPDATE_APP%"',
+        'echo [%date% %time%] waiting for %APP_IMAGE% (%SQUEAL_UPDATE_APP_PID%) and %SQUEAL_UPDATE_EXT_IMAGE% (%SQUEAL_UPDATE_EXT_PID%) to exit',
+        `for /l %%t in (1,1,${waitTicks}) do (`,
+        '  call :running "%SQUEAL_UPDATE_APP_PID%" "%APP_IMAGE%" || call :running "%SQUEAL_UPDATE_EXT_PID%" "%SQUEAL_UPDATE_EXT_IMAGE%" || goto :closed',
+        '  ping -n 2 127.0.0.1 >nul',
+        ')',
+        // Unlike the macOS swap, running out of patience here is survivable: the
+        // installer closes what is still holding a file through Restart Manager,
+        // which is a swap performed properly, not one performed underneath a live
+        // app. So the wait is a courtesy and the deadline is not an abort.
+        'echo [%date% %time%] they are still up; leaving them for the installer to close',
+        ':closed',
+        'echo [%date% %time%] running the installer',
+        // Inno is told to restart nothing. It only brings back what it closed
+        // itself, and the app has almost always exited on its own by now -- which
+        // is exactly why trusting it left the user staring at nothing. The relaunch
+        // below is unconditional instead, so there is one path back and it is this
+        // script's.
+        '"%SQUEAL_UPDATE_INSTALLER%" /SILENT /CLOSEAPPLICATIONS /NORESTARTAPPLICATIONS',
+        'set "CODE=%ERRORLEVEL%"',
+        'echo [%date% %time%] the installer exited with %CODE%',
+        'if not "%CODE%"=="0" echo it did not finish, so what is on disk is whatever it replaced before it stopped',
+        // Relaunched even after a failed install: the installer closes the app
+        // before it can fail, and leaving the user with nothing running is worse
+        // than leaving them on the version they already had.
+        'echo [%date% %time%] relaunching "%SQUEAL_UPDATE_APP%"',
+        'start "" /d "%APP_DIR%" "%SQUEAL_UPDATE_APP%"',
+        'echo [%date% %time%] done',
+        'exit /b',
+        '',
+        // CSV, because tasklist's table format truncates an image name at the
+        // column width and the app's is longer than that. Matching the name as well
+        // as the PID is what keeps a recycled PID from reading as still running,
+        // and matching the echoed name rather than the "no tasks" notice is what
+        // keeps this working on a Windows that is not in English.
+        ':running',
+        'tasklist /fi "PID eq %~1" /fi "IMAGENAME eq %~2" /nh /fo csv 2>nul | find /i "%~2" >nul',
+        'exit /b %ERRORLEVEL%',
+        '',
+    ].join('\r\n');
 }
 
 /**
@@ -394,47 +404,47 @@ export function buildWindowsApplyScript(waitTicks: number = WINDOWS_WAIT_TICKS):
  *   an older one that happened to leave a file behind.
  */
 async function applyUpdateWindows(installerPath: string): Promise<void> {
-  const appExecutable = findAppExecutable(process.execPath);
-  const logPath = join(dataDir(), 'update.log');
-  const scriptPath = join(dirname(installerPath), 'apply-update.cmd');
+    const appExecutable = findAppExecutable(process.execPath);
+    const logPath = join(dataDir(), 'update.log');
+    const scriptPath = join(dirname(installerPath), 'apply-update.cmd');
 
-  await writeFile(scriptPath, buildWindowsApplyScript());
-  await rm(logPath, { force: true });
+    await writeFile(scriptPath, buildWindowsApplyScript());
+    await rm(logPath, { force: true });
 
-  Bun.spawn(['cmd', '/c', 'start', '', '/b', 'cmd', '/c', scriptPath], {
-    stdin: 'ignore',
-    stdout: 'ignore',
-    stderr: 'ignore',
-    windowsHide: true,
-    env: {
-      ...process.env,
-      SQUEAL_UPDATE_INSTALLER: installerPath,
-      SQUEAL_UPDATE_APP: appExecutable,
-      SQUEAL_UPDATE_LOG: logPath,
-      // Neutralino spawns extensions as its own children, so `ppid` is the app.
-      SQUEAL_UPDATE_APP_PID: String(process.ppid),
-      SQUEAL_UPDATE_EXT_PID: String(process.pid),
-      SQUEAL_UPDATE_EXT_IMAGE: basename(process.execPath),
-    },
-  });
+    Bun.spawn(['cmd', '/c', 'start', '', '/b', 'cmd', '/c', scriptPath], {
+        stdin: 'ignore',
+        stdout: 'ignore',
+        stderr: 'ignore',
+        windowsHide: true,
+        env: {
+            ...process.env,
+            SQUEAL_UPDATE_INSTALLER: installerPath,
+            SQUEAL_UPDATE_APP: appExecutable,
+            SQUEAL_UPDATE_LOG: logPath,
+            // Neutralino spawns extensions as its own children, so `ppid` is the app.
+            SQUEAL_UPDATE_APP_PID: String(process.ppid),
+            SQUEAL_UPDATE_EXT_PID: String(process.pid),
+            SQUEAL_UPDATE_EXT_IMAGE: basename(process.execPath),
+        },
+    });
 
-  await waitForHandoff(logPath);
+    await waitForHandoff(logPath);
 }
 
 /** Resolve once the script has written anything at all; throw if it never does. */
 async function waitForHandoff(logPath: string): Promise<void> {
-  const deadline = Date.now() + HANDOFF_CONFIRM_MS;
-  for (;;) {
-    const written = await stat(logPath).catch(() => null);
-    if (written && written.size > 0) return;
-    if (Date.now() >= deadline) {
-      throw new Error(
-        'The update could not be started -- nothing confirmed the installer was running, ' +
-          'so nothing was changed. See update.log in the app data folder.'
-      );
+    const deadline = Date.now() + HANDOFF_CONFIRM_MS;
+    for (;;) {
+        const written = await stat(logPath).catch(() => null);
+        if (written && written.size > 0) return;
+        if (Date.now() >= deadline) {
+            throw new Error(
+                'The update could not be started -- nothing confirmed the installer was running, ' +
+                    'so nothing was changed. See update.log in the app data folder.',
+            );
+        }
+        await Bun.sleep(HANDOFF_POLL_MS);
     }
-    await Bun.sleep(HANDOFF_POLL_MS);
-  }
 }
 
 /**
@@ -445,17 +455,17 @@ async function waitForHandoff(logPath: string): Promise<void> {
  * should not silently point the swap at the wrong directory.
  */
 function findAppBundle(startPath: string): string {
-  let dir = dirname(startPath);
-  while (dir !== dirname(dir)) {
-    if (dir.endsWith('.app')) return dir;
-    dir = dirname(dir);
-  }
-  throw new Error(`Could not find an enclosing .app bundle above ${startPath}.`);
+    let dir = dirname(startPath);
+    while (dir !== dirname(dir)) {
+        if (dir.endsWith('.app')) return dir;
+        dir = dirname(dir);
+    }
+    throw new Error(`Could not find an enclosing .app bundle above ${startPath}.`);
 }
 
 /** Single-quote a path for embedding in the shell script below. */
 function shq(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
+    return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 /**
@@ -495,50 +505,50 @@ function shq(s: string): string {
  * no other evidence of where it stopped.
  */
 function applyUpdateDarwin(dmgPath: string): void {
-  const appBundle = findAppBundle(process.execPath);
-  const appPid = process.ppid;
-  const logPath = join(dataDir(), 'update.log');
-  const launcher = join(appBundle, 'Contents', 'MacOS', APP_EXECUTABLE_NAME);
-  const waitTicks = 150;
+    const appBundle = findAppBundle(process.execPath);
+    const appPid = process.ppid;
+    const logPath = join(dataDir(), 'update.log');
+    const launcher = join(appBundle, 'Contents', 'MacOS', APP_EXECUTABLE_NAME);
+    const waitTicks = 150;
 
-  const script = [
-    'cd /',
-    // Before the redirect, not after: a redirect onto a path whose directory is
-    // missing takes the whole script down with it, and losing the update to a
-    // missing log file would be the tail wagging the dog.
-    `mkdir -p ${shq(dataDir())}`,
-    `exec > ${shq(logPath)} 2>&1`,
-    'set -x',
-    `for i in $(seq 1 ${waitTicks}); do kill -0 ${appPid} 2>/dev/null || break; sleep 0.2; done`,
-    `if kill -0 ${appPid} 2>/dev/null; then echo "the app is still running; leaving it alone"; exit 1; fi`,
-    'set -e',
-    'MOUNT="$(mktemp -d)"',
-    'STAGE="$(mktemp -d)"',
-    // Runs on any exit path, success or failure, so a failed swap never leaves
-    // the .dmg mounted or the staging copy behind.
-    'trap \'hdiutil detach "$MOUNT" -quiet >/dev/null 2>&1 || true; rm -rf "$STAGE"\' EXIT',
-    `hdiutil attach ${shq(dmgPath)} -mountpoint "$MOUNT" -nobrowse -quiet`,
-    `ditto "$MOUNT/${APP_BUNDLE_NAME}" "$STAGE/${APP_BUNDLE_NAME}"`,
-    // Only reached once the copy off the .dmg has fully succeeded, so a bad
-    // mount or a broken ditto never touches the app that is still there.
-    `rm -rf ${shq(appBundle)}`,
-    `mv "$STAGE/${APP_BUNDLE_NAME}" ${shq(appBundle)}`,
-    // Cleared by hand rather than left to the trap: the fallback below `exec`s,
-    // which replaces the shell without ever running it.
-    'hdiutil detach "$MOUNT" -quiet >/dev/null 2>&1 || true',
-    'rm -rf "$STAGE"',
-    'trap - EXIT',
-    'set +e',
-    `for i in 1 2 3 4 5; do open ${shq(appBundle)} && exit 0; sleep 1; done`,
-    'echo "open would not launch the new bundle; running its executable directly"',
-    `exec ${shq(launcher)}`,
-  ].join('\n');
+    const script = [
+        'cd /',
+        // Before the redirect, not after: a redirect onto a path whose directory is
+        // missing takes the whole script down with it, and losing the update to a
+        // missing log file would be the tail wagging the dog.
+        `mkdir -p ${shq(dataDir())}`,
+        `exec > ${shq(logPath)} 2>&1`,
+        'set -x',
+        `for i in $(seq 1 ${waitTicks}); do kill -0 ${appPid} 2>/dev/null || break; sleep 0.2; done`,
+        `if kill -0 ${appPid} 2>/dev/null; then echo "the app is still running; leaving it alone"; exit 1; fi`,
+        'set -e',
+        'MOUNT="$(mktemp -d)"',
+        'STAGE="$(mktemp -d)"',
+        // Runs on any exit path, success or failure, so a failed swap never leaves
+        // the .dmg mounted or the staging copy behind.
+        'trap \'hdiutil detach "$MOUNT" -quiet >/dev/null 2>&1 || true; rm -rf "$STAGE"\' EXIT',
+        `hdiutil attach ${shq(dmgPath)} -mountpoint "$MOUNT" -nobrowse -quiet`,
+        `ditto "$MOUNT/${APP_BUNDLE_NAME}" "$STAGE/${APP_BUNDLE_NAME}"`,
+        // Only reached once the copy off the .dmg has fully succeeded, so a bad
+        // mount or a broken ditto never touches the app that is still there.
+        `rm -rf ${shq(appBundle)}`,
+        `mv "$STAGE/${APP_BUNDLE_NAME}" ${shq(appBundle)}`,
+        // Cleared by hand rather than left to the trap: the fallback below `exec`s,
+        // which replaces the shell without ever running it.
+        'hdiutil detach "$MOUNT" -quiet >/dev/null 2>&1 || true',
+        'rm -rf "$STAGE"',
+        'trap - EXIT',
+        'set +e',
+        `for i in 1 2 3 4 5; do open ${shq(appBundle)} && exit 0; sleep 1; done`,
+        'echo "open would not launch the new bundle; running its executable directly"',
+        `exec ${shq(launcher)}`,
+    ].join('\n');
 
-  Bun.spawn(['/bin/sh', '-c', `nohup /bin/sh -c ${shq(script)} >/dev/null 2>&1 &`], {
-    stdin: 'ignore',
-    stdout: 'ignore',
-    stderr: 'ignore',
-  });
+    Bun.spawn(['/bin/sh', '-c', `nohup /bin/sh -c ${shq(script)} >/dev/null 2>&1 &`], {
+        stdin: 'ignore',
+        stdout: 'ignore',
+        stderr: 'ignore',
+    });
 }
 
 /* ------------------------------------------------------------------ *
@@ -546,31 +556,31 @@ function applyUpdateDarwin(dmgPath: string): void {
  * ------------------------------------------------------------------ */
 
 async function downloadWithProgress(
-  url: string,
-  onProgress: (p: UpdateProgress) => void
+    url: string,
+    onProgress: (p: UpdateProgress) => void,
 ): Promise<Buffer> {
-  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
-  if (!res.ok || !res.body) throw new Error(`The update download failed (HTTP ${res.status}).`);
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+    if (!res.ok || !res.body) throw new Error(`The update download failed (HTTP ${res.status}).`);
 
-  // 0 when the CDN sent no length; the UI shows an indeterminate bar then.
-  const totalBytes = Number(res.headers.get('content-length')) || 0;
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let receivedBytes = 0;
+    // 0 when the CDN sent no length; the UI shows an indeterminate bar then.
+    const totalBytes = Number(res.headers.get('content-length')) || 0;
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let receivedBytes = 0;
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    receivedBytes += value.length;
-    onProgress({ receivedBytes, totalBytes });
-  }
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        receivedBytes += value.length;
+        onProgress({ receivedBytes, totalBytes });
+    }
 
-  return Buffer.concat(chunks);
+    return Buffer.concat(chunks);
 }
 
 async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
-  if (!res.ok) throw new Error(`The update download failed (HTTP ${res.status}).`);
-  return res.text();
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+    if (!res.ok) throw new Error(`The update download failed (HTTP ${res.status}).`);
+    return res.text();
 }

@@ -9,51 +9,66 @@ import Mono from '../../common/components/Mono.tsx';
 import * as t from '../../common/tokens';
 
 interface Props {
-  environment: Environment;
-  name: string;
-  onConfirm: () => void;
-  onCancel: () => void;
+    environment: Environment;
+    name: string;
+    onConfirm: () => void;
+    onCancel: () => void;
 }
 
 export default function ReadOnlyConfirm({ environment, name, onConfirm, onCancel }: Props) {
-  const [typed, setTyped] = useState('');
-  const matches = typed.trim().toLowerCase() === environment.toLowerCase();
+    const [typed, setTyped] = useState('');
+    const matches = typed.trim().toLowerCase() === environment.toLowerCase();
 
-  return (
-    <Modal onClose={onCancel}>
-      <form
-        style={{ display: 'flex', flexDirection: 'column', gap: t.GAP }}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (matches) onConfirm();
-        }}
-      >
-        <h2 style={{ margin: `0 0 ${t.GAP}px`, fontSize: t.TEXT_TITLE, fontWeight: 600 }}>
-          Make {name || 'this connection'} writable?
-        </h2>
-        <p style={{ margin: `0 0 ${t.GAP_LG}px`, color: t.TEXT_MUTED, fontSize: t.TEXT_BODY, lineHeight: 1.5 }}>
-          It will stop refusing writes. Type <Mono>{environment}</Mono> to confirm you mean
-          to write to a <Mono>{environment}</Mono> database.
-        </p>
+    return (
+        <Modal onClose={onCancel}>
+            <form
+                style={{ display: 'flex', flexDirection: 'column', gap: t.GAP }}
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    if (matches) onConfirm();
+                }}
+            >
+                <h2 style={{ margin: `0 0 ${t.GAP}px`, fontSize: t.TEXT_TITLE, fontWeight: 600 }}>
+                    Make {name || 'this connection'} writable?
+                </h2>
+                <p
+                    style={{
+                        margin: `0 0 ${t.GAP_LG}px`,
+                        color: t.TEXT_MUTED,
+                        fontSize: t.TEXT_BODY,
+                        lineHeight: 1.5,
+                    }}
+                >
+                    It will stop refusing writes. Type <Mono>{environment}</Mono> to confirm you
+                    mean to write to a <Mono>{environment}</Mono> database.
+                </p>
 
-        <Field label="" htmlFor="confirm-env">
-          <Input
-            data-testid="modal-input"
-            id="confirm-env"
-            value={typed}
-            autoFocus
-            placeholder={environment}
-            onChange={(e) => setTyped(e.target.value)}
-          />
-        </Field>
+                <Field label="" htmlFor="confirm-env">
+                    <Input
+                        data-testid="modal-input"
+                        id="confirm-env"
+                        value={typed}
+                        autoFocus
+                        placeholder={environment}
+                        onChange={(e) => setTyped(e.target.value)}
+                    />
+                </Field>
 
-        <div style={{ display: 'flex', gap: t.GAP_SM, marginTop: t.GAP_XS }}>
-          <Button type="button" onClick={onCancel}>Cancel</Button>
-          <Button type="submit" data-testid="modal-submit" variant="primary" style={{ justifyContent: 'center', flex: 1 }} disabled={!matches}>
-            Turn off read-only
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
+                <div style={{ display: 'flex', gap: t.GAP_SM, marginTop: t.GAP_XS }}>
+                    <Button type="button" onClick={onCancel}>
+                        Cancel
+                    </Button>
+                    <Button
+                        type="submit"
+                        data-testid="modal-submit"
+                        variant="primary"
+                        style={{ justifyContent: 'center', flex: 1 }}
+                        disabled={!matches}
+                    >
+                        Turn off read-only
+                    </Button>
+                </div>
+            </form>
+        </Modal>
+    );
 }

@@ -37,14 +37,15 @@ const ANY_FROM = /\bFROM\b/gi;
 const FIRST_FROM_RELATION = new RegExp(String.raw`\bFROM\s+${RELATION}(?!\s*,)`, 'i');
 
 function unquote(ident: string): string {
-  return (ident.startsWith('"') && ident.endsWith('"')) || (ident.startsWith('`') && ident.endsWith('`'))
-    ? ident.slice(1, -1)
-    : ident;
+    return (ident.startsWith('"') && ident.endsWith('"')) ||
+        (ident.startsWith('`') && ident.endsWith('`'))
+        ? ident.slice(1, -1)
+        : ident;
 }
 
 export interface SingleTable {
-  table: string;
-  schema?: string;
+    table: string;
+    schema?: string;
 }
 
 /**
@@ -55,12 +56,12 @@ export interface SingleTable {
  * check the wrong catalog entry's key columns.
  */
 export function detectSingleTable(sql: string, schemaCapable: boolean): SingleTable | null {
-  if (LEADING_WITH.test(sql) || ANY_JOIN.test(sql)) return null;
-  if ((sql.match(ANY_FROM)?.length ?? 0) !== 1) return null;
+    if (LEADING_WITH.test(sql) || ANY_JOIN.test(sql)) return null;
+    if ((sql.match(ANY_FROM)?.length ?? 0) !== 1) return null;
 
-  const match = FIRST_FROM_RELATION.exec(sql);
-  if (!match) return null;
-  const [, first, second] = match;
-  if (second) return schemaCapable ? { schema: unquote(first!), table: unquote(second) } : null;
-  return { table: unquote(first!) };
+    const match = FIRST_FROM_RELATION.exec(sql);
+    if (!match) return null;
+    const [, first, second] = match;
+    if (second) return schemaCapable ? { schema: unquote(first!), table: unquote(second) } : null;
+    return { table: unquote(first!) };
 }

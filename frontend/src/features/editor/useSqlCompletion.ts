@@ -44,56 +44,61 @@ const EMPTY: TableInfo[] = [];
  * the model Monaco hands it for the query-scoped part (`completion.ts`).
  */
 export function useSqlCompletion(database: string | null): void {
-  const { connectionId, dialect, defaultSchema } = useSession();
-  const { tables, columns } = useAppSelector((s) => s.explorer);
+    const { connectionId, dialect, defaultSchema } = useSession();
+    const { tables, columns } = useAppSelector((s) => s.explorer);
 
-  /*
-   * A connection pointed at nothing, or a database whose tables have not
-   * landed yet: both are "no tables to offer", which is not the same as a bug.
-   *
-   * The unsearched listing, which is capped like every listing this app holds
-   * (`CATALOG_LIMIT`) -- so a database past the cap suggests the names that fit
-   * and no others. Deliberately not the tree's *search* result: what the editor
-   * offers is a fact about the database, and reading the tree's bar here would
-   * make it a fact about what someone typed into a sidebar.
-   */
-  const listed = (connectionId && database ? tables[connectionId]?.[database]?.tables : undefined) ?? EMPTY;
+    /*
+     * A connection pointed at nothing, or a database whose tables have not
+     * landed yet: both are "no tables to offer", which is not the same as a bug.
+     *
+     * The unsearched listing, which is capped like every listing this app holds
+     * (`CATALOG_LIMIT`) -- so a database past the cap suggests the names that fit
+     * and no others. Deliberately not the tree's *search* result: what the editor
+     * offers is a fact about the database, and reading the tree's bar here would
+     * make it a fact about what someone typed into a sidebar.
+     */
+    const listed =
+        (connectionId && database ? tables[connectionId]?.[database]?.tables : undefined) ?? EMPTY;
 
-  /*
-   * The provider is registered once per dialect and lives across every
-   * keystroke, so it cannot close over any of this -- it would answer with the
-   * catalog as it was at registration, forever. It reads the ref instead, which
-   * is the same shape (and the same reason) as the Ctrl+Enter command's.
-   */
-  const snapshot: CompletionSnapshot = {
-    words: wordsFor(dialect),
-    dialect,
-    tables: listed,
-    defaultSchema,
-    // Resolved the same way `loadColumns` resolved it before filing the answer,
-    // so the read and the write agree on the key. Read it raw and a table whose
-    // columns are sitting in the cache under `public.users` looks unfetched to
-    // the popup -- forever, since the fetch itself is deduped by that same key.
-    columnsFor: (table) => {
-      if (!connectionId || !database) return null;
-      return columns[connectionId]?.[database]?.[relationName(resolveRelation(listed, { table }))] ?? null;
-    },
-  };
+    /*
+     * The provider is registered once per dialect and lives across every
+     * keystroke, so it cannot close over any of this -- it would answer with the
+     * catalog as it was at registration, forever. It reads the ref instead, which
+     * is the same shape (and the same reason) as the Ctrl+Enter command's.
+     */
+    const snapshot: CompletionSnapshot = {
+        words: wordsFor(dialect),
+        dialect,
+        tables: listed,
+        defaultSchema,
+        // Resolved the same way `loadColumns` resolved it before filing the answer,
+        // so the read and the write agree on the key. Read it raw and a table whose
+        // columns are sitting in the cache under `public.users` looks unfetched to
+        // the popup -- forever, since the fetch itself is deduped by that same key.
+        columnsFor: (table) => {
+            if (!connectionId || !database) return null;
+            return (
+                columns[connectionId]?.[database]?.[
+                    relationName(resolveRelation(listed, { table }))
+                ] ?? null
+            );
+        },
+    };
 
-  const latest = useRef(snapshot);
-  latest.current = snapshot;
+    const latest = useRef(snapshot);
+    latest.current = snapshot;
 
-  useEffect(() => {
-    // Registered against the dialect the session reported, so the provider is
-    // only ever asked about models it has the words for. Re-registering on a
-    // dialect change disposes the old one -- two providers on one language both
-    // answer, and the popup would hold every suggestion twice.
-    const registration = monaco.languages.registerCompletionItemProvider(
-      dialect,
-      sqlCompletionProvider(() => latest.current)
-    );
-    return () => registration.dispose();
-  }, [dialect]);
+    useEffect(() => {
+        // Registered against the dialect the session reported, so the provider is
+        // only ever asked about models it has the words for. Re-registering on a
+        // dialect change disposes the old one -- two providers on one language both
+        // answer, and the popup would hold every suggestion twice.
+        const registration = monaco.languages.registerCompletionItemProvider(
+            dialect,
+            sqlCompletionProvider(() => latest.current),
+        );
+        return () => registration.dispose();
+    }, [dialect]);
 }
 
 /**
@@ -104,25 +109,25 @@ export function useSqlCompletion(database: string | null): void {
  * once.
  */
 export function useSqlPrefetch(sql: string, database: string | null): void {
-  const dispatch = useAppDispatch();
-  const scope = useMemo(() => scanScope(sql), [sql]);
+    const dispatch = useAppDispatch();
+    const scope = useMemo(() => scanScope(sql), [sql]);
 
-  /*
-   * Fetch the columns of every table the query mentions, as it is mentioned.
-   *
-   * Keyed on the scan and not on a keystroke, a `.`, or the popup opening: by
-   * the time a dot is typed after `users`, the columns have to be *there*, and a
-   * fetch started at the dot means an empty popup and a round trip. Typing the
-   * table's name is the event that says which table matters, so that is the
-   * event this hangs off.
-   *
-   * This runs on every keystroke and is meant to: `loadColumns` carries the
-   * cache in its `condition` and marks a table asked before its first await, so
-   * a table already asked for never reaches the bridge a second time. The
-   * `scope.tables` identity is what keeps it from even iterating, most keys.
-   */
-  useEffect(() => {
-    if (!database) return;
-    for (const table of scope.tables) void dispatch(loadColumns({ database, table }));
-  }, [scope, database, dispatch]);
+    /*
+     * Fetch the columns of every table the query mentions, as it is mentioned.
+     *
+     * Keyed on the scan and not on a keystroke, a `.`, or the popup opening: by
+     * the time a dot is typed after `users`, the columns have to be *there*, and a
+     * fetch started at the dot means an empty popup and a round trip. Typing the
+     * table's name is the event that says which table matters, so that is the
+     * event this hangs off.
+     *
+     * This runs on every keystroke and is meant to: `loadColumns` carries the
+     * cache in its `condition` and marks a table asked before its first await, so
+     * a table already asked for never reaches the bridge a second time. The
+     * `scope.tables` identity is what keeps it from even iterating, most keys.
+     */
+    useEffect(() => {
+        if (!database) return;
+        for (const table of scope.tables) void dispatch(loadColumns({ database, table }));
+    }, [scope, database, dispatch]);
 }

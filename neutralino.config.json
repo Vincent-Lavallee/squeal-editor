@@ -1,61 +1,61 @@
 {
-  "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
-  "applicationId": "js.squeal.editor",
-  "version": "0.17.0",
-  "defaultMode": "window",
-  "port": 0,
-  "documentRoot": "/resources/",
-  "url": "/",
-  "enableServer": true,
-  "enableNativeAPI": true,
-  "enableExtensions": true,
-  "tokenSecurity": "one-time",
-  "logging": {
-    "enabled": true,
-    "writeToLogFile": true
-  },
-  "nativeAllowList": [
-    "app.*",
-    "os.*",
-    "window.*",
-    "events.*",
-    "extensions.*",
-    "storage.*",
-    "clipboard.*",
-    "debug.log"
-  ],
-  "globalVariables": {
-    "DB_EXTENSION_ID": "js.squeal.db"
-  },
-  "extensions": [
-    {
-      "id": "js.squeal.db",
-      "commandDarwin": "${NL_PATH}/extensions/db/squeal-db-ext",
-      "commandLinux": "${NL_PATH}/extensions/db/squeal-db-ext",
-      "commandWindows": "${NL_PATH}\\extensions\\db\\squeal-db-ext.exe"
+    "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
+    "applicationId": "js.squeal.editor",
+    "version": "0.17.0",
+    "defaultMode": "window",
+    "port": 0,
+    "documentRoot": "/resources/",
+    "url": "/",
+    "enableServer": true,
+    "enableNativeAPI": true,
+    "enableExtensions": true,
+    "tokenSecurity": "one-time",
+    "logging": {
+        "enabled": true,
+        "writeToLogFile": true
+    },
+    "nativeAllowList": [
+        "app.*",
+        "os.*",
+        "window.*",
+        "events.*",
+        "extensions.*",
+        "storage.*",
+        "clipboard.*",
+        "debug.log"
+    ],
+    "globalVariables": {
+        "DB_EXTENSION_ID": "js.squeal.db"
+    },
+    "extensions": [
+        {
+            "id": "js.squeal.db",
+            "commandDarwin": "${NL_PATH}/extensions/db/squeal-db-ext",
+            "commandLinux": "${NL_PATH}/extensions/db/squeal-db-ext",
+            "commandWindows": "${NL_PATH}\\extensions\\db\\squeal-db-ext.exe"
+        }
+    ],
+    "modes": {
+        "window": {
+            "title": "Squeal Editor",
+            "icon": "/resources/icon.png",
+            "width": 1280,
+            "height": 800,
+            "minWidth": 900,
+            "minHeight": 600,
+            "center": true,
+            "borderless": true,
+            "resizable": true,
+            "exitProcessOnClose": true,
+            "enableInspector": false
+        }
+    },
+    "cli": {
+        "binaryName": "squeal-editor",
+        "resourcesPath": "/resources/",
+        "extensionsPath": "/extensions/",
+        "clientLibrary": "/frontend/public/js/neutralino.js",
+        "binaryVersion": "6.8.0",
+        "clientVersion": "6.8.0"
     }
-  ],
-  "modes": {
-    "window": {
-      "title": "Squeal Editor",
-      "icon": "/resources/icon.png",
-      "width": 1280,
-      "height": 800,
-      "minWidth": 900,
-      "minHeight": 600,
-      "center": true,
-      "borderless": true,
-      "resizable": true,
-      "exitProcessOnClose": true,
-      "enableInspector": false
-    }
-  },
-  "cli": {
-    "binaryName": "squeal-editor",
-    "resourcesPath": "/resources/",
-    "extensionsPath": "/extensions/",
-    "clientLibrary": "/frontend/public/js/neutralino.js",
-    "binaryVersion": "6.8.0",
-    "clientVersion": "6.8.0"
-  }
 }

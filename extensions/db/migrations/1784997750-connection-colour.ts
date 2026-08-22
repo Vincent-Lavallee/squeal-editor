@@ -9,8 +9,9 @@ import type { Migration } from './migration.ts';
  * guess-that-costs-least as every other default column here.
  */
 export const migration: Migration = {
-  version: 1784997750,
-  name: 'connection-colour',
+    version: 1784997750,
+    name: 'connection-colour',
 
-  up: (db) => db.run("ALTER TABLE saved_connections ADD COLUMN color TEXT NOT NULL DEFAULT 'slate'"),
+    up: (db) =>
+        db.run("ALTER TABLE saved_connections ADD COLUMN color TEXT NOT NULL DEFAULT 'slate'"),
 };

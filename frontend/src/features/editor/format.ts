@@ -18,19 +18,19 @@ import { monaco } from './monaco.ts';
  * the dialect for.
  */
 export function sqlFormattingProvider(
-  dialect: SqlDialect
+    dialect: SqlDialect,
 ): monaco.languages.DocumentFormattingEditProvider {
-  return {
-    provideDocumentFormattingEdits(model) {
-      const formatted = formatSql(model.getValue(), dialect);
-      // Monaco would otherwise pop a parser error at the user about text it is
-      // perfectly happy to go on editing.
-      if (formatted === null) return [];
-      // One full-range replace. Monaco applies it as an edit, so the change
-      // flows out through `onDidChangeModelContent` like any keystroke -- this
-      // never writes the value in from outside, which is the trap `setValue`
-      // is. See `docs/frontend.md`.
-      return [{ range: model.getFullModelRange(), text: formatted }];
-    },
-  };
+    return {
+        provideDocumentFormattingEdits(model) {
+            const formatted = formatSql(model.getValue(), dialect);
+            // Monaco would otherwise pop a parser error at the user about text it is
+            // perfectly happy to go on editing.
+            if (formatted === null) return [];
+            // One full-range replace. Monaco applies it as an edit, so the change
+            // flows out through `onDidChangeModelContent` like any keystroke -- this
+            // never writes the value in from outside, which is the trap `setValue`
+            // is. See `docs/frontend.md`.
+            return [{ range: model.getFullModelRange(), text: formatted }];
+        },
+    };
 }

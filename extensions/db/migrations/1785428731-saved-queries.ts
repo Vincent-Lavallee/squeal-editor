@@ -14,11 +14,11 @@ import type { Migration } from './migration.ts';
  * servers; two queries called `daily revenue` are one query saved twice.
  */
 export const migration: Migration = {
-  version: 1785428731,
-  name: 'saved-queries',
+    version: 1785428731,
+    name: 'saved-queries',
 
-  up: (db) =>
-    db.run(`CREATE TABLE saved_queries (
+    up: (db) =>
+        db.run(`CREATE TABLE saved_queries (
       id   TEXT PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
       sql  TEXT NOT NULL

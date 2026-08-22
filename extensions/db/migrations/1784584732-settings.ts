@@ -14,11 +14,11 @@ import type { Migration } from './migration.ts';
  * holding an answer the feature never chose.
  */
 export const migration: Migration = {
-  version: 1784584732,
-  name: 'settings',
+    version: 1784584732,
+    name: 'settings',
 
-  up: (db) =>
-    db.run(`CREATE TABLE settings (
+    up: (db) =>
+        db.run(`CREATE TABLE settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )`),

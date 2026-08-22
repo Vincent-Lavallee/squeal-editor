@@ -7,20 +7,20 @@ import type { ConnectionConfig } from '../../shared/protocol/index.ts';
  * real you have running. Managed by `bun run test:db:up` / `:down`.
  */
 export const PG: ConnectionConfig = {
-  type: 'postgres',
-  host: '127.0.0.1',
-  port: 55432,
-  user: 'postgres',
-  password: 'secret',
-  database: 'postgres',
+    type: 'postgres',
+    host: '127.0.0.1',
+    port: 55432,
+    user: 'postgres',
+    password: 'secret',
+    database: 'postgres',
 };
 
 export const MYSQL: ConnectionConfig = {
-  type: 'mysql',
-  host: '127.0.0.1',
-  port: 53306,
-  user: 'root',
-  password: 'secret',
+    type: 'mysql',
+    host: '127.0.0.1',
+    port: 53306,
+    user: 'root',
+    password: 'secret',
 };
 
 /**
@@ -35,12 +35,12 @@ export const MYSQL: ConnectionConfig = {
 export const SQLITE_FILE = join(import.meta.dir, 'shop.db');
 
 export const SQLITE: ConnectionConfig = {
-  type: 'sqlite',
-  host: '',
-  port: 0,
-  user: '',
-  password: '',
-  database: SQLITE_FILE,
+    type: 'sqlite',
+    host: '',
+    port: 0,
+    user: '',
+    password: '',
+    database: SQLITE_FILE,
 };
 
 export const PG_CONTAINER = 'squeal-pg';

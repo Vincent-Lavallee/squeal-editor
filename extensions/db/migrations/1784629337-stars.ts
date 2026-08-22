@@ -16,11 +16,11 @@ import type { Migration } from './migration.ts';
  * the empty string is a real value the constraint can actually compare.
  */
 export const migration: Migration = {
-  version: 1784629337,
-  name: 'stars',
+    version: 1784629337,
+    name: 'stars',
 
-  up: (db) =>
-    db.run(`CREATE TABLE stars (
+    up: (db) =>
+        db.run(`CREATE TABLE stars (
       id            TEXT PRIMARY KEY,
       connection_id TEXT NOT NULL REFERENCES saved_connections(id) ON DELETE CASCADE,
       database      TEXT NOT NULL,

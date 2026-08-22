@@ -15,11 +15,11 @@ import type { Migration } from './migration.ts';
  * to mean anything.
  */
 export const migration: Migration = {
-  version: 1785067675,
-  name: 'environments',
+    version: 1785067675,
+    name: 'environments',
 
-  up: (db) => {
-    db.run(`
+    up: (db) => {
+        db.run(`
       CREATE TABLE environments (
         id       TEXT PRIMARY KEY,
         name     TEXT NOT NULL UNIQUE,
@@ -27,8 +27,12 @@ export const migration: Migration = {
       );
     `);
 
-    ['local', 'dev', 'qa', 'production'].forEach((name, position) => {
-      db.run('INSERT INTO environments (id, name, position) VALUES (?, ?, ?)', [randomUUID(), name, position]);
-    });
-  },
+        ['local', 'dev', 'qa', 'production'].forEach((name, position) => {
+            db.run('INSERT INTO environments (id, name, position) VALUES (?, ?, ?)', [
+                randomUUID(),
+                name,
+                position,
+            ]);
+        });
+    },
 };

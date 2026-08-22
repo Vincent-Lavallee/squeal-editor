@@ -9,22 +9,22 @@ import { isFileEngine, type EngineType } from '../../../../shared/protocol/index
  * the label too, and a second copy of this table is how the two drift apart.
  */
 export interface Engine {
-  value: EngineType;
-  label: string;
-  defaultPort: number;
-  defaultUser: string;
+    value: EngineType;
+    label: string;
+    defaultPort: number;
+    defaultUser: string;
 }
 
 export const ENGINES: Engine[] = [
-  { value: 'postgres', label: 'PostgreSQL', defaultPort: 5432, defaultUser: 'postgres' },
-  { value: 'mysql', label: 'MySQL', defaultPort: 3306, defaultUser: 'root' },
-  // No port and no user: the address is a file path, which the form collects
-  // into `config.database` -- see `ServerConfig`.
-  { value: 'sqlite', label: 'SQLite', defaultPort: 0, defaultUser: '' },
+    { value: 'postgres', label: 'PostgreSQL', defaultPort: 5432, defaultUser: 'postgres' },
+    { value: 'mysql', label: 'MySQL', defaultPort: 3306, defaultUser: 'root' },
+    // No port and no user: the address is a file path, which the form collects
+    // into `config.database` -- see `ServerConfig`.
+    { value: 'sqlite', label: 'SQLite', defaultPort: 0, defaultUser: '' },
 ];
 
 export const engineByType = (type: EngineType): Engine =>
-  ENGINES.find((e) => e.value === type) ?? ENGINES[0]!;
+    ENGINES.find((e) => e.value === type) ?? ENGINES[0]!;
 
 export const engineLabel = (type: EngineType): string => engineByType(type).label;
 

@@ -25,23 +25,23 @@ import { qualifierAt, resolveQualifier, scanScope } from './sqlScope.ts';
  * is registered once and the catalog changes underneath it all session.
  */
 export interface CompletionSnapshot {
-  words: Word[];
-  /**
-   * Which engine is being typed at, and therefore how a name has to be spelled
-   * to survive being inserted — see `quoteIdentifierIfNeeded`.
-   */
-  dialect: SqlDialect;
-  /** The active tab's database's tables. Empty until they land. */
-  tables: TableInfo[];
-  /**
-   * The schema this engine leaves implied. A relation in it is offered both
-   * qualified and bare, since either resolves; one in any other schema only
-   * qualified. Undefined means no schema goes without saying -- an engine with no
-   * schema layer, or no connection yet.
-   */
-  defaultSchema?: string;
-  /** `null` while the fetch is in flight, or if it failed. */
-  columnsFor: (table: string) => ColumnInfo[] | null;
+    words: Word[];
+    /**
+     * Which engine is being typed at, and therefore how a name has to be spelled
+     * to survive being inserted — see `quoteIdentifierIfNeeded`.
+     */
+    dialect: SqlDialect;
+    /** The active tab's database's tables. Empty until they land. */
+    tables: TableInfo[];
+    /**
+     * The schema this engine leaves implied. A relation in it is offered both
+     * qualified and bare, since either resolves; one in any other schema only
+     * qualified. Undefined means no schema goes without saying -- an engine with no
+     * schema layer, or no connection yet.
+     */
+    defaultSchema?: string;
+    /** `null` while the fetch is in flight, or if it failed. */
+    columnsFor: (table: string) => ColumnInfo[] | null;
 }
 
 const { CompletionItemKind } = monaco.languages;
@@ -62,32 +62,32 @@ const SORT = { column: '0', table: '1', word: '2' } as const;
  * has to a relational one -- it was built for a language server.
  */
 const KIND = {
-  column: CompletionItemKind.Field,
-  table: CompletionItemKind.Struct,
-  view: CompletionItemKind.Interface,
-  keyword: CompletionItemKind.Keyword,
-  function: CompletionItemKind.Function,
+    column: CompletionItemKind.Field,
+    table: CompletionItemKind.Struct,
+    view: CompletionItemKind.Interface,
+    keyword: CompletionItemKind.Keyword,
+    function: CompletionItemKind.Function,
 } as const;
 
 /** Where the item being typed starts and ends, so accepting one replaces it. */
 function wordRange(model: monaco.editor.ITextModel, position: monaco.Position): monaco.IRange {
-  const word = model.getWordUntilPosition(position);
-  return {
-    startLineNumber: position.lineNumber,
-    endLineNumber: position.lineNumber,
-    startColumn: word.startColumn,
-    endColumn: word.endColumn,
-  };
+    const word = model.getWordUntilPosition(position);
+    return {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn,
+    };
 }
 
 /** The text of the line up to the cursor: what the scans below read. */
 function lineToCursor(model: monaco.editor.ITextModel, position: monaco.Position): string {
-  return model.getValueInRange({
-    startLineNumber: position.lineNumber,
-    endLineNumber: position.lineNumber,
-    startColumn: 1,
-    endColumn: position.column,
-  });
+    return model.getValueInRange({
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: 1,
+        endColumn: position.column,
+    });
 }
 
 /**
@@ -106,20 +106,20 @@ function lineToCursor(model: monaco.editor.ITextModel, position: monaco.Position
  * the range to swallow the one they typed would delete a character they meant.
  */
 const namer = (dialect: SqlDialect, quoteAlreadyOpen: boolean) => (name: string) =>
-  quoteAlreadyOpen ? name : quoteIdentifierIfNeeded(name, dialect);
+    quoteAlreadyOpen ? name : quoteIdentifierIfNeeded(name, dialect);
 
 const columnItem = (
-  column: ColumnInfo,
-  range: monaco.IRange,
-  detail: string,
-  insertName: (name: string) => string
+    column: ColumnInfo,
+    range: monaco.IRange,
+    detail: string,
+    insertName: (name: string) => string,
 ): monaco.languages.CompletionItem => ({
-  label: column.name,
-  kind: KIND.column,
-  detail,
-  insertText: insertName(column.name),
-  sortText: SORT.column + column.name,
-  range,
+    label: column.name,
+    kind: KIND.column,
+    detail,
+    insertText: insertName(column.name),
+    sortText: SORT.column + column.name,
+    range,
 });
 
 // `relation` is passed whole rather than as its printed name because each half
@@ -128,134 +128,148 @@ const columnItem = (
 // unqualified list writes the schema-qualified label, while `schema.` writes the
 // bare name, the schema being already typed to the left of the dot.
 const tableItem = (
-  table: TableInfo,
-  range: monaco.IRange,
-  relation: Relation,
-  insertName: (name: string) => string
+    table: TableInfo,
+    range: monaco.IRange,
+    relation: Relation,
+    insertName: (name: string) => string,
 ): monaco.languages.CompletionItem => {
-  const name = relationName(relation);
-  return {
-    label: name,
-    kind: table.kind === 'view' ? KIND.view : KIND.table,
-    detail: table.kind,
-    insertText:
-      relation.schema === undefined
-        ? insertName(relation.table)
-        : `${insertName(relation.schema)}.${insertName(relation.table)}`,
-    sortText: SORT.table + name,
-    range,
-  };
+    const name = relationName(relation);
+    return {
+        label: name,
+        kind: table.kind === 'view' ? KIND.view : KIND.table,
+        detail: table.kind,
+        insertText:
+            relation.schema === undefined
+                ? insertName(relation.table)
+                : `${insertName(relation.schema)}.${insertName(relation.table)}`,
+        sortText: SORT.table + name,
+        range,
+    };
 };
 
 /**
  * Builds the provider. `snapshot` is called per request, never captured.
  */
 export function sqlCompletionProvider(
-  snapshot: () => CompletionSnapshot
+    snapshot: () => CompletionSnapshot,
 ): monaco.languages.CompletionItemProvider {
-  return {
-    // The dot is not a word character, so nothing would re-trigger the popup
-    // after one without this -- typing `u.` would leave you pressing Ctrl+Space
-    // at the exact moment the editor has the most to say.
-    triggerCharacters: ['.'],
+    return {
+        // The dot is not a word character, so nothing would re-trigger the popup
+        // after one without this -- typing `u.` would leave you pressing Ctrl+Space
+        // at the exact moment the editor has the most to say.
+        triggerCharacters: ['.'],
 
-    provideCompletionItems(model, position) {
-      const { words, tables, defaultSchema, columnsFor, dialect } = snapshot();
-      // Scanned from the model Monaco is actually asking about, not from
-      // whichever pane's hook last rendered: the provider is registered once
-      // per dialect and every open editor answers through it, so a snapshot
-      // fact that varies *per tab* has to be read off the request itself, not
-      // closed over. Split panes are exactly the case that would otherwise
-      // cross-contaminate -- see `docs/decisions.md`.
-      const scope = scanScope(model.getValue());
-      const range = wordRange(model, position);
-      const line = lineToCursor(model, position);
-      const quoteAlreadyOpen = line[range.startColumn - 2] === identifierQuote(dialect);
-      const insertName = namer(dialect, quoteAlreadyOpen);
+        provideCompletionItems(model, position) {
+            const { words, tables, defaultSchema, columnsFor, dialect } = snapshot();
+            // Scanned from the model Monaco is actually asking about, not from
+            // whichever pane's hook last rendered: the provider is registered once
+            // per dialect and every open editor answers through it, so a snapshot
+            // fact that varies *per tab* has to be read off the request itself, not
+            // closed over. Split panes are exactly the case that would otherwise
+            // cross-contaminate -- see `docs/decisions.md`.
+            const scope = scanScope(model.getValue());
+            const range = wordRange(model, position);
+            const line = lineToCursor(model, position);
+            const quoteAlreadyOpen = line[range.startColumn - 2] === identifierQuote(dialect);
+            const insertName = namer(dialect, quoteAlreadyOpen);
 
-      /*
-       * After a dot, the qualifier is the entire question, and it is one of two:
-       * a table or alias, whose columns are the answer (`u.` -> that table's
-       * columns and nothing else, since keywords cannot follow a dot); or a
-       * schema, whose relations are (`public.` -> the tables in `public`). Either
-       * way keywords are suppressed -- they would bury the answer under words the
-       * dot has already ruled out.
-       */
-      const qualifier = qualifierAt(line);
-      if (qualifier) {
-        const table = resolveQualifier(qualifier, scope);
-        const columns = table ? columnsFor(table) : null;
-        // A resolved table with its columns in hand: those are the answer.
-        if (columns && columns.length > 0) {
-          return { suggestions: columns.map((c) => columnItem(c, range, c.dataType, insertName)) };
-        }
-        // Otherwise the qualifier may be a schema, and `public.` is then asking
-        // for the relations in it, named bare because the schema is already
-        // typed. This has to come second, not first: a name ending in a dot in
-        // the FROM (`FROM public.`) is scanned as a bogus table, so `resolveQualifier`
-        // claims `public` as a table -- but the catalog has no columns for it, so
-        // an empty column answer is the tell that the schema was meant. A real
-        // table sharing a schema's name keeps its columns, since those land here
-        // non-empty and never reach this branch.
-        const inSchema = tables.filter((t) => t.schema !== undefined && t.schema.toLowerCase() === qualifier.toLowerCase());
-        if (inSchema.length > 0) {
-          return { suggestions: inSchema.map((t) => tableItem(t, range, { table: t.name }, insertName)) };
-        }
-        // A real table whose columns have not landed yet, or a qualifier that is
-        // neither table nor schema: an empty popup that closes on the next key,
-        // never the whole dialect suggested at a dot.
-        return { suggestions: [] };
-      }
+            /*
+             * After a dot, the qualifier is the entire question, and it is one of two:
+             * a table or alias, whose columns are the answer (`u.` -> that table's
+             * columns and nothing else, since keywords cannot follow a dot); or a
+             * schema, whose relations are (`public.` -> the tables in `public`). Either
+             * way keywords are suppressed -- they would bury the answer under words the
+             * dot has already ruled out.
+             */
+            const qualifier = qualifierAt(line);
+            if (qualifier) {
+                const table = resolveQualifier(qualifier, scope);
+                const columns = table ? columnsFor(table) : null;
+                // A resolved table with its columns in hand: those are the answer.
+                if (columns && columns.length > 0) {
+                    return {
+                        suggestions: columns.map((c) =>
+                            columnItem(c, range, c.dataType, insertName),
+                        ),
+                    };
+                }
+                // Otherwise the qualifier may be a schema, and `public.` is then asking
+                // for the relations in it, named bare because the schema is already
+                // typed. This has to come second, not first: a name ending in a dot in
+                // the FROM (`FROM public.`) is scanned as a bogus table, so `resolveQualifier`
+                // claims `public` as a table -- but the catalog has no columns for it, so
+                // an empty column answer is the tell that the schema was meant. A real
+                // table sharing a schema's name keeps its columns, since those land here
+                // non-empty and never reach this branch.
+                const inSchema = tables.filter(
+                    (t) =>
+                        t.schema !== undefined &&
+                        t.schema.toLowerCase() === qualifier.toLowerCase(),
+                );
+                if (inSchema.length > 0) {
+                    return {
+                        suggestions: inSchema.map((t) =>
+                            tableItem(t, range, { table: t.name }, insertName),
+                        ),
+                    };
+                }
+                // A real table whose columns have not landed yet, or a qualifier that is
+                // neither table nor schema: an empty popup that closes on the next key,
+                // never the whole dialect suggested at a dot.
+                return { suggestions: [] };
+            }
 
-      const suggestions: monaco.languages.CompletionItem[] = [];
+            const suggestions: monaco.languages.CompletionItem[] = [];
 
-      /*
-       * Columns of the tables already in the FROM/JOIN, unqualified.
-       *
-       * This is the case the feature is really for: `SELECT ema…` after
-       * `FROM users` should offer `email`, and demanding `users.email` first
-       * would be asking the reader to type the thing they came here not to
-       * remember. They sort above tables and words because the query has already
-       * said which tables it is about -- that is a stronger signal than a name
-       * merely matching.
-       */
-      for (const table of scope.tables) {
-        const columns = columnsFor(table);
-        if (!columns) continue;
-        for (const column of columns) {
-          // The table is named in the detail, which the qualified case leaves
-          // out: two tables in a join both have an `id`, and here the label is
-          // the only thing distinguishing entries that are not the same column.
-          suggestions.push(columnItem(column, range, `${column.dataType} · ${table}`, insertName));
-        }
-      }
+            /*
+             * Columns of the tables already in the FROM/JOIN, unqualified.
+             *
+             * This is the case the feature is really for: `SELECT ema…` after
+             * `FROM users` should offer `email`, and demanding `users.email` first
+             * would be asking the reader to type the thing they came here not to
+             * remember. They sort above tables and words because the query has already
+             * said which tables it is about -- that is a stronger signal than a name
+             * merely matching.
+             */
+            for (const table of scope.tables) {
+                const columns = columnsFor(table);
+                if (!columns) continue;
+                for (const column of columns) {
+                    // The table is named in the detail, which the qualified case leaves
+                    // out: two tables in a join both have an `id`, and here the label is
+                    // the only thing distinguishing entries that are not the same column.
+                    suggestions.push(
+                        columnItem(column, range, `${column.dataType} · ${table}`, insertName),
+                    );
+                }
+            }
 
-      for (const table of tables) {
-        // Every relation is offered fully qualified -- `public.users` reads the
-        // same way `reporting.daily_stats` does.
-        suggestions.push(tableItem(table, range, relationOf(table), insertName));
-        // A default-schema relation also resolves unqualified, so the bare name
-        // is offered too: `users` and `public.users` are both valid and either
-        // may be what you want. A relation in another schema gets only the
-        // qualified form -- a bare name there goes through `search_path` and does
-        // not resolve. (No-schema engines never enter this branch: the qualified
-        // name is already bare, so a second entry would just duplicate it.)
-        if (table.schema !== undefined && table.schema === defaultSchema) {
-          suggestions.push(tableItem(table, range, { table: table.name }, insertName));
-        }
-      }
+            for (const table of tables) {
+                // Every relation is offered fully qualified -- `public.users` reads the
+                // same way `reporting.daily_stats` does.
+                suggestions.push(tableItem(table, range, relationOf(table), insertName));
+                // A default-schema relation also resolves unqualified, so the bare name
+                // is offered too: `users` and `public.users` are both valid and either
+                // may be what you want. A relation in another schema gets only the
+                // qualified form -- a bare name there goes through `search_path` and does
+                // not resolve. (No-schema engines never enter this branch: the qualified
+                // name is already bare, so a second entry would just duplicate it.)
+                if (table.schema !== undefined && table.schema === defaultSchema) {
+                    suggestions.push(tableItem(table, range, { table: table.name }, insertName));
+                }
+            }
 
-      for (const word of words) {
-        suggestions.push({
-          label: word.label,
-          kind: word.kind === 'function' ? KIND.function : KIND.keyword,
-          insertText: word.label,
-          sortText: SORT.word + word.label,
-          range,
-        });
-      }
+            for (const word of words) {
+                suggestions.push({
+                    label: word.label,
+                    kind: word.kind === 'function' ? KIND.function : KIND.keyword,
+                    insertText: word.label,
+                    sortText: SORT.word + word.label,
+                    range,
+                });
+            }
 
-      return { suggestions };
-    },
-  };
+            return { suggestions };
+        },
+    };
 }

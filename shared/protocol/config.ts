@@ -55,10 +55,10 @@ export type SqlDialect = 'mysql' | 'pgsql' | 'sql';
  * default trust store does not carry -- see `docs/decisions.md`.
  */
 export interface AwsIamAuth {
-  /** The named AWS profile (from `~/.aws/config`) whose credentials sign the token. */
-  profile: string;
-  /** The region the RDS instance is in; the token is scoped to it. */
-  region: string;
+    /** The named AWS profile (from `~/.aws/config`) whose credentials sign the token. */
+    profile: string;
+    /** The region the RDS instance is in; the token is scoped to it. */
+    region: string;
 }
 
 /**
@@ -71,9 +71,9 @@ export interface AwsIamAuth {
  * lapsed SSO session is fixed by signing in, a missing profile is not.
  */
 export interface AwsCredentialStatus {
-  valid: boolean;
-  problem: string | null;
-  signInHelps: boolean;
+    valid: boolean;
+    problem: string | null;
+    signInHelps: boolean;
 }
 
 /**
@@ -86,52 +86,52 @@ export interface AwsCredentialStatus {
  * password again, so it is not kept.
  */
 export interface ServerConfig {
-  type: EngineType;
-  /**
-   * Where the server is. A file-based engine has no server to address, so
-   * SQLite writes `host: ''`, `port: 0` and `user: ''` and carries its path in
-   * `database` -- see below. They stay required rather than becoming optional so
-   * every server engine keeps its compile-time guarantee that an address exists.
-   */
-  host: string;
-  port: number;
-  user: string;
-  /**
-   * Bootstrap database. Postgres must connect to one; MySQL may omit it.
-   *
-   * **For SQLite this is the path to the database file**, and it is required.
-   * The file *is* the database there -- there is no server holding several and
-   * no name to pick out of one -- so a second field for the path would be a
-   * field that only ever holds what this one already means. It is what the
-   * driver opens, and what `listDatabases` reports back as the sole database.
-   */
-  database?: string;
-  /**
-   * Reach the server over TLS, verifying its certificate against the machine's
-   * trust store. Absent means plaintext.
-   *
-   * It is one flag rather than an engine's own ladder of modes -- and the flag
-   * means *verified* TLS, not merely encrypted, which is the only reading that
-   * survives being written down. Both engines' libraries would happily take
-   * `rejectUnauthorized: false` and hand back a channel that is encrypted
-   * against an observer and wide open to anyone in the middle of it; a
-   * connection like that would report "SSL" while guaranteeing nothing, which is
-   * the same lie as a `Date` that shifts an hour. So verification is not a
-   * second option here -- there is nothing to turn off.
-   *
-   * The cost is that a server whose certificate the machine does not already
-   * trust -- RDS, or any private CA -- cannot be reached with this on until a CA
-   * certificate can be named. That is a backlog item, and until it lands the
-   * failure is a refused connect that says so, not a silent downgrade.
-   */
-  ssl?: boolean;
-  /**
-   * Present when the connection authenticates with an RDS IAM token instead of a
-   * password. It requires `ssl` and carries no secret of its own -- the token is
-   * minted at connect time from the profile and region here. Absent means the
-   * ordinary password auth every other connection uses.
-   */
-  iam?: AwsIamAuth;
+    type: EngineType;
+    /**
+     * Where the server is. A file-based engine has no server to address, so
+     * SQLite writes `host: ''`, `port: 0` and `user: ''` and carries its path in
+     * `database` -- see below. They stay required rather than becoming optional so
+     * every server engine keeps its compile-time guarantee that an address exists.
+     */
+    host: string;
+    port: number;
+    user: string;
+    /**
+     * Bootstrap database. Postgres must connect to one; MySQL may omit it.
+     *
+     * **For SQLite this is the path to the database file**, and it is required.
+     * The file *is* the database there -- there is no server holding several and
+     * no name to pick out of one -- so a second field for the path would be a
+     * field that only ever holds what this one already means. It is what the
+     * driver opens, and what `listDatabases` reports back as the sole database.
+     */
+    database?: string;
+    /**
+     * Reach the server over TLS, verifying its certificate against the machine's
+     * trust store. Absent means plaintext.
+     *
+     * It is one flag rather than an engine's own ladder of modes -- and the flag
+     * means *verified* TLS, not merely encrypted, which is the only reading that
+     * survives being written down. Both engines' libraries would happily take
+     * `rejectUnauthorized: false` and hand back a channel that is encrypted
+     * against an observer and wide open to anyone in the middle of it; a
+     * connection like that would report "SSL" while guaranteeing nothing, which is
+     * the same lie as a `Date` that shifts an hour. So verification is not a
+     * second option here -- there is nothing to turn off.
+     *
+     * The cost is that a server whose certificate the machine does not already
+     * trust -- RDS, or any private CA -- cannot be reached with this on until a CA
+     * certificate can be named. That is a backlog item, and until it lands the
+     * failure is a refused connect that says so, not a silent downgrade.
+     */
+    ssl?: boolean;
+    /**
+     * Present when the connection authenticates with an RDS IAM token instead of a
+     * password. It requires `ssl` and carries no secret of its own -- the token is
+     * minted at connect time from the profile and region here. Absent means the
+     * ordinary password auth every other connection uses.
+     */
+    iam?: AwsIamAuth;
 }
 
 /**
@@ -143,7 +143,7 @@ export interface ServerConfig {
  * password path keeps its compile-time guarantee that a secret is present.
  */
 export interface ConnectionConfig extends ServerConfig {
-  password: string;
+    password: string;
 }
 
 /**
@@ -173,9 +173,9 @@ export type Environment = string;
  * this is a list and not a set -- append-only, since nothing here reorders it.
  */
 export interface EnvironmentDef {
-  id: string;
-  name: string;
-  position: number;
+    id: string;
+    name: string;
+    position: number;
 }
 
 /**
@@ -188,15 +188,7 @@ export interface EnvironmentDef {
  * one -- see `docs/design-system.md`.
  */
 export type WorkspaceIconId =
-  | 'stack'
-  | 'cube'
-  | 'rocket'
-  | 'flask'
-  | 'building'
-  | 'cart'
-  | 'chart'
-  | 'globe'
-  | 'leaf';
+    'stack' | 'cube' | 'rocket' | 'flask' | 'building' | 'cart' | 'chart' | 'globe' | 'leaf';
 
 /**
  * A saved connection's colour, as an id rather than a hex.
@@ -209,15 +201,7 @@ export type WorkspaceIconId =
  * edited by hand -- is never colourless.
  */
 export type ConnectionColorId =
-  | 'slate'
-  | 'blue'
-  | 'cyan'
-  | 'green'
-  | 'amber'
-  | 'orange'
-  | 'red'
-  | 'pink'
-  | 'purple';
+    'slate' | 'blue' | 'cyan' | 'green' | 'amber' | 'orange' | 'red' | 'pink' | 'purple';
 
 /**
  * A project's connections, grouped.
@@ -233,9 +217,9 @@ export type ConnectionColorId =
  * `SavedConnection.color` -- so the group heading is plain text.
  */
 export interface Workspace {
-  id: string;
-  name: string;
-  icon: WorkspaceIconId;
+    id: string;
+    name: string;
+    icon: WorkspaceIconId;
 }
 
 /**
@@ -244,31 +228,31 @@ export interface Workspace {
  * this direction, so `hasPassword` is all the UI learns about it.
  */
 export interface SavedConnection {
-  id: string;
-  /** The workspace it belongs to. Deleting that workspace deletes this. */
-  workspaceId: string;
-  name: string;
-  config: ServerConfig;
-  environment: Environment;
-  /**
-   * This connection's own swatch, the same way a workspace's `icon` is its own
-   * mark. Every connection has one -- the form always sends a choice, defaulting
-   * to `slate` for one nobody has picked a colour for yet -- because a workspace
-   * carries no colour to fall back to. The rail reads this and only this.
-   */
-  color: ConnectionColorId;
-  /**
-   * Open this connection read-only, letting the server refuse writes.
-   *
-   * Beside `environment` rather than inside `config`, and deliberately: a
-   * `ServerConfig` is what it takes to *reach* a server, and read-only is a
-   * session policy that changes nothing about reaching it -- the same reason
-   * `environment` is a sibling and not a field of the config. Defaulted on for
-   * Production, but that policy lives in the UI; the extension is told a boolean.
-   */
-  readOnly: boolean;
-  /** False when the user chose not to store one -- connecting must ask for it. */
-  hasPassword: boolean;
+    id: string;
+    /** The workspace it belongs to. Deleting that workspace deletes this. */
+    workspaceId: string;
+    name: string;
+    config: ServerConfig;
+    environment: Environment;
+    /**
+     * This connection's own swatch, the same way a workspace's `icon` is its own
+     * mark. Every connection has one -- the form always sends a choice, defaulting
+     * to `slate` for one nobody has picked a colour for yet -- because a workspace
+     * carries no colour to fall back to. The rail reads this and only this.
+     */
+    color: ConnectionColorId;
+    /**
+     * Open this connection read-only, letting the server refuse writes.
+     *
+     * Beside `environment` rather than inside `config`, and deliberately: a
+     * `ServerConfig` is what it takes to *reach* a server, and read-only is a
+     * session policy that changes nothing about reaching it -- the same reason
+     * `environment` is a sibling and not a field of the config. Defaulted on for
+     * Production, but that policy lives in the UI; the extension is told a boolean.
+     */
+    readOnly: boolean;
+    /** False when the user chose not to store one -- connecting must ask for it. */
+    hasPassword: boolean;
 }
 
 /**
@@ -281,9 +265,9 @@ export interface SavedConnection {
  * than `connections` whenever some of them store none.
  */
 export interface ConnectionExportSummary {
-  workspaces: number;
-  connections: number;
-  passwords: number;
+    workspaces: number;
+    connections: number;
+    passwords: number;
 }
 
 /**
@@ -296,10 +280,10 @@ export interface ConnectionExportSummary {
  * not a failure.
  */
 export interface ConnectionImportSummary {
-  workspacesAdded: number;
-  connectionsAdded: number;
-  connectionsUpdated: number;
-  passwords: number;
+    workspacesAdded: number;
+    connectionsAdded: number;
+    connectionsUpdated: number;
+    passwords: number;
 }
 
 /**
@@ -309,9 +293,7 @@ export interface ConnectionImportSummary {
  * as a value.
  */
 export type PasswordUpdate =
-  | { mode: 'store'; password: string }
-  | { mode: 'none' }
-  | { mode: 'keep' };
+    { mode: 'store'; password: string } | { mode: 'none' } | { mode: 'keep' };
 
 /**
  * Which password a `db.test` reaches the server with.
@@ -328,5 +310,4 @@ export type PasswordUpdate =
  * empty string a driver never reads -- see `ConnectionConfig`.
  */
 export type TestPassword =
-  | { mode: 'typed'; password: string }
-  | { mode: 'stored'; savedConnectionId: string };
+    { mode: 'typed'; password: string } | { mode: 'stored'; savedConnectionId: string };

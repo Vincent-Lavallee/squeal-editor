@@ -3,16 +3,16 @@ import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 
 import {
-  AI_DELTA_EVENT,
-  AWS_SSO_PROMPT_EVENT,
-  CONNECT_PROGRESS_EVENT,
-  CONNECTION_STATE_EVENT,
-  UPDATE_PROGRESS_EVENT,
-  type AiDelta,
-  type AwsSsoPrompt,
-  type ConnectionState,
-  type ConnectProgress,
-  type UpdateProgress,
+    AI_DELTA_EVENT,
+    AWS_SSO_PROMPT_EVENT,
+    CONNECT_PROGRESS_EVENT,
+    CONNECTION_STATE_EVENT,
+    UPDATE_PROGRESS_EVENT,
+    type AiDelta,
+    type AwsSsoPrompt,
+    type ConnectionState,
+    type ConnectProgress,
+    type UpdateProgress,
 } from '../../shared/protocol/index.ts';
 import App from './App.tsx';
 import { store } from './store/index.ts';
@@ -41,41 +41,41 @@ void store.dispatch(loadAiStatus());
 // here rather than through `bridge.call`. The store is the composition root's,
 // so this is where the extension's out-of-band event meets it.
 void Neutralino.events.on(UPDATE_PROGRESS_EVENT, (evt: CustomEvent) => {
-  store.dispatch(progressReceived(evt.detail as UpdateProgress));
+    store.dispatch(progressReceived(evt.detail as UpdateProgress));
 });
 
 // Connection progress is the same fire-and-forget pattern as update progress.
 void Neutralino.events.on(CONNECT_PROGRESS_EVENT, (evt: CustomEvent) => {
-  store.dispatch(connectionProgressReceived(evt.detail as ConnectProgress));
+    store.dispatch(connectionProgressReceived(evt.detail as ConnectProgress));
 });
 
 // A connection dropping is the one of these three that nobody asked for: it is
 // the server hanging up on a session already open, so it can only ever arrive
 // this way rather than as the reply to a command.
 void Neutralino.events.on(CONNECTION_STATE_EVENT, (evt: CustomEvent) => {
-  store.dispatch(connectionStateReceived(evt.detail as ConnectionState));
+    store.dispatch(connectionStateReceived(evt.detail as ConnectionState));
 });
 
 // What `aws sso login` is waiting for. Not progress: the URL and the code *are*
 // the interaction, and they arrive while the command is still running, so they
 // cannot ride back on its reply.
 void Neutralino.events.on(AWS_SSO_PROMPT_EVENT, (evt: CustomEvent) => {
-  store.dispatch(promptReceived(evt.detail as AwsSsoPrompt));
+    store.dispatch(promptReceived(evt.detail as AwsSsoPrompt));
 });
 
 // A model's answer filling in. `ai.send` resolves with the finished message; this
 // is only what is on screen in between, the same split update progress draws.
 void Neutralino.events.on(AI_DELTA_EVENT, (evt: CustomEvent) => {
-  store.dispatch(deltaReceived(evt.detail as AiDelta));
+    store.dispatch(deltaReceived(evt.detail as AiDelta));
 });
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root missing from index.html');
 
 createRoot(root).render(
-  <React.StrictMode>
-    <Provider store={store}>
-      <App />
-    </Provider>
-  </React.StrictMode>
+    <React.StrictMode>
+        <Provider store={store}>
+            <App />
+        </Provider>
+    </React.StrictMode>,
 );

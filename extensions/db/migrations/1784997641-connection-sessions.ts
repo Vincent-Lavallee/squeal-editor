@@ -16,11 +16,11 @@ import type { Migration } from './migration.ts';
  * takes its saved session with it.
  */
 export const migration: Migration = {
-  version: 1784997641,
-  name: 'connection-sessions',
+    version: 1784997641,
+    name: 'connection-sessions',
 
-  up: (db) =>
-    db.run(`CREATE TABLE connection_sessions (
+    up: (db) =>
+        db.run(`CREATE TABLE connection_sessions (
       connection_id TEXT PRIMARY KEY REFERENCES saved_connections(id) ON DELETE CASCADE,
       snapshot      TEXT NOT NULL
     )`),

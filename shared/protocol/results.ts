@@ -24,9 +24,9 @@ export type CellValue = string | number | boolean | null;
  * the tree can group by it without asking which case it is looking at.
  */
 export interface TableInfo {
-  name: string;
-  schema?: string;
-  kind: 'table' | 'view';
+    name: string;
+    schema?: string;
+    kind: 'table' | 'view';
 }
 
 /**
@@ -36,9 +36,9 @@ export interface TableInfo {
  * relation in one database, not about the table name alone.
  */
 export interface StarredTable {
-  database: string;
-  table: string;
-  schema?: string;
+    database: string;
+    table: string;
+    schema?: string;
 }
 
 /**
@@ -52,10 +52,10 @@ export interface StarredTable {
  * in `drivers/common.ts`.
  */
 export interface ForeignKeyRef {
-  table: string;
-  /** Absent for MySQL, whose database is its schema. */
-  schema?: string;
-  column: string;
+    table: string;
+    /** Absent for MySQL, whose database is its schema. */
+    schema?: string;
+    column: string;
 }
 
 /**
@@ -71,13 +71,13 @@ export interface ForeignKeyRef {
  * tables stay two relationships rather than collapsing into one line.
  */
 export interface ForeignKeyLink {
-  name: string;
-  columns: string[];
-  refTable: string;
-  /** Absent for MySQL and SQLite, whose database is its schema. */
-  refSchema?: string;
-  /** Parallel to `columns`: the Nth local column points at the Nth of these. */
-  refColumns: string[];
+    name: string;
+    columns: string[];
+    refTable: string;
+    /** Absent for MySQL and SQLite, whose database is its schema. */
+    refSchema?: string;
+    /** Parallel to `columns`: the Nth local column points at the Nth of these. */
+    refColumns: string[];
 }
 
 /**
@@ -88,9 +88,9 @@ export interface ForeignKeyLink {
  * so a composite constraint marks all of its columns rather than none of them.
  */
 export interface DiagramColumn {
-  name: string;
-  dataType: string;
-  primaryKey: boolean;
+    name: string;
+    dataType: string;
+    primaryKey: boolean;
 }
 
 /**
@@ -104,10 +104,10 @@ export interface DiagramColumn {
  * pointing at it, so every line in the diagram is drawn once by its source.
  */
 export interface DiagramTable {
-  name: string;
-  schema?: string;
-  columns: DiagramColumn[];
-  foreignKeys: ForeignKeyLink[];
+    name: string;
+    schema?: string;
+    columns: DiagramColumn[];
+    foreignKeys: ForeignKeyLink[];
 }
 
 /**
@@ -131,19 +131,19 @@ export interface DiagramTable {
  * and the grid both need to know before the grid can offer to follow one.
  */
 export interface ColumnInfo {
-  name: string;
-  dataType: string;
-  primaryKey: boolean;
-  foreignKey?: ForeignKeyRef;
+    name: string;
+    dataType: string;
+    primaryKey: boolean;
+    foreignKey?: ForeignKeyRef;
 }
 
 export interface QueryResult {
-  columns: string[];
-  rows: CellValue[][];
-  durationMs: number;
-  /** Set instead of columns/rows for statements that return no grid. */
-  affectedRows?: number;
-  message?: string;
+    columns: string[];
+    rows: CellValue[][];
+    durationMs: number;
+    /** Set instead of columns/rows for statements that return no grid. */
+    affectedRows?: number;
+    message?: string;
 }
 
 /**
@@ -156,38 +156,38 @@ export interface QueryResult {
  * therefore names a table, never SQL, and steps by `offset`.
  */
 export interface TablePage {
-  result: QueryResult;
-  /** Row offset of the first row here, so the grid can number rows absolutely. */
-  offset: number;
-  /** Rows per page, authored by the extension. The UI steps by it, never by 100. */
-  pageSize: number;
-  /**
-   * Whether a next page exists, *answered* rather than inferred: the page SQL
-   * asks for one row beyond `pageSize` and that row is dropped before it ships.
-   * A full page is not evidence of more rows -- a table of exactly `pageSize`
-   * rows would claim a page 2 that does not exist -- and `COUNT(*)` is a full
-   * scan to answer a question this already answers for free.
-   */
-  hasMore: boolean;
-  /**
-   * The columns that identify a row, so the grid can write back to it: the
-   * primary key, or a unique index over `NOT NULL` columns when there is no
-   * primary key. `null` when the relation has neither -- a view, or a keyless
-   * table -- which is what makes the grid read-only and say why. There is no row
-   * identity to target, so no `UPDATE`/`DELETE` can name a single row.
-   *
-   * Computed by the extension, never chosen by the UI: which columns are a
-   * legitimate identity is a catalog fact and per-engine to read, the same rule
-   * as quoting. The grid only *shows* it and hands the key values back on save.
-   */
-  keyColumns: string[] | null;
-  /**
-   * The browsed table's columns as the catalog describes them, in the same order
-   * as `result.columns`, so the grid can show each column's type in its header
-   * and knows the primary-key columns. `[]` when they could not be read, in which
-   * case the grid falls back to the bare names from `result.columns`.
-   */
-  columnInfo: ColumnInfo[];
+    result: QueryResult;
+    /** Row offset of the first row here, so the grid can number rows absolutely. */
+    offset: number;
+    /** Rows per page, authored by the extension. The UI steps by it, never by 100. */
+    pageSize: number;
+    /**
+     * Whether a next page exists, *answered* rather than inferred: the page SQL
+     * asks for one row beyond `pageSize` and that row is dropped before it ships.
+     * A full page is not evidence of more rows -- a table of exactly `pageSize`
+     * rows would claim a page 2 that does not exist -- and `COUNT(*)` is a full
+     * scan to answer a question this already answers for free.
+     */
+    hasMore: boolean;
+    /**
+     * The columns that identify a row, so the grid can write back to it: the
+     * primary key, or a unique index over `NOT NULL` columns when there is no
+     * primary key. `null` when the relation has neither -- a view, or a keyless
+     * table -- which is what makes the grid read-only and say why. There is no row
+     * identity to target, so no `UPDATE`/`DELETE` can name a single row.
+     *
+     * Computed by the extension, never chosen by the UI: which columns are a
+     * legitimate identity is a catalog fact and per-engine to read, the same rule
+     * as quoting. The grid only *shows* it and hands the key values back on save.
+     */
+    keyColumns: string[] | null;
+    /**
+     * The browsed table's columns as the catalog describes them, in the same order
+     * as `result.columns`, so the grid can show each column's type in its header
+     * and knows the primary-key columns. `[]` when they could not be read, in which
+     * case the grid falls back to the bare names from `result.columns`.
+     */
+    columnInfo: ColumnInfo[];
 }
 
 /**
@@ -202,23 +202,14 @@ export interface TablePage {
  * list that becomes one bound parameter per item.
  */
 export type FilterOperator =
-  | '='
-  | '<>'
-  | '>'
-  | '<'
-  | '>='
-  | '<='
-  | 'LIKE'
-  | 'IN'
-  | 'IS NULL'
-  | 'IS NOT NULL';
+    '=' | '<>' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'IN' | 'IS NULL' | 'IS NOT NULL';
 
 /** One builder row: a column, a comparison, and the text to compare against. */
 export interface FilterCondition {
-  column: string;
-  operator: FilterOperator;
-  /** Ignored for `IS NULL`/`IS NOT NULL`; split on commas for `IN`. */
-  value: string;
+    column: string;
+    operator: FilterOperator;
+    /** Ignored for `IS NULL`/`IS NOT NULL`; split on commas for `IN`. */
+    value: string;
 }
 
 /**
@@ -242,8 +233,8 @@ export interface FilterCondition {
  * It carries no parameters by construction: there is no structure to bind.
  */
 export type TableFilter =
-  | { kind: 'builder'; conjunction: 'AND' | 'OR'; conditions: FilterCondition[] }
-  | { kind: 'raw'; where: string };
+    | { kind: 'builder'; conjunction: 'AND' | 'OR'; conditions: FilterCondition[] }
+    | { kind: 'raw'; where: string };
 
 /**
  * The one column a result is ordered by, and which way.
@@ -259,8 +250,8 @@ export type TableFilter =
  * reason `FilterOperator` is one, since it reaches the SQL as text.
  */
 export interface SortOrder {
-  column: string;
-  direction: 'asc' | 'desc';
+    column: string;
+    direction: 'asc' | 'desc';
 }
 
 /**
@@ -274,20 +265,20 @@ export interface SortOrder {
  * Never a `Date` or a `Number` -- the write side of "show what the server sent".
  */
 export interface RowEdit {
-  key: Record<string, CellValue>;
-  set: Record<string, CellValue>;
+    key: Record<string, CellValue>;
+    set: Record<string, CellValue>;
 }
 
 /** One row's deletion, targeted by its identifying values -- see `RowEdit.key`. */
 export interface RowDelete {
-  key: Record<string, CellValue>;
+    key: Record<string, CellValue>;
 }
 
 /** A trigger in the tree, nested under its table. */
 export interface TriggerInfo {
-  name: string;
-  /** Schema for Postgres; absent for MySQL/SQLite. */
-  schema?: string;
+    name: string;
+    /** Schema for Postgres; absent for MySQL/SQLite. */
+    schema?: string;
 }
 
 /**
@@ -300,21 +291,21 @@ export interface TriggerInfo {
  * duplicate keys.
  */
 export interface FunctionInfo {
-  name: string;
-  /** Schema for Postgres; absent for MySQL. SQLite has no functions. */
-  schema?: string;
-  /** 'function' or 'procedure' for Postgres; 'function' for MySQL. */
-  kind: 'function' | 'procedure';
-  /**
-   * The catalog's own handle on this one -- Postgres' oid, as a string, because
-   * an oid past 2^31 is a number JS should not be rounding. Absent for MySQL,
-   * where a routine name is already unique within a database.
-   */
-  id?: string;
-  /**
-   * The argument list as the engine renders it (`x integer, y text`), which is
-   * what tells two overloads apart on screen. Absent where there is nothing to
-   * tell apart.
-   */
-  args?: string;
+    name: string;
+    /** Schema for Postgres; absent for MySQL. SQLite has no functions. */
+    schema?: string;
+    /** 'function' or 'procedure' for Postgres; 'function' for MySQL. */
+    kind: 'function' | 'procedure';
+    /**
+     * The catalog's own handle on this one -- Postgres' oid, as a string, because
+     * an oid past 2^31 is a number JS should not be rounding. Absent for MySQL,
+     * where a routine name is already unique within a database.
+     */
+    id?: string;
+    /**
+     * The argument list as the engine renders it (`x integer, y text`), which is
+     * what tells two overloads apart on screen. Absent where there is nothing to
+     * tell apart.
+     */
+    args?: string;
 }

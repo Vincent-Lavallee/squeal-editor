@@ -8,8 +8,7 @@
 
 /** Envelope the extension broadcasts back on the `db.response` event. */
 export type DbResponse =
-  | { reqId: number; ok: true; data: unknown }
-  | { reqId: number; ok: false; error: string };
+    { reqId: number; ok: true; data: unknown } | { reqId: number; ok: false; error: string };
 
 export const DB_RESPONSE_EVENT = 'db.response';
 
@@ -23,7 +22,7 @@ export const UPDATE_PROGRESS_EVENT = 'update.progress';
 
 /** Broadcast the extension emits during `db.connect` / `db.saved.connect`. */
 export type ConnectProgress = {
-  phase: 'iam-token' | 'connecting' | 'verifying';
+    phase: 'iam-token' | 'connecting' | 'verifying';
 };
 export const CONNECT_PROGRESS_EVENT = 'connect.progress';
 
@@ -40,8 +39,8 @@ export const CONNECT_PROGRESS_EVENT = 'connect.progress';
  * URL. The UI shows whatever it has.
  */
 export type AwsSsoPrompt = {
-  url: string;
-  code: string | null;
+    url: string;
+    code: string | null;
 };
 export const AWS_SSO_PROMPT_EVENT = 'aws.ssoPrompt';
 
@@ -55,10 +54,10 @@ export const AWS_SSO_PROMPT_EVENT = 'aws.ssoPrompt';
  * ending. `restored` is that reopen having succeeded.
  */
 export type ConnectionState = {
-  connectionId: string;
-  state: 'lost' | 'restored';
-  /** The driver's own words for why, shown in the tooltip. Absent on `restored`. */
-  reason?: string;
+    connectionId: string;
+    state: 'lost' | 'restored';
+    /** The driver's own words for why, shown in the tooltip. Absent on `restored`. */
+    reason?: string;
 };
 export const CONNECTION_STATE_EVENT = 'connection.state';
 
@@ -75,7 +74,7 @@ export const CONNECTION_STATE_EVENT = 'connection.state';
  * cancelling is worth anything.
  */
 export type AiDelta = {
-  turnId: string;
-  text: string;
+    turnId: string;
+    text: string;
 };
 export const AI_DELTA_EVENT = 'ai.delta';

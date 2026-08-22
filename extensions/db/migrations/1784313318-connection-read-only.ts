@@ -8,10 +8,11 @@ import { hasColumn, type Migration } from './migration.ts';
  * looking like the server refusing rather than the app changing the rules.
  */
 export const migration: Migration = {
-  version: 1784313318,
-  name: 'connection-read-only',
+    version: 1784313318,
+    name: 'connection-read-only',
 
-  up: (db) => db.run('ALTER TABLE saved_connections ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0'),
+    up: (db) =>
+        db.run('ALTER TABLE saved_connections ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0'),
 
-  applied: (db) => hasColumn(db, 'saved_connections', 'read_only'),
+    applied: (db) => hasColumn(db, 'saved_connections', 'read_only'),
 };

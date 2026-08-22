@@ -10,11 +10,11 @@ import type { AppDispatch, RootState } from './index.ts';
  * store -> slices -> thunk: the import is erased, so nothing loops back.
  */
 export const createAppThunk = createAsyncThunk.withTypes<{
-  state: RootState;
-  dispatch: AppDispatch;
-  rejectValue: string;
+    state: RootState;
+    dispatch: AppDispatch;
+    rejectValue: string;
 }>();
 
 /** The bridge rejects with an Error; everything else is a programmer mistake. */
 export const errorMessage = (err: unknown): string =>
-  err instanceof Error ? err.message : String(err);
+    err instanceof Error ? err.message : String(err);

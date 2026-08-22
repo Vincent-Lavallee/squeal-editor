@@ -27,8 +27,8 @@ import type { SqlDialect } from '../../../../shared/protocol/index.ts';
 export type WordKind = 'keyword' | 'function';
 
 export interface Word {
-  label: string;
-  kind: WordKind;
+    label: string;
+    kind: WordKind;
 }
 
 type Grammar = typeof mysql;
@@ -49,11 +49,11 @@ const GRAMMARS: Record<SqlDialect, Grammar> = { mysql, pgsql, sql };
  * pays for this same quirk, painting `operator` with `--syntax-keyword`.
  */
 function wordsOf(grammar: Grammar): Word[] {
-  const keywords = [...grammar.keywords, ...grammar.operators, ...grammar.builtinVariables];
-  return [
-    ...keywords.map((label): Word => ({ label, kind: 'keyword' })),
-    ...grammar.builtinFunctions.map((label): Word => ({ label, kind: 'function' })),
-  ];
+    const keywords = [...grammar.keywords, ...grammar.operators, ...grammar.builtinVariables];
+    return [
+        ...keywords.map((label): Word => ({ label, kind: 'keyword' })),
+        ...grammar.builtinFunctions.map((label): Word => ({ label, kind: 'function' })),
+    ];
 }
 
 /*
@@ -63,18 +63,18 @@ function wordsOf(grammar: Grammar): Word[] {
 const cache = new Map<SqlDialect, Word[]>();
 
 export function wordsFor(dialect: SqlDialect): Word[] {
-  const built = cache.get(dialect);
-  if (built) return built;
+    const built = cache.get(dialect);
+    if (built) return built;
 
-  // Deduped: the grammars repeat a word across their lists (`NULL` and `NOT`
-  // are keywords *and* operators in every one of them), and a suggestion list
-  // that offers NULL twice looks broken in the one way nobody can act on.
-  const seen = new Map<string, Word>();
-  for (const word of wordsOf(GRAMMARS[dialect])) {
-    if (!seen.has(word.label)) seen.set(word.label, word);
-  }
+    // Deduped: the grammars repeat a word across their lists (`NULL` and `NOT`
+    // are keywords *and* operators in every one of them), and a suggestion list
+    // that offers NULL twice looks broken in the one way nobody can act on.
+    const seen = new Map<string, Word>();
+    for (const word of wordsOf(GRAMMARS[dialect])) {
+        if (!seen.has(word.label)) seen.set(word.label, word);
+    }
 
-  const words = [...seen.values()];
-  cache.set(dialect, words);
-  return words;
+    const words = [...seen.values()];
+    cache.set(dialect, words);
+    return words;
 }

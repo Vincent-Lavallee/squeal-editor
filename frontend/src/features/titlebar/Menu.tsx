@@ -1,13 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import * as t from '../../common/tokens';
 
-interface Item { label: string; onSelect: () => void; }
-interface Props { label: string; items: Item[]; }
+interface Item {
+    label: string;
+    onSelect: () => void;
+}
+interface Props {
+    label: string;
+    items: Item[];
+}
 
 const itemBase: React.CSSProperties = {
-  padding: '6px 8px', border: 'none', borderRadius: t.RADIUS,
-  background: 'none', color: t.TEXT, font: 'inherit',
-  fontSize: t.TEXT_BODY, textAlign: 'left', cursor: 'pointer',
+    padding: '6px 8px',
+    border: 'none',
+    borderRadius: t.RADIUS,
+    background: 'none',
+    color: t.TEXT,
+    font: 'inherit',
+    fontSize: t.TEXT_BODY,
+    textAlign: 'left',
+    cursor: 'pointer',
 };
 
 /*
@@ -16,34 +28,86 @@ const itemBase: React.CSSProperties = {
  * pointerdown listener below closes it in the same gesture that opens the other.
  */
 export default function Menu({ label, items }: Props) {
-  const [open, setOpen] = useState(false);
-  const [hovered, setHovered] = useState<string | null>(null);
-  const root = useRef<HTMLDivElement>(null);
+    const [open, setOpen] = useState(false);
+    const [hovered, setHovered] = useState<string | null>(null);
+    const root = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(e: PointerEvent): void { if (!root.current?.contains(e.target as Node)) setOpen(false); }
-    function onKeyDown(e: KeyboardEvent): void { if (e.key === 'Escape') setOpen(false); }
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => { document.removeEventListener('pointerdown', onPointerDown); document.removeEventListener('keydown', onKeyDown); };
-  }, [open]);
+    useEffect(() => {
+        if (!open) return;
+        function onPointerDown(e: PointerEvent): void {
+            if (!root.current?.contains(e.target as Node)) setOpen(false);
+        }
+        function onKeyDown(e: KeyboardEvent): void {
+            if (e.key === 'Escape') setOpen(false);
+        }
+        document.addEventListener('pointerdown', onPointerDown);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('pointerdown', onPointerDown);
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, [open]);
 
-  return (
-    <div style={{ position: 'relative', flex: 'none' }} ref={root}>
-      <button data-testid="menu-trigger" data-menu={label}
-        style={{ height: t.TITLEBAR_H, padding: `0 ${t.GAP_SM}px`, border: 'none', borderRadius: t.RADIUS, background: open ? t.HOVER : 'none', color: open ? t.TEXT : t.TEXT_MUTED, font: 'inherit', fontSize: t.TEXT_BADGE, cursor: 'pointer' }}
-        aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>{label}</button>
-      {open && (
-        <div style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0, display: 'flex', flexDirection: 'column', minWidth: 160, padding: t.GAP_XS, border: `1px solid ${t.BORDER_STRONG}`, borderRadius: t.RADIUS, background: t.BG }} role="menu">
-          {items.map((item) => (
-            <button key={item.label} data-testid="menu-item" role="menuitem"
-              style={{ ...itemBase, ...(hovered === item.label ? { background: t.HOVER } : {}) }}
-              onMouseEnter={() => setHovered(item.label)} onMouseLeave={() => setHovered(null)}
-              onClick={() => { setOpen(false); item.onSelect(); }}>{item.label}</button>
-          ))}
+    return (
+        <div style={{ position: 'relative', flex: 'none' }} ref={root}>
+            <button
+                data-testid="menu-trigger"
+                data-menu={label}
+                style={{
+                    height: t.TITLEBAR_H,
+                    padding: `0 ${t.GAP_SM}px`,
+                    border: 'none',
+                    borderRadius: t.RADIUS,
+                    background: open ? t.HOVER : 'none',
+                    color: open ? t.TEXT : t.TEXT_MUTED,
+                    font: 'inherit',
+                    fontSize: t.TEXT_BADGE,
+                    cursor: 'pointer',
+                }}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={() => setOpen((v) => !v)}
+            >
+                {label}
+            </button>
+            {open && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        zIndex: 10,
+                        top: '100%',
+                        left: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minWidth: 160,
+                        padding: t.GAP_XS,
+                        border: `1px solid ${t.BORDER_STRONG}`,
+                        borderRadius: t.RADIUS,
+                        background: t.BG,
+                    }}
+                    role="menu"
+                >
+                    {items.map((item) => (
+                        <button
+                            key={item.label}
+                            data-testid="menu-item"
+                            role="menuitem"
+                            style={{
+                                ...itemBase,
+                                ...(hovered === item.label ? { background: t.HOVER } : {}),
+                            }}
+                            onMouseEnter={() => setHovered(item.label)}
+                            onMouseLeave={() => setHovered(null)}
+                            onClick={() => {
+                                setOpen(false);
+                                item.onSelect();
+                            }}
+                        >
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
+            )}
         </div>
-      )}
-    </div>
-  );
+    );
 }

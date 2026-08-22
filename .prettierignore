@@ -1,0 +1,31 @@
+# Claude Code local state — settings and worktrees, not project source.
+.claude
+
+# Build/runtime output — see .gitignore for why these aren't source.
+node_modules
+resources
+bin
+frontend/public/js
+.tmp
+dist
+extensions/db/squeal-db-ext
+extensions/db/squeal-db-ext.exe
+extensions/db/squeal-window-chrome.dll
+tests/fixtures/shop.db
+
+# Installer output, checksums, release automation.
+installer/*.exe
+installer/*.sig
+SHA256SUMS*
+.release-please-manifest.json
+CHANGELOG.md
+
+# Bun compile scratch files and logs.
+*.bun-build
+neutralinojs.log
+bun.lock
+
+# Hand-formatted prose docs — Prettier's markdown pass isn't what wrote these,
+# and prose line breaks here are intentional. Code fences inside them are not
+# linted either.
+*.md

@@ -21,75 +21,76 @@ import { createAppThunk, errorMessage } from './thunk.ts';
  * pressing it again.
  */
 interface ConnectionTestState {
-  testing: boolean;
-  /** The server's own version string, or null while nothing has been reached. */
-  serverVersion: string | null;
-  error: string | null;
+    testing: boolean;
+    /** The server's own version string, or null while nothing has been reached. */
+    serverVersion: string | null;
+    error: string | null;
 }
 
 const initialState: ConnectionTestState = { testing: false, serverVersion: null, error: null };
 
 export const testConnection = createAppThunk(
-  'connectionTest/test',
-  async (arg: { config: ServerConfig; password: TestPassword }, { rejectWithValue }) => {
-    try {
-      // The same ceiling a connect gets: this opens the identical socket, so a
-      // server that is slow to answer must not be called unreachable any sooner
-      // here than it would be there.
-      return (await call('db.test', arg, 60_000)).serverVersion;
-    } catch (err) {
-      return rejectWithValue(errorMessage(err));
-    }
-  }
+    'connectionTest/test',
+    async (arg: { config: ServerConfig; password: TestPassword }, { rejectWithValue }) => {
+        try {
+            // The same ceiling a connect gets: this opens the identical socket, so a
+            // server that is slow to answer must not be called unreachable any sooner
+            // here than it would be there.
+            return (await call('db.test', arg, 60_000)).serverVersion;
+        } catch (err) {
+            return rejectWithValue(errorMessage(err));
+        }
+    },
 );
 
 const connectionTestSlice = createSlice({
-  name: 'connectionTest',
-  initialState,
-  reducers: {
-    /**
-     * Withdraw the last answer. The form clears on every edit: a result describes
-     * the values as they were when it ran, and leaving "Connected to PostgreSQL
-     * 16.2" sitting under a host that has since been retyped is the app claiming
-     * something it never tested.
-     */
-    cleared() {
-      return initialState;
+    name: 'connectionTest',
+    initialState,
+    reducers: {
+        /**
+         * Withdraw the last answer. The form clears on every edit: a result describes
+         * the values as they were when it ran, and leaving "Connected to PostgreSQL
+         * 16.2" sitting under a host that has since been retyped is the app claiming
+         * something it never tested.
+         */
+        cleared() {
+            return initialState;
+        },
     },
-  },
-  extraReducers: (builder) => {
-    builder
-      .addCase(testConnection.pending, (state) => {
-        state.testing = true;
-        state.serverVersion = null;
-        state.error = null;
-      })
-      .addCase(testConnection.fulfilled, (state, action) => {
-        state.testing = false;
-        state.serverVersion = action.payload;
-      })
-      .addCase(testConnection.rejected, (state, action) => {
-        state.testing = false;
-        state.error = action.payload ?? 'Could not reach that server.';
-      });
-  },
+    extraReducers: (builder) => {
+        builder
+            .addCase(testConnection.pending, (state) => {
+                state.testing = true;
+                state.serverVersion = null;
+                state.error = null;
+            })
+            .addCase(testConnection.fulfilled, (state, action) => {
+                state.testing = false;
+                state.serverVersion = action.payload;
+            })
+            .addCase(testConnection.rejected, (state, action) => {
+                state.testing = false;
+                state.error = action.payload ?? 'Could not reach that server.';
+            });
+    },
 });
 
 export const { cleared } = connectionTestSlice.actions;
 export const connectionTestReducer = connectionTestSlice.reducer;
 
 export function useConnectionTest() {
-  const dispatch = useAppDispatch();
-  const { testing, serverVersion, error } = useAppSelector((s) => s.connectionTest);
+    const dispatch = useAppDispatch();
+    const { testing, serverVersion, error } = useAppSelector((s) => s.connectionTest);
 
-  return {
-    testing,
-    serverVersion,
-    error,
-    test: useCallback(
-      (config: ServerConfig, password: TestPassword) => void dispatch(testConnection({ config, password })),
-      [dispatch]
-    ),
-    clear: useCallback(() => dispatch(cleared()), [dispatch]),
-  };
+    return {
+        testing,
+        serverVersion,
+        error,
+        test: useCallback(
+            (config: ServerConfig, password: TestPassword) =>
+                void dispatch(testConnection({ config, password })),
+            [dispatch],
+        ),
+        clear: useCallback(() => dispatch(cleared()), [dispatch]),
+    };
 }

@@ -14,11 +14,11 @@ import { hasColumn, type Migration } from './migration.ts';
  * before a connection is copied, or the rows have nothing to reference.
  */
 export const migration: Migration = {
-  version: 1784289561,
-  name: 'workspaces',
+    version: 1784289561,
+    name: 'workspaces',
 
-  up: (db) => {
-    db.run(`
+    up: (db) => {
+        db.run(`
       CREATE TABLE workspaces (
         id   TEXT PRIMARY KEY,
         name TEXT NOT NULL UNIQUE,
@@ -26,16 +26,20 @@ export const migration: Migration = {
       );
     `);
 
-    /*
-     * Spelled out rather than taken from store.ts's constants: this is what this
-     * version wrote, and it has to stay that whatever the app calls its default
-     * workspace later. See the freezing rule in `index.ts`.
-     */
-    const workspaceId = randomUUID();
-    db.run('INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)', [workspaceId, 'Default', 'stack']);
+        /*
+         * Spelled out rather than taken from store.ts's constants: this is what this
+         * version wrote, and it has to stay that whatever the app calls its default
+         * workspace later. See the freezing rule in `index.ts`.
+         */
+        const workspaceId = randomUUID();
+        db.run('INSERT INTO workspaces (id, name, icon) VALUES (?, ?, ?)', [
+            workspaceId,
+            'Default',
+            'stack',
+        ]);
 
-    db.run('ALTER TABLE saved_connections RENAME TO saved_connections_legacy');
-    db.run(`
+        db.run('ALTER TABLE saved_connections RENAME TO saved_connections_legacy');
+        db.run(`
       CREATE TABLE saved_connections (
         id               TEXT PRIMARY KEY,
         workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -51,20 +55,20 @@ export const migration: Migration = {
       );
     `);
 
-    /*
-     * `local` is the environment every migrated row gets. Nobody said what these
-     * connections are, and the guess that costs least is the one that never
-     * labels an unclassified row Production.
-     */
-    db.run(
-      `INSERT INTO saved_connections
+        /*
+         * `local` is the environment every migrated row gets. Nobody said what these
+         * connections are, and the guess that costs least is the one that never
+         * labels an unclassified row Production.
+         */
+        db.run(
+            `INSERT INTO saved_connections
          (id, workspace_id, name, engine, host, port, username, default_database, environment, password)
        SELECT id, ?, name, engine, host, port, username, default_database, ?, password
        FROM saved_connections_legacy`,
-      [workspaceId, 'local']
-    );
-    db.run('DROP TABLE saved_connections_legacy');
-  },
+            [workspaceId, 'local'],
+        );
+        db.run('DROP TABLE saved_connections_legacy');
+    },
 
-  applied: (db) => hasColumn(db, 'saved_connections', 'workspace_id'),
+    applied: (db) => hasColumn(db, 'saved_connections', 'workspace_id'),
 };

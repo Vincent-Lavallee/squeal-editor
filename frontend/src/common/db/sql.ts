@@ -27,8 +27,8 @@ export const identifierQuote = (dialect: SqlDialect): string => (dialect === 'my
  * bare becomes a lookup for a column named `eventtype`, which does not exist.
  */
 export function quoteIdentifier(name: string, dialect: SqlDialect): string {
-  const quote = identifierQuote(dialect);
-  return quote + name.replaceAll(quote, quote + quote) + quote;
+    const quote = identifierQuote(dialect);
+    return quote + name.replaceAll(quote, quote + quote) + quote;
 }
 
 /**
@@ -47,9 +47,9 @@ export function quoteIdentifier(name: string, dialect: SqlDialect): string {
  * generous way would quote half the ordinary columns there are.
  */
 const BARE_IDENTIFIER: Record<SqlDialect, RegExp> = {
-  pgsql: /^[a-z_][a-z0-9_$]*$/,
-  mysql: /^[A-Za-z_$][A-Za-z0-9_$]*$/,
-  sql: /^[A-Za-z_][A-Za-z0-9_$]*$/,
+    pgsql: /^[a-z_][a-z0-9_$]*$/,
+    mysql: /^[A-Za-z_$][A-Za-z0-9_$]*$/,
+    sql: /^[A-Za-z_][A-Za-z0-9_$]*$/,
 };
 
 /**
@@ -63,4 +63,4 @@ const BARE_IDENTIFIER: Record<SqlDialect, RegExp> = {
  * a query that never needed one.
  */
 export const quoteIdentifierIfNeeded = (name: string, dialect: SqlDialect): string =>
-  BARE_IDENTIFIER[dialect].test(name) ? name : quoteIdentifier(name, dialect);
+    BARE_IDENTIFIER[dialect].test(name) ? name : quoteIdentifier(name, dialect);

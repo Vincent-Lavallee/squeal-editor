@@ -10,8 +10,8 @@ import type { Migration } from './migration.ts';
  * dance `workspaces` needed the one time a constraint had to change.
  */
 export const migration: Migration = {
-  version: 1784997850,
-  name: 'drop-workspace-colour',
+    version: 1784997850,
+    name: 'drop-workspace-colour',
 
-  up: (db) => db.run('ALTER TABLE workspaces DROP COLUMN color'),
+    up: (db) => db.run('ALTER TABLE workspaces DROP COLUMN color'),
 };

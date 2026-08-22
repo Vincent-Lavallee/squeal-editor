@@ -15,21 +15,24 @@ import { sqlChanged } from '../../store/tabsSlice.ts';
  * `Shell`) did not have to learn that the storage did.
  */
 export function useEditor() {
-  const dispatch = useAppDispatch();
-  const store = useStore<RootState>();
-  const sqlByTab = useAppSelector((s) => s.tabs.sqlByTab);
+    const dispatch = useAppDispatch();
+    const store = useStore<RootState>();
+    const sqlByTab = useAppSelector((s) => s.tabs.sqlByTab);
 
-  return {
-    sqlByTab,
-    setSql: useCallback((tabId: string, sql: string) => dispatch(sqlChanged({ tabId, sql })), [dispatch]),
-    /**
-     * A tab's text read *synchronously*, for seeding a new tab's Monaco model at
-     * creation. `store.getState()` is up to date the instant a dispatch returns
-     * -- Redux dispatch is synchronous -- so this reads the text a definition or
-     * duplicated tab set moments earlier in the same turn, which is exactly what
-     * the context's `sqlRef` shadow existed to work around when the store was a
-     * `useState` that had not committed yet. The slice removed the need for it.
-     */
-    peekSql: useCallback((tabId: string) => store.getState().tabs.sqlByTab[tabId], [store]),
-  };
+    return {
+        sqlByTab,
+        setSql: useCallback(
+            (tabId: string, sql: string) => dispatch(sqlChanged({ tabId, sql })),
+            [dispatch],
+        ),
+        /**
+         * A tab's text read *synchronously*, for seeding a new tab's Monaco model at
+         * creation. `store.getState()` is up to date the instant a dispatch returns
+         * -- Redux dispatch is synchronous -- so this reads the text a definition or
+         * duplicated tab set moments earlier in the same turn, which is exactly what
+         * the context's `sqlRef` shadow existed to work around when the store was a
+         * `useState` that had not committed yet. The slice removed the need for it.
+         */
+        peekSql: useCallback((tabId: string) => store.getState().tabs.sqlByTab[tabId], [store]),
+    };
 }

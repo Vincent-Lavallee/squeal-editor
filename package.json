@@ -1,30 +1,31 @@
 {
-  "name": "squeal-editor",
-  "version": "0.17.0",
-  "private": true,
-  "description": "A stupid simple multi-database SQL editor built with Neutralino + React",
-  "workspaces": [
-    "frontend",
-    "extensions/db"
-  ],
-  "scripts": {
-    "postinstall": "neu update",
-    "build": "bun run --filter @squeal/frontend build",
-    "build:ext": "bun run scripts/build-extension.ts && bun run scripts/build-window-chrome.ts",
-    "start": "bun run build && bun run build:ext && neu run -- --window-enable-inspector=true",
-    "dev": "bun run build:ext && neu run -- --window-enable-inspector=true",
-    "typecheck": "tsc -p frontend --noEmit && tsc -p extensions/db --noEmit",
-    "test": "bun test",
-    "test:ui": "bun run tests/helpers/reap.ts && bun run build && bun run build:ext && SQUEAL_UI=1 bun test tests/ui.test.ts --timeout 120000",
-    "test:db:up": "bun run tests/fixtures/db.ts up",
-    "test:db:down": "bun run tests/fixtures/db.ts down",
-    "neu:update": "neu update"
-  },
-  "devDependencies": {
-    "@neutralinojs/neu": "^11.3.2",
-    "@types/bun": "^1.1.14",
-    "@types/ws": "^8.5.13",
-    "typescript": "^5.7.2",
-    "ws": "^8.18.0"
-  }
+    "name": "squeal-editor",
+    "version": "0.17.0",
+    "private": true,
+    "description": "A stupid simple multi-database SQL editor built with Neutralino + React",
+    "workspaces": [
+        "frontend",
+        "extensions/db"
+    ],
+    "scripts": {
+        "postinstall": "neu update",
+        "build": "bun run --filter @squeal/frontend build",
+        "build:ext": "bun run scripts/build-extension.ts && bun run scripts/build-window-chrome.ts",
+        "start": "bun run build && bun run build:ext && neu run -- --window-enable-inspector=true",
+        "dev": "bun run build:ext && neu run -- --window-enable-inspector=true",
+        "typecheck": "tsc -p frontend --noEmit && tsc -p extensions/db --noEmit",
+        "test": "bun test",
+        "test:ui": "bun run tests/helpers/reap.ts && bun run build && bun run build:ext && SQUEAL_UI=1 bun test tests/ui.test.ts --timeout 120000",
+        "test:db:up": "bun run tests/fixtures/db.ts up",
+        "test:db:down": "bun run tests/fixtures/db.ts down",
+        "neu:update": "neu update"
+    },
+    "devDependencies": {
+        "@neutralinojs/neu": "^11.3.2",
+        "@types/bun": "^1.1.14",
+        "@types/ws": "^8.5.13",
+        "prettier": "^3.9.6",
+        "typescript": "^5.7.2",
+        "ws": "^8.18.0"
+    }
 }

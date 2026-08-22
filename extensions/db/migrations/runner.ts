@@ -26,12 +26,12 @@ import { tableExists, type Migration } from './migration.ts';
  * which is the whole difference from probing the schema on every launch.
  */
 function adopt(db: Database): Migration[] {
-  const done: Migration[] = [];
-  for (const migration of MIGRATIONS) {
-    if (!migration.applied?.(db)) break;
-    done.push(migration);
-  }
-  return done;
+    const done: Migration[] = [];
+    for (const migration of MIGRATIONS) {
+        if (!migration.applied?.(db)) break;
+        done.push(migration);
+    }
+    return done;
 }
 
 /**
@@ -43,9 +43,9 @@ function adopt(db: Database): Migration[] {
  * than `applied` is what makes it diagnosable instead of mystifying.
  */
 export function runMigrations(db: Database): void {
-  const adopting = !tableExists(db, 'schema_migrations');
+    const adopting = !tableExists(db, 'schema_migrations');
 
-  db.run(`
+    db.run(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version    INTEGER PRIMARY KEY,
       name       TEXT NOT NULL,
@@ -54,32 +54,33 @@ export function runMigrations(db: Database): void {
     );
   `);
 
-  if (adopting) {
-    const adopted = adopt(db);
-    for (const migration of adopted) record(db, migration, 'adopted');
-    if (adopted.length > 0) log.info(`adopted ${adopted.length} pre-existing migration(s) into a fresh store`);
-  }
+    if (adopting) {
+        const adopted = adopt(db);
+        for (const migration of adopted) record(db, migration, 'adopted');
+        if (adopted.length > 0)
+            log.info(`adopted ${adopted.length} pre-existing migration(s) into a fresh store`);
+    }
 
-  const current = (db.query('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number | null }).v ?? 0;
+    const current =
+        (db.query('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number | null })
+            .v ?? 0;
 
-  for (const migration of MIGRATIONS) {
-    if (migration.version <= current) continue;
-    // Each migration and its stamp land together. SQLite makes DDL
-    // transactional, so a failure leaves neither the half-made table nor a
-    // version claiming work that did not happen.
-    db.transaction(() => {
-      migration.up(db);
-      record(db, migration, 'applied');
-    })();
-    log.info(`ran migration ${migration.version}-${migration.name}`);
-  }
+    for (const migration of MIGRATIONS) {
+        if (migration.version <= current) continue;
+        // Each migration and its stamp land together. SQLite makes DDL
+        // transactional, so a failure leaves neither the half-made table nor a
+        // version claiming work that did not happen.
+        db.transaction(() => {
+            migration.up(db);
+            record(db, migration, 'applied');
+        })();
+        log.info(`ran migration ${migration.version}-${migration.name}`);
+    }
 }
 
 function record(db: Database, migration: Migration, origin: 'applied' | 'adopted'): void {
-  db.run('INSERT INTO schema_migrations (version, name, origin, applied_at) VALUES (?, ?, ?, ?)', [
-    migration.version,
-    migration.name,
-    origin,
-    new Date().toISOString(),
-  ]);
+    db.run(
+        'INSERT INTO schema_migrations (version, name, origin, applied_at) VALUES (?, ?, ?, ?)',
+        [migration.version, migration.name, origin, new Date().toISOString()],
+    );
 }

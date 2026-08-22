@@ -15,22 +15,22 @@
  */
 
 export type {
-  AwsCredentialStatus,
-  AwsIamAuth,
-  ConnectionColorId,
-  ConnectionConfig,
-  ConnectionExportSummary,
-  ConnectionImportSummary,
-  EngineType,
-  Environment,
-  EnvironmentDef,
-  PasswordUpdate,
-  SavedConnection,
-  ServerConfig,
-  SqlDialect,
-  TestPassword,
-  Workspace,
-  WorkspaceIconId,
+    AwsCredentialStatus,
+    AwsIamAuth,
+    ConnectionColorId,
+    ConnectionConfig,
+    ConnectionExportSummary,
+    ConnectionImportSummary,
+    EngineType,
+    Environment,
+    EnvironmentDef,
+    PasswordUpdate,
+    SavedConnection,
+    ServerConfig,
+    SqlDialect,
+    TestPassword,
+    Workspace,
+    WorkspaceIconId,
 } from './config.ts';
 
 // The one value `config` exports. Both sides act on it and must not disagree --
@@ -38,37 +38,37 @@ export type {
 export { isFileEngine } from './config.ts';
 
 export type {
-  CellValue,
-  ColumnInfo,
-  DiagramColumn,
-  DiagramTable,
-  FilterCondition,
-  FilterOperator,
-  ForeignKeyLink,
-  ForeignKeyRef,
-  FunctionInfo,
-  QueryResult,
-  RowDelete,
-  RowEdit,
-  SortOrder,
-  StarredTable,
-  TableFilter,
-  TableInfo,
-  TablePage,
-  TriggerInfo,
+    CellValue,
+    ColumnInfo,
+    DiagramColumn,
+    DiagramTable,
+    FilterCondition,
+    FilterOperator,
+    ForeignKeyLink,
+    ForeignKeyRef,
+    FunctionInfo,
+    QueryResult,
+    RowDelete,
+    RowEdit,
+    SortOrder,
+    StarredTable,
+    TableFilter,
+    TableInfo,
+    TablePage,
+    TriggerInfo,
 } from './results.ts';
 
 export type {
-  AiApprovalMode,
-  AiConversation,
-  AiConversationSummary,
-  AiMessage,
-  AiModel,
-  AiProvider,
-  AiProviderInfo,
-  AiStatus,
-  AiToolCall,
-  AiToolDef,
+    AiApprovalMode,
+    AiConversation,
+    AiConversationSummary,
+    AiMessage,
+    AiModel,
+    AiProvider,
+    AiProviderInfo,
+    AiStatus,
+    AiToolCall,
+    AiToolDef,
 } from './ai.ts';
 export { AI_PROVIDERS, providerLabel } from './ai.ts';
 
@@ -78,12 +78,18 @@ export type { UpdateProgress, UpdateStatus } from './updater.ts';
 
 export type { CommandName, CommandReq, CommandRes, Commands, ResizeEdge } from './commands.ts';
 
-export type { AiDelta, AwsSsoPrompt, ConnectionState, ConnectProgress, DbResponse } from './events.ts';
+export type {
+    AiDelta,
+    AwsSsoPrompt,
+    ConnectionState,
+    ConnectProgress,
+    DbResponse,
+} from './events.ts';
 export {
-  AI_DELTA_EVENT,
-  AWS_SSO_PROMPT_EVENT,
-  CONNECT_PROGRESS_EVENT,
-  CONNECTION_STATE_EVENT,
-  DB_RESPONSE_EVENT,
-  UPDATE_PROGRESS_EVENT,
+    AI_DELTA_EVENT,
+    AWS_SSO_PROMPT_EVENT,
+    CONNECT_PROGRESS_EVENT,
+    CONNECTION_STATE_EVENT,
+    DB_RESPONSE_EVENT,
+    UPDATE_PROGRESS_EVENT,
 } from './events.ts';

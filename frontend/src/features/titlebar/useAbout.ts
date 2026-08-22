@@ -14,12 +14,12 @@ import { call } from '../../common/bridge/bridge.ts';
  * for it would hold nothing.
  */
 export function useAbout() {
-  const openDataDir = useCallback((): void => {
-    void (async () => {
-      const { path } = await call('app.dataDir', {});
-      await Neutralino.os.open(path);
-    })().catch(() => undefined);
-  }, []);
+    const openDataDir = useCallback((): void => {
+        void (async () => {
+            const { path } = await call('app.dataDir', {});
+            await Neutralino.os.open(path);
+        })().catch(() => undefined);
+    }, []);
 
-  return { version: __APP_VERSION__, openDataDir };
+    return { version: __APP_VERSION__, openDataDir };
 }

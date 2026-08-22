@@ -1,19 +1,19 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Squeal Editor</title>
-    <!-- Without this the webview requests /favicon.ico and logs a resource error.
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Squeal Editor</title>
+        <!-- Without this the webview requests /favicon.ico and logs a resource error.
          The webview has no tabs, so this is never seen; it points at the real icon
          only to avoid a second file that could drift from it. -->
-    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-    <!-- Served from frontend/public/js/ and refreshed by `neu update`. Must load
+        <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+        <!-- Served from frontend/public/js/ and refreshed by `neu update`. Must load
          before the app so window.Neutralino exists at init time. -->
-    <script src="/js/neutralino.js"></script>
-  </head>
-  <body>
-    <div id="root" tabindex="-1"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+        <script src="/js/neutralino.js"></script>
+    </head>
+    <body>
+        <div id="root" tabindex="-1"></div>
+        <script type="module" src="/src/main.tsx"></script>
+    </body>
 </html>

@@ -46,24 +46,27 @@ import { workspacesReducer } from './workspacesSlice.ts';
  * See `docs/decisions.md`.
  */
 export const store = configureStore({
-  reducer: {
-    session: sessionReducer,
-    workspaces: workspacesReducer,
-    environments: environmentsReducer,
-    saved: savedReducer,
-    savedQueries: savedQueriesReducer,
-    transfer: transferReducer,
-    connectionTest: connectionTestReducer,
-    awsSignIn: awsSignInReducer,
-    explorer: explorerReducer,
-    results: resultsReducer,
-    tabs: tabsReducer,
-    updater: updaterReducer,
-    settings: settingsReducer,
-    assistant: assistantReducer,
-  },
-  middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().prepend(sessionSyncMiddleware.middleware, conversationSyncMiddleware.middleware),
+    reducer: {
+        session: sessionReducer,
+        workspaces: workspacesReducer,
+        environments: environmentsReducer,
+        saved: savedReducer,
+        savedQueries: savedQueriesReducer,
+        transfer: transferReducer,
+        connectionTest: connectionTestReducer,
+        awsSignIn: awsSignInReducer,
+        explorer: explorerReducer,
+        results: resultsReducer,
+        tabs: tabsReducer,
+        updater: updaterReducer,
+        settings: settingsReducer,
+        assistant: assistantReducer,
+    },
+    middleware: (getDefaultMiddleware) =>
+        getDefaultMiddleware().prepend(
+            sessionSyncMiddleware.middleware,
+            conversationSyncMiddleware.middleware,
+        ),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

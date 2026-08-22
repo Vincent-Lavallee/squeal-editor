@@ -5,6 +5,6 @@
  * typecheck agrees. Same class of ambient declaration as `neutralino.d.ts`.
  */
 declare module '*.pem' {
-  const content: string;
-  export default content;
+    const content: string;
+    export default content;
 }

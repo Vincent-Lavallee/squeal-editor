@@ -10,14 +10,14 @@ import { hasColumn, type Migration } from './migration.ts';
  * what these two already say.
  */
 export const migration: Migration = {
-  version: 1784374797,
-  name: 'connection-aws-iam',
+    version: 1784374797,
+    name: 'connection-aws-iam',
 
-  up: (db) => {
-    db.run('ALTER TABLE saved_connections ADD COLUMN aws_profile TEXT');
-    db.run('ALTER TABLE saved_connections ADD COLUMN aws_region TEXT');
-  },
+    up: (db) => {
+        db.run('ALTER TABLE saved_connections ADD COLUMN aws_profile TEXT');
+        db.run('ALTER TABLE saved_connections ADD COLUMN aws_region TEXT');
+    },
 
-  // The two land together, so profile alone is the test -- the same rule `toSaved` reads them by.
-  applied: (db) => hasColumn(db, 'saved_connections', 'aws_profile'),
+    // The two land together, so profile alone is the test -- the same rule `toSaved` reads them by.
+    applied: (db) => hasColumn(db, 'saved_connections', 'aws_profile'),
 };

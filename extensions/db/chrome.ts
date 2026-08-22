@@ -65,77 +65,77 @@ const CHROME_HOOK = 'SquealChromeHook';
 const HIT_TEST: Record<ResizeEdge, number> = { top: 12, 'top-left': 13, 'top-right': 14 };
 
 function utf16(text: string) {
-  return Buffer.from(`${text}\0`, 'utf16le');
+    return Buffer.from(`${text}\0`, 'utf16le');
 }
 
 // GetProcAddress is the one call here that never had a W variant: the export
 // name is bytes, not text.
 function ascii(text: string) {
-  return Buffer.from(`${text}\0`, 'latin1');
+    return Buffer.from(`${text}\0`, 'latin1');
 }
 
 function open() {
-  const kernel32 = dlopen('kernel32.dll', {
-    LoadLibraryW: { args: [FFIType.ptr], returns: FFIType.ptr },
-    GetProcAddress: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.ptr },
-  });
-  const user32 = dlopen('user32.dll', {
-    FindWindowExW: {
-      args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
-      returns: FFIType.ptr,
-    },
-    GetWindowThreadProcessId: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.u32 },
-    IsWindowVisible: { args: [FFIType.ptr], returns: FFIType.i32 },
-    GetWindow: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.ptr },
-    IsZoomed: { args: [FFIType.ptr], returns: FFIType.i32 },
-    GetWindowRect: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-    GetClientRect: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-    ClientToScreen: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-    MonitorFromWindow: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.ptr },
-    GetMonitorInfoW: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-    SetWindowPos: {
-      args: [
-        FFIType.ptr,
-        FFIType.ptr,
-        FFIType.i32,
-        FFIType.i32,
-        FFIType.i32,
-        FFIType.i32,
-        FFIType.u32,
-      ],
-      returns: FFIType.i32,
-    },
-    GetWindowLongW: { args: [FFIType.ptr, FFIType.i32], returns: FFIType.i32 },
-    RegisterWindowMessageW: { args: [FFIType.ptr], returns: FFIType.u32 },
-    SetWindowsHookExW: {
-      args: [FFIType.i32, FFIType.ptr, FFIType.ptr, FFIType.u32],
-      returns: FFIType.ptr,
-    },
-    UnhookWindowsHookEx: { args: [FFIType.ptr], returns: FFIType.i32 },
-    SendMessageTimeoutW: {
-      args: [
-        FFIType.ptr,
-        FFIType.u32,
-        FFIType.ptr,
-        FFIType.ptr,
-        FFIType.u32,
-        FFIType.u32,
-        FFIType.ptr,
-      ],
-      returns: FFIType.ptr,
-    },
-    PostMessageW: {
-      args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr],
-      returns: FFIType.i32,
-    },
-  });
-  const dwmapi = dlopen('dwmapi.dll', {
-    DwmSetWindowAttribute: {
-      args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.u32],
-      returns: FFIType.i32,
-    },
-  });
-  return { kernel32, user32, dwmapi };
+    const kernel32 = dlopen('kernel32.dll', {
+        LoadLibraryW: { args: [FFIType.ptr], returns: FFIType.ptr },
+        GetProcAddress: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.ptr },
+    });
+    const user32 = dlopen('user32.dll', {
+        FindWindowExW: {
+            args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
+            returns: FFIType.ptr,
+        },
+        GetWindowThreadProcessId: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.u32 },
+        IsWindowVisible: { args: [FFIType.ptr], returns: FFIType.i32 },
+        GetWindow: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.ptr },
+        IsZoomed: { args: [FFIType.ptr], returns: FFIType.i32 },
+        GetWindowRect: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+        GetClientRect: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+        ClientToScreen: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+        MonitorFromWindow: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.ptr },
+        GetMonitorInfoW: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+        SetWindowPos: {
+            args: [
+                FFIType.ptr,
+                FFIType.ptr,
+                FFIType.i32,
+                FFIType.i32,
+                FFIType.i32,
+                FFIType.i32,
+                FFIType.u32,
+            ],
+            returns: FFIType.i32,
+        },
+        GetWindowLongW: { args: [FFIType.ptr, FFIType.i32], returns: FFIType.i32 },
+        RegisterWindowMessageW: { args: [FFIType.ptr], returns: FFIType.u32 },
+        SetWindowsHookExW: {
+            args: [FFIType.i32, FFIType.ptr, FFIType.ptr, FFIType.u32],
+            returns: FFIType.ptr,
+        },
+        UnhookWindowsHookEx: { args: [FFIType.ptr], returns: FFIType.i32 },
+        SendMessageTimeoutW: {
+            args: [
+                FFIType.ptr,
+                FFIType.u32,
+                FFIType.ptr,
+                FFIType.ptr,
+                FFIType.u32,
+                FFIType.u32,
+                FFIType.ptr,
+            ],
+            returns: FFIType.ptr,
+        },
+        PostMessageW: {
+            args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr],
+            returns: FFIType.i32,
+        },
+    });
+    const dwmapi = dlopen('dwmapi.dll', {
+        DwmSetWindowAttribute: {
+            args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.u32],
+            returns: FFIType.i32,
+        },
+    });
+    return { kernel32, user32, dwmapi };
 }
 
 type Libs = ReturnType<typeof open>;
@@ -147,14 +147,14 @@ let libs: Libs | null = null;
  * rather than failing.
  */
 function toColorRef(colour: string): number | null {
-  const hex = /^#([0-9a-f]{6})$/i.exec(colour.trim())?.[1];
-  if (!hex) return null;
+    const hex = /^#([0-9a-f]{6})$/i.exec(colour.trim())?.[1];
+    if (!hex) return null;
 
-  const rgb = Number.parseInt(hex, 16);
-  const r = (rgb >> 16) & 0xff;
-  const g = (rgb >> 8) & 0xff;
-  const b = rgb & 0xff;
-  return (b << 16) | (g << 8) | r;
+    const rgb = Number.parseInt(hex, 16);
+    const r = (rgb >> 16) & 0xff;
+    const g = (rgb >> 8) & 0xff;
+    const b = rgb & 0xff;
+    return (b << 16) | (g << 8) | r;
 }
 
 /**
@@ -168,22 +168,22 @@ function toColorRef(colour: string): number | null {
  * same answer as EnumWindows without needing a callback across the FFI boundary.
  */
 function findWindow(user32: Libs['user32'], pid: number): Pointer | null {
-  const owner = new Uint32Array(1);
-  const ownerPtr = ptr(owner);
+    const owner = new Uint32Array(1);
+    const ownerPtr = ptr(owner);
 
-  let hwnd = user32.symbols.FindWindowExW(null, null, null, null);
-  while (hwnd) {
-    user32.symbols.GetWindowThreadProcessId(hwnd, ownerPtr);
-    if (
-      owner[0] === pid &&
-      user32.symbols.IsWindowVisible(hwnd) !== 0 &&
-      !user32.symbols.GetWindow(hwnd, GW_OWNER)
-    ) {
-      return hwnd;
+    let hwnd = user32.symbols.FindWindowExW(null, null, null, null);
+    while (hwnd) {
+        user32.symbols.GetWindowThreadProcessId(hwnd, ownerPtr);
+        if (
+            owner[0] === pid &&
+            user32.symbols.IsWindowVisible(hwnd) !== 0 &&
+            !user32.symbols.GetWindow(hwnd, GW_OWNER)
+        ) {
+            return hwnd;
+        }
+        hwnd = user32.symbols.FindWindowExW(null, hwnd, null, null);
     }
-    hwnd = user32.symbols.FindWindowExW(null, hwnd, null, null);
-  }
-  return null;
+    return null;
 }
 
 /**
@@ -195,25 +195,35 @@ function findWindow(user32: Libs['user32'], pid: number): Pointer | null {
  * Returns whether Windows actually took it.
  */
 export function matchWindowFrame(pid: number, colour: string): boolean {
-  if (process.platform !== 'win32') return false;
+    if (process.platform !== 'win32') return false;
 
-  const colorRef = toColorRef(colour);
-  if (colorRef === null) return false;
+    const colorRef = toColorRef(colour);
+    if (colorRef === null) return false;
 
-  try {
-    libs ??= open();
-    const hwnd = findWindow(libs.user32, pid);
-    if (!hwnd) return false;
+    try {
+        libs ??= open();
+        const hwnd = findWindow(libs.user32, pid);
+        if (!hwnd) return false;
 
-    // A DWM attribute is stored on the window, so this survives the frame repaint
-    // that the UI's own setSize triggers -- one application holds.
-    const value = ptr(new Uint32Array([colorRef]));
-    const border = libs.dwmapi.symbols.DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, value, 4);
-    const caption = libs.dwmapi.symbols.DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, value, 4);
-    return border === S_OK && caption === S_OK;
-  } catch {
-    return false; // No dwmapi, no FFI, no frame -- the band simply stays.
-  }
+        // A DWM attribute is stored on the window, so this survives the frame repaint
+        // that the UI's own setSize triggers -- one application holds.
+        const value = ptr(new Uint32Array([colorRef]));
+        const border = libs.dwmapi.symbols.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            value,
+            4,
+        );
+        const caption = libs.dwmapi.symbols.DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CAPTION_COLOR,
+            value,
+            4,
+        );
+        return border === S_OK && caption === S_OK;
+    } catch {
+        return false; // No dwmapi, no FFI, no frame -- the band simply stays.
+    }
 }
 
 /**
@@ -243,72 +253,72 @@ export function matchWindowFrame(pid: number, colour: string): boolean {
  * touched again.
  */
 export function fitMaximizedToWorkArea(pid: number): boolean {
-  if (process.platform !== 'win32') return false;
+    if (process.platform !== 'win32') return false;
 
-  try {
-    libs ??= open();
-    const { user32 } = libs;
-    const hwnd = findWindow(user32, pid);
-    if (!hwnd) return false;
-    if (user32.symbols.IsZoomed(hwnd) === 0) return false;
+    try {
+        libs ??= open();
+        const { user32 } = libs;
+        const hwnd = findWindow(user32, pid);
+        if (!hwnd) return false;
+        if (user32.symbols.IsZoomed(hwnd) === 0) return false;
 
-    const monitor = user32.symbols.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    if (!monitor) return false;
+        const monitor = user32.symbols.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if (!monitor) return false;
 
-    // MONITORINFO: cbSize, rcMonitor, rcWork, dwFlags -- 40 bytes, rcWork at [5..8].
-    const info = new Int32Array(10);
-    info[0] = info.byteLength;
-    if (user32.symbols.GetMonitorInfoW(monitor, ptr(info)) === 0) return false;
-    const work = { left: info[5]!, top: info[6]!, right: info[7]!, bottom: info[8]! };
+        // MONITORINFO: cbSize, rcMonitor, rcWork, dwFlags -- 40 bytes, rcWork at [5..8].
+        const info = new Int32Array(10);
+        info[0] = info.byteLength;
+        if (user32.symbols.GetMonitorInfoW(monitor, ptr(info)) === 0) return false;
+        const work = { left: info[5]!, top: info[6]!, right: info[7]!, bottom: info[8]! };
 
-    const rect = new Int32Array(4);
-    if (user32.symbols.GetWindowRect(hwnd, ptr(rect)) === 0) return false;
+        const rect = new Int32Array(4);
+        if (user32.symbols.GetWindowRect(hwnd, ptr(rect)) === 0) return false;
 
-    // The frame insets: where the client area sits inside the window rect. The
-    // client origin needs ClientToScreen because GetClientRect answers in client
-    // coordinates, where the origin is 0,0 by definition.
-    const client = new Int32Array(4);
-    if (user32.symbols.GetClientRect(hwnd, ptr(client)) === 0) return false;
-    const origin = new Int32Array(2);
-    if (user32.symbols.ClientToScreen(hwnd, ptr(origin)) === 0) return false;
+        // The frame insets: where the client area sits inside the window rect. The
+        // client origin needs ClientToScreen because GetClientRect answers in client
+        // coordinates, where the origin is 0,0 by definition.
+        const client = new Int32Array(4);
+        if (user32.symbols.GetClientRect(hwnd, ptr(client)) === 0) return false;
+        const origin = new Int32Array(2);
+        if (user32.symbols.ClientToScreen(hwnd, ptr(origin)) === 0) return false;
 
-    const inset = {
-      left: origin[0]! - rect[0]!,
-      top: origin[1]! - rect[1]!,
-      right: rect[2]! - (origin[0]! + client[2]!),
-      bottom: rect[3]! - (origin[1]! + client[3]!),
-    };
+        const inset = {
+            left: origin[0]! - rect[0]!,
+            top: origin[1]! - rect[1]!,
+            right: rect[2]! - (origin[0]! + client[2]!),
+            bottom: rect[3]! - (origin[1]! + client[3]!),
+        };
 
-    const target = {
-      left: work.left - inset.left,
-      top: work.top - inset.top,
-      right: work.right + inset.right,
-      bottom: work.bottom + inset.bottom,
-    };
+        const target = {
+            left: work.left - inset.left,
+            top: work.top - inset.top,
+            right: work.right + inset.right,
+            bottom: work.bottom + inset.bottom,
+        };
 
-    if (
-      rect[0] === target.left &&
-      rect[1] === target.top &&
-      rect[2] === target.right &&
-      rect[3] === target.bottom
-    ) {
-      return true; // Already fitted; moving again would echo another resize.
+        if (
+            rect[0] === target.left &&
+            rect[1] === target.top &&
+            rect[2] === target.right &&
+            rect[3] === target.bottom
+        ) {
+            return true; // Already fitted; moving again would echo another resize.
+        }
+
+        return (
+            user32.symbols.SetWindowPos(
+                hwnd,
+                null,
+                target.left,
+                target.top,
+                target.right - target.left,
+                target.bottom - target.top,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            ) !== 0
+        );
+    } catch {
+        return false; // Same category as above: a cosmetic loss, never an error.
     }
-
-    return (
-      user32.symbols.SetWindowPos(
-        hwnd,
-        null,
-        target.left,
-        target.top,
-        target.right - target.left,
-        target.bottom - target.top,
-        SWP_NOZORDER | SWP_NOACTIVATE
-      ) !== 0
-    );
-  } catch {
-    return false; // Same category as above: a cosmetic loss, never an error.
-  }
 }
 
 /**
@@ -348,62 +358,62 @@ let chromeInstalled = false;
  * worth having -- nothing else in the app sets that bit.
  */
 export function installWindowChrome(pid: number): boolean {
-  if (process.platform !== 'win32') return false;
+    if (process.platform !== 'win32') return false;
 
-  try {
-    libs ??= open();
-    const { kernel32, user32 } = libs;
+    try {
+        libs ??= open();
+        const { kernel32, user32 } = libs;
 
-    const hwnd = findWindow(user32, pid);
-    if (!hwnd) return false;
+        const hwnd = findWindow(user32, pid);
+        if (!hwnd) return false;
 
-    // Beside the extension binary, which is where scripts/build-window-chrome.ts
-    // puts it and where `neu build` copies it from. A build made on a machine
-    // with no C compiler simply has no file here, and the app keeps the frame it
-    // has always had.
-    const dll = kernel32.symbols.LoadLibraryW(
-      ptr(utf16(join(dirname(process.execPath), CHROME_DLL)))
-    );
-    if (!dll) return false;
+        // Beside the extension binary, which is where scripts/build-window-chrome.ts
+        // puts it and where `neu build` copies it from. A build made on a machine
+        // with no C compiler simply has no file here, and the app keeps the frame it
+        // has always had.
+        const dll = kernel32.symbols.LoadLibraryW(
+            ptr(utf16(join(dirname(process.execPath), CHROME_DLL))),
+        );
+        if (!dll) return false;
 
-    const hook = kernel32.symbols.GetProcAddress(dll, ptr(ascii(CHROME_HOOK)));
-    if (!hook) return false;
+        const hook = kernel32.symbols.GetProcAddress(dll, ptr(ascii(CHROME_HOOK)));
+        if (!hook) return false;
 
-    const thread = user32.symbols.GetWindowThreadProcessId(hwnd, null);
-    if (!thread) return false;
+        const thread = user32.symbols.GetWindowThreadProcessId(hwnd, null);
+        if (!thread) return false;
 
-    const installed = user32.symbols.SetWindowsHookExW(WH_CALLWNDPROC, hook, dll, thread);
-    if (!installed) return false;
+        const installed = user32.symbols.SetWindowsHookExW(WH_CALLWNDPROC, hook, dll, thread);
+        if (!installed) return false;
 
-    // A failed registration answers 0, which is WM_NULL: the DLL guards against
-    // being installed by one, so sending it would leave the hook in place with
-    // nothing to trigger it.
-    const message = user32.symbols.RegisterWindowMessageW(ptr(utf16(INSTALL_MESSAGE)));
-    if (!message) {
-      user32.symbols.UnhookWindowsHookEx(installed);
-      return false;
+        // A failed registration answers 0, which is WM_NULL: the DLL guards against
+        // being installed by one, so sending it would leave the hook in place with
+        // nothing to trigger it.
+        const message = user32.symbols.RegisterWindowMessageW(ptr(utf16(INSTALL_MESSAGE)));
+        if (!message) {
+            user32.symbols.UnhookWindowsHookEx(installed);
+            return false;
+        }
+
+        // A hung app must not hang this one behind it: the send is on the startup
+        // path, and there is nothing to do about a window that will not answer
+        // except carry on without the chrome.
+        user32.symbols.SendMessageTimeoutW(
+            hwnd,
+            message,
+            null,
+            null,
+            SMTO_ABORTIFHUNG,
+            INSTALL_TIMEOUT_MS,
+            null,
+        );
+        user32.symbols.UnhookWindowsHookEx(installed);
+
+        chromeInstalled =
+            (user32.symbols.GetWindowLongW(hwnd, GWL_STYLE) & WS_CAPTION) === WS_CAPTION;
+        return chromeInstalled;
+    } catch {
+        return false; // Same category as the paint: a cosmetic loss, never an error.
     }
-
-    // A hung app must not hang this one behind it: the send is on the startup
-    // path, and there is nothing to do about a window that will not answer
-    // except carry on without the chrome.
-    user32.symbols.SendMessageTimeoutW(
-      hwnd,
-      message,
-      null,
-      null,
-      SMTO_ABORTIFHUNG,
-      INSTALL_TIMEOUT_MS,
-      null
-    );
-    user32.symbols.UnhookWindowsHookEx(installed);
-
-    chromeInstalled =
-      (user32.symbols.GetWindowLongW(hwnd, GWL_STYLE) & WS_CAPTION) === WS_CAPTION;
-    return chromeInstalled;
-  } catch {
-    return false; // Same category as the paint: a cosmetic loss, never an error.
-  }
 }
 
 /**
@@ -421,20 +431,20 @@ export function installWindowChrome(pid: number): boolean {
  * extension for as long as the user holds the mouse down.
  */
 export function beginWindowResize(pid: number, edge: ResizeEdge): boolean {
-  if (process.platform !== 'win32' || !chromeInstalled) return false;
+    if (process.platform !== 'win32' || !chromeInstalled) return false;
 
-  try {
-    libs ??= open();
-    const { user32 } = libs;
+    try {
+        libs ??= open();
+        const { user32 } = libs;
 
-    const hwnd = findWindow(user32, pid);
-    if (!hwnd) return false;
+        const hwnd = findWindow(user32, pid);
+        if (!hwnd) return false;
 
-    const message = user32.symbols.RegisterWindowMessageW(ptr(utf16(RESIZE_MESSAGE)));
-    if (!message) return false;
+        const message = user32.symbols.RegisterWindowMessageW(ptr(utf16(RESIZE_MESSAGE)));
+        if (!message) return false;
 
-    return user32.symbols.PostMessageW(hwnd, message, HIT_TEST[edge], null) !== 0;
-  } catch {
-    return false;
-  }
+        return user32.symbols.PostMessageW(hwnd, message, HIT_TEST[edge], null) !== 0;
+    } catch {
+        return false;
+    }
 }

@@ -47,92 +47,98 @@ Rules that matter here:
 - Call renameConversation once on your first reply, with a short title for what is being asked. Several assistant tabs can be open at once and they are told apart by their names.`;
 
 function describeConnection(state: RootState): string[] {
-  const id = state.session.activeConnectionId;
-  const connection = id ? state.session.connections[id] : null;
-  if (!connection) return ['No connection is open.'];
+    const id = state.session.activeConnectionId;
+    const connection = id ? state.session.connections[id] : null;
+    if (!connection) return ['No connection is open.'];
 
-  // The tab in front's, falling back to the connection's seed -- `selectDatabase`'s
-  // own reason applies twice over here: an assistant tab carries `database: null`,
-  // so when *it* is the tab in front this already reads as "nothing selected,
-  // fall back to the seed" rather than resolving to some other open tab by luck
-  // of array order.
-  const database = selectDatabase(state);
-  const databases = state.explorer.databases[connection.connectionId] ?? [];
+    // The tab in front's, falling back to the connection's seed -- `selectDatabase`'s
+    // own reason applies twice over here: an assistant tab carries `database: null`,
+    // so when *it* is the tab in front this already reads as "nothing selected,
+    // fall back to the seed" rather than resolving to some other open tab by luck
+    // of array order.
+    const database = selectDatabase(state);
+    const databases = state.explorer.databases[connection.connectionId] ?? [];
 
-  return [
-    `Connection in front: ${connection.name} (${connection.environment})`,
-    `Engine: ${connection.config.type} — write SQL in the ${connection.dialect} dialect`,
-    `Read-only: ${connection.readOnly ? 'yes, the server refuses writes on this session' : 'no'}`,
-    `Current database: ${database ?? 'none selected'}`,
-    databases.length ? `Databases on this connection: ${databases.join(', ')}` : '',
-  ].filter(Boolean);
+    return [
+        `Connection in front: ${connection.name} (${connection.environment})`,
+        `Engine: ${connection.config.type} — write SQL in the ${connection.dialect} dialect`,
+        `Read-only: ${connection.readOnly ? 'yes, the server refuses writes on this session' : 'no'}`,
+        `Current database: ${database ?? 'none selected'}`,
+        databases.length ? `Databases on this connection: ${databases.join(', ')}` : '',
+    ].filter(Boolean);
 }
 
 function describeTables(state: RootState): string[] {
-  const id = state.session.activeConnectionId;
-  if (!id) return [];
-  const database = selectDatabase(state);
-  if (!database) return [];
+    const id = state.session.activeConnectionId;
+    if (!id) return [];
+    const database = selectDatabase(state);
+    if (!database) return [];
 
-  const listing = state.explorer.tables[id]?.[database];
-  const tables = listing?.tables ?? [];
-  if (!tables.length) return [];
+    const listing = state.explorer.tables[id]?.[database];
+    const tables = listing?.tables ?? [];
+    if (!tables.length) return [];
 
-  const shown = tables.slice(0, TABLE_LIMIT);
-  const names = shown.map((table) => (table.schema ? `${table.schema}.${table.name}` : table.name)).join(', ');
+    const shown = tables.slice(0, TABLE_LIMIT);
+    const names = shown
+        .map((table) => (table.schema ? `${table.schema}.${table.name}` : table.name))
+        .join(', ');
 
-  /*
-   * A capped list that did not say it was capped would have the model concluding
-   * a table does not exist because it fell off the end of a listing it was never
-   * told was partial.
-   *
-   * Two cuts, and the second is why the total is hedged: this budget takes the
-   * first `TABLE_LIMIT` of what the cache holds, and the cache itself only ever
-   * held the first `CATALOG_LIMIT` of the database. Where the second one bit,
-   * the count in hand is a floor rather than a total, and stating it flat would
-   * tell the model a database of thousands has exactly `CATALOG_LIMIT` tables.
-   */
-  const cutByThisBudget = tables.length > shown.length;
-  const cutBeforeItArrived = listing?.truncated ?? false;
-  const total = cutBeforeItArrived ? `more than ${tables.length}` : `${tables.length}`;
-  const note =
-    cutByThisBudget || cutBeforeItArrived
-      ? ` (${shown.length} of ${total} — use searchTables to find the rest)`
-      : '';
-  return [`Tables in ${database}${note}: ${names}`];
+    /*
+     * A capped list that did not say it was capped would have the model concluding
+     * a table does not exist because it fell off the end of a listing it was never
+     * told was partial.
+     *
+     * Two cuts, and the second is why the total is hedged: this budget takes the
+     * first `TABLE_LIMIT` of what the cache holds, and the cache itself only ever
+     * held the first `CATALOG_LIMIT` of the database. Where the second one bit,
+     * the count in hand is a floor rather than a total, and stating it flat would
+     * tell the model a database of thousands has exactly `CATALOG_LIMIT` tables.
+     */
+    const cutByThisBudget = tables.length > shown.length;
+    const cutBeforeItArrived = listing?.truncated ?? false;
+    const total = cutBeforeItArrived ? `more than ${tables.length}` : `${tables.length}`;
+    const note =
+        cutByThisBudget || cutBeforeItArrived
+            ? ` (${shown.length} of ${total} — use searchTables to find the rest)`
+            : '';
+    return [`Tables in ${database}${note}: ${names}`];
 }
 
 /** SQL past this length is cut, so twenty tabs of hand-written queries cannot blow the turn's own budget up on their own. */
 function trimSql(sql: string): string {
-  return sql.length > SQL_PREVIEW_LIMIT ? `${sql.slice(0, SQL_PREVIEW_LIMIT)}\n… ${sql.length - SQL_PREVIEW_LIMIT} more characters` : sql;
+    return sql.length > SQL_PREVIEW_LIMIT
+        ? `${sql.slice(0, SQL_PREVIEW_LIMIT)}\n… ${sql.length - SQL_PREVIEW_LIMIT} more characters`
+        : sql;
 }
 
 function describeOneTab(state: RootState, tab: Tab, connectionId: string): string {
-  const front = tab.id === state.tabs.activeTabId[connectionId] || tab.id === state.tabs.secondaryActiveTabId[connectionId];
-  const header = `- "${tab.title}" (${tab.kind}${tab.table ? `, browsing ${tab.table}` : ''}, database ${tab.database ?? 'none'}, id ${tab.id}${front ? ', in front' : ''})`;
-  const lines = [header];
+    const front =
+        tab.id === state.tabs.activeTabId[connectionId] ||
+        tab.id === state.tabs.secondaryActiveTabId[connectionId];
+    const header = `- "${tab.title}" (${tab.kind}${tab.table ? `, browsing ${tab.table}` : ''}, database ${tab.database ?? 'none'}, id ${tab.id}${front ? ', in front' : ''})`;
+    const lines = [header];
 
-  const sql = state.tabs.sqlByTab[tab.id];
-  if (tab.kind === 'editor' && sql?.trim()) lines.push(`  SQL:\n${trimSql(sql)}`);
+    const sql = state.tabs.sqlByTab[tab.id];
+    if (tab.kind === 'editor' && sql?.trim()) lines.push(`  SQL:\n${trimSql(sql)}`);
 
-  const part = activePart(state.results[tab.id]);
-  if (part?.error) {
-    // In full, and never trimmed: the error text is the single most useful
-    // thing in this whole block, and it is the one thing here that carries no
-    // data of its own.
-    lines.push(`  Last run failed:\n${part.error}`);
-  } else if (part?.result) {
-    const columns = part.result.columns.join(', ');
-    const types = part.columns.length
-      ? ` Column types: ${part.columns.map((column) => `${column.name} ${column.dataType}`).join(', ')}.`
-      : '';
-    lines.push(
-      `  Result: ${part.result.rows.length} row(s) in ${part.result.durationMs ?? 0}ms. Columns: ${columns}.${types}` +
-        ' The values are not shown here; call getTabResult if you need them.'
-    );
-  }
+    const part = activePart(state.results[tab.id]);
+    if (part?.error) {
+        // In full, and never trimmed: the error text is the single most useful
+        // thing in this whole block, and it is the one thing here that carries no
+        // data of its own.
+        lines.push(`  Last run failed:\n${part.error}`);
+    } else if (part?.result) {
+        const columns = part.result.columns.join(', ');
+        const types = part.columns.length
+            ? ` Column types: ${part.columns.map((column) => `${column.name} ${column.dataType}`).join(', ')}.`
+            : '';
+        lines.push(
+            `  Result: ${part.result.rows.length} row(s) in ${part.result.durationMs ?? 0}ms. Columns: ${columns}.${types}` +
+                ' The values are not shown here; call getTabResult if you need them.',
+        );
+    }
 
-  return lines.join('\n');
+    return lines.join('\n');
 }
 
 /**
@@ -153,16 +159,23 @@ function describeOneTab(state: RootState, tab: Tab, connectionId: string): strin
  * model to do with it.
  */
 function describeAllTabs(state: RootState): string[] {
-  const connectionId = state.session.activeConnectionId;
-  if (!connectionId) return [];
+    const connectionId = state.session.activeConnectionId;
+    if (!connectionId) return [];
 
-  const tabs = state.tabs.tabs.filter((tab) => tab.connectionId === connectionId && tab.kind !== 'assistant');
-  if (!tabs.length) return [];
+    const tabs = state.tabs.tabs.filter(
+        (tab) => tab.connectionId === connectionId && tab.kind !== 'assistant',
+    );
+    if (!tabs.length) return [];
 
-  const shown = tabs.slice(0, TAB_LIMIT);
-  const note = tabs.length > shown.length ? ` (${shown.length} of ${tabs.length} — call getAllTabs for the rest)` : '';
+    const shown = tabs.slice(0, TAB_LIMIT);
+    const note =
+        tabs.length > shown.length
+            ? ` (${shown.length} of ${tabs.length} — call getAllTabs for the rest)`
+            : '';
 
-  return [`Open tabs${note}:\n${shown.map((tab) => describeOneTab(state, tab, connectionId)).join('\n')}`];
+    return [
+        `Open tabs${note}:\n${shown.map((tab) => describeOneTab(state, tab, connectionId)).join('\n')}`,
+    ];
 }
 
 /**
@@ -173,9 +186,13 @@ function describeAllTabs(state: RootState): string[] {
  * changing half be rebuilt without rewriting the instructions around it.
  */
 export function buildContext(state: RootState): AiMessage[] {
-  const blocks = [...describeConnection(state), ...describeTables(state), ...describeAllTabs(state)];
-  return [
-    { role: 'system', content: SYSTEM },
-    { role: 'system', content: `Current state of the editor:\n\n${blocks.join('\n')}` },
-  ];
+    const blocks = [
+        ...describeConnection(state),
+        ...describeTables(state),
+        ...describeAllTabs(state),
+    ];
+    return [
+        { role: 'system', content: SYSTEM },
+        { role: 'system', content: `Current state of the editor:\n\n${blocks.join('\n')}` },
+    ];
 }

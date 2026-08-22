@@ -11,19 +11,19 @@
  * the editor is what tokenizes; this app only wants the words.
  */
 declare module 'monaco-editor/esm/vs/basic-languages/*' {
-  export const language: {
-    /** Reserved words: SELECT, FROM, CREATE. */
-    keywords: string[];
-    /**
-     * Word-shaped operators only -- AND, IN, LIKE, NOT, JOIN. The SQL grammars
-     * put no symbols in this list, which is why it can be offered as-is; they
-     * are `operator` to the tokenizer and keywords to everyone else, which is
-     * the same reason `monaco.ts` paints this token with `--syntax-keyword`.
-     */
-    operators: string[];
-    /** COUNT, NOW, COALESCE. */
-    builtinFunctions: string[];
-    /** @@version and friends. Empty for both engines this app speaks today. */
-    builtinVariables: string[];
-  };
+    export const language: {
+        /** Reserved words: SELECT, FROM, CREATE. */
+        keywords: string[];
+        /**
+         * Word-shaped operators only -- AND, IN, LIKE, NOT, JOIN. The SQL grammars
+         * put no symbols in this list, which is why it can be offered as-is; they
+         * are `operator` to the tokenizer and keywords to everyone else, which is
+         * the same reason `monaco.ts` paints this token with `--syntax-keyword`.
+         */
+        operators: string[];
+        /** COUNT, NOW, COALESCE. */
+        builtinFunctions: string[];
+        /** @@version and friends. Empty for both engines this app speaks today. */
+        builtinVariables: string[];
+    };
 }

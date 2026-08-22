@@ -35,18 +35,23 @@ const fenced = (sql: string): string => `\`\`\`sql\n${sql.trim()}\n\`\`\``;
  * match on the title, which keeps a tab id out of a sentence the user has to
  * read. Saying it at all is what lets a fix be offered *into that tab*.
  */
-export function diagnosePrompt({ tabTitle, database, sql, error }: {
-  tabTitle: string;
-  database: string | null;
-  sql: string | null;
-  error: string;
+export function diagnosePrompt({
+    tabTitle,
+    database,
+    sql,
+    error,
+}: {
+    tabTitle: string;
+    database: string | null;
+    sql: string | null;
+    error: string;
 }): string {
-  const where = database ? ` on database \`${database}\`` : '';
-  return [
-    `This failed in my tab "${tabTitle}"${where}. What went wrong, and how do I fix it?`,
-    sql ? `\n${fenced(sql)}` : '',
-    `\nThe server said:\n\n${error}`,
-  ].join('');
+    const where = database ? ` on database \`${database}\`` : '';
+    return [
+        `This failed in my tab "${tabTitle}"${where}. What went wrong, and how do I fix it?`,
+        sql ? `\n${fenced(sql)}` : '',
+        `\nThe server said:\n\n${error}`,
+    ].join('');
 }
 
 /**
@@ -57,11 +62,15 @@ export function diagnosePrompt({ tabTitle, database, sql, error }: {
  * which is the assistant tab by the time the turn is sent, so it would find
  * nothing. This is the same reason the diagnosis carries its statement.
  */
-export function explainPrompt({ tabTitle, database, sql }: {
-  tabTitle: string;
-  database: string | null;
-  sql: string;
+export function explainPrompt({
+    tabTitle,
+    database,
+    sql,
+}: {
+    tabTitle: string;
+    database: string | null;
+    sql: string;
 }): string {
-  const where = database ? ` It runs against \`${database}\`.` : '';
-  return `Explain this SQL from my tab "${tabTitle}".${where} What does it do, and is there anything about it I should know?\n\n${fenced(sql)}`;
+    const where = database ? ` It runs against \`${database}\`.` : '';
+    return `Explain this SQL from my tab "${tabTitle}".${where} What does it do, and is there anything about it I should know?\n\n${fenced(sql)}`;
 }

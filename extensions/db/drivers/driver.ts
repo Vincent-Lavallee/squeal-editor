@@ -1,27 +1,27 @@
 import type {
-  CellValue,
-  ColumnInfo,
-  ConnectionConfig,
-  DiagramTable,
-  FunctionInfo,
-  RowDelete,
-  RowEdit,
-  SqlDialect,
+    CellValue,
+    ColumnInfo,
+    ConnectionConfig,
+    DiagramTable,
+    FunctionInfo,
+    RowDelete,
+    RowEdit,
+    SqlDialect,
 } from '../../../shared/protocol/index.ts';
 
 /** What a driver reports about a relation, before preview SQL is attached. */
 export interface TableMeta {
-  name: string;
-  /** Where it lives, for an engine that has schemas. Absent for MySQL. */
-  schema?: string;
-  kind: 'table' | 'view';
+    name: string;
+    /** Where it lives, for an engine that has schemas. Absent for MySQL. */
+    schema?: string;
+    kind: 'table' | 'view';
 }
 
 /** How a table listing is narrowed, when the caller cannot carry the whole database. */
 export interface TableSearch {
-  /** Matched anywhere in the name, case-insensitively. */
-  text?: string;
-  limit?: number;
+    /** Matched anywhere in the name, case-insensitively. */
+    text?: string;
+    limit?: number;
 }
 
 /**
@@ -36,14 +36,14 @@ export interface TableSearch {
  * fallback that case and only that case still needs.
  */
 export interface Relation {
-  table: string;
-  schema?: string;
+    table: string;
+    schema?: string;
 }
 
 /** A grid, or a count for statements that return no rows. */
 export type QueryOutcome =
-  | { columns: string[]; rows: CellValue[][] }
-  | { columns: []; rows: []; affectedRows: number; message: string };
+    | { columns: string[]; rows: CellValue[][] }
+    | { columns: []; rows: []; affectedRows: number; message: string };
 
 /**
  * An engine. Generic over its client type so mysql2 and pg each keep their own
@@ -51,231 +51,235 @@ export type QueryOutcome =
  * non-generic handle, which is what keeps the registry free of `any`.
  */
 export interface Driver<C> {
-  defaultPort: number;
-  /**
-   * How this engine's SQL is written. The renderer highlights with it and never
-   * learns which engine said so, which is the same rule that keeps quoting here.
-   */
-  dialect: SqlDialect;
-  /**
-   * The schema a relation is in when nobody says otherwise -- the one that goes
-   * without saying, so the UI can leave it off a name it prints.
-   *
-   * Reported rather than assumed for the same reason `dialect` is: the renderer
-   * must not carry a table of which engine calls its default schema what, and it
-   * already has to be told which relations are in which schema. Undefined for an
-   * engine with no schema layer, which is what says "there is nothing to leave
-   * off here".
-   *
-   * It is the *conventional* default and not a reading of the session's
-   * `search_path`, which a user may have set to anything. Getting it wrong costs
-   * a name printed in full, never a query aimed at the wrong relation -- the SQL
-   * this side authors always qualifies (see `qualify`) and never consults this.
-   */
-  defaultSchema?: string;
-  createClient(config: ConnectionConfig, database?: string): Promise<C>;
-  closeClient(client: C): Promise<void>;
-  /**
-   * Hear about the server dropping this client, rather than finding out at the
-   * next query.
-   *
-   * **Registering this is not optional and not a nicety.** Both server libraries
-   * are EventEmitters that `emit('error')` when the socket dies with nothing in
-   * flight, and an `error` event with no listener is how Node spells "throw" --
-   * which reaches `main.ts`'s `uncaughtException` handler and takes the whole
-   * extension, every other connection included, down with one dropped socket.
-   *
-   * `handler` fires at most once per client, for a drop or a clean server-side
-   * close alike; the caller cannot tell those apart and does not need to, since
-   * either way the client is finished.
-   */
-  onClientLost(client: C, handler: (reason: string) => void): void;
-  /**
-   * Whether a failed call means the connection itself is finished, as opposed to
-   * the statement being wrong.
-   *
-   * `onClientLost` catches a client dropped while nothing was running, which is
-   * the common case and the dangerous one. It does **not** catch a client dropped
-   * *during* a query: both libraries hand a network failure to the waiting
-   * command rather than to the connection when there is a command to hand it to,
-   * so the query rejects and no event is emitted. Without this, that client stays
-   * cached and dead and every command after it fails the same way for as long as
-   * the app is open -- which is exactly what "it says connected but nothing
-   * works" looks like.
-   *
-   * Answered from the library's own structured signal, never by matching on
-   * message text: a syntax error and a severed socket must not be one category.
-   */
-  isConnectionLost(err: unknown): boolean;
-  /**
-   * Drop the socket without asking the server first, for a client that is not
-   * going to answer.
-   *
-   * `closeClient` is the polite form: it writes a goodbye and waits to be told
-   * the connection is over. On a half-open socket -- the normal shape of an idle
-   * connection reaped by a load balancer -- there is nobody left to answer, and
-   * that wait is a TCP retransmission timeout measured in minutes. This is what
-   * bounds it.
-   */
-  destroyClient(client: C): void;
-  /**
-   * What the server calls its own version, in its own words.
-   *
-   * Per-engine like every other catalog read here -- `VERSION()`, a Postgres
-   * setting and a SQLite function are three different questions -- and the
-   * answer is passed on untouched. Nothing parses it or puts a product name in
-   * front of it: a MariaDB server answering `11.4.2-MariaDB` under the MySQL
-   * driver is telling the user something true, and normalising it would be the
-   * value-handling rule broken about a value that is only ever read.
-   */
-  serverVersion(client: C): Promise<string>;
-  listDatabases(client: C): Promise<string[]>;
-  /**
-   * A database's relations, optionally narrowed and capped.
-   *
-   * Both halves of `search` are the **server's** job, not a filter applied to
-   * what came back, and that is the whole reason they are on the contract rather
-   * than in the caller: a database with thousands of tables is slow to answer and
-   * expensive to carry, so narrowing after the fact has already paid every cost
-   * the narrowing exists to avoid.
-   *
-   * Omitted, this is the unbounded listing it has always been. No caller in the
-   * app leaves it off any more -- every one of them sends a `limit` -- and it
-   * stays because "every relation in this database" is a question this should
-   * still be able to answer. `text` matches anywhere in the name and is matched
-   * case-insensitively, since a caller searching for a table does not know how
-   * it was capitalised.
-   */
-  listTables(client: C, database: string, search?: TableSearch): Promise<TableMeta[]>;
-  /**
-   * A table's columns, in the order the table declares them.
-   *
-   * Ordinal order, not alphabetical: it is the order the table was written in
-   * and the order `SELECT *` returns, so it is the only one the reader already
-   * has in their head. The completion sorts by relevance on top of it anyway.
-   *
-   * `relation` carries the schema `listTables` reported alongside the name, which
-   * is what makes a Postgres relation outside `public` resolvable without taking
-   * a display string apart to find out where it lives.
-   */
-  listColumns(client: C, database: string, relation: Relation): Promise<ColumnInfo[]>;
-  /**
-   * Every table of a database with its columns and foreign keys, for the
-   * relationship diagram.
-   *
-   * Not `listTables` plus a `listColumns` per table: the diagram is about all of
-   * them at once, so this is two catalog reads over the whole database rather
-   * than two per table. Each engine shapes its rows into `DiagramColumnPart`s
-   * and `DiagramLinkPart`s and hands them to `assembleDiagram`, which is where
-   * the grouping lives so it cannot drift per engine.
-   *
-   * **Tables only.** A view declares no foreign key and nothing may reference
-   * one, so it would be a node no line could reach.
-   */
-  listRelationships(client: C, database: string): Promise<DiagramTable[]>;
-  /**
-   * Run one statement.
-   *
-   * `params` is optional and exists for the SQL *this side authored* -- a
-   * browsed page's filter binds its values rather than interpolating them. The
-   * user's own statement arrives through `db.query` with no parameters, because
-   * it is text they wrote and there is nothing in it for us to bind.
-   */
-  query(client: C, sql: string, params?: CellValue[]): Promise<QueryOutcome>;
-  /**
-   * Put this client's session into read-only mode, or back to read-write, so the
-   * *server* refuses writes rather than the app trying to parse them out of the
-   * SQL. It is a driver method because the statement is per-engine, the same
-   * reason quoting is -- and it is applied per client, once per database a
-   * connection opens (see `connection.ts`).
-   */
-  setReadOnly(client: C, readOnly: boolean): Promise<void>;
-  /**
-   * A relation's `CREATE` statement, faithful to what the server holds.
-   *
-   * Per-engine like quoting, and for the same reason: MySQL hands back its own
-   * `SHOW CREATE TABLE`, while Postgres has no such command and the statement is
-   * reassembled from the catalog -- columns via `format_type`, table constraints
-   * via `pg_get_constraintdef`, secondary indexes via `pg_get_indexdef`. Each is
-   * the engine rendering its own definition, which is the answer here the same
-   * way `format_type` was for a column's type. `kind` selects table-vs-view.
-   */
-  tableDdl(client: C, relation: Relation, kind: 'table' | 'view'): Promise<string>;
-  /**
-   * Triggers for a specific table, queried per-engine from the catalog.
-   */
-  listTriggers(client: C, database: string, relation: Relation): Promise<Array<{ name: string; schema?: string }>>;
-  /**
-   * A trigger's definition.
-   */
-  triggerDdl(client: C, database: string, relation: Relation, trigger: string): Promise<string>;
-  /**
-   * Functions and stored procedures in a database, queried per-engine from the catalog.
-   * Empty for SQLite, which has no server-side functions.
-   */
-  listFunctions(client: C, database: string): Promise<FunctionInfo[]>;
-  /**
-   * A function's or procedure's definition, for the row `listFunctions`
-   * reported. It takes that whole row for the same reason `Relation` exists:
-   * what identifies a function is several facts at once, and an engine with
-   * overloads cannot recover the missing ones from a name.
-   */
-  functionDdl(client: C, database: string, func: FunctionInfo): Promise<string>;
-  /**
-   * Drop a relation. `DROP TABLE` and `DROP VIEW` differ per kind and the
-   * identifier is quoted per engine, which is why the UI names one and never
-   * writes the SQL. No `CASCADE`: a relation something else depends on stays put,
-   * refused by the server, rather than taking its dependents with it silently.
-   */
-  dropRelation(client: C, relation: Relation, kind: 'table' | 'view'): Promise<void>;
-  /**
-   * The columns that identify a row of a table, or `null` when nothing does.
-   *
-   * The primary key if there is one, else a unique index over columns that are
-   * all `NOT NULL` -- a nullable unique column is not an identity, because two
-   * rows may both be NULL there and a `WHERE` over it would match both. `null`
-   * for a keyless table or a view, which is what makes the editable grid stay
-   * read-only. Per-engine like quoting: the catalog query differs, and only this
-   * side may write it. The names come back in key order.
-   */
-  rowKey(client: C, database: string, relation: Relation): Promise<string[] | null>;
-  /**
-   * Apply staged edits and deletes as one atomic transaction, returning the
-   * total rows affected.
-   *
-   * Per-engine because both the quoting *and* the placeholder syntax differ
-   * (`?` for mysql2, `$n` for pg). Each row is targeted by its `keyColumns`
-   * values, bound as parameters -- and every value in `set` is bound as a
-   * parameter too, so the server parses the text and no value is reformatted
-   * through a `Date` or a `Number`. An op that would touch more than one row
-   * means the key was not unique after all: the batch rolls back and throws,
-   * rather than editing rows the user never saw.
-   */
-  applyWrites(
-    client: C,
-    relation: Relation,
-    keyColumns: string[],
-    edits: RowEdit[],
-    deletes: RowDelete[]
-  ): Promise<number>;
-  quoteIdent(name: string): string;
-  /**
-   * How this engine names a relation in a statement: quoted, and qualified by its
-   * schema where the engine has one.
-   *
-   * A driver method beside `quoteIdent` because qualifying is per-engine in the
-   * same way quoting is -- Postgres writes `"reporting"."hits"`, MySQL writes
-   * `` `hits` `` and ignores the schema entirely, its client already being pinned
-   * to the database that *is* the schema. Every statement this side authors about
-   * a relation goes through here, so there is one answer to what a table is
-   * called in SQL rather than one per call site.
-   */
-  qualify(relation: Relation): string;
-  /**
-   * How this engine spells the Nth bound parameter -- `?` for mysql2, `$n` for
-   * pg. A driver method beside `quoteIdent` for the same reason: both are the
-   * engine's own spelling, and every assembler that binds a value (`runWrites`,
-   * `buildWhere`) takes it as a callback so the assembly cannot drift per engine.
-   */
-  placeholder(position: number): string;
+    defaultPort: number;
+    /**
+     * How this engine's SQL is written. The renderer highlights with it and never
+     * learns which engine said so, which is the same rule that keeps quoting here.
+     */
+    dialect: SqlDialect;
+    /**
+     * The schema a relation is in when nobody says otherwise -- the one that goes
+     * without saying, so the UI can leave it off a name it prints.
+     *
+     * Reported rather than assumed for the same reason `dialect` is: the renderer
+     * must not carry a table of which engine calls its default schema what, and it
+     * already has to be told which relations are in which schema. Undefined for an
+     * engine with no schema layer, which is what says "there is nothing to leave
+     * off here".
+     *
+     * It is the *conventional* default and not a reading of the session's
+     * `search_path`, which a user may have set to anything. Getting it wrong costs
+     * a name printed in full, never a query aimed at the wrong relation -- the SQL
+     * this side authors always qualifies (see `qualify`) and never consults this.
+     */
+    defaultSchema?: string;
+    createClient(config: ConnectionConfig, database?: string): Promise<C>;
+    closeClient(client: C): Promise<void>;
+    /**
+     * Hear about the server dropping this client, rather than finding out at the
+     * next query.
+     *
+     * **Registering this is not optional and not a nicety.** Both server libraries
+     * are EventEmitters that `emit('error')` when the socket dies with nothing in
+     * flight, and an `error` event with no listener is how Node spells "throw" --
+     * which reaches `main.ts`'s `uncaughtException` handler and takes the whole
+     * extension, every other connection included, down with one dropped socket.
+     *
+     * `handler` fires at most once per client, for a drop or a clean server-side
+     * close alike; the caller cannot tell those apart and does not need to, since
+     * either way the client is finished.
+     */
+    onClientLost(client: C, handler: (reason: string) => void): void;
+    /**
+     * Whether a failed call means the connection itself is finished, as opposed to
+     * the statement being wrong.
+     *
+     * `onClientLost` catches a client dropped while nothing was running, which is
+     * the common case and the dangerous one. It does **not** catch a client dropped
+     * *during* a query: both libraries hand a network failure to the waiting
+     * command rather than to the connection when there is a command to hand it to,
+     * so the query rejects and no event is emitted. Without this, that client stays
+     * cached and dead and every command after it fails the same way for as long as
+     * the app is open -- which is exactly what "it says connected but nothing
+     * works" looks like.
+     *
+     * Answered from the library's own structured signal, never by matching on
+     * message text: a syntax error and a severed socket must not be one category.
+     */
+    isConnectionLost(err: unknown): boolean;
+    /**
+     * Drop the socket without asking the server first, for a client that is not
+     * going to answer.
+     *
+     * `closeClient` is the polite form: it writes a goodbye and waits to be told
+     * the connection is over. On a half-open socket -- the normal shape of an idle
+     * connection reaped by a load balancer -- there is nobody left to answer, and
+     * that wait is a TCP retransmission timeout measured in minutes. This is what
+     * bounds it.
+     */
+    destroyClient(client: C): void;
+    /**
+     * What the server calls its own version, in its own words.
+     *
+     * Per-engine like every other catalog read here -- `VERSION()`, a Postgres
+     * setting and a SQLite function are three different questions -- and the
+     * answer is passed on untouched. Nothing parses it or puts a product name in
+     * front of it: a MariaDB server answering `11.4.2-MariaDB` under the MySQL
+     * driver is telling the user something true, and normalising it would be the
+     * value-handling rule broken about a value that is only ever read.
+     */
+    serverVersion(client: C): Promise<string>;
+    listDatabases(client: C): Promise<string[]>;
+    /**
+     * A database's relations, optionally narrowed and capped.
+     *
+     * Both halves of `search` are the **server's** job, not a filter applied to
+     * what came back, and that is the whole reason they are on the contract rather
+     * than in the caller: a database with thousands of tables is slow to answer and
+     * expensive to carry, so narrowing after the fact has already paid every cost
+     * the narrowing exists to avoid.
+     *
+     * Omitted, this is the unbounded listing it has always been. No caller in the
+     * app leaves it off any more -- every one of them sends a `limit` -- and it
+     * stays because "every relation in this database" is a question this should
+     * still be able to answer. `text` matches anywhere in the name and is matched
+     * case-insensitively, since a caller searching for a table does not know how
+     * it was capitalised.
+     */
+    listTables(client: C, database: string, search?: TableSearch): Promise<TableMeta[]>;
+    /**
+     * A table's columns, in the order the table declares them.
+     *
+     * Ordinal order, not alphabetical: it is the order the table was written in
+     * and the order `SELECT *` returns, so it is the only one the reader already
+     * has in their head. The completion sorts by relevance on top of it anyway.
+     *
+     * `relation` carries the schema `listTables` reported alongside the name, which
+     * is what makes a Postgres relation outside `public` resolvable without taking
+     * a display string apart to find out where it lives.
+     */
+    listColumns(client: C, database: string, relation: Relation): Promise<ColumnInfo[]>;
+    /**
+     * Every table of a database with its columns and foreign keys, for the
+     * relationship diagram.
+     *
+     * Not `listTables` plus a `listColumns` per table: the diagram is about all of
+     * them at once, so this is two catalog reads over the whole database rather
+     * than two per table. Each engine shapes its rows into `DiagramColumnPart`s
+     * and `DiagramLinkPart`s and hands them to `assembleDiagram`, which is where
+     * the grouping lives so it cannot drift per engine.
+     *
+     * **Tables only.** A view declares no foreign key and nothing may reference
+     * one, so it would be a node no line could reach.
+     */
+    listRelationships(client: C, database: string): Promise<DiagramTable[]>;
+    /**
+     * Run one statement.
+     *
+     * `params` is optional and exists for the SQL *this side authored* -- a
+     * browsed page's filter binds its values rather than interpolating them. The
+     * user's own statement arrives through `db.query` with no parameters, because
+     * it is text they wrote and there is nothing in it for us to bind.
+     */
+    query(client: C, sql: string, params?: CellValue[]): Promise<QueryOutcome>;
+    /**
+     * Put this client's session into read-only mode, or back to read-write, so the
+     * *server* refuses writes rather than the app trying to parse them out of the
+     * SQL. It is a driver method because the statement is per-engine, the same
+     * reason quoting is -- and it is applied per client, once per database a
+     * connection opens (see `connection.ts`).
+     */
+    setReadOnly(client: C, readOnly: boolean): Promise<void>;
+    /**
+     * A relation's `CREATE` statement, faithful to what the server holds.
+     *
+     * Per-engine like quoting, and for the same reason: MySQL hands back its own
+     * `SHOW CREATE TABLE`, while Postgres has no such command and the statement is
+     * reassembled from the catalog -- columns via `format_type`, table constraints
+     * via `pg_get_constraintdef`, secondary indexes via `pg_get_indexdef`. Each is
+     * the engine rendering its own definition, which is the answer here the same
+     * way `format_type` was for a column's type. `kind` selects table-vs-view.
+     */
+    tableDdl(client: C, relation: Relation, kind: 'table' | 'view'): Promise<string>;
+    /**
+     * Triggers for a specific table, queried per-engine from the catalog.
+     */
+    listTriggers(
+        client: C,
+        database: string,
+        relation: Relation,
+    ): Promise<Array<{ name: string; schema?: string }>>;
+    /**
+     * A trigger's definition.
+     */
+    triggerDdl(client: C, database: string, relation: Relation, trigger: string): Promise<string>;
+    /**
+     * Functions and stored procedures in a database, queried per-engine from the catalog.
+     * Empty for SQLite, which has no server-side functions.
+     */
+    listFunctions(client: C, database: string): Promise<FunctionInfo[]>;
+    /**
+     * A function's or procedure's definition, for the row `listFunctions`
+     * reported. It takes that whole row for the same reason `Relation` exists:
+     * what identifies a function is several facts at once, and an engine with
+     * overloads cannot recover the missing ones from a name.
+     */
+    functionDdl(client: C, database: string, func: FunctionInfo): Promise<string>;
+    /**
+     * Drop a relation. `DROP TABLE` and `DROP VIEW` differ per kind and the
+     * identifier is quoted per engine, which is why the UI names one and never
+     * writes the SQL. No `CASCADE`: a relation something else depends on stays put,
+     * refused by the server, rather than taking its dependents with it silently.
+     */
+    dropRelation(client: C, relation: Relation, kind: 'table' | 'view'): Promise<void>;
+    /**
+     * The columns that identify a row of a table, or `null` when nothing does.
+     *
+     * The primary key if there is one, else a unique index over columns that are
+     * all `NOT NULL` -- a nullable unique column is not an identity, because two
+     * rows may both be NULL there and a `WHERE` over it would match both. `null`
+     * for a keyless table or a view, which is what makes the editable grid stay
+     * read-only. Per-engine like quoting: the catalog query differs, and only this
+     * side may write it. The names come back in key order.
+     */
+    rowKey(client: C, database: string, relation: Relation): Promise<string[] | null>;
+    /**
+     * Apply staged edits and deletes as one atomic transaction, returning the
+     * total rows affected.
+     *
+     * Per-engine because both the quoting *and* the placeholder syntax differ
+     * (`?` for mysql2, `$n` for pg). Each row is targeted by its `keyColumns`
+     * values, bound as parameters -- and every value in `set` is bound as a
+     * parameter too, so the server parses the text and no value is reformatted
+     * through a `Date` or a `Number`. An op that would touch more than one row
+     * means the key was not unique after all: the batch rolls back and throws,
+     * rather than editing rows the user never saw.
+     */
+    applyWrites(
+        client: C,
+        relation: Relation,
+        keyColumns: string[],
+        edits: RowEdit[],
+        deletes: RowDelete[],
+    ): Promise<number>;
+    quoteIdent(name: string): string;
+    /**
+     * How this engine names a relation in a statement: quoted, and qualified by its
+     * schema where the engine has one.
+     *
+     * A driver method beside `quoteIdent` because qualifying is per-engine in the
+     * same way quoting is -- Postgres writes `"reporting"."hits"`, MySQL writes
+     * `` `hits` `` and ignores the schema entirely, its client already being pinned
+     * to the database that *is* the schema. Every statement this side authors about
+     * a relation goes through here, so there is one answer to what a table is
+     * called in SQL rather than one per call site.
+     */
+    qualify(relation: Relation): string;
+    /**
+     * How this engine spells the Nth bound parameter -- `?` for mysql2, `$n` for
+     * pg. A driver method beside `quoteIdent` for the same reason: both are the
+     * engine's own spelling, and every assembler that binds a value (`runWrites`,
+     * `buildWhere`) takes it as a callback so the assembly cannot drift per engine.
+     */
+    placeholder(position: number): string;
 }

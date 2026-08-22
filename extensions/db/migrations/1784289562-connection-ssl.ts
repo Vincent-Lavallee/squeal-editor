@@ -9,10 +9,10 @@ import { hasColumn, type Migration } from './migration.ts';
  * having gone rather than the app having changed its mind.
  */
 export const migration: Migration = {
-  version: 1784289562,
-  name: 'connection-ssl',
+    version: 1784289562,
+    name: 'connection-ssl',
 
-  up: (db) => db.run('ALTER TABLE saved_connections ADD COLUMN ssl INTEGER NOT NULL DEFAULT 0'),
+    up: (db) => db.run('ALTER TABLE saved_connections ADD COLUMN ssl INTEGER NOT NULL DEFAULT 0'),
 
-  applied: (db) => hasColumn(db, 'saved_connections', 'ssl'),
+    applied: (db) => hasColumn(db, 'saved_connections', 'ssl'),
 };

@@ -9,8 +9,9 @@ import type { Migration } from './migration.ts';
  * point at a label the app no longer offers.
  */
 export const migration: Migration = {
-  version: 1784997700,
-  name: 'environment-qa',
+    version: 1784997700,
+    name: 'environment-qa',
 
-  up: (db) => db.run("UPDATE saved_connections SET environment = 'qa' WHERE environment = 'staging'"),
+    up: (db) =>
+        db.run("UPDATE saved_connections SET environment = 'qa' WHERE environment = 'staging'"),
 };

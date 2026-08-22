@@ -7,10 +7,10 @@ import { hasColumn, type Migration } from './migration.ts';
  * colourless -- the same guess-that-costs-least as every other default here.
  */
 export const migration: Migration = {
-  version: 1784408527,
-  name: 'workspace-colour',
+    version: 1784408527,
+    name: 'workspace-colour',
 
-  up: (db) => db.run("ALTER TABLE workspaces ADD COLUMN color TEXT NOT NULL DEFAULT 'slate'"),
+    up: (db) => db.run("ALTER TABLE workspaces ADD COLUMN color TEXT NOT NULL DEFAULT 'slate'"),
 
-  applied: (db) => hasColumn(db, 'workspaces', 'color'),
+    applied: (db) => hasColumn(db, 'workspaces', 'color'),
 };

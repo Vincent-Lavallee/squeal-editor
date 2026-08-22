@@ -8,11 +8,11 @@ import { tableExists, type Migration } from './migration.ts';
  * columns dodge both and nothing downstream has to quote.
  */
 export const migration: Migration = {
-  version: 1784202096,
-  name: 'saved-connections',
+    version: 1784202096,
+    name: 'saved-connections',
 
-  up: (db) =>
-    db.run(`
+    up: (db) =>
+        db.run(`
       CREATE TABLE saved_connections (
         id               TEXT PRIMARY KEY,
         name             TEXT NOT NULL UNIQUE,
@@ -25,5 +25,5 @@ export const migration: Migration = {
       );
     `),
 
-  applied: (db) => tableExists(db, 'saved_connections'),
+    applied: (db) => tableExists(db, 'saved_connections'),
 };

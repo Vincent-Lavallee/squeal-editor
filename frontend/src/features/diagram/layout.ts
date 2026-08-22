@@ -24,31 +24,31 @@ const LOOSE_PER_ROW = 6;
 
 /** One table, drawn. `key` is what edges name it by -- always qualified. */
 export interface DiagramNode {
-  key: string;
-  label: string;
-  relation: Relation;
-  table: DiagramTable;
-  /** Which of this table's columns any foreign key of it uses, for the key mark. */
-  foreignKeyColumns: Set<string>;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+    key: string;
+    label: string;
+    relation: Relation;
+    table: DiagramTable;
+    /** Which of this table's columns any foreign key of it uses, for the key mark. */
+    foreignKeyColumns: Set<string>;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
 }
 
 /** One constraint, drawn: from the table that declares it to the one it names. */
 export interface DiagramEdge {
-  id: string;
-  from: string;
-  to: string;
-  /** The declaring table's columns, so the line can leave from the right row. */
-  fromColumns: string[];
-  toColumns: string[];
+    id: string;
+    from: string;
+    to: string;
+    /** The declaring table's columns, so the line can leave from the right row. */
+    fromColumns: string[];
+    toColumns: string[];
 }
 
 export interface DiagramLayout {
-  nodes: DiagramNode[];
-  edges: DiagramEdge[];
+    nodes: DiagramNode[];
+    edges: DiagramEdge[];
 }
 
 /**
@@ -68,19 +68,19 @@ export interface DiagramLayout {
  * layout's own padding, which is every diagram nobody has touched.
  */
 export function extentOf(nodes: DiagramNode[]): DiagramExtent {
-  let left = 0;
-  let top = 0;
-  let right = 0;
-  let bottom = 0;
-  for (const node of nodes) {
-    // Padded on the near sides too, so a node dragged out keeps the margin the
-    // layout gives the ones it left behind.
-    left = Math.min(left, node.x - CANVAS_PAD);
-    top = Math.min(top, node.y - CANVAS_PAD);
-    right = Math.max(right, node.x + node.width + CANVAS_PAD);
-    bottom = Math.max(bottom, node.y + node.height + CANVAS_PAD);
-  }
-  return { left, top, right, bottom };
+    let left = 0;
+    let top = 0;
+    let right = 0;
+    let bottom = 0;
+    for (const node of nodes) {
+        // Padded on the near sides too, so a node dragged out keeps the margin the
+        // layout gives the ones it left behind.
+        left = Math.min(left, node.x - CANVAS_PAD);
+        top = Math.min(top, node.y - CANVAS_PAD);
+        right = Math.max(right, node.x + node.width + CANVAS_PAD);
+        bottom = Math.max(bottom, node.y + node.height + CANVAS_PAD);
+    }
+    return { left, top, right, bottom };
 }
 
 /**
@@ -90,10 +90,10 @@ export function extentOf(nodes: DiagramNode[]): DiagramExtent {
  * is the pair that makes a negative coordinate reachable.
  */
 export interface DiagramExtent {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
 }
 
 const nodeHeight = (table: DiagramTable): number => HEADER_H + table.columns.length * ROW_H;
@@ -110,55 +110,58 @@ const nodeHeight = (table: DiagramTable): number => HEADER_H + table.columns.len
  * it is currently resolving and treats a re-entry as depth 0 -- an arbitrary but
  * bounded answer, where the honest one does not exist.
  */
-function depths(nodes: Map<string, DiagramTable>, targetsOf: Map<string, string[]>): Map<string, number> {
-  const resolved = new Map<string, number>();
-  const resolving = new Set<string>();
+function depths(
+    nodes: Map<string, DiagramTable>,
+    targetsOf: Map<string, string[]>,
+): Map<string, number> {
+    const resolved = new Map<string, number>();
+    const resolving = new Set<string>();
 
-  const walk = (key: string): number => {
-    const known = resolved.get(key);
-    if (known !== undefined) return known;
-    if (resolving.has(key)) return 0;
-    resolving.add(key);
-    let depth = 0;
-    for (const target of targetsOf.get(key) ?? []) {
-      if (target !== key) depth = Math.max(depth, walk(target) + 1);
-    }
-    resolving.delete(key);
-    resolved.set(key, depth);
-    return depth;
-  };
+    const walk = (key: string): number => {
+        const known = resolved.get(key);
+        if (known !== undefined) return known;
+        if (resolving.has(key)) return 0;
+        resolving.add(key);
+        let depth = 0;
+        for (const target of targetsOf.get(key) ?? []) {
+            if (target !== key) depth = Math.max(depth, walk(target) + 1);
+        }
+        resolving.delete(key);
+        resolved.set(key, depth);
+        return depth;
+    };
 
-  for (const key of nodes.keys()) walk(key);
-  return resolved;
+    for (const key of nodes.keys()) walk(key);
+    return resolved;
 }
 
 /** Which tables are reachable from which, ignoring direction: one cluster each. */
 function clusters(keys: string[], edges: DiagramEdge[]): string[][] {
-  const parent = new Map(keys.map((key) => [key, key]));
-  const find = (key: string): string => {
-    let root = key;
-    while (parent.get(root) !== root) root = parent.get(root)!;
-    while (parent.get(key) !== root) {
-      const next = parent.get(key)!;
-      parent.set(key, root);
-      key = next;
+    const parent = new Map(keys.map((key) => [key, key]));
+    const find = (key: string): string => {
+        let root = key;
+        while (parent.get(root) !== root) root = parent.get(root)!;
+        while (parent.get(key) !== root) {
+            const next = parent.get(key)!;
+            parent.set(key, root);
+            key = next;
+        }
+        return root;
+    };
+
+    for (const edge of edges) {
+        const [a, b] = [find(edge.from), find(edge.to)];
+        if (a !== b) parent.set(a, b);
     }
-    return root;
-  };
 
-  for (const edge of edges) {
-    const [a, b] = [find(edge.from), find(edge.to)];
-    if (a !== b) parent.set(a, b);
-  }
-
-  const grouped = new Map<string, string[]>();
-  for (const key of keys) {
-    const root = find(key);
-    const members = grouped.get(root) ?? [];
-    members.push(key);
-    grouped.set(root, members);
-  }
-  return [...grouped.values()];
+    const grouped = new Map<string, string[]>();
+    for (const key of keys) {
+        const root = find(key);
+        const members = grouped.get(root) ?? [];
+        members.push(key);
+        grouped.set(root, members);
+    }
+    return [...grouped.values()];
 }
 
 /**
@@ -170,13 +173,24 @@ function clusters(keys: string[], edges: DiagramEdge[]): string[][] {
  * whatever is left. A node with no placed target keeps its name order, which is
  * what stops the pass from shuffling an unconnected node somewhere arbitrary.
  */
-function orderByTargets(column: string[], targetsOf: Map<string, string[]>, placedAt: Map<string, number>): string[] {
-  const barycentre = new Map<string, number>();
-  for (const [at, key] of column.entries()) {
-    const positions = (targetsOf.get(key) ?? []).map((target) => placedAt.get(target)).filter((y) => y !== undefined);
-    barycentre.set(key, positions.length === 0 ? at : positions.reduce((sum, y) => sum + y, 0) / positions.length);
-  }
-  return [...column].sort((a, b) => barycentre.get(a)! - barycentre.get(b)!);
+function orderByTargets(
+    column: string[],
+    targetsOf: Map<string, string[]>,
+    placedAt: Map<string, number>,
+): string[] {
+    const barycentre = new Map<string, number>();
+    for (const [at, key] of column.entries()) {
+        const positions = (targetsOf.get(key) ?? [])
+            .map((target) => placedAt.get(target))
+            .filter((y) => y !== undefined);
+        barycentre.set(
+            key,
+            positions.length === 0
+                ? at
+                : positions.reduce((sum, y) => sum + y, 0) / positions.length,
+        );
+    }
+    return [...column].sort((a, b) => barycentre.get(a)! - barycentre.get(b)!);
 }
 
 /**
@@ -194,97 +208,107 @@ function orderByTargets(column: string[], targetsOf: Map<string, string[]>, plac
  * together.
  */
 export function layoutDiagram(tables: DiagramTable[], defaultSchema?: string): DiagramLayout {
-  const byKey = new Map<string, DiagramTable>();
-  for (const table of tables) byKey.set(relationName({ table: table.name, schema: table.schema }), table);
+    const byKey = new Map<string, DiagramTable>();
+    for (const table of tables)
+        byKey.set(relationName({ table: table.name, schema: table.schema }), table);
 
-  const edges: DiagramEdge[] = [];
-  const targetsOf = new Map<string, string[]>();
-  for (const [key, table] of byKey) {
-    for (const link of table.foreignKeys) {
-      const target = relationName({ table: link.refTable, schema: link.refSchema });
-      if (!byKey.has(target)) continue;
-      const id = JSON.stringify([key, link.name]);
-      edges.push({ id, from: key, to: target, fromColumns: link.columns, toColumns: link.refColumns });
-      const targets = targetsOf.get(key) ?? [];
-      targets.push(target);
-      targetsOf.set(key, targets);
-    }
-  }
-
-  const connected = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
-  const depthOf = depths(byKey, targetsOf);
-  const byName = (a: string, b: string) => a.localeCompare(b);
-
-  const position = new Map<string, { x: number; y: number }>();
-  let cursorY = CANVAS_PAD;
-
-  const groups = clusters([...byKey.keys()].filter((key) => connected.has(key)), edges);
-  groups.sort((a, b) => b.length - a.length || byName(a[0]!, b[0]!));
-
-  for (const group of groups) {
-    const columns: string[][] = [];
-    for (const key of [...group].sort(byName)) {
-      const depth = depthOf.get(key)!;
-      (columns[depth] ??= []).push(key);
+    const edges: DiagramEdge[] = [];
+    const targetsOf = new Map<string, string[]>();
+    for (const [key, table] of byKey) {
+        for (const link of table.foreignKeys) {
+            const target = relationName({ table: link.refTable, schema: link.refSchema });
+            if (!byKey.has(target)) continue;
+            const id = JSON.stringify([key, link.name]);
+            edges.push({
+                id,
+                from: key,
+                to: target,
+                fromColumns: link.columns,
+                toColumns: link.refColumns,
+            });
+            const targets = targetsOf.get(key) ?? [];
+            targets.push(target);
+            targetsOf.set(key, targets);
+        }
     }
 
-    // Left to right, so each column is ordered against one already placed.
-    const placedAt = new Map<string, number>();
-    let x = CANVAS_PAD;
-    let tallest = 0;
-    for (const column of columns) {
-      if (!column) continue;
-      let y = cursorY;
-      for (const key of orderByTargets(column, targetsOf, placedAt)) {
-        position.set(key, { x, y });
-        placedAt.set(key, y);
-        y += nodeHeight(byKey.get(key)!) + NODE_GAP;
-      }
-      tallest = Math.max(tallest, y - NODE_GAP - cursorY);
-      x += NODE_W + COLUMN_GAP;
+    const connected = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
+    const depthOf = depths(byKey, targetsOf);
+    const byName = (a: string, b: string) => a.localeCompare(b);
+
+    const position = new Map<string, { x: number; y: number }>();
+    let cursorY = CANVAS_PAD;
+
+    const groups = clusters(
+        [...byKey.keys()].filter((key) => connected.has(key)),
+        edges,
+    );
+    groups.sort((a, b) => b.length - a.length || byName(a[0]!, b[0]!));
+
+    for (const group of groups) {
+        const columns: string[][] = [];
+        for (const key of [...group].sort(byName)) {
+            const depth = depthOf.get(key)!;
+            (columns[depth] ??= []).push(key);
+        }
+
+        // Left to right, so each column is ordered against one already placed.
+        const placedAt = new Map<string, number>();
+        let x = CANVAS_PAD;
+        let tallest = 0;
+        for (const column of columns) {
+            if (!column) continue;
+            let y = cursorY;
+            for (const key of orderByTargets(column, targetsOf, placedAt)) {
+                position.set(key, { x, y });
+                placedAt.set(key, y);
+                y += nodeHeight(byKey.get(key)!) + NODE_GAP;
+            }
+            tallest = Math.max(tallest, y - NODE_GAP - cursorY);
+            x += NODE_W + COLUMN_GAP;
+        }
+        cursorY += tallest + CLUSTER_GAP;
     }
-    cursorY += tallest + CLUSTER_GAP;
-  }
 
-  const loose = [...byKey.keys()].filter((key) => !connected.has(key)).sort(byName);
-  for (let at = 0; at < loose.length; at += LOOSE_PER_ROW) {
-    const row = loose.slice(at, at + LOOSE_PER_ROW);
-    let x = CANVAS_PAD;
-    for (const key of row) {
-      position.set(key, { x, y: cursorY });
-      x += NODE_W + NODE_GAP;
+    const loose = [...byKey.keys()].filter((key) => !connected.has(key)).sort(byName);
+    for (let at = 0; at < loose.length; at += LOOSE_PER_ROW) {
+        const row = loose.slice(at, at + LOOSE_PER_ROW);
+        let x = CANVAS_PAD;
+        for (const key of row) {
+            position.set(key, { x, y: cursorY });
+            x += NODE_W + NODE_GAP;
+        }
+        cursorY += Math.max(...row.map((key) => nodeHeight(byKey.get(key)!))) + NODE_GAP;
     }
-    cursorY += Math.max(...row.map((key) => nodeHeight(byKey.get(key)!))) + NODE_GAP;
-  }
 
-  const nodes: DiagramNode[] = [...byKey].map(([key, table]) => {
-    const at = position.get(key)!;
-    const relation = { table: table.name, schema: table.schema };
-    return {
-      key,
-      label: relationLabel(relation, defaultSchema),
-      relation,
-      table,
-      foreignKeyColumns: new Set(table.foreignKeys.flatMap((link) => link.columns)),
-      x: at.x,
-      y: at.y,
-      width: NODE_W,
-      height: nodeHeight(table),
-    };
-  });
+    const nodes: DiagramNode[] = [...byKey].map(([key, table]) => {
+        const at = position.get(key)!;
+        const relation = { table: table.name, schema: table.schema };
+        return {
+            key,
+            label: relationLabel(relation, defaultSchema),
+            relation,
+            table,
+            foreignKeyColumns: new Set(table.foreignKeys.flatMap((link) => link.columns)),
+            x: at.x,
+            y: at.y,
+            width: NODE_W,
+            height: nodeHeight(table),
+        };
+    });
 
-  // No extent here on purpose: how much room the drawing needs is a question
-  // about where the nodes *are*, which stops being this function's answer the
-  // moment one is dragged. `extentOf` is the one place that answers it.
-  return { nodes, edges };
+    // No extent here on purpose: how much room the drawing needs is a question
+    // about where the nodes *are*, which stops being this function's answer the
+    // moment one is dragged. `extentOf` is the one place that answers it.
+    return { nodes, edges };
 }
 
 /** Where a column's row sits inside its node, so a line can leave from it. */
 export const columnAnchorY = (node: DiagramNode, column: string): number => {
-  const at = node.table.columns.findIndex((c) => c.name === column);
-  // A constraint naming a column the catalog did not list has nowhere better to
-  // point than the table's own header, which is still the truthful end of the line.
-  return at === -1 ? node.y + HEADER_H / 2 : node.y + HEADER_H + at * ROW_H + ROW_H / 2;
+    const at = node.table.columns.findIndex((c) => c.name === column);
+    // A constraint naming a column the catalog did not list has nowhere better to
+    // point than the table's own header, which is still the truthful end of the line.
+    return at === -1 ? node.y + HEADER_H / 2 : node.y + HEADER_H + at * ROW_H + ROW_H / 2;
 };
 
 /** How far a self-reference bulges past its own table's right edge. */
@@ -311,25 +335,30 @@ const BEND_MAX = 130;
  * different place -- the view offsets a copy and calls this again, so nothing
  * here has to know that dragging exists.
  */
-export function edgePath(from: DiagramNode, to: DiagramNode, fromColumn: string, toColumn: string): string {
-  const y1 = columnAnchorY(from, fromColumn);
-  const y2 = columnAnchorY(to, toColumn);
+export function edgePath(
+    from: DiagramNode,
+    to: DiagramNode,
+    fromColumn: string,
+    toColumn: string,
+): string {
+    const y1 = columnAnchorY(from, fromColumn);
+    const y2 = columnAnchorY(to, toColumn);
 
-  if (from.key === to.key) {
-    const x = from.x + from.width;
-    // A self-reference whose two ends land on one row would otherwise draw as a
-    // flat line lying on top of that row and read as nothing at all.
-    const spread = Math.abs(y2 - y1) < LOOP_MIN_SPREAD ? LOOP_MIN_SPREAD : 0;
-    return `M ${x} ${y1} C ${x + LOOP_W} ${y1 - spread}, ${x + LOOP_W} ${y2 + spread}, ${x} ${y2}`;
-  }
+    if (from.key === to.key) {
+        const x = from.x + from.width;
+        // A self-reference whose two ends land on one row would otherwise draw as a
+        // flat line lying on top of that row and read as nothing at all.
+        const spread = Math.abs(y2 - y1) < LOOP_MIN_SPREAD ? LOOP_MIN_SPREAD : 0;
+        return `M ${x} ${y1} C ${x + LOOP_W} ${y1 - spread}, ${x + LOOP_W} ${y2 + spread}, ${x} ${y2}`;
+    }
 
-  const rightward = to.x + to.width / 2 >= from.x + from.width / 2;
-  const x1 = rightward ? from.x + from.width : from.x;
-  const x2 = rightward ? to.x : to.x + to.width;
-  const bend = Math.min(Math.max(Math.abs(x2 - x1) / 2, BEND_MIN), BEND_MAX);
-  const c1 = rightward ? x1 + bend : x1 - bend;
-  const c2 = rightward ? x2 - bend : x2 + bend;
-  return `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`;
+    const rightward = to.x + to.width / 2 >= from.x + from.width / 2;
+    const x1 = rightward ? from.x + from.width : from.x;
+    const x2 = rightward ? to.x : to.x + to.width;
+    const bend = Math.min(Math.max(Math.abs(x2 - x1) / 2, BEND_MIN), BEND_MAX);
+    const c1 = rightward ? x1 + bend : x1 - bend;
+    const c2 = rightward ? x2 - bend : x2 + bend;
+    return `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`;
 }
 
 export { HEADER_H, ROW_H };

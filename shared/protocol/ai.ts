@@ -25,23 +25,44 @@ export type AiProvider = 'openai' | 'anthropic' | 'gemini' | 'deepseek';
  * it because they went looking for *Claude*, not for Anthropic PBC.
  */
 export interface AiProviderInfo {
-  id: AiProvider;
-  label: string;
-  /** Where a key is minted. The connect screen opens it in a browser. */
-  keysUrl: string;
-  /** What a key from this provider looks like, shown as the field's placeholder. */
-  keyHint: string;
+    id: AiProvider;
+    label: string;
+    /** Where a key is minted. The connect screen opens it in a browser. */
+    keysUrl: string;
+    /** What a key from this provider looks like, shown as the field's placeholder. */
+    keyHint: string;
 }
 
 /** `as const` so this reads as a non-empty list: the connect screen starts on the first entry. */
 export const AI_PROVIDERS = [
-  { id: 'anthropic', label: 'Claude', keysUrl: 'https://console.anthropic.com/settings/keys', keyHint: 'sk-ant-…' },
-  { id: 'openai', label: 'ChatGPT', keysUrl: 'https://platform.openai.com/api-keys', keyHint: 'sk-…' },
-  { id: 'gemini', label: 'Gemini', keysUrl: 'https://aistudio.google.com/apikey', keyHint: 'AIza…' },
-  { id: 'deepseek', label: 'DeepSeek', keysUrl: 'https://platform.deepseek.com/api_keys', keyHint: 'sk-…' },
+    {
+        id: 'anthropic',
+        label: 'Claude',
+        keysUrl: 'https://console.anthropic.com/settings/keys',
+        keyHint: 'sk-ant-…',
+    },
+    {
+        id: 'openai',
+        label: 'ChatGPT',
+        keysUrl: 'https://platform.openai.com/api-keys',
+        keyHint: 'sk-…',
+    },
+    {
+        id: 'gemini',
+        label: 'Gemini',
+        keysUrl: 'https://aistudio.google.com/apikey',
+        keyHint: 'AIza…',
+    },
+    {
+        id: 'deepseek',
+        label: 'DeepSeek',
+        keysUrl: 'https://platform.deepseek.com/api_keys',
+        keyHint: 'sk-…',
+    },
 ] as const satisfies readonly AiProviderInfo[];
 
-export const providerLabel = (id: AiProvider): string => AI_PROVIDERS.find((provider) => provider.id === id)?.label ?? id;
+export const providerLabel = (id: AiProvider): string =>
+    AI_PROVIDERS.find((provider) => provider.id === id)?.label ?? id;
 
 /**
  * Where the user stands with the assistant, **answered rather than thrown**.
@@ -57,9 +78,9 @@ export const providerLabel = (id: AiProvider): string => AI_PROVIDERS.find((prov
  * the keychain would not answer, which is a real state and a different screen.
  */
 export interface AiStatus {
-  state: 'no-key' | 'ready' | 'unavailable';
-  provider?: AiProvider;
-  reason?: string;
+    state: 'no-key' | 'ready' | 'unavailable';
+    provider?: AiProvider;
+    reason?: string;
 }
 
 /**
@@ -72,18 +93,18 @@ export interface AiStatus {
  * cannot promise now that no provider reports tool support.
  */
 export interface AiModel {
-  id: string;
-  name: string;
-  /** The provider's label, so the picker can say who a model belongs to without a second lookup. */
-  vendor: string;
-  /**
-   * Whether this is the model the UI should start on.
-   *
-   * Decided in the extension, one per catalog, because "which model is the good
-   * one" is provider knowledge and this is the side that has it. Nothing about
-   * *cost* is carried -- see `docs/decisions.md`.
-   */
-  isDefault?: boolean;
+    id: string;
+    name: string;
+    /** The provider's label, so the picker can say who a model belongs to without a second lookup. */
+    vendor: string;
+    /**
+     * Whether this is the model the UI should start on.
+     *
+     * Decided in the extension, one per catalog, because "which model is the good
+     * one" is provider knowledge and this is the side that has it. Nothing about
+     * *cost* is carried -- see `docs/decisions.md`.
+     */
+    isDefault?: boolean;
 }
 
 /**
@@ -99,37 +120,37 @@ export interface AiModel {
 export type AiApprovalMode = 'manual' | 'auto' | 'bypass';
 
 export interface AiToolCall {
-  id: string;
-  name: string;
-  /** The model's own JSON, unparsed: it can be malformed, and the loop reports that back as the tool's result. */
-  arguments: string;
+    id: string;
+    name: string;
+    /** The model's own JSON, unparsed: it can be malformed, and the loop reports that back as the tool's result. */
+    arguments: string;
 }
 
 export interface AiMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
-  toolCalls?: AiToolCall[];
-  /** On a `tool` message: which call it answers. */
-  toolCallId?: string;
-  /**
-   * On an `assistant` message: what the provider said this turn's request cost
-   * in tokens, when it said anything at all.
-   *
-   * `inputTokens` is the whole request that produced this reply — the rebuilt
-   * context, every prior message, every tool definition — so it is the
-   * conversation's current size, not a delta. Absent rather than estimated when
-   * a provider's stream did not carry it, the same rule that keeps a dollar
-   * figure off `AiModel`: a guessed number reads as a measured one and this app
-   * would rather say nothing.
-   */
-  usage?: { inputTokens: number; outputTokens: number };
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content: string;
+    toolCalls?: AiToolCall[];
+    /** On a `tool` message: which call it answers. */
+    toolCallId?: string;
+    /**
+     * On an `assistant` message: what the provider said this turn's request cost
+     * in tokens, when it said anything at all.
+     *
+     * `inputTokens` is the whole request that produced this reply — the rebuilt
+     * context, every prior message, every tool definition — so it is the
+     * conversation's current size, not a delta. Absent rather than estimated when
+     * a provider's stream did not carry it, the same rule that keeps a dollar
+     * figure off `AiModel`: a guessed number reads as a measured one and this app
+     * would rather say nothing.
+     */
+    usage?: { inputTokens: number; outputTokens: number };
 }
 
 export interface AiToolDef {
-  name: string;
-  description: string;
-  /** JSON Schema, handed to the model as written. */
-  parameters: unknown;
+    name: string;
+    description: string;
+    /** JSON Schema, handed to the model as written. */
+    parameters: unknown;
 }
 
 /**
@@ -142,17 +163,17 @@ export interface AiToolDef {
  * `conversations.get` fetches the one that was picked.
  */
 export interface AiConversationSummary {
-  id: string;
-  /** The tab's own name, which the model wrote on its first reply. */
-  title: string;
-  /**
-   * When it was last written, in epoch milliseconds.
-   *
-   * The app's own clock, not a value a server sent, which is why the UI may
-   * render it through `Date` — the rule that forbids that is about database
-   * values, and this one was minted here.
-   */
-  updatedAt: number;
+    id: string;
+    /** The tab's own name, which the model wrote on its first reply. */
+    title: string;
+    /**
+     * When it was last written, in epoch milliseconds.
+     *
+     * The app's own clock, not a value a server sent, which is why the UI may
+     * render it through `Date` — the rule that forbids that is about database
+     * values, and this one was minted here.
+     */
+    updatedAt: number;
 }
 
 /**
@@ -165,5 +186,5 @@ export interface AiConversationSummary {
  * written down as its shape. See `docs/frontend.md`.
  */
 export interface AiConversation extends AiConversationSummary {
-  body: string;
+    body: string;
 }

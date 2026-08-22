@@ -21,7 +21,7 @@
  * colour and names a server; see `docs/extension.md`.
  */
 export interface SavedQuery {
-  id: string;
-  name: string;
-  sql: string;
+    id: string;
+    name: string;
+    sql: string;
 }

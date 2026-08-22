@@ -1,13 +1,13 @@
 import { createListenerMiddleware, isAnyOf } from '@reduxjs/toolkit';
 
 import {
-  assistantSaid,
-  conversationRestarted,
-  noticed,
-  openConversation,
-  saveConversation,
-  toolAnswered,
-  userSaid,
+    assistantSaid,
+    conversationRestarted,
+    noticed,
+    openConversation,
+    saveConversation,
+    toolAnswered,
+    userSaid,
 } from './assistantSlice.ts';
 import { toStored } from './conversationRecord.ts';
 import { disconnect } from './sessionSlice.ts';
@@ -30,7 +30,10 @@ import type { AppDispatch, RootState } from './index.ts';
  * and its redaction cannot be changed apart.
  */
 export const conversationSyncMiddleware = createListenerMiddleware();
-const startAppListening = conversationSyncMiddleware.startListening.withTypes<RootState, AppDispatch>();
+const startAppListening = conversationSyncMiddleware.startListening.withTypes<
+    RootState,
+    AppDispatch
+>();
 
 /** How long a conversation sits still before it is written. `sessionSyncListener`'s. */
 const DEBOUNCE_MS = 600;
@@ -49,29 +52,29 @@ const lastSaved = new Map<string, string>();
  * that emptiness over a real conversation.
  */
 function saveChanged(state: RootState, dispatch: AppDispatch): void {
-  for (const [tabId, conversation] of Object.entries(state.assistant.byTab)) {
-    if (!conversation.id || conversation.messages.length === 0) continue;
+    for (const [tabId, conversation] of Object.entries(state.assistant.byTab)) {
+        if (!conversation.id || conversation.messages.length === 0) continue;
 
-    const body = JSON.stringify(toStored(conversation));
-    if (lastSaved.get(conversation.id) === body) continue;
-    lastSaved.set(conversation.id, body);
+        const body = JSON.stringify(toStored(conversation));
+        if (lastSaved.get(conversation.id) === body) continue;
+        lastSaved.set(conversation.id, body);
 
-    // The tab's name is the conversation's: the model writes it there on its
-    // first reply (`renameConversation`) and the user can edit it in the strip,
-    // so reading it back is what keeps one name for one thing.
-    const title = state.tabs.tabs.find((tab) => tab.id === tabId)?.title ?? 'Conversation';
-    void dispatch(saveConversation({ id: conversation.id, title, body }));
-  }
+        // The tab's name is the conversation's: the model writes it there on its
+        // first reply (`renameConversation`) and the user can edit it in the strip,
+        // so reading it back is what keeps one name for one thing.
+        const title = state.tabs.tabs.find((tab) => tab.id === tabId)?.title ?? 'Conversation';
+        void dispatch(saveConversation({ id: conversation.id, title, body }));
+    }
 }
 
 // Debounced: everything that adds to a thread, plus the rename that titles it.
 startAppListening({
-  matcher: isAnyOf(userSaid, assistantSaid, toolAnswered, noticed, tabRenamed),
-  effect: async (_action, api) => {
-    api.cancelActiveListeners();
-    await api.delay(DEBOUNCE_MS);
-    saveChanged(api.getState(), api.dispatch);
-  },
+    matcher: isAnyOf(userSaid, assistantSaid, toolAnswered, noticed, tabRenamed),
+    effect: async (_action, api) => {
+        api.cancelActiveListeners();
+        await api.delay(DEBOUNCE_MS);
+        saveChanged(api.getState(), api.dispatch);
+    },
 });
 
 /**
@@ -89,8 +92,13 @@ startAppListening({
  * one has to be written on the way out, exactly as a closing tab's is.
  */
 startAppListening({
-  matcher: isAnyOf(tabsClosed, disconnect.fulfilled, conversationRestarted, openConversation.pending),
-  effect: (_action, api) => {
-    saveChanged(api.getOriginalState(), api.dispatch);
-  },
+    matcher: isAnyOf(
+        tabsClosed,
+        disconnect.fulfilled,
+        conversationRestarted,
+        openConversation.pending,
+    ),
+    effect: (_action, api) => {
+        saveChanged(api.getOriginalState(), api.dispatch);
+    },
 });

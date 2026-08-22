@@ -5,14 +5,14 @@ import { activePart, browseTable } from './resultsSlice.ts';
 import type { SessionSnapshot } from './sessionSnapshot.ts';
 import { disconnect, saveSession } from './sessionSlice.ts';
 import {
-  databaseChanged,
-  sqlChanged,
-  tabActivated,
-  tabMoved,
-  tabOpened,
-  tabRenamed,
-  tabSaved,
-  tabsClosed,
+    databaseChanged,
+    sqlChanged,
+    tabActivated,
+    tabMoved,
+    tabOpened,
+    tabRenamed,
+    tabSaved,
+    tabsClosed,
 } from './tabsSlice.ts';
 import type { AppDispatch, RootState } from './index.ts';
 
@@ -53,74 +53,82 @@ const lastSaved = new Map<string, string>();
 
 /** Serialise one open connection's tabs into the shape the store keeps. */
 function snapshotFor(state: RootState, connectionId: string): SessionSnapshot {
-  // Every tab of the connection, both panes -- `pane` is what says which one
-  // each belongs to, so the split comes back with them.
-  const tabs = state.tabs.tabs.filter((t) => t.connectionId === connectionId);
-  const activeId = state.tabs.activeTabId[connectionId] ?? null;
-  const activeIndex = activeId ? tabs.findIndex((t) => t.id === activeId) : -1;
-  const secondaryId = state.tabs.secondaryActiveTabId[connectionId] ?? null;
-  const secondaryActiveIndex = secondaryId ? tabs.findIndex((t) => t.id === secondaryId) : -1;
+    // Every tab of the connection, both panes -- `pane` is what says which one
+    // each belongs to, so the split comes back with them.
+    const tabs = state.tabs.tabs.filter((t) => t.connectionId === connectionId);
+    const activeId = state.tabs.activeTabId[connectionId] ?? null;
+    const activeIndex = activeId ? tabs.findIndex((t) => t.id === activeId) : -1;
+    const secondaryId = state.tabs.secondaryActiveTabId[connectionId] ?? null;
+    const secondaryActiveIndex = secondaryId ? tabs.findIndex((t) => t.id === secondaryId) : -1;
 
-  return {
-    tabs: tabs.map((tab) => {
-      if (tab.kind === 'grid') {
-        // The filter a browsed page was fetched with is authoritative once the
-        // tab has browsed; before that -- a restored tab never yet viewed -- the
-        // seed it was reopened with is all there is.
-        const browsed = activePart(state.results[tab.id])?.browse;
-        const filter = browsed ? browsed.filter : (tab.filter ?? null);
-        return { kind: tab.kind, database: tab.database, table: tab.table, schema: tab.schema, title: tab.title, filter, pane: tab.pane };
-      }
-      // A diagram holds nothing but the database it is about, so that is all
-      // that is written down. Falling through to the editor shape below would
-      // store an `sql: ''` that is not a fact about this tab and that the
-      // restore would then have to know to ignore.
-      if (tab.kind === 'diagram') {
-        return { kind: tab.kind, database: tab.database, title: tab.title, pane: tab.pane };
-      }
-      // An assistant tab holds a conversation and no database, so the link is
-      // all that goes down -- and it comes off the live thread when there is
-      // one, falling back to the seed the tab was restored with and never
-      // adopted. The grid filter's split exactly: the live value wins for a tab
-      // that has been looked at, the seed answers for one that has not.
-      //
-      // The presence of the entry decides, not its `id`: a thread the user
-      // cleared holds `id: null`, and coalescing that onto the seed would
-      // reopen tomorrow the conversation they emptied today.
-      if (tab.kind === 'assistant') {
-        const held = state.assistant.byTab[tab.id];
-        return {
-          kind: tab.kind,
-          title: tab.title,
-          pane: tab.pane,
-          conversationId: held ? (held.id ?? undefined) : tab.conversationId,
-        };
-      }
-      return {
-        kind: tab.kind,
-        database: tab.database,
-        title: tab.title,
-        sql: state.tabs.sqlByTab[tab.id] ?? '',
-        savedQueryId: tab.savedQueryId,
-        unsaved: tab.unsaved,
-        pane: tab.pane,
-      };
-    }),
-    activeIndex: activeIndex < 0 ? null : activeIndex,
-    secondaryActiveIndex: secondaryActiveIndex < 0 ? null : secondaryActiveIndex,
-    nextQueryNo: state.tabs.nextQueryNo[connectionId] ?? tabs.length + 1,
-    database: state.tabs.defaultDatabase[connectionId] ?? null,
-  };
+    return {
+        tabs: tabs.map((tab) => {
+            if (tab.kind === 'grid') {
+                // The filter a browsed page was fetched with is authoritative once the
+                // tab has browsed; before that -- a restored tab never yet viewed -- the
+                // seed it was reopened with is all there is.
+                const browsed = activePart(state.results[tab.id])?.browse;
+                const filter = browsed ? browsed.filter : (tab.filter ?? null);
+                return {
+                    kind: tab.kind,
+                    database: tab.database,
+                    table: tab.table,
+                    schema: tab.schema,
+                    title: tab.title,
+                    filter,
+                    pane: tab.pane,
+                };
+            }
+            // A diagram holds nothing but the database it is about, so that is all
+            // that is written down. Falling through to the editor shape below would
+            // store an `sql: ''` that is not a fact about this tab and that the
+            // restore would then have to know to ignore.
+            if (tab.kind === 'diagram') {
+                return { kind: tab.kind, database: tab.database, title: tab.title, pane: tab.pane };
+            }
+            // An assistant tab holds a conversation and no database, so the link is
+            // all that goes down -- and it comes off the live thread when there is
+            // one, falling back to the seed the tab was restored with and never
+            // adopted. The grid filter's split exactly: the live value wins for a tab
+            // that has been looked at, the seed answers for one that has not.
+            //
+            // The presence of the entry decides, not its `id`: a thread the user
+            // cleared holds `id: null`, and coalescing that onto the seed would
+            // reopen tomorrow the conversation they emptied today.
+            if (tab.kind === 'assistant') {
+                const held = state.assistant.byTab[tab.id];
+                return {
+                    kind: tab.kind,
+                    title: tab.title,
+                    pane: tab.pane,
+                    conversationId: held ? (held.id ?? undefined) : tab.conversationId,
+                };
+            }
+            return {
+                kind: tab.kind,
+                database: tab.database,
+                title: tab.title,
+                sql: state.tabs.sqlByTab[tab.id] ?? '',
+                savedQueryId: tab.savedQueryId,
+                unsaved: tab.unsaved,
+                pane: tab.pane,
+            };
+        }),
+        activeIndex: activeIndex < 0 ? null : activeIndex,
+        secondaryActiveIndex: secondaryActiveIndex < 0 ? null : secondaryActiveIndex,
+        nextQueryNo: state.tabs.nextQueryNo[connectionId] ?? tabs.length + 1,
+        database: state.tabs.defaultDatabase[connectionId] ?? null,
+    };
 }
 
 /** Save one connection if its snapshot changed since it was last written. */
 function saveIfChanged(state: RootState, dispatch: AppDispatch, connectionId: string): void {
-  const conn = state.session.connections[connectionId];
-  if (!conn) return;
-  const serialised = JSON.stringify(snapshotFor(state, connectionId));
-  if (lastSaved.get(conn.savedConnectionId) === serialised) return;
-  lastSaved.set(conn.savedConnectionId, serialised);
-  void dispatch(saveSession({ savedConnectionId: conn.savedConnectionId, session: serialised }));
+    const conn = state.session.connections[connectionId];
+    if (!conn) return;
+    const serialised = JSON.stringify(snapshotFor(state, connectionId));
+    if (lastSaved.get(conn.savedConnectionId) === serialised) return;
+    lastSaved.set(conn.savedConnectionId, serialised);
+    void dispatch(saveSession({ savedConnectionId: conn.savedConnectionId, session: serialised }));
 }
 
 // Debounced: re-check every connection still open when a session settles. Only
@@ -132,16 +140,27 @@ function saveIfChanged(state: RootState, dispatch: AppDispatch, connectionId: st
 // started and quit out of would restore empty, since nothing else the user did
 // would have written the snapshot again.
 startAppListening({
-  matcher: isAnyOf(
-    tabOpened, tabsClosed, tabMoved, tabActivated, databaseChanged, sqlChanged, tabRenamed, tabSaved, browseTable.fulfilled,
-    userSaid, conversationRestarted, openConversation.pending
-  ),
-  effect: async (_action, api) => {
-    api.cancelActiveListeners();
-    await api.delay(DEBOUNCE_MS);
-    const state = api.getState();
-    for (const connectionId of state.session.order) saveIfChanged(state, api.dispatch, connectionId);
-  },
+    matcher: isAnyOf(
+        tabOpened,
+        tabsClosed,
+        tabMoved,
+        tabActivated,
+        databaseChanged,
+        sqlChanged,
+        tabRenamed,
+        tabSaved,
+        browseTable.fulfilled,
+        userSaid,
+        conversationRestarted,
+        openConversation.pending,
+    ),
+    effect: async (_action, api) => {
+        api.cancelActiveListeners();
+        await api.delay(DEBOUNCE_MS);
+        const state = api.getState();
+        for (const connectionId of state.session.order)
+            saveIfChanged(state, api.dispatch, connectionId);
+    },
 });
 
 // Immediate, before the tabs go: `disconnect.pending` fires while the connection
@@ -149,8 +168,8 @@ startAppListening({
 // would otherwise lose. `fulfilled` (which removes them) is deliberately not
 // listened to -- serialising then would save an empty session.
 startAppListening({
-  actionCreator: disconnect.pending,
-  effect: (action, api) => {
-    saveIfChanged(api.getState(), api.dispatch, action.meta.arg);
-  },
+    actionCreator: disconnect.pending,
+    effect: (action, api) => {
+        saveIfChanged(api.getState(), api.dispatch, action.meta.arg);
+    },
 });

@@ -23,52 +23,52 @@ import type { TableFilter } from '../../../shared/protocol/index.ts';
  * session, which is exactly why either link can be written down at all.
  */
 export interface SessionSnapshot {
-  tabs: Array<{
-    /** An `assistant` tab rides here like any other, carrying `conversationId`. */
-    kind: 'editor' | 'grid' | 'diagram' | 'assistant';
+    tabs: Array<{
+        /** An `assistant` tab rides here like any other, carrying `conversationId`. */
+        kind: 'editor' | 'grid' | 'diagram' | 'assistant';
+        /**
+         * Which database this tab was pointed at. Absent on a snapshot written
+         * while the database was the connection's, which reads as "it was on the
+         * connection's" -- the top-level `database` below -- and is exactly what it
+         * was. That is the whole of the backwards compatibility here.
+         */
+        database?: string | null;
+        table?: string;
+        schema?: string;
+        title: string;
+        sql?: string;
+        filter?: TableFilter | null;
+        savedQueryId?: string;
+        /**
+         * The conversation an `assistant` tab was holding. Absent on a snapshot
+         * written before conversations were kept, and on one whose tab was opened
+         * and never spoken to -- both read as "it comes back empty", which is what
+         * an assistant tab with nothing in it is.
+         */
+        conversationId?: string;
+        /** Whether this tab held edits it had not saved back to its query. */
+        unsaved?: boolean;
+        /**
+         * Which pane this tab was docked in. Absent on a snapshot written before
+         * the split existed, which reads as `'primary'` -- the whole of what makes
+         * an older stored session reopen unchanged.
+         */
+        pane?: 'primary' | 'secondary';
+    }>;
+    activeIndex: number | null;
     /**
-     * Which database this tab was pointed at. Absent on a snapshot written
-     * while the database was the connection's, which reads as "it was on the
-     * connection's" -- the top-level `database` below -- and is exactly what it
-     * was. That is the whole of the backwards compatibility here.
+     * Which tab the *secondary* pane had in front, by position, or null/absent
+     * when there was no split. Its own field for the reason `activeIndex` is
+     * one: a pane's front tab is not derivable from the tab list.
      */
-    database?: string | null;
-    table?: string;
-    schema?: string;
-    title: string;
-    sql?: string;
-    filter?: TableFilter | null;
-    savedQueryId?: string;
+    secondaryActiveIndex?: number | null;
+    nextQueryNo: number;
     /**
-     * The conversation an `assistant` tab was holding. Absent on a snapshot
-     * written before conversations were kept, and on one whose tab was opened
-     * and never spoken to -- both read as "it comes back empty", which is what
-     * an assistant tab with nothing in it is.
+     * The connection's **seed** -- what the next tab opened with nothing in front
+     * starts on, and what an older snapshot's tabs are all read as having been
+     * on. Not a target: every tab carries its own above.
      */
-    conversationId?: string;
-    /** Whether this tab held edits it had not saved back to its query. */
-    unsaved?: boolean;
-    /**
-     * Which pane this tab was docked in. Absent on a snapshot written before
-     * the split existed, which reads as `'primary'` -- the whole of what makes
-     * an older stored session reopen unchanged.
-     */
-    pane?: 'primary' | 'secondary';
-  }>;
-  activeIndex: number | null;
-  /**
-   * Which tab the *secondary* pane had in front, by position, or null/absent
-   * when there was no split. Its own field for the reason `activeIndex` is
-   * one: a pane's front tab is not derivable from the tab list.
-   */
-  secondaryActiveIndex?: number | null;
-  nextQueryNo: number;
-  /**
-   * The connection's **seed** -- what the next tab opened with nothing in front
-   * starts on, and what an older snapshot's tabs are all read as having been
-   * on. Not a target: every tab carries its own above.
-   */
-  database: string | null;
+    database: string | null;
 }
 
 /**
@@ -79,10 +79,10 @@ export interface SessionSnapshot {
  * that happens, coming up with a fresh tab beats refusing to open.
  */
 export function parseSnapshot(raw: string | null): SessionSnapshot | null {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as SessionSnapshot;
-  } catch {
-    return null;
-  }
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw) as SessionSnapshot;
+    } catch {
+        return null;
+    }
 }

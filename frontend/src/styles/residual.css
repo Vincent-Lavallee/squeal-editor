@@ -9,160 +9,218 @@
 /* Monaco's theme and useWindowChrome read these at runtime via
    getComputedStyle(). They must exist on :root. Keep in sync with tokens.ts. */
 :root {
-  --bg: #111113;
-  --border: #272a2d;
-  --border-strong: #363a3f;
-  --hover: #ffffff0a;
-  --selected: #0eb39e24;
-  --scrim: #00000099;
-  --veil: #11111359;
-  --veil-edge: #ffffff1f;
-  --veil-sheen: #ffffff14;
-  --veil-deep: #111113e6;
-  --veil-blur: 12px;
-  --text: #edeef0;
-  --text-muted: #b0b4ba;
-  --text-faint: #696e77;
-  --accent: #0eb39e;
-  --accent-bg: #0d2d2a;
-  --on-accent: #0d1514;
-  --red: #e5484d;
-  --red-bg: #3b1219;
-  --red-text: #ff9592;
-  --green: #3dd68c;
-  --green-bg: #132d21;
-  --amber: #ffca16;
-  --amber-bg: #341c00;
-  --purple: #bf7af0;
-  --purple-bg: #301c3b;
-  --syntax-keyword: var(--accent);
-  --syntax-string: #3dd68c;
-  --syntax-number: #ffca16;
-  --syntax-comment: var(--text-faint);
-  --syntax-punctuation: var(--text-muted);
-  --conn-slate: #b0b4ba;
-  --conn-blue: #5eb0ef;
-  --conn-cyan: #4ccce6;
-  --conn-green: #3dd68c;
-  --conn-amber: #ffca16;
-  --conn-orange: #ffa057;
-  --conn-red: #ff9592;
-  --conn-pink: #ff8dcc;
-  --conn-purple: #bf7af0;
-  --radius-pill: 999px;
-  --radius: 6px;
-  --radius-lg: 8px;
-  --font: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-  --text-page: 24px;
-  --text-title: 15px;
-  --text-body: 13px;
-  --text-badge: 12px;
-  --text-label: 11px;
-  --text-micro: 10px;
-  --tracking-label: 0.04em;
-  --icon: 16px;
-  --titlebar-h: 32px;
-  --tab-h: 32px;
-  --statusbar-h: 26px;
-  --rail-h: 32px;
-  --button-h: 30px;
-  --button-h-bar: 24px;
-  --row-h: 44px;
-  --row-h-dense: 30px;
-  --gap-xs: 4px;
-  --gap-sm: 8px;
-  --gap: 12px;
-  --gap-lg: 16px;
-  --gap-xl: 24px;
+    --bg: #111113;
+    --border: #272a2d;
+    --border-strong: #363a3f;
+    --hover: #ffffff0a;
+    --selected: #0eb39e24;
+    --scrim: #00000099;
+    --veil: #11111359;
+    --veil-edge: #ffffff1f;
+    --veil-sheen: #ffffff14;
+    --veil-deep: #111113e6;
+    --veil-blur: 12px;
+    --text: #edeef0;
+    --text-muted: #b0b4ba;
+    --text-faint: #696e77;
+    --accent: #0eb39e;
+    --accent-bg: #0d2d2a;
+    --on-accent: #0d1514;
+    --red: #e5484d;
+    --red-bg: #3b1219;
+    --red-text: #ff9592;
+    --green: #3dd68c;
+    --green-bg: #132d21;
+    --amber: #ffca16;
+    --amber-bg: #341c00;
+    --purple: #bf7af0;
+    --purple-bg: #301c3b;
+    --syntax-keyword: var(--accent);
+    --syntax-string: #3dd68c;
+    --syntax-number: #ffca16;
+    --syntax-comment: var(--text-faint);
+    --syntax-punctuation: var(--text-muted);
+    --conn-slate: #b0b4ba;
+    --conn-blue: #5eb0ef;
+    --conn-cyan: #4ccce6;
+    --conn-green: #3dd68c;
+    --conn-amber: #ffca16;
+    --conn-orange: #ffa057;
+    --conn-red: #ff9592;
+    --conn-pink: #ff8dcc;
+    --conn-purple: #bf7af0;
+    --radius-pill: 999px;
+    --radius: 6px;
+    --radius-lg: 8px;
+    --font: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+    --text-page: 24px;
+    --text-title: 15px;
+    --text-body: 13px;
+    --text-badge: 12px;
+    --text-label: 11px;
+    --text-micro: 10px;
+    --tracking-label: 0.04em;
+    --icon: 16px;
+    --titlebar-h: 32px;
+    --tab-h: 32px;
+    --statusbar-h: 26px;
+    --rail-h: 32px;
+    --button-h: 30px;
+    --button-h-bar: 24px;
+    --row-h: 44px;
+    --row-h-dense: 30px;
+    --gap-xs: 4px;
+    --gap-sm: 8px;
+    --gap: 12px;
+    --gap-lg: 16px;
+    --gap-xl: 24px;
 }
 
 /* ---- Reset ---- */
 /* The one place the palette is told to the browser rather than drawn by it,
    for everything the browser draws for itself and no CSS can reach: scrollbars,
    focus rings, autofill, and the text-field context menu. */
-:root { color-scheme: dark; }
-*, *::before, *::after { box-sizing: border-box; }
-html, body, #root { height: 100%; }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
-  font-size: var(--text-body);
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  overflow: hidden;
+:root {
+    color-scheme: dark;
 }
-button, label, th { user-select: none; }
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+html,
+body,
+#root {
+    height: 100%;
+}
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+}
+button,
+label,
+th {
+    user-select: none;
+}
 
 /* ---- Focus-visible (global, no inline equivalent) ---- */
 :focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
 }
 
 /* ---- Scrollbars (pseudo-elements, no inline equivalent) ---- */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-  border: 2px solid var(--bg);
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
 }
-::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
-.tabs::-webkit-scrollbar { display: none; }
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: var(--radius-pill);
+    border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint);
+}
+.tabs::-webkit-scrollbar {
+    display: none;
+}
 
 /* ---- Placeholder (browser pseudo-element, no inline equivalent) ---- */
-input::placeholder { color: var(--text-faint); }
+input::placeholder {
+    color: var(--text-faint);
+}
 
 /* ---- Animations (@keyframes, no inline equivalent) ---- */
 @keyframes update-banner-sweep {
-  from { margin-left: -40%; }
-  to { margin-left: 100%; }
+    from {
+        margin-left: -40%;
+    }
+    to {
+        margin-left: 100%;
+    }
 }
 .update-banner__bar--indeterminate .update-banner__fill {
-  width: 40%;
-  animation: update-banner-sweep 1.1s ease-in-out infinite;
+    width: 40%;
+    animation: update-banner-sweep 1.1s ease-in-out infinite;
 }
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
-.spin { animation: spin 0.6s linear infinite; }
+.spin {
+    animation: spin 0.6s linear infinite;
+}
 @keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
+    0%,
+    100% {
+        opacity: 0.4;
+    }
+    50% {
+        opacity: 0.8;
+    }
 }
-.skeleton { animation: skeleton-pulse 1.6s ease-in-out infinite; }
+.skeleton {
+    animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
 @keyframes copy-hint-pop {
-  from { opacity: 0; transform: translateY(-4px) scale(0.92); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.92);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 /* The colour picker takes its row over rather than floating a panel above it,
    so it has to read as *arriving* — dropped in without a beat, the row looks
    like it was re-rendered by something else. */
 @keyframes swatch-row-in {
-  from { opacity: 0; transform: translateX(-6px); }
-  to { opacity: 1; transform: translateX(0); }
+    from {
+        opacity: 0;
+        transform: translateX(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
-.conn-colors { animation: swatch-row-in 0.12s ease-out; }
+.conn-colors {
+    animation: swatch-row-in 0.12s ease-out;
+}
 
 /* ---- :has() rules (no inline equivalent) ---- */
 /* A radio drawn as a tile hides the input, so the focus ring has to be moved
    onto the tile — the global :focus-visible rule lands on something 0px wide. */
 .ws-icons__pick:has(input:focus-visible),
 .conn-colors__pick:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
 }
 
 /* ---- Grid compound selectors (noisy to inline) ---- */
-.grid tbody tr:hover td { background: var(--hover); }
+.grid tbody tr:hover td {
+    background: var(--hover);
+}
 .grid tbody tr.grid__row--selected td,
 .grid tbody tr.grid__row--selected .gutter {
-  background: var(--selected);
+    background: var(--selected);
 }
 /* A cell selection draws no fill of its own: it is one accent outline around
    the whole rectangle, made of the boundary edges of the cells that sit on it,
@@ -175,47 +233,64 @@ input::placeholder { color: var(--text-faint); }
    cannot carry. */
 .grid tbody tr.grid__row--deleted td,
 .grid tbody tr.grid__row--deleted .gutter {
-  background: var(--red-bg);
-  color: var(--red-text);
-  text-decoration: line-through;
+    background: var(--red-bg);
+    color: var(--red-text);
+    text-decoration: line-through;
 }
 .grid__cell--dirty {
-  color: var(--accent);
+    color: var(--accent);
 }
 /* A sortable header is a click target, so it says so on hover -- the same
    `--hover` a row already uses, since it is the same gesture at the top of the
    same column. A header that cannot be sorted (a blank or duplicated name) is
    left inert rather than drawn differently: nothing offered is nothing to
    explain, and a disabled-looking column reads as a broken one. */
-.grid thead th.grid__th--sortable:hover { background: var(--hover); }
+.grid thead th.grid__th--sortable:hover {
+    background: var(--hover);
+}
 /* The hint arrow rides along with that: hidden at rest, shown on the one column
    being pointed at. `visibility`, never `display` -- the mark keeps its slot
    either way, so a header does not widen under the cursor and the columns beside
    it do not shift. The sorted column carries a real arrow in the same slot
    instead, which is why sorting one never moves anything either. */
-.grid thead th .grid__sort-hint { visibility: hidden; }
-.grid thead th.grid__th--sortable:hover .grid__sort-hint { visibility: visible; }
+.grid thead th .grid__sort-hint {
+    visibility: hidden;
+}
+.grid thead th.grid__th--sortable:hover .grid__sort-hint {
+    visibility: visible;
+}
 /* The resize grip is invisible until pointed at, then it is the column's own
    1px border in accent -- drawn as a pseudo-element inside the strip so what
    lights up is the line being moved, not the 7px target around it. It has to
    outlive the pointer during a drag, hence the `--active` class: the cursor
    leaves the strip the instant the column starts following it. */
 .grid thead th .grid__resize::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 1px;
-  height: 100%;
-  background: var(--accent);
-  opacity: 0;
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 1px;
+    height: 100%;
+    background: var(--accent);
+    opacity: 0;
 }
 .grid thead th .grid__resize:hover::after,
-.grid thead th .grid__resize--active::after { opacity: 1; }
+.grid thead th .grid__resize--active::after {
+    opacity: 1;
+}
 
 /* ---- Grid tab hides the editor box (Monaco stays mounted) ---- */
-.main--grid .editor { display: none; }
+.main--grid .editor {
+    display: none;
+}
 
 /* ---- Layout (flex fill for routing + root flex column) ---- */
-.app-body { flex: 1; min-height: 0; overflow: auto; }
-#root { display: flex; flex-direction: column; }
+.app-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+#root {
+    display: flex;
+    flex-direction: column;
+}
