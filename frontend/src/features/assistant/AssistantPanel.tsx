@@ -35,6 +35,23 @@ export default function AssistantPanel({ tabId }: { tabId: string }) {
   const { status } = account;
   const ready = status?.state === 'ready';
 
+  /*
+   * The most recent turn's `inputTokens` is the size of everything sent to get
+   * that reply -- the rebuilt context, every message before it, every tool
+   * definition -- so it is this conversation's current footprint, not a running
+   * total the way `outputTokens` summed across turns would be. Read backwards
+   * because the last assistant message is usually the most recent one and this
+   * skips a full-array pass on every render of a long thread.
+   */
+  let contextTokens: number | null = null;
+  for (let i = conversation.messages.length - 1; i >= 0; i -= 1) {
+    const usage = conversation.messages[i]?.usage;
+    if (usage) {
+      contextTokens = usage.inputTokens + usage.outputTokens;
+      break;
+    }
+  }
+
   // The catalog is read once a key is stored, not at launch: it is that key's
   // catalog, so asking before there is one would only ever fail. Several tabs
   // asking is one fetch's worth of waste and no correctness problem.
@@ -62,6 +79,12 @@ export default function AssistantPanel({ tabId }: { tabId: string }) {
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE, fontWeight: 600, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           Assistant
         </span>
+        {contextTokens !== null ? (
+          <span title={`This conversation's last turn sent ${contextTokens.toLocaleString()} tokens of context.`}
+            style={{ flex: 'none', color: t.TEXT_FAINT, fontSize: t.TEXT_BADGE, fontVariantNumeric: 'tabular-nums' }}>
+            {formatTokenCount(contextTokens)} tokens
+          </span>
+        ) : null}
         {/* The history is offered whether or not this tab holds anything --
             reaching a past conversation is most wanted from an empty one --
             while starting a new one only appears once there is one to leave.
@@ -168,4 +191,9 @@ export default function AssistantPanel({ tabId }: { tabId: string }) {
       )}
     </div>
   );
+}
+
+/** "842", "12.4K" -- a badge, not a precise reading, so it drops to one decimal past three digits rather than ever growing a comma. */
+function formatTokenCount(count: number): string {
+  return count < 1000 ? `${count}` : `${(count / 1000).toFixed(1)}K`;
 }

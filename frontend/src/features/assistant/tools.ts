@@ -11,7 +11,9 @@
  * the loop so that adding a tool cannot quietly add a hole:
  *
  * - `mutating` -- it runs SQL or rewrites a tab, so it stops for approval unless
- *   the approval mode says otherwise.
+ *   the approval mode says otherwise. `runRawSql` also carries real values back,
+ *   capped at `maxRows` and reduced to their shape before they reach disk --
+ *   approval is what stands in for `getTabResult`'s "ask a second tool" here.
  * - everything else reads, and reading is never gated. That includes
  *   `getTabResult`, which carries real values: a card in front of every lookup
  *   is a card nobody reads by the third one, which is worse than no card at all
@@ -533,26 +535,51 @@ export const TOOLS: Tool[] = [
     },
   },
 
-  /* -- Running. Both stop for approval; neither reports rows. ------------- */
+  /* -- Running. Both stop for approval. `runRawSql` reports rows; `runTabQuery`
+     doesn't need to -- its result lands in the tab's own grid, where getTabResult
+     already reaches it. --------------------------------------------------- */
   {
     def: {
       name: 'runRawSql',
       description:
-        'Run one SQL statement you have written and report what it did. Returns column names and a row count, never the row values. ' +
-        'The user approves every call before it runs.',
+        'Run one SQL statement you have written and report what it did. Returns column names, a row count and up to maxRows of ' +
+        'the actual values. The user approves every call before it runs.',
       parameters: {
         type: 'object',
-        properties: { ...connectionArg, ...databaseArg, sql: { type: 'string' } },
+        properties: { ...connectionArg, ...databaseArg, sql: { type: 'string' }, maxRows: { type: 'integer', description: 'Default 50.' } },
         required: ['sql'],
       },
     },
     mutating: true,
     target: (args, ctx) => label(args, ctx),
+    // The one summariser here that is not about a tab's rows: what reaches disk
+    // is the shape a raw query answered with, the same reduction `getTabResult`
+    // gets, so a query run once is not a query whose result sits in `squeal.db`
+    // forever. The `message` branch (an INSERT, an UPDATE) carries nothing to
+    // reduce -- `affectedRows` is a count, not a value -- so it stores as it ran.
+    summarise(result) {
+      const { columns = [], rowsAvailable, message } = result as { columns?: string[]; rowsAvailable?: number; message?: string };
+      if (message !== undefined) return JSON.stringify(result);
+      return `${rowsAvailable ?? 0} rows of a hand-written query(${columns.join(', ')})`;
+    },
     async run(args, ctx) {
       const connection = resolveConnection(args, ctx);
       const database = resolveDatabase(args, ctx, connection.connectionId);
       const result = await call('db.query', { connectionId: connection.connectionId, database, sql: String(args.sql) });
-      return { connection: connection.name, database, ...describeResult(result) };
+      if (result.message) return { connection: connection.name, database, ...describeResult(result) };
+
+      const maxRows = Math.max(1, Math.min(num(args.maxRows) ?? 50, 200));
+      // Cells go exactly as the server sent them -- `getTabResult`'s reason: a
+      // BIGINT that JS would round, a date JS would shift.
+      return {
+        connection: connection.name,
+        database,
+        columns: result.columns,
+        rows: result.rows.slice(0, maxRows),
+        rowsReturned: Math.min(result.rows.length, maxRows),
+        rowsAvailable: result.rows.length,
+        durationMs: result.durationMs,
+      };
     },
   },
   {

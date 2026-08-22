@@ -862,3 +862,18 @@ This is a record, not a plan. Nothing here is waiting on anything.
   door out of two. Whatever ends a turn early has to answer every call the model
   made first, saying why it was stopped, so the transcript stays well formed and
   the model can read that it ran out of budget rather than being asked to guess.
+
+- **2026-08-22** — **Say how much context a conversation is holding** — A thread grows a schema,
+  a result and every tool answer at a time, and nothing on screen says how heavy
+  it has become until a turn fails for being too long. Show the tokens the last
+  turn actually sent, per conversation, in the composer footer beside the model
+  picker — the model is what the number depends on, so it belongs next to it.
+  Both wire formats report usage and neither is read today, so the number
+  travels with the turn rather than being counted a second time in the webview.
+  It is a bare count and not a fraction: no provider catalog gives a window size
+  worth trusting, and the table it would take is one more list that goes stale
+  every time a model ships.
+
+- **2026-08-22** — **A hand-written query had no way back to its own values** — Running raw SQL through the assistant answered with a row count and nothing else, and the only tool that returns real values only reaches a tab's own grid — which a hand-written query never lands in. So a query the model wrote itself, to answer its own question, could tell you how many rows came back and nothing about what was in them. It now answers with the real cells too, capped per call, and what gets written to disk when the conversation is saved stays reduced to the shape — the row count and the columns, never the values.
+
+- **2026-08-22** — **The assistant's context described its own tab as "the active tab"** — An assistant conversation is itself a tab, so the moment the user was looking at it to send a message, the context sent to the model named *it* as the tab in front — no SQL, no result, nothing useful — instead of whatever query tab the user actually meant. It happened every time the assistant wasn't sitting in a split pane beside the real tab, which is most of the time. The context now describes every open tab of the connection (SQL trimmed, last result's shape, whichever one is genuinely in front marked as such) rather than guessing at a single one, and two related spots — the connection's "current database" and the table listing — that picked a database by the first open tab that happened to have one set now read the same "tab in front, falling back to the connection's seed" the rest of the app already uses.

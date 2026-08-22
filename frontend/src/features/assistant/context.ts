@@ -22,8 +22,14 @@
 
 import { TABLE_LIMIT } from './tools.ts';
 import { activePart } from '../../store/resultsSlice.ts';
+import { selectDatabase } from '../../store/tabsSlice.ts';
 import type { RootState } from '../../store/index.ts';
+import type { Tab } from '../../store/tabsSlice.ts';
 import type { AiMessage } from '../../../../shared/protocol/index.ts';
+
+/** How many open tabs `describeAllTabs` lists, and how much of one tab's SQL it shows. */
+const TAB_LIMIT = 20;
+const SQL_PREVIEW_LIMIT = 1500;
 
 const SYSTEM = `You are the SQL assistant inside Squeal Editor, a desktop SQL client.
 
@@ -45,7 +51,12 @@ function describeConnection(state: RootState): string[] {
   const connection = id ? state.session.connections[id] : null;
   if (!connection) return ['No connection is open.'];
 
-  const database = state.tabs.tabs.find((tab) => tab.connectionId === connection.connectionId && tab.database)?.database;
+  // The tab in front's, falling back to the connection's seed -- `selectDatabase`'s
+  // own reason applies twice over here: an assistant tab carries `database: null`,
+  // so when *it* is the tab in front this already reads as "nothing selected,
+  // fall back to the seed" rather than resolving to some other open tab by luck
+  // of array order.
+  const database = selectDatabase(state);
   const databases = state.explorer.databases[connection.connectionId] ?? [];
 
   return [
@@ -60,7 +71,7 @@ function describeConnection(state: RootState): string[] {
 function describeTables(state: RootState): string[] {
   const id = state.session.activeConnectionId;
   if (!id) return [];
-  const database = state.tabs.tabs.find((tab) => tab.connectionId === id && tab.database)?.database;
+  const database = selectDatabase(state);
   if (!database) return [];
 
   const listing = state.explorer.tables[id]?.[database];
@@ -91,39 +102,67 @@ function describeTables(state: RootState): string[] {
   return [`Tables in ${database}${note}: ${names}`];
 }
 
-function describeActiveTab(state: RootState): string[] {
-  // The primary pane's, per connection -- which is what "the tab in front" means
-  // everywhere else in the app, split or not.
-  const connectionId = state.session.activeConnectionId;
-  const tabId = connectionId ? state.tabs.activeTabId[connectionId] : null;
-  const tab = state.tabs.tabs.find((t) => t.id === tabId);
-  if (!tab) return [];
+/** SQL past this length is cut, so twenty tabs of hand-written queries cannot blow the turn's own budget up on their own. */
+function trimSql(sql: string): string {
+  return sql.length > SQL_PREVIEW_LIMIT ? `${sql.slice(0, SQL_PREVIEW_LIMIT)}\n… ${sql.length - SQL_PREVIEW_LIMIT} more characters` : sql;
+}
 
-  const lines = [`Active tab: "${tab.title}" (${tab.kind}${tab.table ? `, browsing ${tab.table}` : ''}, database ${tab.database ?? 'none'}, id ${tab.id})`];
+function describeOneTab(state: RootState, tab: Tab, connectionId: string): string {
+  const front = tab.id === state.tabs.activeTabId[connectionId] || tab.id === state.tabs.secondaryActiveTabId[connectionId];
+  const header = `- "${tab.title}" (${tab.kind}${tab.table ? `, browsing ${tab.table}` : ''}, database ${tab.database ?? 'none'}, id ${tab.id}${front ? ', in front' : ''})`;
+  const lines = [header];
 
   const sql = state.tabs.sqlByTab[tab.id];
-  if (tab.kind === 'editor' && sql?.trim()) lines.push(`Its SQL:\n${sql}`);
+  if (tab.kind === 'editor' && sql?.trim()) lines.push(`  SQL:\n${trimSql(sql)}`);
 
   const part = activePart(state.results[tab.id]);
-  if (!part) return lines;
-
-  if (part.error) {
-    // In full, and never truncated: the error text is the single most useful
+  if (part?.error) {
+    // In full, and never trimmed: the error text is the single most useful
     // thing in this whole block, and it is the one thing here that carries no
     // data of its own.
-    lines.push(`Its last run failed:\n${part.error}`);
-  } else if (part.result) {
+    lines.push(`  Last run failed:\n${part.error}`);
+  } else if (part?.result) {
     const columns = part.result.columns.join(', ');
     const types = part.columns.length
       ? ` Column types: ${part.columns.map((column) => `${column.name} ${column.dataType}`).join(', ')}.`
       : '';
     lines.push(
-      `Its result: ${part.result.rows.length} row(s) in ${part.result.durationMs ?? 0}ms. Columns: ${columns}.${types}` +
+      `  Result: ${part.result.rows.length} row(s) in ${part.result.durationMs ?? 0}ms. Columns: ${columns}.${types}` +
         ' The values are not shown here; call getTabResult if you need them.'
     );
   }
 
-  return lines;
+  return lines.join('\n');
+}
+
+/**
+ * Every open tab of the connection in front, not only the one on screen.
+ *
+ * **The tab "in front" is not always a useful answer here** -- an assistant
+ * conversation is a tab like any other, so the moment the user is actually
+ * looking at it to type this message, *it* is what `activeTabId` names, and a
+ * version of this that only described the front tab described the panel
+ * describing itself: no SQL, no result, nothing the model could use. Listing
+ * every tab sidesteps the question rather than trying to guess the one the
+ * user meant, and marking whichever one really is in front (which the split
+ * view makes a real, useful fact whenever it isn't this conversation) is
+ * enough for the model to tell the two apart without a second lookup.
+ *
+ * The assistant's own tab is left out, for `getAllTabs`' reason: it is the
+ * panel this conversation is being had in, and there is nothing here for the
+ * model to do with it.
+ */
+function describeAllTabs(state: RootState): string[] {
+  const connectionId = state.session.activeConnectionId;
+  if (!connectionId) return [];
+
+  const tabs = state.tabs.tabs.filter((tab) => tab.connectionId === connectionId && tab.kind !== 'assistant');
+  if (!tabs.length) return [];
+
+  const shown = tabs.slice(0, TAB_LIMIT);
+  const note = tabs.length > shown.length ? ` (${shown.length} of ${tabs.length} — call getAllTabs for the rest)` : '';
+
+  return [`Open tabs${note}:\n${shown.map((tab) => describeOneTab(state, tab, connectionId)).join('\n')}`];
 }
 
 /**
@@ -134,7 +173,7 @@ function describeActiveTab(state: RootState): string[] {
  * changing half be rebuilt without rewriting the instructions around it.
  */
 export function buildContext(state: RootState): AiMessage[] {
-  const blocks = [...describeConnection(state), ...describeTables(state), ...describeActiveTab(state)];
+  const blocks = [...describeConnection(state), ...describeTables(state), ...describeAllTabs(state)];
   return [
     { role: 'system', content: SYSTEM },
     { role: 'system', content: `Current state of the editor:\n\n${blocks.join('\n')}` },

@@ -378,12 +378,12 @@ interface PartialCall {
   arguments: string;
 }
 
-function assemble(content: string, calls: Map<number, PartialCall>): AiMessage {
+function assemble(content: string, calls: Map<number, PartialCall>, usage?: { inputTokens: number; outputTokens: number }): AiMessage {
   const toolCalls = [...calls.entries()]
     .sort(([left], [right]) => left - right)
     .map(([, call]) => ({ id: call.id, name: call.name, arguments: call.arguments }));
 
-  return { role: 'assistant', content, ...(toolCalls.length ? { toolCalls } : {}) };
+  return { role: 'assistant', content, ...(toolCalls.length ? { toolCalls } : {}), ...(usage ? { usage } : {}) };
 }
 
 /** A payload that will not parse is one frame, not a failed turn. */
@@ -419,6 +419,11 @@ function openAiBody(model: string, messages: AiMessage[], tools: AiToolDef[]): R
   return {
     model,
     stream: true,
+    // Asks for one more frame at the end of the stream, carrying the usage every
+    // non-streamed response gets for free. Not every provider on this wire sends
+    // it back regardless -- `readOpenAiStream` treats it as absent rather than
+    // guessing when it does not.
+    stream_options: { include_usage: true },
     messages: messages.map(openAiMessage),
     tools: tools.map((tool) => ({
       type: 'function',
@@ -434,14 +439,21 @@ interface OpenAiChunk {
       tool_calls?: { index: number; id?: string; function?: { name?: string; arguments?: string } }[];
     };
   }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
 async function readOpenAiStream(body: ReadableStream<Uint8Array>, onDelta: (text: string) => void): Promise<AiMessage> {
   let content = '';
   const calls = new Map<number, PartialCall>();
+  let usage: { inputTokens: number; outputTokens: number } | undefined;
 
   await eachPayload(body, (payload) => {
-    const delta = parsePayload<OpenAiChunk>(payload)?.choices?.[0]?.delta;
+    const chunk = parsePayload<OpenAiChunk>(payload);
+    if (!chunk) return;
+
+    if (chunk.usage) usage = { inputTokens: chunk.usage.prompt_tokens ?? 0, outputTokens: chunk.usage.completion_tokens ?? 0 };
+
+    const delta = chunk.choices?.[0]?.delta;
     if (!delta) return;
 
     if (delta.content) {
@@ -458,7 +470,7 @@ async function readOpenAiStream(body: ReadableStream<Uint8Array>, onDelta: (text
     }
   });
 
-  return assemble(content, calls);
+  return assemble(content, calls, usage);
 }
 
 /* ------------------------------------------------------------------ *
@@ -525,6 +537,8 @@ interface AnthropicEvent {
   content_block?: { type?: string; id?: string; name?: string };
   delta?: { type?: string; text?: string; partial_json?: string };
   error?: { message?: string };
+  message?: { usage?: { input_tokens?: number } };
+  usage?: { input_tokens?: number; output_tokens?: number };
 }
 
 /**
@@ -534,18 +548,36 @@ interface AnthropicEvent {
  * earlier `content_block_start` -- so the id and the name come once, at the
  * start, and everything after is a fragment that has to find them again. Same
  * accumulator as the OpenAI reader, reached by a different route.
+ *
+ * `message_start` and `message_delta` are the two frames usage rides on, and
+ * neither carries a block `index` -- the input count is settled the moment the
+ * turn starts (it is the whole of what was sent), and the output count arrives
+ * cumulative on every `message_delta`, so the last one seen is the final one.
  */
 async function readAnthropicStream(body: ReadableStream<Uint8Array>, onDelta: (text: string) => void): Promise<AiMessage> {
   let content = '';
   const outcome = { failure: '' };
   const calls = new Map<number, PartialCall>();
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   await eachPayload(body, (payload) => {
     const event = parsePayload<AnthropicEvent>(payload);
-    if (!event || event.index === undefined) {
-      // An error frame is the one event that arrives without an index, and it is
-      // the turn's outcome rather than one block's.
-      if (event?.type === 'error') outcome.failure = event.error?.message ?? 'Claude stopped the response.';
+    if (!event) return;
+
+    if (event.type === 'message_start') {
+      inputTokens = event.message?.usage?.input_tokens ?? 0;
+      return;
+    }
+    if (event.type === 'message_delta') {
+      if (event.usage?.output_tokens !== undefined) outputTokens = event.usage.output_tokens;
+      return;
+    }
+
+    if (event.index === undefined) {
+      // An error frame is the other event that arrives without an index, and it
+      // is the turn's outcome rather than one block's.
+      if (event.type === 'error') outcome.failure = event.error?.message ?? 'Claude stopped the response.';
       return;
     }
 
@@ -569,5 +601,5 @@ async function readAnthropicStream(body: ReadableStream<Uint8Array>, onDelta: (t
   });
 
   if (outcome.failure) throw new Error(outcome.failure);
-  return assemble(content, calls);
+  return assemble(content, calls, inputTokens ? { inputTokens, outputTokens } : undefined);
 }

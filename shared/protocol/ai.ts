@@ -111,6 +111,18 @@ export interface AiMessage {
   toolCalls?: AiToolCall[];
   /** On a `tool` message: which call it answers. */
   toolCallId?: string;
+  /**
+   * On an `assistant` message: what the provider said this turn's request cost
+   * in tokens, when it said anything at all.
+   *
+   * `inputTokens` is the whole request that produced this reply — the rebuilt
+   * context, every prior message, every tool definition — so it is the
+   * conversation's current size, not a delta. Absent rather than estimated when
+   * a provider's stream did not carry it, the same rule that keeps a dollar
+   * figure off `AiModel`: a guessed number reads as a measured one and this app
+   * would rather say nothing.
+   */
+  usage?: { inputTokens: number; outputTokens: number };
 }
 
 export interface AiToolDef {

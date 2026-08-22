@@ -3402,6 +3402,34 @@ database values, and no addresses. The table list is **capped and says it is
 capped** — a partial listing that did not say so would have the model concluding
 a table does not exist because it fell off the end.
 
+**It describes every open tab, not "the" active one.** An assistant tab is a tab
+like any other, so the instant the user is looking at it to type a message,
+`activeTabId` names *that* tab — a version of this that described only the tab
+in front described the panel describing itself, in the single most common case
+there is. `describeAllTabs` lists every tab of the connection in front instead
+(the assistant's own left out, `getAllTabs`' reason), each with its SQL —
+trimmed past `SQL_PREVIEW_LIMIT` — and its last result's shape, and marks
+whichever one is genuinely in front rather than guessing at it. See
+`docs/decisions.md`.
+
+### The header states the last turn's token count, never a cost
+
+`AiMessage.usage` rides on an assistant message when the provider's stream said
+what the turn cost in tokens — `extensions/db/assistant.ts` reads it off
+Anthropic's `message_start`/`message_delta` events and off the trailing frame
+`stream_options: { include_usage: true }` asks the OpenAI-shaped wire for.
+Absent, not estimated, when a provider's stream did not carry it: a guessed
+number reading as a measured one is the exact failure `docs/decisions.md`
+removed cost reporting over, and a token count earns none of that risk back by
+being a different unit.
+
+**`inputTokens` is read as the conversation's current size, not summed across
+turns.** It is what the whole request cost to send — the rebuilt context above,
+every prior message, every tool definition — so the *last* turn's figure already
+is the running total; adding turns together would double-count everything before
+the last one. `AssistantPanel` walks `conversation.messages` backwards for the
+newest one carrying `usage` and adds its `inputTokens` and `outputTokens`.
+
 ### Tools, and the three ways the loop treats one
 
 `tools.ts` declares all fifteen, and the property that gates a tool lives on the
@@ -3434,9 +3462,20 @@ was, briefly: it carries real values, so it asked every time and could not be
 auto-approved. Using it is what ended that — a card in front of every lookup is a
 card nobody reads by the third one, which is worse than no card because it still
 looks like a guard. The rows are protected where it costs nothing instead: the
-per-turn context never carries values, so the model has to *ask* rather than
-being handed them, and asking leaves a row in the thread naming what it read. See
-`docs/decisions.md`.
+per-turn context — the system and state messages `context.ts` rebuilds — never
+carries values, so the model has to *ask* rather than being handed them, and
+asking leaves a row in the thread naming what it read. See `docs/decisions.md`.
+
+**`runRawSql` answers with real values too, capped at `maxRows`, for the query it
+was just approved to run** — it is not a second exception to the rule above, it
+is the same value/shape split `getTabResult` already draws applied to the one
+tool that had no path to values at all: a hand-written query never lands in a
+tab, so there was nothing for `getTabResult` to reach. What is written to
+`squeal.db` is still the shape, not the rows, through the same `summarise`/
+`stored` seam `conversationRecord.ts` gives every value-carrying tool. Approval
+is what stands in for the second "ask" `getTabResult` needs: `runRawSql` is
+`mutating`, so `manual` stops for it every time and `auto` still stops on a
+`production` connection, neither of which ever gated `getTabResult`.
 
 Four things worth knowing before adding one:
 

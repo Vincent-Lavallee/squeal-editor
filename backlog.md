@@ -60,17 +60,6 @@ Things that do not exist yet.
   value is emitted exactly as the server sent it, quoted per engine — never
   reformatted through a JS `Date` or `Number`.
 
-- **Say how much context a conversation is holding** — A thread grows a schema,
-  a result and every tool answer at a time, and nothing on screen says how heavy
-  it has become until a turn fails for being too long. Show the tokens the last
-  turn actually sent, per conversation, in the composer footer beside the model
-  picker — the model is what the number depends on, so it belongs next to it.
-  Both wire formats report usage and neither is read today, so the number
-  travels with the turn rather than being counted a second time in the webview.
-  It is a bare count and not a fraction: no provider catalog gives a window size
-  worth trusting, and the table it would take is one more list that goes stale
-  every time a model ships.
-
 - **Light theme** — The design system is Radix dark and nothing else: no token
   has a light value, so the app is dark or it is broken. Give every token a light
   counterpart and somewhere to choose — theme is the first user setting, so it

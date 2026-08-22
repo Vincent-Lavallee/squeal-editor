@@ -6101,6 +6101,91 @@ checkbox gives, which belongs to one conversation and dies with it.
 
 ---
 
+## `runRawSql` learned the value/shape split, because it had no other way to values
+
+**What was missing.** `getTabResult`'s split — real cells in the live thread,
+shape alone on disk — assumes the query in question landed in a tab. A
+hand-written query run through `runRawSql` never does: it is a bare `db.query`,
+not `runQuery` against a tab's slot. So a model asked to read what its own query
+returned had no tool that could: `runRawSql` answered with a row *count*, and
+the only tool that answers with rows needed a tab that this one never has.
+
+**The fix is not a new gate.** It is the split `getTabResult` already has,
+given to the tool that was missing it: `runRawSql.run` now returns the real
+cells, capped at `maxRows` (default 50, ceiling 200, the same numbers
+`getTabResult` uses), and a `summarise` reduces that to a row count and the
+column names before `conversationRecord.ts` writes it to `squeal.db` — the
+exact seam `getTabResult` was built around, applied a second time rather than
+invented again.
+
+**This does not reopen "the per-turn context carries no values."** That rule
+was always about `context.ts`'s rebuilt system and state messages, never about
+a tool's own answer — a tool result was always going to sit in
+`conversation.messages` and ride along on every later turn the moment any
+value-carrying tool answered, `getTabResult` included. What changed here is
+which tools can produce that answer, not whether one already could.
+
+**Approval is the difference from `getTabResult`, and it is the stronger of the
+two.** `getTabResult` reads without asking at all — reading is never gated.
+`runRawSql` is `mutating`: `manual` stops for it on every call and `auto` still
+stops on a `production` connection. A human already had to say yes to the query
+before its values exist anywhere; that is what stands in for the second "ask"
+`getTabResult`'s design otherwise relies on.
+
+*What this costs, accepted:* a query run through `runRawSql` never appears in a
+grid, so its values are something only the model and the transcript see — there
+is no "watch it land on screen" the way `runTabQuery` gives. A model that wants
+the user watching runs it through a tab instead; `runRawSql` is for the case
+where nobody was going to look at a grid regardless.
+
+---
+
+## The context described "the active tab," and an assistant tab is one
+
+**What was wrong.** `context.ts` used to describe a single "active tab" —
+`state.tabs.activeTabId[connectionId]` — on the reading that this is what "the
+tab in front" means everywhere else in the app. It is, and that was the bug: an
+assistant tab is a tab like every other kind, so the moment the user is looking
+at it to type a message, *it* is what `activeTabId` names. The context block
+then described the assistant's own tab to itself — no SQL, no result, nothing
+the model could use — in the single most common case there is, and only told
+the truth when the assistant happened to be sitting in a split pane beside the
+tab the user actually meant.
+
+**Why "remember the last real tab" was not the fix.** The obvious patch is a
+second pointer — `lastWorkingTabId`, updated everywhere `activeTabId` already
+is (`mint`, `tabActivated`, `promoteIfPrimaryEmpty`, session restore, a tab
+closing under the active one) — kept beside it in `tabsSlice`. That is real
+surface for a fact the app has never needed anywhere else, and it still only
+answers for *one* tab: a user with three tabs open, asking a question that
+touches two of them, would have the third simply absent, for the same reason
+the single active tab always was.
+
+**The fix given instead.** `describeAllTabs` lists every open tab of the
+connection in front — SQL, last result's shape, whether it is genuinely in
+front — rather than trying to name the one the user meant. It sidesteps the
+question completely: there is no wrong tab to guess when nothing is being
+guessed. The assistant's own tab is left out, the same reason `getAllTabs`
+(the tool version of this same list) already leaves it out. A per-tab SQL cap
+(`SQL_PREVIEW_LIMIT`) and a count on the whole list (`TAB_LIMIT`) exist for the
+reason `TABLE_LIMIT` does: this is now, on every turn, as many tabs' full SQL
+as are open, and an unbounded version of that is a budget problem waiting on
+whoever opens their eleventh tab.
+
+**Two smaller fixes rode along, because they were the same bug wearing a
+different name.** `describeConnection`'s "current database" line and
+`describeTables`' database lookup both picked a database by
+`state.tabs.tabs.find(tab => tab.database)` — the *first* tab in array order
+that had one set, which is neither "the active tab's" nor any other principled
+answer once two tabs can sit on two databases. Both now read `selectDatabase`,
+the selector `tabsSlice` already maintains for exactly "where the tab in front
+runs, falling back to the connection's seed" — which, as a side effect of an
+assistant tab always carrying `database: null`, already resolves correctly
+when the assistant itself is the tab in front, with no assistant-specific case
+needed.
+
+---
+
 ## An assistant tab is a conversation, and cost reporting is gone
 
 Two reversals of entries above, both found by using the thing.
@@ -6144,6 +6229,18 @@ fact: this app cannot reliably know what a model costs. Four providers publishin
 four price lists on their own schedules is that problem multiplied, not solved.
 Three attempts at presenting a number we could not stand behind is the signal
 that the number should not be presented.
+
+**A token count is not the same number wearing a different unit, and later
+shipped where cost did not.** The distinction: cost was this app *deriving* a
+dollar figure from a price list four vendors publish on their own schedules,
+which is guessing dressed as arithmetic. A token count is *read off the
+provider's own response* — Anthropic states it on every stream, and asking
+OpenAI-shaped wire for `stream_options: { include_usage: true }` gets the same
+trailing frame back from OpenAI, Gemini and DeepSeek. Nothing here is computed
+from a table this project maintains, so the failure mode price reporting had —
+a stale number presented with the confidence of a measured one — does not apply.
+Where a provider's stream does not carry it, the panel shows nothing for that
+turn rather than falling back to an estimate; see `docs/frontend.md`.
 
 ---
 
