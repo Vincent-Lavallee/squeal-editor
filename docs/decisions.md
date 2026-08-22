@@ -1229,12 +1229,13 @@ the whole install, which is exactly what the Inno installer already does.
 **Why the installer is the swap mechanism.** Windows cannot overwrite a running
 `.exe`, so something other than the app has to do the swap. The release already
 carries a Setup.exe, and Inno's Restart Manager closes the running instance (and
-its extension), replaces every file, and relaunches — the "helper that swaps the
-files" the backlog asked for, already built and already shipped. `update.apply`
-launches it detached (`cmd /c start`, so it outlives the app) with
-`/SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS`, then the UI exits. *Rejected: a
-bespoke helper unzipping the portable build over the install* — same swap, but
-re-derived, and it leaves the installer that already does it unused.
+its extension) and replaces every file — the "helper that swaps the files" the
+backlog asked for, already built and already shipped. `update.apply` runs it
+`/SILENT /CLOSEAPPLICATIONS`, from a script that outlives the app; see "The
+Windows handoff is confirmed at both ends" below for why it is a script and not
+the bare `cmd /c start` this began as. *Rejected: a bespoke helper unzipping the
+portable build over the install* — same swap, but re-derived, and it leaves the
+installer that already does it unused.
 
 **Why it lives in the extension.** Reaching GitHub, streaming a download to disk,
 verifying it, and launching a process are all native calls the webview cannot
@@ -6651,3 +6652,77 @@ suites cannot carry it — 640 tables in the fixture would slow every run and
 break the tree assertions everywhere — so the UI suite pins the wiring (the note
 stays away on a listing that fits; the search does not narrow the completion)
 and the extension suite keeps the mechanism.
+
+---
+
+## The Windows handoff is confirmed at both ends, and it leaves a trace
+
+Restarting to update often did nothing — no installer, same version, no
+explanation — and when it did work the app never came back. Both are the same
+handoff, and both ends of it were blind.
+
+**The app told the installer to start and stopped watching.** `update.apply`
+spawned `cmd /c start … Setup.exe` and returned, and the UI called `app.exit()`
+on that return. But returning meant the *spawn* had happened, not the install:
+`cmd` still had to start, parse and `CreateProcess` a hundred-megabyte Setup.exe,
+and it was a child of an extension that was already shutting down. Lose that
+race and there is nothing left to notice it — the app has exited, the extension
+is gone, and the user is looking at the same version they asked to replace.
+So `update.apply` now **resolves only once the swap has proven it is running**,
+and rejects otherwise. The UI already draws an apply failure; before this there
+was simply nothing that could fail.
+
+**The installer was told to bring the app back, and could not.**
+`/RESTARTAPPLICATIONS` restarts what Restart Manager *itself* closed, and the app
+closes itself the moment `update.apply` returns — so by the time Setup looks,
+there is nothing registered to restart. The flag was asking the OS to undo
+something the app had already done for it. It is now `/NORESTARTAPPLICATIONS`
+and the relaunch is explicit, which is the conclusion `applyUpdateDarwin` had
+already reached from the other side: **the process that performs the swap is the
+one that has to bring the app back**, because it is the only one still running.
+
+**Why a script, when a single `start` was the whole appeal.** Confirming the
+handoff, waiting for the app to be gone, reading the installer's exit code and
+relaunching afterwards are four things that all happen *after* the app is gone,
+and a detached one-liner can do none of them. Windows therefore gets the shape
+macOS already has: `apply-update.cmd`, orphaned by `start … /b` before the app
+exits, tracing the run to the same `update.log` in the data directory. That log
+is the point — "it never launched" had no evidence behind it, and the app that
+would have reported the failure is the thing being replaced.
+
+**Why the log doubles as the handshake.** The alternative was a second artifact
+— a marker file, a named pipe, a port — to say "I am running", next to a log
+that already says exactly that in its first line. `update.apply` deletes
+`update.log`, spawns the script, and waits for the file to come back non-empty:
+one artifact, and the confirmation is the same evidence the user is pointed at
+when it fails. Deleting first is what keeps a stale log from confirming an
+attempt that never started.
+
+**Why the wait deadline means something different on each platform.** macOS
+abandons the swap if the app is still alive, because `rm -rf` on a live bundle is
+how an update ends with nothing running. Windows proceeds, because the installer
+closing what still holds a file *is* Restart Manager doing its job properly —
+`/CLOSEAPPLICATIONS` stays for exactly that case. The waits look alike and are
+not: one is a precondition, the other a courtesy.
+
+**Why the script holds no path of its own.** `cmd` reads a `.cmd` file in the
+console's OEM codepage, not UTF-8, so a data directory under an accented user
+name would arrive mangled and the swap would run against a path that does not
+exist — on someone else's machine, months later, with no way to reproduce it.
+Every path is passed in the environment instead, which the spawn hands over
+without that decode, and the file itself stays pure ASCII. A test asserts the
+ASCII, because the natural way to edit this script is to inline a path.
+
+**Why the app is relaunched even when the installer failed.** Setup closes the
+app before it can fail, so a failed install with no relaunch leaves the machine
+with nothing running at all. Coming back on the version you already had, with
+the reason in `update.log`, is strictly better than coming back to nothing.
+
+*Verified by rehearsal, not by shipping a release* — the same approach the macOS
+script took, for the same reason. A stand-in `squeal-editor-win_x64.exe` and a
+stand-in installer proved: the wait breaking when the process actually exits and
+running out when it does not; the installer's arguments and its exit code
+arriving in the log; the relaunch firing on both; the log directory being created
+under a path with accents and an apostrophe; and — the one that matters —
+the script completing a full install *after* the process that spawned it had
+already exited.

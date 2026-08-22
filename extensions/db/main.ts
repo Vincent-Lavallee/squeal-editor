@@ -441,7 +441,8 @@ const COMMANDS: Handlers = {
   },
 
   async 'update.apply'() {
-    applyUpdate();
+    // Resolves only once the swap is confirmed running; the UI exits on that.
+    await applyUpdate();
     return { ok: true };
   },
 

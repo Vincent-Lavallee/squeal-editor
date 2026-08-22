@@ -83,7 +83,8 @@ export const downloadUpdate = createAppThunk('updater/download', async (_: void,
 export const applyUpdate = createAppThunk('updater/apply', async (_: void, { rejectWithValue }) => {
   try {
     await call('update.apply', {});
-    // Step aside so the installer can swap the files it is about to replace; it
+    // Only reached once the extension has confirmed the swap is running, so
+    // stepping aside here is stepping aside for something that exists. It
     // relaunches us on the far side.
     await Neutralino.app.exit();
   } catch (err) {
@@ -166,8 +167,8 @@ const updaterSlice = createSlice({
         state.error = action.payload ?? 'The update could not be downloaded.';
       })
 
-      // Apply only rejects if the launch itself failed; the happy path exits the
-      // app before any of this could run.
+      // Apply only rejects if the swap could not be confirmed running; the
+      // happy path exits the app before any of this could run.
       .addCase(applyUpdate.rejected, (state, action) => {
         state.phase = 'error';
         state.error = action.payload ?? 'The update could not be started.';

@@ -1449,40 +1449,58 @@ the connection registry) that `check` fills and `download`/`apply` read:
   ed25519 signature** — both must pass or the temp dir is discarded and it throws.
   Order matters: the checksum is the cheap catch for a truncated download, the
   signature is the proof of origin. Nothing unverified is ever staged for apply.
-- **`update.apply`** hands the swap to something that outlives the app, which is
-  a different thing per platform. **Windows** launches the staged installer
-  detached (`cmd /c start`) with `/SILENT /CLOSEAPPLICATIONS
-  /RESTARTAPPLICATIONS`; Inno's Restart Manager closes this app and its extension,
-  swaps every file, and relaunches. **macOS** has no installer to hand it to, so
-  `applyUpdateDarwin` *is* the installer: a detached `/bin/sh` script that waits
-  for the app to exit, mounts the .dmg, `ditto`s the new `Squeal Editor.app` over
-  the running bundle — found by walking up from `process.execPath`, so it works
-  wherever the user put the app — and reopens it. The UI calls `app.exit()` once
-  this returns, on both.
+- **`update.apply`** hands the swap to a script that outlives the app, and each
+  platform writes its own. **Windows** writes `apply-update.cmd` beside the
+  staged installer and runs it through `cmd /c start … /b`; the script waits for
+  the app and this extension to exit, runs the installer `/SILENT
+  /CLOSEAPPLICATIONS /NORESTARTAPPLICATIONS`, and launches the app again itself.
+  **macOS** has no installer to hand it to, so `applyUpdateDarwin`'s script *is*
+  the installer: it waits for the app to exit, mounts the .dmg, `ditto`s the new
+  `Squeal Editor.app` over the running bundle — found by walking up from
+  `process.execPath`, so it works wherever the user put the app — and reopens it.
+  The UI calls `app.exit()` once this returns, on both.
 
-  **Four things about that script are load-bearing, because nobody can watch it
+  **What both scripts share is load-bearing, because nobody can watch either one
   run.** The process that would have reported a failure is the one being
   replaced, so each of these fails silently by default:
 
-  - It is spawned through `nohup … &`, orphaned onto launchd before the app goes
-    away. A plain child stays in the app's own process group and dies with
-    anything that signals the group.
-  - It `cd /` first. The extension's working directory is the bundle's
-    `Contents/Resources` (the launcher shim puts it there), which the `rm -rf`
-    is about to delete out from under the running script.
-  - Waiting for the app to exit is a **preflight, not a delay**: if the app is
-    still alive when the wait runs out, the swap is abandoned rather than
-    performed underneath it. Deleting a live app's bundle is how an update ends
-    with nothing left running.
-  - `open` is retried, then falls back to executing the bundle's launcher
-    directly. LaunchServices can refuse a bundle replaced at a path it still
-    holds a record for, and a refusal there is the difference between an update
-    and a machine with no app on it.
+  - **The script is orphaned before the app exits** — `nohup … &` onto launchd,
+    `start` into a parent that exits immediately. A plain child dies with the
+    process that spawned it, and on Windows that is how an update did nothing at
+    all: the app exited in the same breath as the spawn, and a `cmd` that had not
+    yet reached the installer went with it.
+  - **It leaves the directory it is about to replace** — `cd /`, `cd /d
+    %SystemRoot%`. The extension's working directory is inside the install (the
+    macOS launcher shim puts it in `Contents/Resources`), which is a lock on
+    Windows and a deletion underfoot on macOS.
+  - **It waits for the app to actually be gone**, by PID — this extension's own
+    `process.ppid`, since Neutralino spawns extensions as its children — and on
+    Windows for this extension too, by PID *and* image name so a recycled PID
+    cannot read as still running. What running out of patience means differs:
+    macOS **abandons** the swap, because deleting a live app's bundle is how an
+    update ends with nothing running; Windows **proceeds**, because Restart
+    Manager closing what still holds a file is a swap done properly.
+  - **It relaunches the app itself**, rather than trusting the OS to. macOS
+    retries `open` and then falls back to the bundle's launcher, because
+    LaunchServices can refuse a bundle replaced at a path it still holds a record
+    for. Windows tells Inno `/NORESTARTAPPLICATIONS`: Restart Manager brings back
+    only what it closed itself, and the app has almost always closed itself
+    first, so relying on it left the user with nothing to come back to.
+  - **It is traced to `update.log` in `dataDir()`** — the directory the About
+    menu's *Open app data* already opens — truncated per attempt, so it always
+    describes the last one. It is the only evidence an update that stopped
+    halfway leaves behind.
 
-  The whole run is traced to **`update.log` in `dataDir()`** — the directory the
-  About menu's *Open app data* already opens — truncated per attempt, so it
-  always describes the last one. It is the only evidence an update that stopped
-  halfway leaves behind.
+  **Windows also confirms the handoff before the app is allowed to exit.**
+  `update.apply` deletes `update.log`, spawns the script, and does not resolve
+  until the script has written its first line back into it — the trace doubles as
+  the handshake. A script that never got off the ground therefore rejects the
+  command, and the UI shows an error instead of restarting into the same version.
+  The script's own text is **pure ASCII**, and every path it touches reaches it
+  through the environment: `cmd` reads a `.cmd` file in the console's OEM
+  codepage, so a data directory under an accented user name, written there as
+  UTF-8, would come back mangled and the swap would run against a path that does
+  not exist.
 
 **Signature verification fails closed.** `verifyEd25519` returns false — never
 throws its way to true — on a bad key, a bad signature, or the empty baked key.
@@ -1492,10 +1510,13 @@ the pair; while empty, no update can be applied, which is the safe default. See
 private key lives only in CI.
 
 The pure helpers (`compareVersions`, `verifyEd25519`, `selectAssets`,
-`parseChecksum`) are exported and unit-tested in `tests/updater.test.ts` — no
-database, so they run without the fixtures. The one that matters most flips a byte
-and requires the signature to fail, the same shape as the store's
-ciphertext-bit-flip test.
+`parseChecksum`, `buildWindowsApplyScript`) are exported and unit-tested in
+`tests/updater.test.ts` — no database, so they run without the fixtures. The one
+that matters most flips a byte and requires the signature to fail, the same shape
+as the store's ciphertext-bit-flip test. The script builder is there because the
+Windows swap cannot be run in a test at all: what *can* be asserted is that it
+carries no path of its own, that it tells Inno to restart nothing, and that it
+writes its log before it starts waiting.
 
 ## Logging (`log.ts`)
 

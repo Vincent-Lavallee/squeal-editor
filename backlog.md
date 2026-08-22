@@ -54,23 +54,15 @@ Things that are wrong.
   Whatever the shape, the confirm has to end up one dialog for the whole gesture,
   not one per tab kind.
 
-- **The Windows update handoff is blind at both ends** — Restarting to update
-  often does nothing the first time — the installer never appears — and when it
-  does run, the app is not brought back afterwards. Both come from the same
-  handoff: the installer is launched fire-and-forget and the app exits itself
-  immediately, so nothing confirms the installer actually started, and the
-  installer's restart-applications flag has nothing to restart because the app
-  closed before it ever saw it running. macOS already answers this shape by
-  relaunching explicitly rather than trusting the OS to do it. It also traces
-  the whole swap to a log in the data directory, because the app that would
-  report the failure is the thing being replaced — Windows has no such trace,
-  which is why "it never launched" has no evidence behind it, and it needs one.
-
 - **Update ignores custom install path on Windows** — The Windows installer
   lets you choose an install location, but a later update reinstalls to the
   default path instead of the one originally chosen, effectively relocating
   or duplicating the install. The updater needs to read back and respect
-  wherever the app is actually installed.
+  wherever the app is actually installed. The restart after an update now
+  reopens the app from wherever it really is, which sharpens this rather than
+  softening it: if the install lands somewhere else, the relaunch brings back
+  the copy that was not replaced, on the old version, looking like an update
+  that silently did nothing.
 
 ## Features
 

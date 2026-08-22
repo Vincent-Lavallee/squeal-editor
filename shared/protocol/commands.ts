@@ -848,10 +848,15 @@ export interface Commands {
     res: { ok: true };
   };
   /**
-   * Launch the staged installer and step back. Windows cannot overwrite a
-   * running `.exe`, so the installer -- not the app -- does the swap: it closes
-   * the running instance (and its extension), replaces every file, and relaunches.
-   * The UI calls `app.exit()` once this returns so the swap can proceed cleanly.
+   * Hand the staged update to the swap and step back. Neither platform can
+   * overwrite its own running files, so a script that outlives the app does it:
+   * it waits for the app to exit, installs, and launches the app again itself.
+   *
+   * Resolves only once that script has confirmed it is running, because the UI
+   * calls `app.exit()` on the resolution -- an apply that never got off the
+   * ground must reject rather than close the app onto nothing. It is the one
+   * failure the user hears about: a check and a download can fail quietly, but
+   * this one was asked for and answered with a restart.
    */
   'update.apply': {
     req: Record<string, never>;

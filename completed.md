@@ -831,3 +831,16 @@ This is a record, not a plan. Nothing here is waiting on anything.
   border Windows hit-tests for resize, and the top's goes with the band, so the
   titlebar draws three grab strips that ask the DLL to start the real OS sizing
   loop.
+
+- **2026-08-21** — **The Windows update handoff is blind at both ends** —
+  Restarting to update often did nothing the first time — the installer never
+  appeared — and when it did run, the app was not brought back afterwards. Both
+  came from the same handoff: the installer was launched fire-and-forget and the
+  app exited itself immediately, so nothing confirmed the installer actually
+  started, and the installer's restart-applications flag had nothing to restart
+  because the app closed before it ever saw it running. macOS already answered
+  this shape by relaunching explicitly rather than trusting the OS to. It also
+  traced the whole swap to a log in the data directory, because the app that
+  would report the failure is the thing being replaced — Windows had no such
+  trace, which is why "it never launched" had no evidence behind it, and it
+  needed one.

@@ -13,7 +13,13 @@
 import { generateKeyPairSync, sign as cryptoSign } from 'node:crypto';
 import { describe, expect, test } from 'bun:test';
 
-import { compareVersions, parseChecksum, selectAssets, verifyEd25519 } from '../extensions/db/updater.ts';
+import {
+  buildWindowsApplyScript,
+  compareVersions,
+  parseChecksum,
+  selectAssets,
+  verifyEd25519,
+} from '../extensions/db/updater.ts';
 
 describe('compareVersions', () => {
   test('orders by each numeric part', () => {
@@ -122,5 +128,54 @@ describe('parseChecksum', () => {
 
   test('returns null for a file not listed', () => {
     expect(parseChecksum(sums, 'not-here.exe')).toBeNull();
+  });
+});
+
+describe('buildWindowsApplyScript', () => {
+  const script = buildWindowsApplyScript();
+
+  test('holds no path of its own, so nothing in it can be mis-decoded', () => {
+    // cmd reads a .cmd file in the console's OEM codepage, so a path written
+    // here as UTF-8 arrives mangled on a machine whose user name is accented.
+    // Every path comes from the environment instead; this is what enforces it.
+    const nonAscii = /[^\x20-\x7e\r\n]/;
+    expect(script).not.toMatch(nonAscii);
+    expect(script).toContain('"%SQUEAL_UPDATE_INSTALLER%"');
+    expect(script).toContain('"%SQUEAL_UPDATE_APP%"');
+  });
+
+  test('tells the installer to restart nothing, and relaunches the app itself', () => {
+    // The whole bug: Restart Manager brings back only what it closed itself,
+    // and the app has already closed itself by then.
+    expect(script).toContain('/NORESTARTAPPLICATIONS');
+    expect(script).not.toContain('/RESTARTAPPLICATIONS ');
+    expect(script).toContain('start "" /d "%APP_DIR%" "%SQUEAL_UPDATE_APP%"');
+  });
+
+  test('writes its log before it waits, so the app has something to confirm', () => {
+    const lines = script.split('\r\n');
+    const redirect = lines.findIndex((line) => line.includes('> "%SQUEAL_UPDATE_LOG%"'));
+    const firstEcho = lines.findIndex((line) => line.startsWith('echo [%date%'));
+    const wait = lines.findIndex((line) => line.startsWith('for /l'));
+    expect(redirect).toBeGreaterThanOrEqual(0);
+    expect(firstEcho).toBeGreaterThan(redirect);
+    expect(wait).toBeGreaterThan(firstEcho);
+  });
+
+  test('waits on the image name as well as the PID', () => {
+    // A PID alone is reused; a truncating table format would not match the
+    // app's name, which is longer than tasklist's column.
+    expect(script).toContain('/fo csv');
+    expect(script).toContain('tasklist /fi "PID eq %~1" /fi "IMAGENAME eq %~2"');
+  });
+
+  test('runs the installer whether or not the wait ran out', () => {
+    const lines = buildWindowsApplyScript(3).split('\r\n');
+    const loop = lines.findIndex((line) => line.startsWith('for /l %%t in (1,1,3)'));
+    const closed = lines.indexOf(':closed');
+    const installer = lines.findIndex((line) => line.startsWith('"%SQUEAL_UPDATE_INSTALLER%"'));
+    expect(loop).toBeGreaterThanOrEqual(0);
+    expect(closed).toBeGreaterThan(loop);
+    expect(installer).toBeGreaterThan(closed);
   });
 });
