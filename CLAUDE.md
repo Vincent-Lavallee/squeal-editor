@@ -39,6 +39,9 @@ writing down. If nothing changed conceptually, change nothing.
 | `bun start`          | build the frontend, then launch the app                     |
 | `bun run build`      | build the frontend into `resources/`                        |
 | `bun run typecheck`  | typecheck frontend + extension                              |
+| `bun run lint`       | ESLint over the whole repo                                   |
+| `bun run format`     | Prettier, writes in place                                    |
+| `bun run knip`       | find files nothing imports                                   |
 | `bun run test:db:up` | start throwaway MySQL + Postgres in Docker                  |
 | `bun test`           | extension suite (needs the test databases; UI suite skips)  |
 | `bun run test:ui`    | drive the real app (Windows-only, needs the test databases) |
@@ -63,3 +66,8 @@ These are load-bearing. Each one cost real debugging; see `docs/decisions.md`.
 - Never, ever add yourself as a co-author.
 - Avoid comments if possible. Code should be self describing (eg Name variables appropriately. Extract if conditions into variables for easier understanding.). So avoid JSDOC at all cost and make the core more self readable
 - Never commit by yourself unless asked to
+- Run `bun run lint` / `bun run format` before calling a change done; see
+  `docs/decisions.md` for what each rule enforces and why. The 200-line file /
+  60-line function caps are errors but the repo isn't clean against them yet —
+  that cleanup is its own pass, so a violation in a file you didn't touch isn't
+  yours to fix.

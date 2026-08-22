@@ -6869,3 +6869,68 @@ it answers** rather than appended — Anthropic wants the results in the turn
 straight after the `tool_use` block, OpenAI wants each `tool` message after the
 assistant message that asked, and appending satisfies neither — and an answer
 already recorded left alone.
+
+---
+
+## ESLint + Prettier + knip over Biome
+
+**Why.** The size and naming rules were the point (200-line files, 60-line
+functions, per-construct casing, `require-await`), and those live in
+`typescript-eslint`/core ESLint, not in Biome — there's no
+`max-lines-per-function` equivalent there, and its naming rule can't
+distinguish an enum member from a variable the way `@typescript-eslint/naming-convention`
+does. ESLint is slower and needs more config, but it's the tool that actually
+has the rules that were asked for.
+
+**Prettier runs standalone, not through ESLint.** `eslint-config-prettier`
+only turns off the ESLint rules that would fight Prettier's formatting; no
+`eslint-plugin-prettier` is installed. Running Prettier as its own pass is
+faster and keeps a formatting diff from ever showing up as a lint error.
+
+**knip, for the one thing ESLint structurally cannot see.** ESLint lints one
+file at a time, so "nothing imports this file" isn't a lint rule — it needs a
+whole-project graph. knip's `exports`/`types`/`duplicates`/`enumMembers`
+reporters are off in `knip.json`; those go well past "unused files" into
+flagging Redux action creators and selectors that are exported for reuse and
+just don't have a caller yet, which is noise for what was actually asked.
+Turn them back on deliberately if that noise becomes worth reading through.
+
+**Where naming convention doesn't apply.** Object/type/class properties are
+exempt from the camelCase default (`objectLiteralProperty`/`typeProperty`/
+`classProperty` all set to `format: null` in `eslint.config.mjs`). They
+routinely mirror shapes this codebase doesn't own — database columns, wire
+payloads in `shared/protocol/` — and forcing camelCase there would mean
+translating at every boundary instead of showing what the source actually
+calls the field, which is the same "show what the server sent" instinct
+behind never reformatting a database value (see "Never render a value through
+`Date` or `Number`" above).
+
+**Type-aware rules (`require-await`, `no-floating-promises`,
+`no-misused-promises`, `consistent-type-imports`) are scoped to
+`frontend/src/**` and `extensions/db/**` only** — the same boundary
+`bun run typecheck` already draws. Both directories have a governing
+`tsconfig.json`; `shared/`, `scripts/`, and `tests/` don't, and
+type-aware linting needs every linted file to resolve through some
+tsconfig's program. Building a third tsconfig just to cover those stray
+directories was rejected: `shared/protocol/` is nearly all interface
+declarations (no function bodies for `require-await` to check anyway), and
+scripts/tests get the same non-type-checked rule set everyone gets outside
+those two roots.
+
+**The 200-line/60-line caps are errors, not warnings, from day one — with no
+grandfathering.** That was a deliberate call: roughly fifteen existing files
+(`Shell.tsx` at 961 lines, `tabsSlice.ts` at 1001, `assistantSlice.ts` at 952,
+among others) already exceed both caps, so `bun run lint` reports real errors
+today (~350, mostly `max-lines-per-function` and `naming-convention`) rather
+than passing clean. The alternative — warn-only, or `eslint-disable` comments
+grandfathering today's files — was rejected on the same logic as skipping a
+mock database: a rule that's silently exempted everywhere it would currently
+fire teaches nobody that it exists. Splitting those files is intentionally a
+separate pass, not part of adopting the linter.
+
+**`eslint-plugin-react`'s `settings.react.version` is pinned to `'18.3.1'`,
+not `'detect'`.** `'detect'` runs eslint-plugin-react 7.37.5's own
+version-sniffing, which calls a `context.getFilename()` that ESLint 10
+removed — it crashes the whole lint run, not just one rule. Pinning sidesteps
+the codepath entirely; revisit once eslint-plugin-react ships an ESLint 10
+fix.

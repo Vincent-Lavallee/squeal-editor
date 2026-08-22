@@ -14,6 +14,11 @@
         "start": "bun run build && bun run build:ext && neu run -- --window-enable-inspector=true",
         "dev": "bun run build:ext && neu run -- --window-enable-inspector=true",
         "typecheck": "tsc -p frontend --noEmit && tsc -p extensions/db --noEmit",
+        "lint": "eslint .",
+        "lint:fix": "eslint . --fix",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "knip": "knip",
         "test": "bun test",
         "test:ui": "bun run tests/helpers/reap.ts && bun run build && bun run build:ext && SQUEAL_UI=1 bun test tests/ui.test.ts --timeout 120000",
         "test:db:up": "bun run tests/fixtures/db.ts up",
@@ -21,11 +26,20 @@
         "neu:update": "neu update"
     },
     "devDependencies": {
+        "@eslint/js": "^10.0.1",
         "@neutralinojs/neu": "^11.3.2",
         "@types/bun": "^1.1.14",
         "@types/ws": "^8.5.13",
+        "eslint": "^10.9.0",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-react": "^7.37.5",
+        "eslint-plugin-react-hooks": "^7.1.1",
+        "eslint-plugin-react-refresh": "^0.5.4",
+        "globals": "^17.11.0",
+        "knip": "^6.32.2",
         "prettier": "^3.9.6",
         "typescript": "^5.7.2",
+        "typescript-eslint": "^8.67.0",
         "ws": "^8.18.0"
     }
 }
