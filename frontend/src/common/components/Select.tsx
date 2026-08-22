@@ -401,7 +401,7 @@ export default function Select({
         const at = shown.findIndex((o) => o.value === value);
         setActive(at === -1 ? 0 : at);
         if (searchable) search.current?.focus();
-    }, [open, searchable]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [open, searchable]);
 
     // Filtering moves the list under the cursor; keeping a stale index would
     // highlight a row that is no longer there, or none at all.

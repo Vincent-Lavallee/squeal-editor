@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 
-import type { DiagramTable } from '../../../../shared/protocol/index.ts';
 import { useAppDispatch, useAppSelector } from '../../store/hooks.ts';
 import { loadRelationships } from '../../store/explorerSlice.ts';
 import { selectActiveConnection } from '../../store/sessionSlice.ts';
@@ -60,7 +59,7 @@ export function useDiagram(database: string | null, reloads = 0) {
     }, [connectionId, database, dispatch, reloads]);
 
     return {
-        tables: (tables ?? null) as DiagramTable[] | null,
+        tables: tables ?? null,
         defaultSchema,
         loading,
         /**

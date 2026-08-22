@@ -124,6 +124,7 @@ export async function exportToFile(
     } catch (err) {
         throw new Error(
             `Could not write that file: ${err instanceof Error ? err.message : String(err)}`,
+            { cause: err },
         );
     }
 
@@ -147,6 +148,7 @@ export async function importFromFile(path: string): Promise<ConnectionImportSumm
     } catch (err) {
         throw new Error(
             `Could not read that file: ${err instanceof Error ? err.message : String(err)}`,
+            { cause: err },
         );
     }
 

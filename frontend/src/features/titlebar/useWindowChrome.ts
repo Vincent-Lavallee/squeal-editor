@@ -153,8 +153,9 @@ export function useWindowChrome() {
      */
     useEffect(() => {
         void sync();
-        globalThis.addEventListener('resize', sync);
-        return () => globalThis.removeEventListener('resize', sync);
+        const onResize = () => void sync();
+        globalThis.addEventListener('resize', onResize);
+        return () => globalThis.removeEventListener('resize', onResize);
     }, [sync]);
 
     const minimize = useCallback((): void => {

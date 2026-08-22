@@ -124,8 +124,8 @@ export function useResults(tab: Tab | null) {
     // page always has all of its table's columns (it is `SELECT *`), a hand
     // query only counts once its own result is checked to actually carry it.
     const keyColumns = browse !== null ? browse.keyColumns : queryEditable ? queryKeyColumns : null;
-    const editTable = browse?.table ?? (queryEditable ? editTarget!.table : null);
-    const editSchema = browse ? undefined : queryEditable ? editTarget!.schema : undefined;
+    const editTable = browse?.table ?? (queryEditable ? editTarget.table : null);
+    const editSchema = browse ? undefined : queryEditable ? editTarget.schema : undefined;
 
     // Which rows are on screen, as one string two renders can be compared by. A
     // browsed page is named by its table, offset, filter and sort; a hand query has
@@ -497,7 +497,7 @@ export function useResults(tab: Tab | null) {
                 // looking at after a save. The sort matters more than it looks: the
                 // staging is keyed by row index, so a page that came back in a different
                 // order would leave every remaining index pointing at the wrong row.
-                dispatch(
+                void dispatch(
                     browseTable({
                         tabId: activeTabId,
                         table: browse.table,
@@ -512,17 +512,14 @@ export function useResults(tab: Tab | null) {
                 // statement that produced the rows, not the editor's current text --
                 // "the same view" is not the same view if it is a different query.
                 // Into its own slot, the same rule `toggleSort` follows.
-                dispatch(
+                void dispatch(
                     runQuery({ tabId: activeTabId, sql: ranSql, part: activeStatement, sort }),
                 );
             }
         } else {
             // Beside the save bar, not in `error`: a failed save must leave the grid and
             // the edits the user is still holding on screen, not blank them.
-            view.setSaveError(
-                activeTabId,
-                (action.payload as string | undefined) ?? 'Could not save the changes.',
-            );
+            view.setSaveError(activeTabId, action.payload ?? 'Could not save the changes.');
         }
     }, [
         activeTabId,
@@ -647,7 +644,7 @@ export function useResults(tab: Tab | null) {
         // repeating across a boundary, since the two pages were ordered differently.
         next: useCallback(() => {
             if (activeTabId && browse?.hasMore) {
-                dispatch(
+                void dispatch(
                     browseTable({
                         tabId: activeTabId,
                         table: browse.table,
@@ -660,7 +657,7 @@ export function useResults(tab: Tab | null) {
         }, [dispatch, activeTabId, browse, sort]),
         prev: useCallback(() => {
             if (activeTabId && browse && browse.offset > 0) {
-                dispatch(
+                void dispatch(
                     browseTable({
                         tabId: activeTabId,
                         table: browse.table,

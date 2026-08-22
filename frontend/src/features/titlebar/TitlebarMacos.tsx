@@ -175,7 +175,7 @@ export default function TitlebarMacos({ onOpenDiagram, onOpenAssistant }: Props)
                 e.stopPropagation();
                 if (name === 'close') close();
                 else if (name === 'minimize') minimize();
-                else toggleMaximize();
+                else void toggleMaximize();
             }}
             aria-label={
                 name === 'close'

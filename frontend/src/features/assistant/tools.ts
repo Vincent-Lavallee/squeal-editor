@@ -183,6 +183,9 @@ const databaseArg = {
     },
 } as const;
 
+/* eslint-disable @typescript-eslint/require-await -- Tool.run returns
+   Promise<unknown> so the assistant loop can await every tool uniformly; not
+   every tool happens to need one. */
 export const TOOLS: Tool[] = [
     /* -- Schema. Four jobs, and each description says when not to use it. ---- */
     {
@@ -764,6 +767,7 @@ export const TOOLS: Tool[] = [
         },
     },
 ];
+/* eslint-enable @typescript-eslint/require-await */
 
 /**
  * What the rows a call read were *of*: the table a browsed grid is showing, else

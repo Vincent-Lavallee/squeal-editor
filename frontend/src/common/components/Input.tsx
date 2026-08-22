@@ -32,57 +32,60 @@ interface Props extends InputHTMLAttributes<HTMLInputElement> {
 // `forwardRef` because focus is sometimes put here from outside: the tree's
 // filter is reached by a keyboard shortcut the shell owns, and a shortcut that
 // can only be answered by clicking the field would not be one.
-const Input = forwardRef<HTMLInputElement, Props>(function Input(
-    {
-        variant = 'default',
-        autoComplete = 'off',
-        style,
-        disabled,
-        onFocus,
-        onBlur,
-        onMouseEnter,
-        onMouseLeave,
-        ...rest
+const Input = forwardRef<HTMLInputElement, Props>(
+    (
+        {
+            variant = 'default',
+            autoComplete = 'off',
+            style,
+            disabled,
+            onFocus,
+            onBlur,
+            onMouseEnter,
+            onMouseLeave,
+            ...rest
+        },
+        ref,
+    ) => {
+        const [focused, setFocused] = useState(false);
+        const [hovered, setHovered] = useState(false);
+
+        const isBare = variant === 'bare';
+        const showsBox = focused || (hovered && !disabled);
+
+        return (
+            <input
+                ref={ref}
+                style={{
+                    ...(isBare ? bare : base),
+                    ...(disabled ? { color: t.TEXT_FAINT, borderColor: t.BORDER } : {}),
+                    ...(focused && !isBare ? { borderColor: t.ACCENT } : {}),
+                    ...(isBare && showsBox && !disabled ? { borderColor: t.BORDER_STRONG } : {}),
+                    ...(style ?? {}),
+                }}
+                autoComplete={autoComplete}
+                disabled={disabled}
+                onFocus={(e) => {
+                    setFocused(true);
+                    onFocus?.(e);
+                }}
+                onBlur={(e) => {
+                    setFocused(false);
+                    onBlur?.(e);
+                }}
+                onMouseEnter={(e) => {
+                    setHovered(true);
+                    onMouseEnter?.(e);
+                }}
+                onMouseLeave={(e) => {
+                    setHovered(false);
+                    onMouseLeave?.(e);
+                }}
+                {...rest}
+            />
+        );
     },
-    ref,
-) {
-    const [focused, setFocused] = useState(false);
-    const [hovered, setHovered] = useState(false);
-
-    const isBare = variant === 'bare';
-    const showsBox = focused || (hovered && !disabled);
-
-    return (
-        <input
-            ref={ref}
-            style={{
-                ...(isBare ? bare : base),
-                ...(disabled ? { color: t.TEXT_FAINT, borderColor: t.BORDER } : {}),
-                ...(focused && !isBare ? { borderColor: t.ACCENT } : {}),
-                ...(isBare && showsBox && !disabled ? { borderColor: t.BORDER_STRONG } : {}),
-                ...(style ?? {}),
-            }}
-            autoComplete={autoComplete}
-            disabled={disabled}
-            onFocus={(e) => {
-                setFocused(true);
-                onFocus?.(e);
-            }}
-            onBlur={(e) => {
-                setFocused(false);
-                onBlur?.(e);
-            }}
-            onMouseEnter={(e) => {
-                setHovered(true);
-                onMouseEnter?.(e);
-            }}
-            onMouseLeave={(e) => {
-                setHovered(false);
-                onMouseLeave?.(e);
-            }}
-            {...rest}
-        />
-    );
-});
+);
+Input.displayName = 'Input';
 
 export default Input;

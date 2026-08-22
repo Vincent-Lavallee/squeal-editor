@@ -59,7 +59,7 @@ export default function StatusBar() {
 
     function toggle(): void {
         if (readOnly) setConfirming(true);
-        else if (connectionId) setReadOnly(connectionId, true);
+        else if (connectionId) void setReadOnly(connectionId, true);
     }
     const Icon = readOnly ? ReadOnlyIcon : WritableIcon;
 
@@ -191,7 +191,7 @@ export default function StatusBar() {
                     name={name}
                     onConfirm={() => {
                         setConfirming(false);
-                        setReadOnly(connectionId, false);
+                        void setReadOnly(connectionId, false);
                     }}
                     onCancel={() => setConfirming(false)}
                 />

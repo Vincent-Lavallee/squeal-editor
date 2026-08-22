@@ -78,7 +78,7 @@ export default function Button({
     return (
         <button
             type={type}
-            style={{ ...base, ...v, ...h, ...d, ...style } as CSSProperties}
+            style={{ ...base, ...v, ...h, ...d, ...style }}
             disabled={disabled}
             onMouseEnter={(e) => {
                 setHovered(true);

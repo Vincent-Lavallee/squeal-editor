@@ -1012,9 +1012,13 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
                     onToggleSync={toggleTreeSync}
                     onSelectTable={openTable}
                     onSelectDatabase={browseDatabase}
-                    onShowDefinition={showDefinition}
-                    onShowTriggerDefinition={showTriggerDefinition}
-                    onShowFunctionDefinition={showFunctionDefinition}
+                    onShowDefinition={(database, table) => void showDefinition(database, table)}
+                    onShowTriggerDefinition={(database, table, trigger, schema) =>
+                        void showTriggerDefinition(database, table, trigger, schema)
+                    }
+                    onShowFunctionDefinition={(database, func) =>
+                        void showFunctionDefinition(database, func)
+                    }
                     collapsed={sidebarCollapsed}
                     onToggleCollapse={toggleSidebar}
                     focusFilter={filterFocusRequest}

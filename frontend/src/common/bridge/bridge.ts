@@ -104,7 +104,7 @@ export async function call<K extends CommandName>(
             reject(new Error('The database did not respond in time.'));
         }, timeoutMs);
 
-        pending.set(reqId, { resolve: resolve as Pending['resolve'], reject, timer });
+        pending.set(reqId, { resolve, reject, timer });
 
         Neutralino.extensions
             .dispatch(EXT_ID, event, { ...payload, reqId })

@@ -115,7 +115,6 @@ export default function JsonCellDrawer({
         // Mount only: the drawer exists exactly as long as one cell is being
         // edited (`ResultsTable` renders it conditionally on `jsonEditing`), so a
         // different cell is always a fresh mount, never a prop change to react to.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const format = () => void editorRef.current?.getAction('editor.action.formatDocument')?.run();

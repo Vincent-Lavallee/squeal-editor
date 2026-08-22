@@ -6,4 +6,5 @@
  * release. A constant, not a runtime lookup: the value is fixed the moment the
  * frontend is built and never changes while the app runs.
  */
+// eslint-disable-next-line @typescript-eslint/naming-convention -- Vite's own `define` convention.
 declare const __APP_VERSION__: string;

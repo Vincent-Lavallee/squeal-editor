@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/require-await -- bun:sqlite is synchronous;
+   these stay `async` to satisfy Driver<C>'s Promise-returning contract so callers
+   can await every engine polymorphically. */
 import { Database as SqliteDatabase } from 'bun:sqlite';
 
 import type { CellValue } from '../../../shared/protocol/index.ts';

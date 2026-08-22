@@ -905,7 +905,7 @@ export default function Sidebar({
                         height: 24,
                         padding: 0,
                     }}
-                    onClick={refreshTables}
+                    onClick={() => void refreshTables()}
                     disabled={!database || loading}
                     title="Refresh tables"
                     aria-label="Refresh tables"

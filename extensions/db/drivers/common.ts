@@ -40,6 +40,10 @@ export function toDisplayValue(value: unknown): CellValue {
     if (typeof value === 'object') return JSON.stringify(value);
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
         return value;
+    // Only a function or a symbol reaches here, both of which stringify meaningfully --
+    // TS just can't see that, because Buffer.isBuffer's `any` parameter defeats the
+    // negative narrowing that would otherwise prove it.
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string
     return String(value);
 }
 

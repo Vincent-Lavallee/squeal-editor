@@ -63,8 +63,8 @@ export default function EnvironmentsDialog({ onClose }: Props) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: t.GAP }}>
                 <h2 style={{ margin: 0, fontSize: t.TEXT_TITLE, fontWeight: 600 }}>Environments</h2>
                 <p style={{ margin: 0, color: t.TEXT_MUTED, fontSize: t.TEXT_BODY }}>
-                    What a connection's Environment field offers, and what the connect screen groups
-                    by.
+                    What a connection&apos;s Environment field offers, and what the connect screen
+                    groups by.
                 </p>
 
                 <ul style={list}>

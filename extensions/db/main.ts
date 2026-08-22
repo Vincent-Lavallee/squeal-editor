@@ -24,7 +24,6 @@ import {
     type CommandReq,
     type CommandRes,
     type ConnectionConfig,
-    type QueryResult,
     type SqlDialect,
 } from '../../shared/protocol/index.ts';
 import {
@@ -156,6 +155,9 @@ async function establish(
     return { connectionId, databases, dialect: conn.dialect, defaultSchema: conn.defaultSchema };
 }
 
+/* eslint-disable @typescript-eslint/require-await -- Handlers requires every
+   command to return a Promise so the dispatcher can await them uniformly; not
+   every handler happens to need one. */
 const COMMANDS: Handlers = {
     async 'db.connect'({ config, readOnly }) {
         return establish(config, readOnly);
@@ -231,7 +233,7 @@ const COMMANDS: Handlers = {
         const durationMs = Date.now() - startedAt;
         if (durationMs > SLOW_QUERY_MS)
             log.warn(`slow query on ${connectionId} (${database ?? 'default'}): ${durationMs}ms`);
-        return { ...outcome, durationMs } as QueryResult;
+        return { ...outcome, durationMs };
     },
 
     async 'db.browse'({ connectionId, database, table, schema, offset, filter, sort }) {
@@ -552,6 +554,7 @@ const COMMANDS: Handlers = {
         return { ok: true };
     },
 };
+/* eslint-enable @typescript-eslint/require-await */
 
 /* ------------------------------------------------------------------ *
  * Neutralino extension transport
@@ -572,12 +575,24 @@ function send(event: string, data: unknown): void {
     );
 }
 
+// `RawData` covers configurations this socket never uses -- but ArrayBuffer's
+// own `toString()` is `'[object ArrayBuffer]'`, not its bytes, so a plain
+// `raw.toString()` would silently misparse if one ever arrived.
+function rawDataToString(raw: WebSocket.RawData): string {
+    if (Buffer.isBuffer(raw)) return raw.toString();
+    if (Array.isArray(raw)) return Buffer.concat(raw).toString();
+    return Buffer.from(raw).toString();
+}
+
 async function handleMessage(raw: WebSocket.RawData): Promise<void> {
     lastSeenAlive = Date.now();
 
     let message: { event?: string; data?: Record<string, unknown> };
     try {
-        message = JSON.parse(raw.toString());
+        message = JSON.parse(rawDataToString(raw)) as {
+            event?: string;
+            data?: Record<string, unknown>;
+        };
     } catch {
         return;
     }
@@ -637,7 +652,7 @@ function start(init: ExtensionInit): void {
     ws.on('pong', () => {
         lastSeenAlive = Date.now();
     });
-    ws.on('message', handleMessage);
+    ws.on('message', (raw) => void handleMessage(raw));
     ws.on('error', (err) => {
         log.error(`socket error: ${err.message}`);
         void shutdown(1);

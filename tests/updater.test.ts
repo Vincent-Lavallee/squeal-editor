@@ -121,8 +121,8 @@ describe('selectAssets', () => {
 
 describe('parseChecksum', () => {
     const sums = [
-        'deadbeef'.repeat(8) + '  squeal-editor-v0.1.4.exe',
-        'a'.repeat(64) + '  something-else.zip',
+        `${'deadbeef'.repeat(8)}  squeal-editor-v0.1.4.exe`,
+        `${'a'.repeat(64)}  something-else.zip`,
     ].join('\n');
 
     test('finds the digest for the named file, lowercased', () => {

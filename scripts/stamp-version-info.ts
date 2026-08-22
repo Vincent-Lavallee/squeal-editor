@@ -24,6 +24,7 @@ const UNICODE_CODEPAGE = 0x04b0;
 
 const VS_FFI_SIGNATURE = 0xfeef04bd;
 const VS_FFI_STRUCVERSION = 0x00010000;
+// eslint-disable-next-line @typescript-eslint/naming-convention -- the literal Win32 API name.
 const VOS__WINDOWS32 = 0x00000004;
 const VFT_APP = 0x00000001;
 

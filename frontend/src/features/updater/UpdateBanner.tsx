@@ -39,7 +39,7 @@ export default function UpdateBanner() {
             >
                 <UpdateIcon style={iconSvg} />
                 <span style={{ marginRight: 'auto' }}>
-                    Automatic updates aren't available on this platform yet.
+                    Automatic updates aren&apos;t available on this platform yet.
                 </span>
                 <Button variant="ghost" onClick={dismiss}>
                     Dismiss
@@ -64,7 +64,7 @@ export default function UpdateBanner() {
                 role="status"
             >
                 <UpdateIcon style={iconSvg} />
-                <span style={{ marginRight: 'auto' }}>Couldn't check for updates.</span>
+                <span style={{ marginRight: 'auto' }}>Couldn&apos;t check for updates.</span>
                 <Button onClick={() => check(true)}>Try again</Button>
                 <Button variant="ghost" onClick={dismiss}>
                     Dismiss
@@ -89,7 +89,7 @@ export default function UpdateBanner() {
                 role="status"
             >
                 <UpdateIcon style={iconSvg} />
-                <span style={{ marginRight: 'auto' }}>You're on the latest version.</span>
+                <span style={{ marginRight: 'auto' }}>You&apos;re on the latest version.</span>
                 <Button variant="ghost" onClick={dismiss}>
                     Dismiss
                 </Button>

@@ -229,6 +229,10 @@ export async function launchApp(env: Record<string, string> = {}): Promise<AppSe
     });
 
     let msgId = 0;
+    // `any` here, deliberately: every pending call has its own T from `send<T>`
+    // below, and this one map holds all of them at once -- there's no type
+    // short of erasure that fits a resolver for every T in the same slot.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const waiting = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
 
     ws.on('message', (raw) => {
@@ -237,9 +241,11 @@ export async function launchApp(env: Record<string, string> = {}): Promise<AppSe
         const w = waiting.get(msg.id);
         if (!w) return;
         waiting.delete(msg.id);
-        msg.error ? w.reject(new Error(msg.error.message)) : w.resolve(msg.result);
+        if (msg.error) w.reject(new Error(msg.error.message));
+        else w.resolve(msg.result);
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same as `waiting` above.
     function send<T = any>(method: string, params: Record<string, unknown> = {}): Promise<T> {
         const id = ++msgId;
         ws.send(JSON.stringify({ id, method, params }));
@@ -314,8 +320,9 @@ export async function launchApp(env: Record<string, string> = {}): Promise<AppSe
                 await Bun.sleep(100);
             }
             throw new Error(
-                `waitFor timed out after ${timeoutMs}ms: ${expression.trim().slice(0, 120)}` +
-                    (lastError ? `\nlast error: ${String(lastError)}` : ''),
+                `waitFor timed out after ${timeoutMs}ms: ${expression.trim().slice(0, 120)}${
+                    lastError ? `\nlast error: ${String(lastError)}` : ''
+                }`,
             );
         },
 

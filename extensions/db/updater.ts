@@ -30,6 +30,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import type { ReadableStreamDefaultReader } from 'node:stream/web';
 
 import type { UpdateProgress, UpdateStatus } from '../../shared/protocol/index.ts';
 import { dataDir } from './store.ts';
@@ -564,7 +565,11 @@ async function downloadWithProgress(
 
     // 0 when the CDN sent no length; the UI shows an indeterminate bar then.
     const totalBytes = Number(res.headers.get('content-length')) || 0;
-    const reader = res.body.getReader();
+    // `ReadableStream` isn't a resolvable global type without the DOM lib, which
+    // this tsconfig deliberately excludes -- so without this annotation
+    // `res.body.getReader()` silently degrades to `any`. Bun's fetch implements
+    // the same WHATWG stream interface Node's `stream/web` types describe.
+    const reader = res.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
     const chunks: Uint8Array[] = [];
     let receivedBytes = 0;
 

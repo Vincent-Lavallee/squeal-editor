@@ -10,7 +10,7 @@
 
 import { formatSql } from '../../common/db/formatSql.ts';
 import type { SqlDialect } from '../../../../shared/protocol/index.ts';
-import { monaco } from './monaco.ts';
+import type { monaco } from './monaco.ts';
 
 /**
  * Builds a formatting provider for one dialect. Registered per language, the

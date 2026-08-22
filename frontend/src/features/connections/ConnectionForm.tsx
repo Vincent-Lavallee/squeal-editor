@@ -248,7 +248,7 @@ export default function ConnectionForm({
     // every edit that is not one -- unlike a test, which describes the whole form.
     useEffect(() => {
         signIn.clear();
-    }, [form.awsProfile, signIn.clear]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [form.awsProfile, signIn.clear]);
 
     /*
      * Bring the actions row into view when an attempt starts, because that row is
@@ -460,7 +460,7 @@ export default function ConnectionForm({
                                     label: env.name,
                                 }))}
                                 onSelect={(value) => {
-                                    const env = value as Environment;
+                                    const env = value;
                                     setForm((prev) => ({
                                         ...prev,
                                         environment: env,

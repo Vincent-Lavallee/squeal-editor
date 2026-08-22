@@ -332,6 +332,9 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     return <ResultsViewContext.Provider value={value}>{children}</ResultsViewContext.Provider>;
 }
 
+// A context and the hook that reads it belong in one file; splitting them for
+// Fast Refresh would cost more real readability than the DX it would buy back.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useResultsView(): ResultsView {
     const view = useContext(ResultsViewContext);
     if (!view) throw new Error('useResultsView must be used inside <ResultsProvider>');

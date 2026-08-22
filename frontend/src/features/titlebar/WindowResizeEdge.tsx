@@ -137,7 +137,7 @@ export default function WindowResizeEdge({ edge }: Props) {
     return (
         <div
             style={STYLE[edge]}
-            onPointerDown={onPointerDown}
+            onPointerDown={(e) => void onPointerDown(e)}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
         />
@@ -171,7 +171,7 @@ export function WindowResizeCornerBL() {
     return (
         <div
             style={{ ...CORNER_STYLE, left: 0, cursor: 'nesw-resize' }}
-            onPointerDown={onPointerDown}
+            onPointerDown={(e) => void onPointerDown(e)}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
         />
@@ -205,7 +205,7 @@ export function WindowResizeCornerBR() {
     return (
         <div
             style={{ ...CORNER_STYLE, right: 0, cursor: 'nwse-resize' }}
-            onPointerDown={onPointerDown}
+            onPointerDown={(e) => void onPointerDown(e)}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
         />

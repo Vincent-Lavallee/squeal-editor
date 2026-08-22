@@ -41,7 +41,7 @@ export default function Badge({
         <span
             data-testid={testId}
             title={title}
-            style={{ ...badgeBase, ...badgeVariants[kind], ...style } as CSSProperties}
+            style={{ ...badgeBase, ...badgeVariants[kind], ...style }}
         >
             {children}
         </span>

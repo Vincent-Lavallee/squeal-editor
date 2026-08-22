@@ -249,7 +249,7 @@ const toSaved = (row: Row): SavedConnection => ({
             ? { iam: { profile: row.aws_profile, region: row.aws_region ?? '' } }
             : {}),
     },
-    environment: row.environment as Environment,
+    environment: row.environment,
     color: row.color as ConnectionColorId,
     readOnly: row.read_only !== 0,
     // An IAM row stores no password, so this is false for it -- but the UI must not
