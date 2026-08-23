@@ -102,3 +102,9 @@ jobs:
               env:
                   SQUEAL_TEST_DB_NATIVE: '1'
             - run: bun run test:ui
+            # The app's own stdout/stderr are discarded (tests/helpers/app.ts), so
+            # when it never exposes a CDP page target this is the only way to see
+            # why -- neutralino.config.json turns on writeToLogFile.
+            - name: Show the app's log if it never came up
+              if: failure()
+              run: if (Test-Path neutralinojs.log) { Get-Content neutralinojs.log } else { Write-Output 'no neutralinojs.log was written' }
