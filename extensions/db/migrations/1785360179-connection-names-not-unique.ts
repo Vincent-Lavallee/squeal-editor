@@ -1,3 +1,5 @@
+import type { Database } from 'bun:sqlite';
+
 import type { Migration } from './migration.ts';
 
 /**
@@ -43,17 +45,24 @@ import type { Migration } from './migration.ts';
  * it back under a new constraint. `slate` is the neutral swatch
  * `connection-colour` already promises a colourless connection gets.
  */
-export const migration: Migration = {
-    version: 1785360179,
-    name: 'connection-names-not-unique',
+/**
+ * Lifts `stars` and `connection_sessions` into carry tables and drops the
+ * originals, so `saved_connections` can be dropped and rebuilt without taking
+ * either child down with it under `PRAGMA foreign_keys = ON`.
+ */
+function liftChildren(db: Database): void {
+    db.run('CREATE TABLE stars_carry AS SELECT * FROM stars');
+    db.run('CREATE TABLE connection_sessions_carry AS SELECT * FROM connection_sessions');
+    db.run('DROP TABLE stars');
+    db.run('DROP TABLE connection_sessions');
+}
 
-    up: (db) => {
-        db.run('CREATE TABLE stars_carry AS SELECT * FROM stars');
-        db.run('CREATE TABLE connection_sessions_carry AS SELECT * FROM connection_sessions');
-        db.run('DROP TABLE stars');
-        db.run('DROP TABLE connection_sessions');
-
-        db.run(`
+/**
+ * Rebuilds `saved_connections` without `UNIQUE (workspace_id, name)`. `color`
+ * is `COALESCE`d rather than copied straight across -- see the file comment.
+ */
+function rebuildSavedConnections(db: Database): void {
+    db.run(`
       CREATE TABLE saved_connections_rebuilt (
         id               TEXT PRIMARY KEY,
         workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -72,7 +81,7 @@ export const migration: Migration = {
         color            TEXT NOT NULL DEFAULT 'slate'
       );
     `);
-        db.run(`
+    db.run(`
       INSERT INTO saved_connections_rebuilt
         (id, workspace_id, name, engine, host, port, username, default_database, environment,
          password, ssl, read_only, aws_profile, aws_region, color)
@@ -80,10 +89,13 @@ export const migration: Migration = {
              password, ssl, read_only, aws_profile, aws_region, COALESCE(color, 'slate')
       FROM saved_connections
     `);
-        db.run('DROP TABLE saved_connections');
-        db.run('ALTER TABLE saved_connections_rebuilt RENAME TO saved_connections');
+    db.run('DROP TABLE saved_connections');
+    db.run('ALTER TABLE saved_connections_rebuilt RENAME TO saved_connections');
+}
 
-        db.run(`
+/** Recreates `stars` and `connection_sessions` against the rebuilt table and restores their rows. */
+function restoreChildren(db: Database): void {
+    db.run(`
       CREATE TABLE stars (
         id            TEXT PRIMARY KEY,
         connection_id TEXT NOT NULL REFERENCES saved_connections(id) ON DELETE CASCADE,
@@ -93,21 +105,31 @@ export const migration: Migration = {
         UNIQUE (connection_id, database, schema, table_name)
       );
     `);
-        db.run(
-            'INSERT INTO stars SELECT id, connection_id, database, schema, table_name FROM stars_carry',
-        );
-        db.run('DROP TABLE stars_carry');
+    db.run(
+        'INSERT INTO stars SELECT id, connection_id, database, schema, table_name FROM stars_carry',
+    );
+    db.run('DROP TABLE stars_carry');
 
-        db.run(`
+    db.run(`
       CREATE TABLE connection_sessions (
         connection_id TEXT PRIMARY KEY REFERENCES saved_connections(id) ON DELETE CASCADE,
         snapshot      TEXT NOT NULL
       );
     `);
-        db.run(
-            'INSERT INTO connection_sessions SELECT connection_id, snapshot FROM connection_sessions_carry',
-        );
-        db.run('DROP TABLE connection_sessions_carry');
+    db.run(
+        'INSERT INTO connection_sessions SELECT connection_id, snapshot FROM connection_sessions_carry',
+    );
+    db.run('DROP TABLE connection_sessions_carry');
+}
+
+export const migration: Migration = {
+    version: 1785360179,
+    name: 'connection-names-not-unique',
+
+    up: (db) => {
+        liftChildren(db);
+        rebuildSavedConnections(db);
+        restoreChildren(db);
 
         const orphans = db.query('PRAGMA foreign_key_check').all();
         if (orphans.length > 0)

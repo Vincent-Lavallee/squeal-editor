@@ -16,11 +16,41 @@
 import { useState } from 'react';
 
 import ContextMenu from '../../common/components/ContextMenu.tsx';
-import { AssistantIcon } from '../../common/icons/icons.ts';
 import { useAssistantAccount } from '../../store/assistantSlice.ts';
 import { useTabs } from '../../store/tabsSlice.ts';
 import { providerLabel } from '../../../../shared/protocol/index.ts';
-import * as t from '../../common/tokens';
+import AssistantButton from './AssistantButton.tsx';
+
+function assistantMenuItems(options: {
+    connected: boolean;
+    provider: string | null;
+    title: string;
+    forgetKey: () => void;
+    openAssistantTab: () => void;
+}) {
+    const { connected, provider, title, forgetKey, openAssistantTab } = options;
+    if (connected) {
+        return [
+            {
+                label: `Using your ${provider ?? 'stored'} API key`,
+                disabled: true,
+                onSelect: () => undefined,
+            },
+            { label: 'Remove the API key', danger: true, onSelect: forgetKey },
+        ];
+    }
+    return [
+        { label: title, disabled: true, onSelect: () => undefined },
+        /*
+         * Adding a key *starts* here and *happens* in a tab. The form is
+         * a provider, a field and a warning about which product sells
+         * one, and a 26px strip has nowhere to put any of that -- so
+         * this opens the tab that already draws it rather than growing a
+         * second copy of that screen.
+         */
+        { label: 'Add an API key', onSelect: openAssistantTab },
+    ];
+}
 
 export default function AssistantStatus() {
     const { status, anyRunning, forgetKey } = useAssistantAccount();
@@ -46,90 +76,30 @@ export default function AssistantStatus() {
 
     return (
         <>
-            <button
-                type="button"
-                data-testid="statusbar-assistant"
-                style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: t.GAP_XS,
-                    height: '100%',
-                    padding: `0 ${t.GAP}px`,
-                    border: 'none',
-                    borderLeft: `1px solid ${t.BORDER}`,
-                    background: hovered ? t.HOVER : 'none',
-                    // Grayscale like every other segment here: having a key is a state,
-                    // not a status, so it spends no hue. The dot below is the exception and
-                    // it is `--accent` because it means "this is happening now".
-                    color: hovered ? t.TEXT : connected ? t.TEXT_MUTED : t.TEXT_FAINT,
-                    font: 'inherit',
-                    fontSize: t.TEXT_BADGE,
-                    cursor: 'pointer',
-                }}
-                onMouseEnter={() => setHovered(true)}
-                onMouseLeave={() => setHovered(false)}
+            <AssistantButton
+                connected={connected}
+                hovered={hovered}
+                label={label}
+                title={title}
+                anyRunning={anyRunning}
+                onHover={setHovered}
                 onClick={(e) =>
                     setMenuAt({ x: e.clientX, y: e.currentTarget.getBoundingClientRect().top })
                 }
-                title={title}
-            >
-                <AssistantIcon style={{ flex: 'none', width: t.ICON, height: t.ICON }} />
-                <span
-                    style={{
-                        overflow: 'hidden',
-                        maxWidth: 140,
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                    }}
-                >
-                    {label}
-                </span>
-                {anyRunning && (
-                    <span
-                        data-testid="statusbar-assistant-busy"
-                        aria-hidden="true"
-                        style={{
-                            flex: 'none',
-                            width: 5,
-                            height: 5,
-                            borderRadius: t.RADIUS_PILL,
-                            background: t.ACCENT,
-                        }}
-                    />
-                )}
-            </button>
+            />
 
             {menuAt && (
                 <ContextMenu
                     x={menuAt.x}
                     y={menuAt.y}
                     onClose={() => setMenuAt(null)}
-                    items={
-                        connected
-                            ? [
-                                  {
-                                      label: `Using your ${provider ?? 'stored'} API key`,
-                                      disabled: true,
-                                      onSelect: () => undefined,
-                                  },
-                                  {
-                                      label: 'Remove the API key',
-                                      danger: true,
-                                      onSelect: forgetKey,
-                                  },
-                              ]
-                            : [
-                                  { label: title, disabled: true, onSelect: () => undefined },
-                                  /*
-                                   * Adding a key *starts* here and *happens* in a tab. The form is
-                                   * a provider, a field and a warning about which product sells
-                                   * one, and a 26px strip has nowhere to put any of that -- so
-                                   * this opens the tab that already draws it rather than growing a
-                                   * second copy of that screen.
-                                   */
-                                  { label: 'Add an API key', onSelect: openAssistantTab },
-                              ]
-                    }
+                    items={assistantMenuItems({
+                        connected,
+                        provider,
+                        title,
+                        forgetKey,
+                        openAssistantTab,
+                    })}
                 />
             )}
         </>

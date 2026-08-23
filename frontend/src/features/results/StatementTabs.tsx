@@ -1,10 +1,21 @@
-import { ThinkingOrb } from 'thinking-orbs';
-
 import { cancelQuery } from '../../store/resultsSlice.ts';
 import type { Tab } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import * as t from '../../common/tokens';
+import StatementTabButton from './StatementTabButton.tsx';
 import { useResults } from './useResults.ts';
+
+const stripStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: t.GAP_XS,
+    flex: 'none',
+    height: t.TAB_H,
+    padding: `0 ${t.GAP_SM}px`,
+    borderBottom: `1px solid ${t.BORDER}`,
+    overflowX: 'auto',
+    scrollbarWidth: 'none',
+};
 
 /**
  * The numbered strip over a run that held more than one statement.
@@ -35,74 +46,16 @@ export default function StatementTabs({ tab }: { tab: Tab | null }) {
     const notRun = statementCount - statements.length;
 
     return (
-        <div
-            data-testid="statement-tabs"
-            role="tablist"
-            style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: t.GAP_XS,
-                flex: 'none',
-                height: t.TAB_H,
-                padding: `0 ${t.GAP_SM}px`,
-                borderBottom: `1px solid ${t.BORDER}`,
-                overflowX: 'auto',
-                scrollbarWidth: 'none',
-            }}
-        >
-            {statements.map((part, index) => {
-                const active = index === activeStatement;
-                return (
-                    <button
-                        key={index}
-                        data-testid="statement-tab"
-                        role="tab"
-                        aria-selected={active}
-                        onClick={() => selectStatement(index)}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: t.GAP_XS,
-                            flex: 'none',
-                            height: 24,
-                            padding: `0 ${t.GAP_SM}px`,
-                            border: 'none',
-                            borderRadius: t.RADIUS,
-                            background: active ? t.SELECTED : 'transparent',
-                            color: active ? t.ACCENT : t.TEXT_MUTED,
-                            font: 'inherit',
-                            fontSize: t.TEXT_BADGE,
-                            cursor: 'pointer',
-                        }}
-                    >
-                        Result {index + 1}
-                        {part.running && (
-                            <ThinkingOrb
-                                state="shaping"
-                                size={20}
-                                theme="dark"
-                                aria-label="Running"
-                            />
-                        )}
-                        {/* Semantic, the one place a hue is allowed in the chrome: a failed
-                statement is why the batch stopped, and the strip is where you
-                are looking when you wonder which one it was. */}
-                        {part.error !== null && (
-                            <span
-                                data-testid="statement-failed"
-                                role="img"
-                                aria-label="Failed"
-                                style={{
-                                    width: 6,
-                                    height: 6,
-                                    borderRadius: t.RADIUS_PILL,
-                                    background: t.RED,
-                                }}
-                            />
-                        )}
-                    </button>
-                );
-            })}
+        <div data-testid="statement-tabs" role="tablist" style={stripStyle}>
+            {statements.map((part, index) => (
+                <StatementTabButton
+                    key={index}
+                    part={part}
+                    index={index}
+                    active={index === activeStatement}
+                    onSelect={() => selectStatement(index)}
+                />
+            ))}
 
             {notRun > 0 && (
                 <span

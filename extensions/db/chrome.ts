@@ -27,10 +27,11 @@
  * as it was. Nothing in this file can break a query.
  */
 
-import { dlopen, FFIType, ptr, type Pointer } from 'bun:ffi';
+import { ptr, type Pointer } from 'bun:ffi';
 import { dirname, join } from 'node:path';
 
 import type { ResizeEdge } from '../../shared/protocol/index.ts';
+import { openDwmapi, openKernel32, openUser32 } from './chromeLibs.ts';
 
 // DWM window attributes, Windows 11 build 22000+. Earlier Windows fails the call
 // and keeps its own frame colour, which is the honest fallback.
@@ -75,67 +76,7 @@ function ascii(text: string) {
 }
 
 function open() {
-    const kernel32 = dlopen('kernel32.dll', {
-        LoadLibraryW: { args: [FFIType.ptr], returns: FFIType.ptr },
-        GetProcAddress: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.ptr },
-    });
-    const user32 = dlopen('user32.dll', {
-        FindWindowExW: {
-            args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
-            returns: FFIType.ptr,
-        },
-        GetWindowThreadProcessId: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.u32 },
-        IsWindowVisible: { args: [FFIType.ptr], returns: FFIType.i32 },
-        GetWindow: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.ptr },
-        IsZoomed: { args: [FFIType.ptr], returns: FFIType.i32 },
-        GetWindowRect: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-        GetClientRect: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-        ClientToScreen: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-        MonitorFromWindow: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.ptr },
-        GetMonitorInfoW: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-        SetWindowPos: {
-            args: [
-                FFIType.ptr,
-                FFIType.ptr,
-                FFIType.i32,
-                FFIType.i32,
-                FFIType.i32,
-                FFIType.i32,
-                FFIType.u32,
-            ],
-            returns: FFIType.i32,
-        },
-        GetWindowLongW: { args: [FFIType.ptr, FFIType.i32], returns: FFIType.i32 },
-        RegisterWindowMessageW: { args: [FFIType.ptr], returns: FFIType.u32 },
-        SetWindowsHookExW: {
-            args: [FFIType.i32, FFIType.ptr, FFIType.ptr, FFIType.u32],
-            returns: FFIType.ptr,
-        },
-        UnhookWindowsHookEx: { args: [FFIType.ptr], returns: FFIType.i32 },
-        SendMessageTimeoutW: {
-            args: [
-                FFIType.ptr,
-                FFIType.u32,
-                FFIType.ptr,
-                FFIType.ptr,
-                FFIType.u32,
-                FFIType.u32,
-                FFIType.ptr,
-            ],
-            returns: FFIType.ptr,
-        },
-        PostMessageW: {
-            args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr],
-            returns: FFIType.i32,
-        },
-    });
-    const dwmapi = dlopen('dwmapi.dll', {
-        DwmSetWindowAttribute: {
-            args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.u32],
-            returns: FFIType.i32,
-        },
-    });
-    return { kernel32, user32, dwmapi };
+    return { kernel32: openKernel32(), user32: openUser32(), dwmapi: openDwmapi() };
 }
 
 type Libs = ReturnType<typeof open>;

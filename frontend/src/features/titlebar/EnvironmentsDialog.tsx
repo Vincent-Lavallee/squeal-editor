@@ -3,9 +3,10 @@ import { useState } from 'react';
 import { useEnvironments } from '../../store/environmentsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import Callout from '../../common/components/Callout.tsx';
-import Input from '../../common/components/Input.tsx';
 import Modal from '../../common/components/Modal.tsx';
 import * as t from '../../common/tokens';
+import AddEnvironmentForm from './AddEnvironmentForm.tsx';
+import EnvironmentRow from './EnvironmentRow.tsx';
 
 const list: React.CSSProperties = {
     display: 'flex',
@@ -16,12 +17,6 @@ const list: React.CSSProperties = {
     border: `1px solid ${t.BORDER_STRONG}`,
     borderRadius: t.RADIUS,
     overflow: 'hidden',
-};
-const row: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: t.GAP_SM,
-    padding: `${t.GAP_SM}px 10px`,
 };
 
 interface Props {
@@ -69,68 +64,28 @@ export default function EnvironmentsDialog({ onClose }: Props) {
 
                 <ul style={list}>
                     {environments.map((env, i) => (
-                        <li
-                            data-testid="env-row"
+                        <EnvironmentRow
                             key={env.id}
-                            style={{
-                                ...row,
-                                ...(i > 0 ? { borderTop: `1px solid ${t.BORDER}` } : {}),
+                            env={env}
+                            first={i === 0}
+                            canDelete={canDelete}
+                            confirming={confirmingId === env.id}
+                            onConfirm={() => setConfirmingId(env.id)}
+                            onRemove={() => {
+                                remove(env.id);
+                                setConfirmingId(null);
                             }}
-                        >
-                            <span data-testid="env-name" style={{ flex: 1, fontSize: t.TEXT_BODY }}>
-                                {env.name}
-                            </span>
-                            {confirmingId === env.id ? (
-                                <>
-                                    <span
-                                        style={{
-                                            color: t.TEXT_FAINT,
-                                            fontFamily: t.FONT,
-                                            fontSize: t.TEXT_BADGE,
-                                        }}
-                                    >
-                                        Delete?
-                                    </span>
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() => {
-                                            remove(env.id);
-                                            setConfirmingId(null);
-                                        }}
-                                    >
-                                        Yes
-                                    </Button>
-                                    <Button variant="ghost" onClick={() => setConfirmingId(null)}>
-                                        No
-                                    </Button>
-                                </>
-                            ) : (
-                                canDelete && (
-                                    <Button variant="ghost" onClick={() => setConfirmingId(env.id)}>
-                                        Delete
-                                    </Button>
-                                )
-                            )}
-                        </li>
+                            onCancel={() => setConfirmingId(null)}
+                        />
                     ))}
                 </ul>
 
-                <form
-                    style={{ display: 'flex', gap: t.GAP_SM }}
-                    onSubmit={(e) => void handleAdd(e)}
-                >
-                    <div style={{ flex: 1 }}>
-                        <Input
-                            value={name}
-                            placeholder="Staging"
-                            disabled={saving}
-                            onChange={(e) => setName(e.target.value)}
-                        />
-                    </div>
-                    <Button type="submit" disabled={saving || !name.trim()}>
-                        + Add
-                    </Button>
-                </form>
+                <AddEnvironmentForm
+                    name={name}
+                    saving={saving}
+                    onChange={setName}
+                    onAdd={(e) => void handleAdd(e)}
+                />
 
                 {error && <Callout>{error}</Callout>}
 

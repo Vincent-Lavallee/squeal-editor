@@ -7,21 +7,43 @@ For anything visual, read `design-system.md` instead of this file.
 
 ## Files
 
+Two folder rules apply everywhere below: a **subfeature gets its own subfolder**
+inside its feature folder (e.g. the assistant's tool definitions live in
+`features/assistant/tools/`, not loose beside the panel), and **hooks get their
+own `hooks/` subfolder** within whichever folder owns them — a feature,
+`common/`, or a subfeature (e.g. `features/sidebar/hooks/`).
+
 ```
 src/main.tsx            entry; initBridge(), <Provider>, render
 src/App.tsx             the titlebar, then routing: connected && !adding
-src/Shell.tsx           the composition root; wires the features together
+src/Shell.tsx           the composition root; wires the features together.
+                        `useShell()` (`src/shell/hooks/`) is everything it
+                        reads or calls, composed from one hook per concern;
+                        `ShellPane` (`src/shell/`, plus `shellPaneView.ts`) is
+                        the primary/secondary editor+results half, called
+                        twice with `pane` swapped so the two can never drift
+                        out of sync with each other
 src/common/             shared infrastructure, no components
   bridge/bridge.ts      typed request/response over the extension channel
   icons/                icon bindings, workspace glyphs, the connection colour palette
   db/                   the UI's engine table
   shortcuts.ts          every keyboard shortcut — the app's and Monaco's — and the one spelling of a chord
-src/store/              every slice; bridge-crossed state and the keys it is held under
+src/store/              every slice; bridge-crossed state and the keys it is held under.
+                        A slice split for length follows one shape: `xSlice.ts`
+                        keeps the state, `createSlice` and its selectors;
+                        `xThunks.ts` (or several, split by concern) holds the
+                        async thunks; `xHooks.ts` holds the exported `useX()`;
+                        an `xExtraReducers.ts`/`xReducerHelpers.ts` holds a
+                        split-out `extraReducers` builder. Each still exports
+                        everything through `xSlice.ts` so other files' imports
+                        never have to know about the split.
   index.ts              configureStore + RootState/AppDispatch
   hooks.ts              useAppDispatch / useAppSelector
   thunk.ts              createAppThunk + errorMessage
-  sessionSlice.ts       every open connection, and which is in front + useSession()
-  tabsSlice.ts          what is open, and what each one is pointed at + useTabs()
+  sessionSlice.ts + sessionThunks.ts + sessionHooks.ts
+                        every open connection, and which is in front + useSession()
+  tabsSlice.ts + tabsThunks/Reducers/ReducerHelpers/Selectors/Hooks/Types.ts
+                        what is open, and what each one is pointed at + useTabs()
   workspacesSlice.ts    the workspace list
   environmentsSlice.ts  the environment picklist + useEnvironments()
   savedSlice.ts         the stored connection list
@@ -30,19 +52,35 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
   connectionTestSlice.ts  what the connect form reached, without keeping it + useConnectionTest()
   awsSignInSlice.ts     what each AWS profile can currently do, and the sign-in that fixes it + useAwsSignIn()
   explorerSlice.ts      the catalog: databases, their tables, their columns
-  resultsSlice.ts       the result grid, keyed by tab
+  resultsSlice.ts + resultsThunks.ts
+                        the result grid, keyed by tab
   updaterSlice.ts       the release check, download progress + useUpdater()
   settingsSlice.ts      the user's preferences + useBooleanSetting()
-  assistantSlice.ts     the conversations, the account, and the agent loop itself
+  assistantSlice.ts     the conversations, the account, and their reducers;
+                        composes assistantAccountThunks.ts (the stored key,
+                        the model catalog), assistantConversationThunks.ts
+                        (the picker's reads and writes), assistantApproval.ts
+                        (the approval gate and its resolvers),
+                        assistantRunTool.ts (one tool call),
+                        assistantTurnLoop.ts (`sendMessage`, the loop over
+                        tool calls), assistantExtraReducers.ts, and
+                        assistantHooks.ts (`useAssistantAccount`,
+                        `useConversation`, `useConversationHistory`)
   sessionSnapshot.ts    what a connection's open tabs look like written down
   sessionSyncListener.ts   when that snapshot is written
   conversationRecord.ts    what a conversation looks like written down, values removed
   conversationSyncListener.ts  when that record is written
 src/features/
-  connections/          ConnectScreen, ConnectionForm, SavedConnectionList,
-                        WorkspacePicker, WorkspaceForm, PasswordPrompt,
-                        AwsSignIn (AwsSignInButton + AwsSignInStatus),
-                        useSavedConnections, useWorkspaces
+  connections/          ConnectScreen (composes ConnectScreenBody's per-view
+                        components), ConnectionForm (composes its field-group
+                        components, each with a matching name), SavedConnectionList
+                        (composes SavedConnectionGroup/Row/...), WorkspacePicker
+                        (composes WorkspaceRow/...), WorkspaceForm, PasswordPrompt,
+                        AwsSignInButton, AwsSignInStatus, AwsSignInVeil (composes
+                        AwsSignInVeilBlocked/Action)
+    hooks/              useSavedConnections, useWorkspaces, useConnectionForm
+                        (+ its Fields/Test halves), useConnectScreen (+ its
+                        Nav/Actions/Submits halves), useConnectionRows
   titlebar/             Titlebar, Menu, AboutDialog, EnvironmentsDialog, ShortcutsDialog,
                         ExportConnectionsDialog + ImportConnectionsDialog,
                         WindowResizeEdge (the app's own resize strips),
@@ -56,7 +94,8 @@ src/features/
                         format + useSqlFormatter, useEditorKeybindings (Monaco's own commands, on our chords)
   results/              ResultsTable, StatementTabs, FilterBar, JsonCellDrawer,
                         ResultsContext (useResultsView), useResults
-  diagram/              RelationshipDiagram, layout (pure), useDiagram
+  diagram/              RelationshipDiagram, layout + layoutGraph +
+                        diagramExtent + edgePath (pure), useDiagram, useDiagramCanvas
   statusbar/            StatusBar + ReadOnlyConfirm: the bottom bar and its lock
   updater/              UpdateBanner, useUpdater: the found-update strip
   assistant/            AssistantPanel, Thread, Markdown (an answer, rendered),

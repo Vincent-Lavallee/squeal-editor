@@ -32,8 +32,8 @@ export interface TableSearch {
  * never be separated from the name and later guessed back out of it. A caller
  * that has a `TableMeta` has both halves already; the one caller that does not is
  * the editor's completion, scanning a name out of SQL as it is typed, and it
- * passes `schema` undefined -- see `splitRelation` in `postgres.ts`, which is the
- * fallback that case and only that case still needs.
+ * passes `schema` undefined -- see `splitRelation` in `postgresRelation.ts`,
+ * which is the fallback that case and only that case still needs.
  */
 export interface Relation {
     table: string;
@@ -257,10 +257,7 @@ export interface Driver<C> {
      */
     applyWrites(
         client: C,
-        relation: Relation,
-        keyColumns: string[],
-        edits: RowEdit[],
-        deletes: RowDelete[],
+        args: { relation: Relation; keyColumns: string[]; edits: RowEdit[]; deletes: RowDelete[] },
     ): Promise<number>;
     quoteIdent(name: string): string;
     /**

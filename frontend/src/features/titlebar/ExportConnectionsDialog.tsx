@@ -6,6 +6,7 @@ import Callout from '../../common/components/Callout.tsx';
 import Checkbox from '../../common/components/Checkbox.tsx';
 import Modal from '../../common/components/Modal.tsx';
 import * as t from '../../common/tokens';
+import ExportedSummary from './ExportedSummary.tsx';
 
 interface Props {
     onClose: () => void;
@@ -62,18 +63,7 @@ export default function ExportConnectionsDialog({ onClose }: Props) {
                 />
 
                 {error && <Callout>{error}</Callout>}
-                {exported && (
-                    <Callout tone="success">
-                        Exported {exported.connections}{' '}
-                        {exported.connections === 1 ? 'connection' : 'connections'} in{' '}
-                        {exported.workspaces}{' '}
-                        {exported.workspaces === 1 ? 'workspace' : 'workspaces'}
-                        {exported.passwords > 0
-                            ? `, ${exported.passwords} carrying a password`
-                            : ''}
-                        .
-                    </Callout>
-                )}
+                {exported && <ExportedSummary exported={exported} />}
 
                 <div
                     style={{

@@ -2,6 +2,8 @@ import type { Tab } from '../../store/tabsSlice.ts';
 import Button from '../../common/components/Button.tsx';
 import Modal from '../../common/components/Modal.tsx';
 import * as t from '../../common/tokens';
+import CloseTabsList from './CloseTabsList.tsx';
+import CloseTabsMessage from './CloseTabsMessage.tsx';
 
 interface Props {
     /** The tabs in the set that would lose text — never empty, or nothing would have asked. */
@@ -35,52 +37,8 @@ export default function CloseTabsConfirm({ tabs, onConfirm, onCancel }: Props) {
                     onConfirm();
                 }}
             >
-                <h2 style={{ margin: `0 0 ${t.GAP}px`, fontSize: t.TEXT_TITLE, fontWeight: 600 }}>
-                    {one
-                        ? `Close ${tabs[0]!.title}?`
-                        : `Close ${tabs.length} tabs with unsaved changes?`}
-                </h2>
-                <p
-                    style={{
-                        margin: 0,
-                        color: t.TEXT_MUTED,
-                        fontSize: t.TEXT_BODY,
-                        lineHeight: 1.5,
-                    }}
-                >
-                    {one
-                        ? 'Its query has not been saved, and closing the tab discards it.'
-                        : 'Their queries have not been saved, and closing the tabs discards them.'}
-                </p>
-
-                {!one && (
-                    <ul
-                        data-testid="close-confirm-list"
-                        style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: t.GAP_XS,
-                            margin: `0 0 ${t.GAP_SM}px`,
-                            padding: 0,
-                            listStyle: 'none',
-                            color: t.TEXT,
-                            fontSize: t.TEXT_BODY,
-                        }}
-                    >
-                        {tabs.map((tab) => (
-                            <li
-                                key={tab.id}
-                                style={{
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                }}
-                            >
-                                {tab.title}
-                            </li>
-                        ))}
-                    </ul>
-                )}
+                <CloseTabsMessage tabs={tabs} one={one} />
+                {!one && <CloseTabsList tabs={tabs} />}
 
                 <div style={{ display: 'flex', gap: t.GAP_SM, marginTop: t.GAP_XS }}>
                     <Button type="button" onClick={onCancel}>

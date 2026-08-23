@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as t from '../../common/tokens';
+import MenuItems from './MenuItems.tsx';
 
 interface Item {
     label: string;
@@ -9,18 +10,6 @@ interface Props {
     label: string;
     items: Item[];
 }
-
-const itemBase: React.CSSProperties = {
-    padding: '6px 8px',
-    border: 'none',
-    borderRadius: t.RADIUS,
-    background: 'none',
-    color: t.TEXT,
-    font: 'inherit',
-    fontSize: t.TEXT_BODY,
-    textAlign: 'left',
-    cursor: 'pointer',
-};
 
 /*
  * Each menu owns its own open state, and two of them side by side need no
@@ -71,42 +60,15 @@ export default function Menu({ label, items }: Props) {
                 {label}
             </button>
             {open && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        zIndex: 10,
-                        top: '100%',
-                        left: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        minWidth: 160,
-                        padding: t.GAP_XS,
-                        border: `1px solid ${t.BORDER_STRONG}`,
-                        borderRadius: t.RADIUS,
-                        background: t.BG,
+                <MenuItems
+                    items={items}
+                    hovered={hovered}
+                    onHover={setHovered}
+                    onSelect={(item) => {
+                        setOpen(false);
+                        item.onSelect();
                     }}
-                    role="menu"
-                >
-                    {items.map((item) => (
-                        <button
-                            key={item.label}
-                            data-testid="menu-item"
-                            role="menuitem"
-                            style={{
-                                ...itemBase,
-                                ...(hovered === item.label ? { background: t.HOVER } : {}),
-                            }}
-                            onMouseEnter={() => setHovered(item.label)}
-                            onMouseLeave={() => setHovered(null)}
-                            onClick={() => {
-                                setOpen(false);
-                                item.onSelect();
-                            }}
-                        >
-                            {item.label}
-                        </button>
-                    ))}
-                </div>
+                />
             )}
         </div>
     );

@@ -34,15 +34,17 @@ const BINARY = 0;
 const terminated = (text: string) => Buffer.from(`${text}\0`, 'utf16le');
 const paddingAfter = (length: number) => Buffer.alloc((4 - (length % 4)) % 4);
 
+type BlockOptions = {
+    key: string;
+    type: number;
+    value: Buffer;
+    valueLength: number;
+    children?: Buffer[];
+};
+
 // Every block is padded out to a 4-byte boundary and reports that padding in
 // its own length, so walking a parent's children is just "advance by wLength".
-function block(
-    key: string,
-    type: number,
-    value: Buffer,
-    valueLength: number,
-    children: Buffer[] = [],
-) {
+function block({ key, type, value, valueLength, children = [] }: BlockOptions) {
     const header = Buffer.alloc(6);
     header.writeUInt16LE(valueLength, 2);
     header.writeUInt16LE(type, 4);
@@ -63,7 +65,7 @@ function block(
 // wValueLength counts characters for text and bytes for binary — the one place
 // the two block kinds disagree.
 const textBlock = (key: string, value: string) =>
-    block(key, TEXT, terminated(value), value.length + 1);
+    block({ key, type: TEXT, value: terminated(value), valueLength: value.length + 1 });
 
 function fixedFileInfo(version: number[]) {
     const info = Buffer.alloc(52);
@@ -92,12 +94,12 @@ function versionResource(version: string, fileName: string) {
     translation.writeUInt16LE(US_ENGLISH, 0);
     translation.writeUInt16LE(UNICODE_CODEPAGE, 2);
 
-    const strings = block(
-        `${US_ENGLISH.toString(16).padStart(4, '0')}${UNICODE_CODEPAGE.toString(16).padStart(4, '0')}`,
-        TEXT,
-        Buffer.alloc(0),
-        0,
-        [
+    const strings = block({
+        key: `${US_ENGLISH.toString(16).padStart(4, '0')}${UNICODE_CODEPAGE.toString(16).padStart(4, '0')}`,
+        type: TEXT,
+        value: Buffer.alloc(0),
+        valueLength: 0,
+        children: [
             textBlock('CompanyName', COMPANY),
             textBlock('FileDescription', PRODUCT),
             textBlock('FileVersion', `${major}.${minor}.${patch}.${build}`),
@@ -107,14 +109,37 @@ function versionResource(version: string, fileName: string) {
             textBlock('ProductName', PRODUCT),
             textBlock('ProductVersion', version),
         ],
-    );
+    });
 
-    return block('VS_VERSION_INFO', BINARY, fixedFileInfo([major, minor, patch, build]), 52, [
-        block('StringFileInfo', TEXT, Buffer.alloc(0), 0, [strings]),
-        block('VarFileInfo', TEXT, Buffer.alloc(0), 0, [
-            block('Translation', BINARY, translation, translation.length),
-        ]),
-    ]);
+    return block({
+        key: 'VS_VERSION_INFO',
+        type: BINARY,
+        value: fixedFileInfo([major, minor, patch, build]),
+        valueLength: 52,
+        children: [
+            block({
+                key: 'StringFileInfo',
+                type: TEXT,
+                value: Buffer.alloc(0),
+                valueLength: 0,
+                children: [strings],
+            }),
+            block({
+                key: 'VarFileInfo',
+                type: TEXT,
+                value: Buffer.alloc(0),
+                valueLength: 0,
+                children: [
+                    block({
+                        key: 'Translation',
+                        type: BINARY,
+                        value: translation,
+                        valueLength: translation.length,
+                    }),
+                ],
+            }),
+        ],
+    });
 }
 
 const kernel32 = dlopen('kernel32.dll', {

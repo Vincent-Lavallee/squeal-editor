@@ -6928,6 +6928,19 @@ mock database: a rule that's silently exempted everywhere it would currently
 fire teaches nobody that it exists. Splitting those files is intentionally a
 separate pass, not part of adopting the linter.
 
+**That separate pass landed for `frontend/`, `shared/`, and `scripts/`, but
+`tests/**` is exempted from `max-lines`/`max-lines-per-function` outright**
+(`eslint.config.mjs`), not merely deferred. A test file here is many small,
+mostly-independent `describe`/`test` blocks accumulated in one file rather
+than one giant function, so the caps were firing on file *length*, not on any
+one function actually being hard to follow. Splitting one open costs real
+safety: `docs/testing.md` documents genuine ordering coupling inside a
+suite — shared `beforeAll` sessions, tests that deliberately run last, state
+one block leaves for the next — and moving `describe` blocks to new files
+risks breaking exactly that unless each cross-block dependency is reverified.
+That risk buys nothing a reader needs: a 3000-line test file is still just
+scrolling, never a function you have to hold in your head at once.
+
 **`eslint-plugin-react`'s `settings.react.version` is pinned to `'18.3.1'`,
 not `'detect'`.** `'detect'` runs eslint-plugin-react 7.37.5's own
 version-sniffing, which calls a `context.getFilename()` that ESLint 10

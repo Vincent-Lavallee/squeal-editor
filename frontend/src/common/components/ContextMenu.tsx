@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import * as t from '../tokens';
+import ContextMenuItem from './ContextMenuItem.tsx';
 
 /**
  * The app's one right-click menu: a list of labelled items at a point.
@@ -40,23 +41,10 @@ const menuStyle: React.CSSProperties = {
     borderRadius: t.RADIUS,
     background: t.BG,
 };
-const itemBase: React.CSSProperties = {
-    padding: '6px 8px',
-    border: 'none',
-    borderRadius: t.RADIUS,
-    background: 'none',
-    color: t.TEXT,
-    font: 'inherit',
-    fontSize: t.TEXT_BODY,
-    textAlign: 'left',
-    whiteSpace: 'nowrap',
-    cursor: 'pointer',
-};
 
 export default function ContextMenu({ x, y, items, onClose }: Props) {
     const root = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState({ x, y });
-    const [hovered, setHovered] = useState<string | null>(null);
 
     useEffect(() => {
         function onPointerDown(e: PointerEvent): void {
@@ -94,36 +82,9 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
             style={{ ...menuStyle, top: pos.y, left: pos.x }}
             role="menu"
         >
-            {items.map((item) => {
-                const h = hovered === item.label && !item.disabled;
-                return (
-                    <button
-                        key={item.label}
-                        data-testid="context-menu-item"
-                        role="menuitem"
-                        title={item.title}
-                        style={{
-                            ...itemBase,
-                            ...(item.danger ? { color: t.RED_TEXT } : {}),
-                            ...(item.disabled ? { color: t.TEXT_FAINT, cursor: 'default' } : {}),
-                            ...(h && item.danger
-                                ? { background: t.RED_BG }
-                                : h
-                                  ? { background: t.HOVER }
-                                  : {}),
-                        }}
-                        disabled={item.disabled}
-                        onMouseEnter={() => setHovered(item.label)}
-                        onMouseLeave={() => setHovered(null)}
-                        onClick={() => {
-                            onClose();
-                            item.onSelect();
-                        }}
-                    >
-                        {item.label}
-                    </button>
-                );
-            })}
+            {items.map((item) => (
+                <ContextMenuItem key={item.label} item={item} onClose={onClose} />
+            ))}
         </div>
     );
 }

@@ -23,17 +23,17 @@ not an objection.
 
 | File | Owns |
 |---|---|
-| `main.ts` | transport (WebSocket, heartbeat), the connection registry, command handlers |
-| `connection.ts` | one server connection; per-database clients; the page SQL for browsing |
+| `main.ts` | transport (WebSocket, heartbeat) and dispatch: assembles `COMMANDS` by spreading each `commands*.ts` file's `Pick<Handlers, ...>` slice. `commandTypes.ts` holds the shared `Handlers`/`Send` types. `commandsConnectionCore.ts` is the connection registry and `establish`; `commandsConnection.ts` is the `db.*` handlers that use it (split further into table-catalog/schema-catalog/query sub-groups internally); `commandsSaved.ts`, `commandsWorkspaces.ts`, `commandsAws.ts`, `commandsWindow.ts`, `commandsMisc.ts` (saved queries, conversations, settings, `app.dataDir`), `commandsUpdater.ts`, `commandsAssistant.ts` are the rest, one file per comment-delimited domain the handlers already had |
+| `connection.ts` | one server connection: opens it, verifies it, and assembles the returned `ConnectionHandle` by spreading method groups from its siblings — `connectionState.ts` (per-database clients, the drop/retry plumbing), `connectionCatalogMethods.ts` (the thin listing/DDL passthroughs), `connectionQueryMethods.ts` (`query` and `browse` — the page SQL), `connectionWriteMethods.ts` (`write`), `connectionLifecycleMethods.ts` (`setReadOnly`, `close`); `connectionTypes.ts` holds the `ConnectionHandle`/`TableRows` shapes all of them share |
 | `drivers/` | the engine layer: the contract, the shared assemblers, the dispatch, and one file per engine's SQL and value handling |
-| `store.ts` | workspaces and saved connections: the SQLite file, the rows, and the password encryption |
+| `store.ts` | re-exports the split below and owns `closeStore` (tests only), which resets both halves of the singleton state. `storeCore.ts` is the SQLite handle, the row shapes, and the default-workspace/-environment invariants; `storeCrypto.ts` is the password encryption; `storeConnections.ts` is the saved-connection CRUD (`writeConnection` is the one write of that table, reused by `storeImport.ts`); `storeWorkspaces.ts`, `storeEnvironments.ts`, `storeSettings.ts`, `storeStars.ts`, `storeQueries.ts`, `storeSessions.ts`, `storeConversations.ts` are each the one table they name |
 | `transfer.ts` | the connections file: what an export writes, what an import reads, and the validation between |
 | `migrations/` | the store's schema, one file per change, plus the runner that brings a file up to it |
-| `chrome.ts` | the window frame: its colour, the maximise clamp, and injecting the chrome DLL that reclaims the non-client area — all over `bun:ffi`. Windows-only, best-effort |
+| `chrome.ts` (+ `chromeLibs.ts`) | the window frame: its colour, the maximise clamp, and injecting the chrome DLL that reclaims the non-client area — all over `bun:ffi`. Windows-only, best-effort. `chromeLibs.ts` is only the three `dlopen` calls, split out for length |
 | `log.ts` | levelled, timestamped logging to a bounded file on disk |
-| `updater.ts` | the user-initiated updater: the release check, the verified download, and the swap — Windows' installer, macOS' own script |
+| `updater.ts` | the user-initiated updater: `checkForUpdate`/`downloadUpdate`/`applyUpdate` and the pending-update slot, re-exporting the pure pieces below for the unit tests. `updaterHelpers.ts` is the deterministic logic (`compareVersions`, `verifyEd25519`, `selectAssets`, `parseChecksum`); `updaterDownload.ts` is the progress-reporting fetch; `updaterWindowsApply.ts` / `updaterDarwinApply.ts` are each platform's swap script |
 | `updateKey.ts` | the committed ed25519 public key the download's signature is checked against |
-| `assistant.ts` | the assistant's half that cannot live in the webview: the API key in the keychain, the four providers, the catalog, and one streaming turn |
+| `assistant.ts` | the assistant's half that cannot live in the webview, split by concern: `assistant.ts` itself keeps `send`/`cancel` and re-exports the rest; `assistantCredential.ts` is the keychain (`connect`/`disconnect`/`status`); `assistantCatalog.ts` is `models`/`fetchModels`; `assistantEndpoints.ts` is the `ENDPOINTS` table and Anthropic's constants; `assistantFailure.ts` turns a bad response into the right error; `assistantStream.ts` is the SSE framing both wire formats share; `assistantOpenAiWire.ts` / `assistantAnthropicWire.ts` are each provider's own request shape and stream reader. `assistantCredential.ts` and `assistantCatalog.ts` import from each other (`connect` verifies a key by calling `fetchModels`; `models` resolves the stored key by calling `credentialOrThrow`) — safe because both calls happen inside function bodies, never at module load |
 
 The split matters: `main.ts` knows nothing about SQL, `drivers/` knows nothing
 about the transport, and `store.ts` and `chrome.ts` know nothing about either.
@@ -43,20 +43,56 @@ about the transport, and `store.ts` and `chrome.ts` know nothing about either.
 | File | Owns |
 |---|---|
 | `driver.ts` | the contract: `Driver<C>`, `Relation`, `TableMeta`, `QueryOutcome` |
-| `common.ts` | what every engine leans on and none of them may spell differently: `toDisplayValue`, `pickRowKey`, `pickForeignKeys`, `runWrites`, `buildWhere`, `orderByClause`, `selectExpressionAt`, the TLS options |
-| `mysql.ts`, `postgres.ts`, `sqlite.ts` | one engine each: its SQL, its catalog queries, its quoting, and its library's quirks |
+| `common.ts` | a re-export barrel over `commonValues.ts` (`toDisplayValue`, the TLS options), `commonCatalog.ts` (`pickRowKey`, `pickForeignKeys`, `assembleDiagram`), `commonWrites.ts` (`runWrites`), `commonQuery.ts` (`buildWhere`, `orderByClause`, `selectExpressionAt`) — split for length, never for meaning; every engine still imports `common.ts` itself |
+| `mysql.ts`, `postgres.ts`, `sqlite.ts` | one engine each, assembled by spreading a handful of `Pick<Driver<C>, ...> & ThisType<Driver<C>>` objects from sibling `<engine>Lifecycle.ts` / `<engine>Catalog.ts` / `<engine>Ddl.ts` (/ `<engine>Relationships.ts` where `listRelationships` alone needs the room) files into one object literal — see *Splitting an engine file* below |
 | `index.ts` | the barrel: `withDriver`, and the contract re-exported |
 
 **Import `drivers/index.ts`, never a file beside it** — the same rule
 `shared/protocol/` follows, and for the same reason: a helper can move between
 `common.ts` and an engine without touching a caller. The engine files are the one
 exception, importing `driver.ts` and `common.ts` directly, because importing the
-barrel that imports them would be the cycle.
+barrel that imports them would be the cycle. This exception is by *file*, not by
+symbol: `postgres.ts`'s own split-out siblings (`postgresCatalog.ts` and friends)
+are outside the barrel rule too, since nothing outside `postgres.ts` imports them.
 
 An engine file knows nothing of the other two. Anything two of them would
 otherwise both spell is a `common.ts` assembler taking `quoteIdent` and
 `placeholder` as callbacks — that is what keeps "how a filter is built" from
 having three answers.
+
+#### Splitting an engine file
+
+`mysql.ts`, `postgres.ts` and `sqlite.ts` each assemble their exported
+`Driver<C>` as one object literal built from object spreads:
+
+```ts
+export const mysqlDriver: Driver<MysqlConnection> = {
+    defaultPort: 3306,
+    dialect: 'mysql',
+    ...mysqlLifecycle,
+    ...mysqlCatalog,
+    ...mysqlDdl,
+    async query(client, sql, params) { /* stays here: not worth its own file */ },
+    // ...
+};
+```
+
+Each `...mysqlX` piece is defined in its own sibling file as
+`Pick<Driver<C>, 'methodName' | ...> & ThisType<Driver<C>>` — the `Pick` says
+which contract methods live there, and the `ThisType` intersection is what lets
+a method call `this.qualify(...)`/`this.quoteIdent(...)`/`this.placeholder(...)`
+and have it type-check against the *whole* driver rather than only the methods
+in that one file, without adding a real `this` parameter. That distinction
+matters here specifically because this repo's `max-params` counts an explicit
+`this` parameter as one of the four — a method already at the cap (e.g.
+`triggerDdl`'s `client, database, relation, trigger`) would trip the warning
+the moment a `this: Driver<C>` parameter was added just to satisfy the type
+checker. `ThisType` gets the same typing with no parameter at all.
+
+Nothing about this changes at runtime: object-literal shorthand methods bind
+`this` to whatever they are called on, not to where they were written, so
+spreading pieces from four files into one object leaves every cross-method call
+exactly as it was.
 
 ## Adding an engine
 

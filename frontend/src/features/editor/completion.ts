@@ -148,6 +148,51 @@ const tableItem = (
 };
 
 /**
+ * After a dot, the qualifier is the entire question, and it is one of two: a
+ * table or alias, whose columns are the answer (`u.` -> that table's columns
+ * and nothing else, since keywords cannot follow a dot); or a schema, whose
+ * relations are (`public.` -> the tables in `public`). Either way keywords
+ * are suppressed -- they would bury the answer under words the dot has
+ * already ruled out.
+ */
+function qualifiedSuggestions(
+    qualifier: string,
+    options: {
+        scope: ReturnType<typeof scanScope>;
+        tables: TableInfo[];
+        columnsFor: (table: string) => ColumnInfo[] | null;
+        range: monaco.IRange;
+        insertName: (name: string) => string;
+    },
+): monaco.languages.CompletionItem[] {
+    const { scope, tables, columnsFor, range, insertName } = options;
+    const table = resolveQualifier(qualifier, scope);
+    const columns = table ? columnsFor(table) : null;
+    // A resolved table with its columns in hand: those are the answer.
+    if (columns && columns.length > 0) {
+        return columns.map((c) => columnItem(c, range, c.dataType, insertName));
+    }
+    // Otherwise the qualifier may be a schema, and `public.` is then asking
+    // for the relations in it, named bare because the schema is already
+    // typed. This has to come second, not first: a name ending in a dot in
+    // the FROM (`FROM public.`) is scanned as a bogus table, so `resolveQualifier`
+    // claims `public` as a table -- but the catalog has no columns for it, so
+    // an empty column answer is the tell that the schema was meant. A real
+    // table sharing a schema's name keeps its columns, since those land here
+    // non-empty and never reach this branch.
+    const inSchema = tables.filter(
+        (t) => t.schema !== undefined && t.schema.toLowerCase() === qualifier.toLowerCase(),
+    );
+    if (inSchema.length > 0) {
+        return inSchema.map((t) => tableItem(t, range, { table: t.name }, insertName));
+    }
+    // A real table whose columns have not landed yet, or a qualifier that is
+    // neither table nor schema: an empty popup that closes on the next key,
+    // never the whole dialect suggested at a dot.
+    return [];
+}
+
+/**
  * Builds the provider. `snapshot` is called per request, never captured.
  */
 export function sqlCompletionProvider(
@@ -173,50 +218,17 @@ export function sqlCompletionProvider(
             const quoteAlreadyOpen = line[range.startColumn - 2] === identifierQuote(dialect);
             const insertName = namer(dialect, quoteAlreadyOpen);
 
-            /*
-             * After a dot, the qualifier is the entire question, and it is one of two:
-             * a table or alias, whose columns are the answer (`u.` -> that table's
-             * columns and nothing else, since keywords cannot follow a dot); or a
-             * schema, whose relations are (`public.` -> the tables in `public`). Either
-             * way keywords are suppressed -- they would bury the answer under words the
-             * dot has already ruled out.
-             */
             const qualifier = qualifierAt(line);
             if (qualifier) {
-                const table = resolveQualifier(qualifier, scope);
-                const columns = table ? columnsFor(table) : null;
-                // A resolved table with its columns in hand: those are the answer.
-                if (columns && columns.length > 0) {
-                    return {
-                        suggestions: columns.map((c) =>
-                            columnItem(c, range, c.dataType, insertName),
-                        ),
-                    };
-                }
-                // Otherwise the qualifier may be a schema, and `public.` is then asking
-                // for the relations in it, named bare because the schema is already
-                // typed. This has to come second, not first: a name ending in a dot in
-                // the FROM (`FROM public.`) is scanned as a bogus table, so `resolveQualifier`
-                // claims `public` as a table -- but the catalog has no columns for it, so
-                // an empty column answer is the tell that the schema was meant. A real
-                // table sharing a schema's name keeps its columns, since those land here
-                // non-empty and never reach this branch.
-                const inSchema = tables.filter(
-                    (t) =>
-                        t.schema !== undefined &&
-                        t.schema.toLowerCase() === qualifier.toLowerCase(),
-                );
-                if (inSchema.length > 0) {
-                    return {
-                        suggestions: inSchema.map((t) =>
-                            tableItem(t, range, { table: t.name }, insertName),
-                        ),
-                    };
-                }
-                // A real table whose columns have not landed yet, or a qualifier that is
-                // neither table nor schema: an empty popup that closes on the next key,
-                // never the whole dialect suggested at a dot.
-                return { suggestions: [] };
+                return {
+                    suggestions: qualifiedSuggestions(qualifier, {
+                        scope,
+                        tables,
+                        columnsFor,
+                        range,
+                        insertName,
+                    }),
+                };
             }
 
             const suggestions: monaco.languages.CompletionItem[] = [];

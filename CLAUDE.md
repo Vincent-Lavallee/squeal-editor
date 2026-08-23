@@ -64,10 +64,17 @@ These are load-bearing. Each one cost real debugging; see `docs/decisions.md`.
 ## Rules
 
 - Never, ever add yourself as a co-author.
-- Avoid comments if possible. Code should be self describing (eg Name variables appropriately. Extract if conditions into variables for easier understanding.). So avoid JSDOC at all cost and make the core more self readable
+- Very important, always avoid comments / jsdoc. Code should be self describing eg: Name variables appropriately (I don't mind longer names). Extract if conditions into variables for easier understanding. Comment should be for uncommon code pattern that are hard to self-describe (should be very rare).
 - Never commit by yourself unless asked to
 - Run `bun run lint` / `bun run format` before calling a change done; see
   `docs/decisions.md` for what each rule enforces and why. The 200-line file /
   60-line function caps are errors but the repo isn't clean against them yet —
   that cleanup is its own pass, so a violation in a file you didn't touch isn't
   yours to fix.
+- One file per component, do not bundle multiple hooks/components within the same file
+- If a function has over 3 parameters, prefer passing an object instead as a single parameter
+- A subfeature gets its own subfolder within its feature folder (e.g. the
+  assistant's tool definitions live in `features/assistant/tools/`, not loose
+  in `features/assistant/`)
+- Hooks get their own `hooks/` subfolder within whichever folder owns them —
+  a feature, `common/`, or a subfeature (e.g. `features/sidebar/hooks/`)

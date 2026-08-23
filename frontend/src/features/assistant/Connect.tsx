@@ -14,13 +14,15 @@
 
 import { useState } from 'react';
 
-import Button from '../../common/components/Button.tsx';
 import Callout from '../../common/components/Callout.tsx';
 import Field from '../../common/components/Field.tsx';
 import Input from '../../common/components/Input.tsx';
 import Select from '../../common/components/Select.tsx';
 import * as t from '../../common/tokens';
 import { AI_PROVIDERS, type AiProvider, type AiStatus } from '../../../../shared/protocol/index.ts';
+import AiConnectActions from './AiConnectActions.tsx';
+import AiConnectIntro from './AiConnectIntro.tsx';
+import AiKeyStatusNotice from './AiKeyStatusNotice.tsx';
 
 interface Props {
     status: AiStatus;
@@ -49,37 +51,8 @@ export default function Connect({ status, connecting, error, onConnect }: Props)
 
     return (
         <div style={wrap} data-testid="ai-connect">
-            {status.state === 'unavailable' ? (
-                <Callout>
-                    The stored key could not be read.
-                    {status.reason ? (
-                        <div
-                            style={{
-                                marginTop: t.GAP_SM,
-                                fontFamily: t.MONO,
-                                wordBreak: 'break-word',
-                            }}
-                        >
-                            {status.reason}
-                        </div>
-                    ) : null}
-                </Callout>
-            ) : null}
-
-            <p>
-                Bring your own API key. It is kept in this machine&rsquo;s keychain, and the
-                requests go straight from this app to the provider — nothing passes through anyone
-                else.
-            </p>
-
-            {/* Said before they go looking, not after they come back empty-handed: the
-          two are sold under the same brand and only one of them has an API key
-          behind it, which is the single most likely way this screen wastes
-          somebody's afternoon. */}
-            <p style={{ color: t.TEXT_FAINT, fontSize: t.TEXT_BADGE }}>
-                This needs a <em>developer API key</em>, billed per token. A ChatGPT Plus or Claude
-                Pro subscription is a different product and does not include one.
-            </p>
+            <AiKeyStatusNotice status={status} />
+            <AiConnectIntro />
 
             <Field label="Provider">
                 <Select
@@ -107,23 +80,12 @@ export default function Connect({ status, connecting, error, onConnect }: Props)
                 />
             </Field>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP }}>
-                <Button
-                    variant="primary"
-                    onClick={submit}
-                    disabled={!key.trim() || connecting}
-                    data-testid="ai-connect-submit"
-                >
-                    {connecting ? 'Checking…' : 'Connect'}
-                </Button>
-                <Button
-                    variant="ghost"
-                    onClick={() => void Neutralino.os.open(chosen.keysUrl)}
-                    data-testid="ai-get-key"
-                >
-                    Get a {chosen.label} key
-                </Button>
-            </div>
+            <AiConnectActions
+                provider={chosen}
+                connecting={connecting}
+                disabled={!key.trim() || connecting}
+                onSubmit={submit}
+            />
 
             {/* The provider's own words, not a rewrite of them: "this key is not
           funded" and "this key is not a key" are two different errands. */}

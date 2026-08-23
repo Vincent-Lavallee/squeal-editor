@@ -1,29 +1,42 @@
-import { createSlice, isAnyOf, type PayloadAction } from '@reduxjs/toolkit';
-import { useCallback } from 'react';
+import {
+    createSlice,
+    isAnyOf,
+    type ActionReducerMapBuilder,
+    type PayloadAction,
+} from '@reduxjs/toolkit';
 
 import type {
     ConnectionColorId,
     ConnectionState,
     ConnectProgress,
-    ConnectionConfig,
     Environment,
     ServerConfig,
     SqlDialect,
 } from '../../../shared/protocol/index.ts';
-import { call } from '../common/bridge/bridge.ts';
 import { isFileBased } from '../common/db/engines.ts';
-import { useAppDispatch, useAppSelector } from './hooks.ts';
 import type { RootState } from './index.ts';
-import { parseSnapshot, type SessionSnapshot } from './sessionSnapshot.ts';
-import { createAppThunk, errorMessage } from './thunk.ts';
+import {
+    cancelConnect,
+    connect,
+    connectSaved,
+    disconnect,
+    saveSession,
+    sessionOpened,
+    setReadOnly,
+    type Opened,
+} from './sessionThunks.ts';
 
-let connectController: AbortController | null = null;
-
-/** Abort the connection attempt in flight so the UI can move on immediately. */
-export function cancelConnect(): void {
-    connectController?.abort();
-    connectController = null;
-}
+export {
+    cancelConnect,
+    connect,
+    connectSaved,
+    disconnect,
+    saveSession,
+    sessionOpened,
+    setReadOnly,
+    type Opened,
+};
+export { useSession } from './sessionHooks.ts';
 
 /**
  * One open connection: a server we are holding, and how it reads.
@@ -159,198 +172,6 @@ const initialState: SessionState = {
     awsCredentialsFailed: false,
 };
 
-/**
- * Both connect paths resolve to the same shape, which is what lets one set of
- * matchers below reduce them: the difference is only where the password and the
- * environment came from, and by this point neither has a password.
- */
-interface Opened extends Omit<OpenConnection, 'lostReason'> {
-    databases: string[];
-    /**
-     * The tabs this connection had open last time, for `tabsSlice` to restore --
-     * present only on the saved path, since a connection typed out fresh has none
-     * stored. It rides the payload the way `databases` does and is consumed by
-     * `tabsSlice`'s `sessionOpened` matcher; the session state itself keeps none of
-     * it. `undefined` on `connect`, `null` on a saved connection with nothing stored.
-     */
-    session?: SessionSnapshot | null;
-}
-
-/**
- * Connect to a server the user just typed out and saved.
- *
- * The name, environment and workspace are the form's rather than the extension's:
- * this path connects a row the UI has in hand, so it labels the session from what
- * it already knows rather than reading it back over the bridge. None of the three
- * crosses toward the extension on `db.connect` -- it has no use for them, and a
- * field it ignores is a field that would drift. They ride the payload the same
- * way, which is exactly how `connectSaved` gets them back off the stored row.
- */
-export const connect = createAppThunk(
-    'session/connect',
-    async (
-        arg: {
-            config: ConnectionConfig;
-            name: string;
-            environment: Environment;
-            workspaceId: string;
-            color: ConnectionColorId;
-            readOnly: boolean;
-            /** The row `submitNew` just saved, before ever reaching this thunk. */
-            savedConnectionId: string;
-        },
-        { rejectWithValue },
-    ): Promise<Opened | ReturnType<typeof rejectWithValue>> => {
-        const controller = new AbortController();
-        connectController = controller;
-        try {
-            const res = await call(
-                'db.connect',
-                { config: arg.config, readOnly: arg.readOnly },
-                60_000,
-                controller.signal,
-            );
-            const { password: _password, ...server } = arg.config;
-            return {
-                connectionId: res.connectionId,
-                savedConnectionId: arg.savedConnectionId,
-                config: server,
-                databases: res.databases,
-                dialect: res.dialect,
-                defaultSchema: res.defaultSchema,
-                name: arg.name,
-                workspaceId: arg.workspaceId,
-                color: arg.color,
-                environment: arg.environment,
-                readOnly: arg.readOnly,
-            };
-        } catch (err) {
-            return rejectWithValue(errorMessage(err));
-        } finally {
-            if (connectController === controller) connectController = null;
-        }
-    },
-);
-
-/**
- * Connect to a stored one. The extension decrypts its own password, so
- * `password` is only for connections that store none.
- */
-export const connectSaved = createAppThunk(
-    'session/connectSaved',
-    async (
-        arg: { id: string; password?: string },
-        { rejectWithValue },
-    ): Promise<Opened | ReturnType<typeof rejectWithValue>> => {
-        const controller = new AbortController();
-        connectController = controller;
-        try {
-            const res = await call('db.saved.connect', arg, 60_000, controller.signal);
-            return {
-                connectionId: res.connectionId,
-                savedConnectionId: arg.id,
-                config: res.config,
-                databases: res.databases,
-                dialect: res.dialect,
-                defaultSchema: res.defaultSchema,
-                name: res.name,
-                workspaceId: res.workspaceId,
-                color: res.color,
-                environment: res.environment,
-                readOnly: res.readOnly,
-                // Parsed here rather than in the reducer, so `tabsSlice` receives a shape
-                // and not a string to decode -- the same reason the filter is echoed into
-                // `browseTable`'s payload already parsed.
-                session: parseSnapshot(res.session),
-            };
-        } catch (err) {
-            return rejectWithValue(errorMessage(err));
-        } finally {
-            if (connectController === controller) connectController = null;
-        }
-    },
-);
-
-/**
- * "A connection opened", whichever path opened it.
- *
- * Other slices must react to *this*, never to one connect thunk. When saved
- * connections arrived, the explorer was matching `connect.fulfilled` alone and
- * silently stopped receiving the database list -- the tree came up empty
- * against a perfectly good connection. A third path (IAM) would have done it
- * again. Adding a connect path means adding it here, and nowhere else.
- *
- * **It means "one more", not "instead of".** It used to be the event that wiped
- * every slice, back when there was only ever one connection to wipe. Reducing it
- * that way now would close every tab you had open the moment you opened a second
- * server -- which is the whole thing this feature exists to stop.
- */
-export const sessionOpened = isAnyOf(connect.fulfilled, connectSaved.fulfilled);
-
-/**
- * Close one connection, and take everything keyed by it with it.
- *
- * Resolves even when the extension refuses: the local session is over either
- * way, and stranding the user on a dead connection helps nobody.
- *
- * The tab ids ride along in the payload because they are what every other slice
- * needs to drop and none of them can see `tabsSlice` to work them out. It is the
- * same shape as `sessionOpened` handing `databases` to the explorer: one event,
- * carrying what its readers need.
- */
-export const disconnect = createAppThunk(
-    'session/disconnect',
-    async (connectionId: string, { getState }) => {
-        const tabIds = getState()
-            .tabs.tabs.filter((t) => t.connectionId === connectionId)
-            .map((t) => t.id);
-        await call('db.disconnect', { connectionId }).catch(() => undefined);
-        return { connectionId, tabIds };
-    },
-    {
-        condition: (connectionId, { getState }) =>
-            getState().session.connections[connectionId] !== undefined,
-    },
-);
-
-/**
- * Persist a connection's open tabs, so reconnecting reopens them.
- *
- * A thin bridge wrapper: the snapshot is already serialised and already diffed
- * against what was last saved by the session-sync listener, which is the only
- * caller. It lands in no slice -- the saved shape is the extension's copy of what
- * the store already holds, so there is nothing to keep here and a failure is not
- * worth surfacing: the next change re-saves, and a preference that did not persist
- * is a smaller harm than a banner over an action the user did not take.
- */
-export const saveSession = createAppThunk(
-    'session/saveSession',
-    async (arg: { savedConnectionId: string; session: string }) => {
-        await call('db.session.save', arg).catch(() => undefined);
-        return arg;
-    },
-);
-
-/**
- * Turn read-only on or off for one open connection.
- *
- * The flip lands on `fulfilled`, not optimistically: read-only is a promise the
- * server is keeping, so the lock only closes once the extension confirms it
- * reached every client. A failed toggle leaves the connection as it was and the
- * error where the action was taken.
- */
-export const setReadOnly = createAppThunk(
-    'session/setReadOnly',
-    async (arg: { connectionId: string; readOnly: boolean }, { rejectWithValue }) => {
-        try {
-            await call('db.readonly', arg);
-            return arg;
-        } catch (err) {
-            return rejectWithValue(errorMessage(err));
-        }
-    },
-);
-
 const sessionSlice = createSlice({
     name: 'session',
     initialState,
@@ -390,86 +211,94 @@ const sessionSlice = createSlice({
                 next === 'lost' ? (reason ?? 'The server closed the connection.') : null;
         },
     },
+    // Typing a server and picking a saved one differ only in how the extension was
+    // told the password, so `buildConnectAttemptReducers` reduces them identically.
     extraReducers: (builder) => {
-        // Typing a server and picking a saved one differ only in how the extension
-        // was told the password, so they reduce identically. addCase must come
-        // before addMatcher.
-        builder
-            .addCase(disconnect.fulfilled, (state, action) => {
-                const { connectionId } = action.payload;
-                delete state.connections[connectionId];
-                state.order = state.order.filter((id) => id !== connectionId);
-
-                // Closing the one you are looking at hands you its neighbour, the same
-                // answer a closing tab gives -- and null is a real answer: the last one
-                // going means the connect screen, not a connection conjured back.
-                if (state.activeConnectionId === connectionId) {
-                    state.activeConnectionId = state.order[state.order.length - 1] ?? null;
-                }
-            })
-            .addCase(setReadOnly.fulfilled, (state, action) => {
-                const { connectionId, readOnly } = action.payload;
-                const conn = state.connections[connectionId];
-                // A toggle in flight when its connection closed finds nothing and no-ops.
-                if (conn) conn.readOnly = readOnly;
-            })
-            .addMatcher(isAnyOf(connect.pending, connectSaved.pending), (state) => {
-                state.connecting = true;
-                state.connectingPhase = null;
-                state.connectingStartedAt = Date.now();
-                state.error = null;
-                state.awsCredentialsFailed = false;
-            })
-            .addMatcher(sessionOpened, (state, action) => {
-                const {
-                    connectionId,
-                    savedConnectionId,
-                    config,
-                    dialect,
-                    defaultSchema,
-                    name,
-                    workspaceId,
-                    color,
-                    environment,
-                    readOnly,
-                } = action.payload;
-                state.connecting = false;
-                state.connectingPhase = null;
-                state.connectingStartedAt = null;
-                state.connections[connectionId] = {
-                    connectionId,
-                    savedConnectionId,
-                    config,
-                    dialect,
-                    defaultSchema,
-                    name,
-                    workspaceId,
-                    color,
-                    environment,
-                    readOnly,
-                    lostReason: null,
-                };
-                state.order.push(connectionId);
-                // Opening one puts you on it. Anything else means connecting to a server
-                // and then having to go and find it.
-                state.activeConnectionId = connectionId;
-                // The database this opens on is picked by `tabsSlice`, which creates the
-                // first tab off this same event and is what holds a database now.
-            })
-            .addMatcher(isAnyOf(connect.rejected, connectSaved.rejected), (state, action) => {
-                state.connecting = false;
-                // Read before the phase is cleared, and never for a cancel: the user
-                // stopping an attempt mid-token is not the credentials being wrong, and
-                // offering them a sign-in for it would be answering a question they
-                // withdrew.
-                state.awsCredentialsFailed =
-                    state.connectingPhase === 'iam-token' && action.payload !== 'Cancelled.';
-                state.connectingPhase = null;
-                state.connectingStartedAt = null;
-                state.error = action.payload ?? 'Could not connect.';
-            });
+        buildConnectionClosedReducers(builder);
+        buildConnectAttemptReducers(builder);
     },
 });
+
+function buildConnectionClosedReducers(builder: ActionReducerMapBuilder<SessionState>): void {
+    builder
+        .addCase(disconnect.fulfilled, (state, action) => {
+            const { connectionId } = action.payload;
+            delete state.connections[connectionId];
+            state.order = state.order.filter((id) => id !== connectionId);
+
+            // Closing the one you are looking at hands you its neighbour, the same
+            // answer a closing tab gives -- and null is a real answer: the last one
+            // going means the connect screen, not a connection conjured back.
+            if (state.activeConnectionId === connectionId) {
+                state.activeConnectionId = state.order[state.order.length - 1] ?? null;
+            }
+        })
+        .addCase(setReadOnly.fulfilled, (state, action) => {
+            const { connectionId, readOnly } = action.payload;
+            const conn = state.connections[connectionId];
+            // A toggle in flight when its connection closed finds nothing and no-ops.
+            if (conn) conn.readOnly = readOnly;
+        });
+}
+
+function buildConnectAttemptReducers(builder: ActionReducerMapBuilder<SessionState>): void {
+    builder
+        .addMatcher(isAnyOf(connect.pending, connectSaved.pending), (state) => {
+            state.connecting = true;
+            state.connectingPhase = null;
+            state.connectingStartedAt = Date.now();
+            state.error = null;
+            state.awsCredentialsFailed = false;
+        })
+        .addMatcher(sessionOpened, (state, action) => {
+            const {
+                connectionId,
+                savedConnectionId,
+                config,
+                dialect,
+                defaultSchema,
+                name,
+                workspaceId,
+                color,
+                environment,
+                readOnly,
+            } = action.payload;
+            state.connecting = false;
+            state.connectingPhase = null;
+            state.connectingStartedAt = null;
+            state.connections[connectionId] = {
+                connectionId,
+                savedConnectionId,
+                config,
+                dialect,
+                defaultSchema,
+                name,
+                workspaceId,
+                color,
+                environment,
+                readOnly,
+                lostReason: null,
+            };
+            state.order.push(connectionId);
+            // Opening one puts you on it. Anything else means connecting to a server
+            // and then having to go and find it.
+            state.activeConnectionId = connectionId;
+            // The database this opens on is picked by `tabsSlice`, which creates the
+            // first tab off this same event and is what holds a database now.
+        })
+        .addMatcher(isAnyOf(connect.rejected, connectSaved.rejected), (state, action) => {
+            state.connecting = false;
+            // Read before the phase is cleared, and never for a cancel: the user
+            // stopping an attempt mid-token is not the credentials being wrong, and
+            // offering them a sign-in for it would be answering a question they
+            // withdrew.
+            state.awsCredentialsFailed =
+                state.connectingPhase === 'iam-token' && action.payload !== 'Cancelled.';
+            state.connectingPhase = null;
+            state.connectingStartedAt = null;
+            state.error = action.payload ?? 'Could not connect.';
+        });
+}
 
 export const {
     errorDismissed,
@@ -502,94 +331,3 @@ export const selectActiveConnection = (s: RootState): OpenConnection | null =>
 /** Every open connection, in the order the rail draws them. */
 export const selectConnections = (s: RootState): OpenConnection[] =>
     s.session.order.map((id) => s.session.connections[id]!);
-
-/**
- * The active connection's fields, flattened.
- *
- * Most callers only ever mean "the one in front" -- the editor's dialect, the
- * titlebar's server -- so they read it here and never learn that there are
- * others. The rail is what reads `connections`.
- */
-export function useSession() {
-    const dispatch = useAppDispatch();
-    const {
-        connecting,
-        connectingPhase,
-        connectingStartedAt,
-        error,
-        awsCredentialsFailed,
-        activeConnectionId,
-    } = useAppSelector((s) => s.session);
-    const active = useAppSelector(selectActiveConnection);
-    const connections = useAppSelector(selectConnections);
-
-    return {
-        connections,
-        activeConnectionId,
-        connectionId: activeConnectionId,
-        config: active?.config ?? null,
-        // Plain SQL until a server says otherwise: the editor exists before a
-        // session does, and outlives the last one closing.
-        dialect: active?.dialect ?? 'sql',
-        // Undefined until a server says otherwise, which reads as "nothing to leave
-        // off a name" -- the same answer an engine without schemas gives.
-        defaultSchema: active?.defaultSchema,
-        environment: active?.environment ?? null,
-        name: active?.name ?? '',
-        readOnly: active?.readOnly ?? false,
-        /** Why the connection in front is not reachable, or null while it is. */
-        lostReason: active?.lostReason ?? null,
-        connecting,
-        connectingPhase,
-        connectingStartedAt,
-        error,
-        awsCredentialsFailed,
-        connected: activeConnectionId !== null,
-        serverLabel: active ? serverLabel(active.config) : '',
-        connect: useCallback(
-            (
-                config: ConnectionConfig,
-                name: string,
-                environment: Environment,
-                workspaceId: string,
-                color: ConnectionColorId,
-                readOnly: boolean,
-                savedConnectionId: string,
-            ) =>
-                dispatch(
-                    connect({
-                        config,
-                        name,
-                        environment,
-                        workspaceId,
-                        color,
-                        readOnly,
-                        savedConnectionId,
-                    }),
-                ),
-            [dispatch],
-        ),
-        connectSaved: useCallback(
-            (id: string, password?: string) => dispatch(connectSaved({ id, password })),
-            [dispatch],
-        ),
-        /** Defaults to the one in front, which is what a titlebar's Disconnect means. */
-        disconnect: useCallback(
-            (connectionId?: string) => {
-                const id = connectionId ?? activeConnectionId;
-                if (id) void dispatch(disconnect(id));
-            },
-            [dispatch, activeConnectionId],
-        ),
-        activate: useCallback(
-            (connectionId: string) => dispatch(connectionActivated({ connectionId })),
-            [dispatch],
-        ),
-        setReadOnly: useCallback(
-            (connectionId: string, readOnly: boolean) =>
-                dispatch(setReadOnly({ connectionId, readOnly })),
-            [dispatch],
-        ),
-        dismissError: useCallback(() => dispatch(errorDismissed()), [dispatch]),
-    };
-}

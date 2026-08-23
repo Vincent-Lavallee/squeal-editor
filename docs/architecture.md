@@ -38,6 +38,7 @@ shared/protocol/      the contract, split by domain; both sides import index.ts
   results.ts          rows, the catalog's view of them, and edits going back
   updater.ts          the release check and download progress
   commands.ts         the Commands map: every verb, with its req and res
+  commands/           commands.ts split by sub-domain: db, savedConnections, store, system
   events.ts           the channel's own names and reply envelope
 frontend/             React + Vite → builds into resources/
   src/App.tsx         the composition root: routing and update banner
