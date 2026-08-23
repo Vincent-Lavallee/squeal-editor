@@ -99,6 +99,28 @@ jobs:
             - uses: actions/checkout@v4
             - uses: oven-sh/setup-bun@v2
             - run: bun install
+            # Every GitHub-hosted Windows runner runs job steps elevated, and
+            # WebView2 150+ has a confirmed, unresolved regression where the CDP
+            # port never binds on an elevated process
+            # (MicrosoftEdge/WebView2Feedback#5640) -- verified directly here: the
+            # app and its msedgewebview2.exe children all launch fine, nothing
+            # ever listens on the port. The only known workaround is pinning to
+            # the last known-good Fixed Version (149.0.4022.98) via the
+            # BrowserExecutableFolder policy. ProKn1fe/WebView2.Runtime republishes
+            # Fixed Version builds as ordinary NuGet packages, so this is just an
+            # unzip and a registry value. Revisit -- and drop this step -- once
+            # Microsoft ships a real fix; see docs/decisions.md.
+            - name: Pin WebView2 to the last version without the elevated-CDP regression
+              run: |
+                  $ProgressPreference = 'SilentlyContinue'
+                  $version = '149.0.4022.98'
+                  $nupkg = "$env:RUNNER_TEMP\webview2-fixed.zip"
+                  $dest = "$env:RUNNER_TEMP\webview2-fixed"
+                  curl.exe -sL -o $nupkg "https://api.nuget.org/v3-flatcontainer/webview2.runtime.x64/$version/webview2.runtime.x64.$version.nupkg"
+                  Expand-Archive -Path $nupkg -DestinationPath $dest -Force
+                  $runtimeFolder = "$dest\contentFiles\any\any\WebView2"
+                  New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\BrowserExecutableFolder' -Force | Out-Null
+                  Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\BrowserExecutableFolder' -Name '*' -Value $runtimeFolder
             - uses: ikalnytskyi/action-setup-postgres@v8
               with:
                   username: postgres
@@ -113,33 +135,6 @@ jobs:
             - run: bun run test:db:up
               env:
                   SQUEAL_TEST_DB_NATIVE: '1'
-            # TEMPORARY: bun run test:ui waited 120 real seconds for CDP with
-            # zero response -- too long to be a cold-start issue. The prior run
-            # of this diagnostic confirmed msedgewebview2 processes come up fine
-            # but nothing ever binds :9333, which matches Chrome/Edge 136+
-            # silently ignoring --remote-debugging-port on the *default* profile
-            # directory (developer.chrome.com/blog/remote-debugging-port).
-            # Testing the documented fix -- a non-default WEBVIEW2_USER_DATA_FOLDER
-            # -- before committing it to tests/helpers/app.ts. Remove once known.
-            - name: Diagnose the app launch directly
-              if: always()
-              run: |
-                  bun run build
-                  bun run build:ext
-                  $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
-                  $env:WEBVIEW2_USER_DATA_FOLDER = "$env:RUNNER_TEMP\webview2-diag"
-                  Start-Process -FilePath bun -ArgumentList 'x','neu','run' -NoNewWindow
-                  Start-Sleep -Seconds 30
-                  Write-Output '--- processes ---'
-                  Get-Process | Where-Object { $_.ProcessName -match 'neutralino|webview|msedge|squeal' } | Format-Table Id, ProcessName, Path -AutoSize
-                  Write-Output '--- netstat 9333 ---'
-                  netstat -ano | Select-String ':9333'
-                  Write-Output '--- GET /json ---'
-                  try { (Invoke-WebRequest -Uri 'http://127.0.0.1:9333/json' -UseBasicParsing -TimeoutSec 5).Content } catch { Write-Output "request failed: $_" }
-                  Write-Output '--- neutralinojs.log ---'
-                  if (Test-Path neutralinojs.log) { Get-Content neutralinojs.log } else { Write-Output 'no neutralinojs.log was written' }
-                  Get-Process neutralino-win_x64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-                  Get-Process squeal-db-ext -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             - run: bun run test:ui
             # The app's own stdout/stderr are discarded (tests/helpers/app.ts), so
             # when it never exposes a CDP page target this is the only way to see

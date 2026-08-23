@@ -6981,3 +6981,38 @@ listening on the usual `127.0.0.1:55432` / `:53306` — and seeds over the
 client CLIs (`psql`, `mysql`) addressed by host and port instead of by
 container name. The seed SQL itself, `PG_SEED`/`MYSQL_SEED`, is untouched;
 only how it gets sent moved.
+
+---
+
+## `test-ui` pins WebView2 to a Fixed Version, off the installed one
+
+**Why.** Every GitHub-hosted Windows runner runs job steps elevated (High
+Integrity Level), and WebView2 Runtime 150+ has a confirmed, currently
+unresolved regression where the CDP debug port never binds when the host
+process is elevated (`MicrosoftEdge/WebView2Feedback#5340`, `#5640`). This was
+verified directly, not assumed: a diagnostic step launched the app by hand and
+found `neutralino-win_x64.exe` and every `msedgewebview2.exe` child running
+normally, with nothing ever listening on the debug port — no crash, no error,
+just silence. `WEBVIEW2_USER_DATA_FOLDER` (the fix for the *different*,
+unrelated Chrome 136+ "default profile" restriction) was tried first and ruled
+out; it made no difference, confirming this is the elevated-process regression
+specifically, not the profile one.
+
+**What ships instead.** The `test-ui` job downloads WebView2 Fixed Version
+`149.0.4022.98` (the last release before the regression landed, per the
+upstream issue) and points every WebView2 app on the runner at it via the
+`BrowserExecutableFolder` policy (`HKLM:\SOFTWARE\Policies\Microsoft\Edge\
+WebView2\BrowserExecutableFolder`, value name `*`) before `neu run` ever
+launches. The build is fetched from the `WebView2.Runtime.X64` NuGet package
+(published by `ProKn1fe/WebView2.Runtime`, which republishes Microsoft's own
+Fixed Version archives) rather than Microsoft's own download page, because
+that page hands out the file through a dynamic, unscriptable button rather
+than a stable URL.
+
+**This is explicitly a stopgap, not a real fix.** The upstream reporter called
+pinning "not sustainable long-term" — a Fixed Version build gets no security
+patches and this pin will eventually need bumping to whatever version
+Microsoft's fix lands in, or dropping outright once it does. Check
+`MicrosoftEdge/WebView2Feedback#5640` before touching this step; if it is
+closed, remove the pin first and see whether `test-ui` still passes on the
+plain installed runtime before assuming anything else is wrong.
