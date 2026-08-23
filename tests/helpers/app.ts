@@ -120,11 +120,13 @@ function optionsOf(testid, field) {
   });
 }`;
 
-async function findPage(tries = 40): Promise<Target> {
+async function findPage(tries = 120): Promise<Target> {
+    let lastSeen: string[] | null = null;
     for (let i = 0; i < tries; i++) {
         try {
             const res = await fetch(`http://127.0.0.1:${CDP_PORT}/json`);
             const targets = (await res.json()) as Target[];
+            lastSeen = targets.map((t) => `${t.type}:${t.title}`);
             const page = targets.find((t) => t.title === PAGE_TITLE && t.type === 'page');
             if (page) return page;
         } catch {
@@ -132,7 +134,14 @@ async function findPage(tries = 40): Promise<Target> {
         }
         await Bun.sleep(1000);
     }
-    throw new Error('app never exposed a CDP page target');
+    // Distinguishes "the port never answered at all" from "it answered with
+    // something other than the page we wanted" -- the same crash-vs-cold-start
+    // question a bare timeout can't answer on its own.
+    throw new Error(
+        lastSeen
+            ? `app never exposed a CDP target titled "${PAGE_TITLE}"; saw: ${lastSeen.join(', ') || '(none)'}`
+            : `app never exposed a CDP page target; port ${CDP_PORT} never answered`,
+    );
 }
 
 /** Is anything answering on the debugging port right now? */

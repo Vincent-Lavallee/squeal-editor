@@ -75,7 +75,19 @@ jobs:
             - run: bun run test:db:up
               env:
                   SQUEAL_TEST_DB_NATIVE: '1'
-            - run: bun test
+            # assistant.test.ts and saved.test.ts exercise the real OS keychain
+            # (docs/decisions.md: "Saved connections..."), which on Linux is
+            # Bun.secrets talking to libsecret -- and libsecret needs a real Secret
+            # Service behind it. gnome-keyring provides one; dbus-run-session wraps
+            # the step in its own D-Bus session so the daemon started inside it is
+            # what `bun test` finds. Same recipe zalando/go-keyring's own CI uses.
+            - name: Install a keyring for libsecret
+              run: sudo apt-get update -qq && sudo apt-get install -y -qq gnome-keyring dbus-x11 libsecret-1-0
+            - name: Run the extension suite
+              shell: dbus-run-session -- bash --noprofile --norc -eo pipefail {0}
+              run: |
+                  echo 'test' | gnome-keyring-daemon --unlock
+                  bun test
 
     # WebView2 only exposes CDP through a browser argument (docs/testing.md), so
     # this suite is Windows-only. `bun run test:ui` builds the frontend and
