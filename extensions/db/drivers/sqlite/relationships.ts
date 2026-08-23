@@ -3,9 +3,9 @@
    can await every engine polymorphically. */
 import type { Database as SqliteDatabase } from 'bun:sqlite';
 
-import { assembleDiagram, type DiagramColumnPart, type DiagramLinkPart } from './common.ts';
-import type { Driver } from './driver.ts';
-import { sqliteRows } from './sqliteHelpers.ts';
+import { assembleDiagram, type DiagramColumnPart, type DiagramLinkPart } from '../common.ts';
+import type { Driver } from '../driver.ts';
+import { sqliteRows } from './helpers.ts';
 
 const tableNames = (client: SqliteDatabase): string[] =>
     sqliteRows(

@@ -1,6 +1,6 @@
 import type { Connection as MysqlConnection, FieldPacket } from 'mysql2/promise';
 
-import type { Driver } from './driver.ts';
+import type { Driver } from '../driver.ts';
 
 export const mysqlDdl: Pick<
     Driver<MysqlConnection>,

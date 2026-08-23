@@ -4653,11 +4653,12 @@ engine" against "what only makes sense inside one". `pickRowKey`,
 because a second answer to *what counts as a row identity* or *how a filter is
 assembled* is a bug that only shows up on one engine — which is the same reason
 they took `quoteIdent` and `placeholder` as callbacks before there were three
-files to keep honest. `splitRelation` went the other way, into `postgres.ts`: it
-is Postgres guessing a schema out of punctuation, and nothing else ever calls it.
+files to keep honest. `splitRelation` went the other way, into
+`postgres/relation.ts`: it is Postgres guessing a schema out of punctuation, and
+nothing else ever calls it.
 
 **The barrel rule is the load-bearing part.** `connection.ts` imports
-`drivers/index.ts`, never `drivers/postgres.ts`, exactly as both sides import
+`drivers/index.ts`, never `drivers/postgres/index.ts`, exactly as both sides import
 `shared/protocol/index.ts` — so a helper can move between `common.ts` and an
 engine without touching a caller, which is the thing that makes the boundary
 adjustable rather than another wall. The engine files themselves are the one
@@ -6950,37 +6951,38 @@ fix.
 
 ---
 
-## CI provisions test databases without Docker
+## Each engine's driver files moved into its own folder
 
-**Why.** `test-ui` (`.github/workflows/ci.yml`) has to run on a Windows
-runner — WebView2 only exposes CDP through a browser argument Windows can
-supply (`docs/testing.md`) — and it has to run against real MySQL and
-Postgres, for the same reason nothing else here runs against a mock. Those two
-requirements don't fit together on GitHub-hosted runners: Docker Desktop on
-`windows-latest` is configured for Windows containers, and the images
-`tests/fixtures/db.ts` starts (`postgres:16-alpine`, `mysql:8`) are Linux
-ones. Switching the daemon to Linux containers on a hosted Windows runner is a
-known trick, not a supported one, and it was rejected specifically because it
-can't be verified without spending real Windows-runner minutes on the
-failures — this project has no way to run a `windows-latest` job locally.
+**What it was.** `drivers/` held one flat directory for all three engines:
+`postgres.ts` beside `postgresCatalog.ts`, `postgresDdl.ts`,
+`postgresLifecycle.ts`, `postgresRelation.ts`, `postgresRelationships.ts`,
+`postgresSystemSchemas.ts`, and a smaller version of the same spread for
+`mysql.ts` and `sqlite.ts` — twenty-three files in one directory, distinguished
+only by a repeated engine-name prefix.
 
-**What ships instead.** `ikalnytskyi/action-setup-postgres` and
-`shogo82148/actions-setup-mysql` install real Postgres/MySQL as native
-services — no Docker at all — and both are tested by their own upstream CI
-against `windows-latest`. `test-extension` uses the same two actions on
-`ubuntu-latest`, not Docker, even though Linux containers would have worked
-there: one seeding path for both jobs is one thing to keep correct instead of
-two.
+**What it is.** `drivers/mysql/`, `drivers/postgres/`, `drivers/sqlite/`, each
+holding that engine's own files with the now-redundant prefix dropped
+(`catalog.ts`, `ddl.ts`, `lifecycle.ts`, …) and the file that assembles the
+`Driver<C>` renamed to `index.ts` — the folder name already says which engine,
+so `postgres/postgres.ts` would have kept the redundancy the split exists to
+remove. `common.ts` and its siblings stay directly under `drivers/`, since they
+are shared across all three engines rather than owned by one. Structure only:
+no SQL changed, and every engine still answers the same contract tests.
 
-**Consequence for `tests/fixtures/db.ts`.** `up()`/`down()` gained a
-`SQUEAL_TEST_DB_NATIVE` branch. Unset (the default, what `bun run
-test:db:up` still does on a dev machine), it is exactly what it was: `docker
-run` two named containers and seed them with `docker exec`. Set (CI only), it
-skips starting anything — the workflow's setup actions already have servers
-listening on the usual `127.0.0.1:55432` / `:53306` — and seeds over the
-client CLIs (`psql`, `mysql`) addressed by host and port instead of by
-container name. The seed SQL itself, `PG_SEED`/`MYSQL_SEED`, is untouched;
-only how it gets sent moved.
+**Why `index.ts` and not, say, `driver.ts`.** `drivers/driver.ts` already names
+the contract file at the root, and a file per engine called `driver.ts` one
+level down would collide with it in spelling if not in path — confusing to
+import (`postgres/driver.ts` reads as if it might *be* the contract) and to
+grep for. `index.ts` is also what lets `drivers/index.ts` import `./mysql/
+index.ts` as `./mysql`, the same resolution Node/TypeScript already give a
+folder.
+
+**The barrel rule is unchanged, only its paths are.** `drivers/index.ts` still
+imports each engine's `index.ts` and nothing beside it, and each engine's
+`index.ts` still imports `../driver.ts` and `../common.ts` directly — the same
+cycle-avoiding exception as before, one directory level deeper. See *The
+engine layer became one file per engine, with the contract left central*
+above, which this extends rather than replaces.
 
 ---
 

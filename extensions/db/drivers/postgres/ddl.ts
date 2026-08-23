@@ -1,7 +1,7 @@
 import type pg from 'pg';
 
-import type { Driver } from './driver.ts';
-import { splitRelation } from './postgresRelation.ts';
+import type { Driver } from '../driver.ts';
+import { splitRelation } from './relation.ts';
 
 // Columns, in ordinal order. format_type renders the type; pg_get_expr the
 // default; attidentity/attgenerated distinguish an IDENTITY or a generated

@@ -4,15 +4,15 @@
  * Three things stay central here and one thing does not. Central: the contract
  * every engine answers (`driver.ts`), the engine-neutral assemblers they all
  * lean on (`common.ts`), and the dispatch below. Per-engine: the SQL, the
- * catalog queries, the quoting, and the library's own quirks -- `mysql.ts`,
- * `postgres.ts`, `sqlite.ts`, each of which imports the first two and knows
- * nothing of the others.
+ * catalog queries, the quoting, and the library's own quirks -- `mysql/`,
+ * `postgres/`, `sqlite/`, each of whose `index.ts` imports the first two and
+ * knows nothing of the others.
  *
  * ## Adding an engine
  *
  * 1. Add the name to `EngineType` in `shared/protocol/config.ts`.
- * 2. Write `extensions/db/drivers/<engine>.ts`, exporting a `Driver<C>` where
- *    `C` is the library's client type.
+ * 2. Write `extensions/db/drivers/<engine>/index.ts`, exporting a `Driver<C>`
+ *    where `C` is the library's client type.
  * 3. Import it below and add a `case` to `withDriver`.
  * 4. Add the option to `ENGINES` in `frontend/src/common/db/engines.ts`.
  *
@@ -32,15 +32,15 @@
  */
 import type { EngineType } from '../../../shared/protocol/index.ts';
 import type { Driver } from './driver.ts';
-import { mysqlDriver } from './mysql.ts';
-import { postgresDriver } from './postgres.ts';
-import { sqliteDriver } from './sqlite.ts';
+import { mysqlDriver } from './mysql/index.ts';
+import { postgresDriver } from './postgres/index.ts';
+import { sqliteDriver } from './sqlite/index.ts';
 
 export type { Driver, QueryOutcome, Relation, TableMeta, TableSearch } from './driver.ts';
 export { buildWhere, orderByClause, type WhereClause } from './common.ts';
-export { mysqlDriver } from './mysql.ts';
-export { postgresDriver } from './postgres.ts';
-export { sqliteDriver } from './sqlite.ts';
+export { mysqlDriver } from './mysql/index.ts';
+export { postgresDriver } from './postgres/index.ts';
+export { sqliteDriver } from './sqlite/index.ts';
 
 /**
  * Hands the driver for `type` to `use`, which must work for any client type.

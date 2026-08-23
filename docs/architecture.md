@@ -58,7 +58,7 @@ extensions/db/        the process that makes the calls the webview cannot
     index.ts          the barrel: the dispatch, and the contract re-exported
     driver.ts         the contract every engine answers
     common.ts         the engine-neutral assemblers all of them lean on
-    mysql.ts, postgres.ts, sqlite.ts    one file per engine (mysql2 / pg / bun:sqlite)
+    mysql/, postgres/, sqlite/          one folder per engine (mysql2 / pg / bun:sqlite)
   store.ts            workspaces + saved connections: the SQLite file, the migration, the encryption
   chrome.ts           the window frame's colour, over bun:ffi (Windows-only)
 tests/                real-database + real-app suites

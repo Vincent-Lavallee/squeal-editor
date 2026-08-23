@@ -150,3 +150,40 @@ Things that should be improved on code wise
   code already says, against the standing rule that a comment explains why and
   never what. Do a pass that removes the noise, leaving only the why-comments the
   rule keeps. Can you also update the claude md so that it's more respected
+
+- **Frontend feature barrels add indirection with nothing behind it** — Every
+  feature under `frontend/src` has an `index.ts` that only re-exports a handful
+  of its own files, and the composition root imports the barrel instead of the
+  file directly. Unlike the extension's `drivers/index.ts`, which is load-bearing
+  because it breaks a real import cycle, the frontend barrels don't prevent
+  anything — they're a style choice, not a fix for a cycle. Remove them and
+  import each feature's files directly from `Shell`; this drops the one place
+  that declared a feature's "public" files versus its internals, and that's
+  accepted rather than replaced with a lint rule. Extension-side barrels
+  (`drivers/index.ts`, `protocol/index.ts`) are out of scope — they stay.
+
+- **Hooks sit loose in most features instead of a `hooks/` subfolder** — The
+  working agreement says hooks get their own `hooks/` subfolder within whichever
+  folder owns them, and `features/connections` and `shell/` already follow it,
+  but everywhere else a feature's hooks sit directly beside its components:
+  editor, results, and explorer each carry a few dozen, and titlebar, tabs,
+  diagram, assistant, queries, statusbar, and updater carry fewer but are just as
+  loose. `common/components` has the same problem for the Select/dropdown hooks.
+  Move every feature's hooks into its own `hooks/` folder, `common/components`
+  included, so the convention is actually followed everywhere it claims to be.
+
+- **Some features have grown subfeatures that were never split out** — The
+  working agreement says a subfeature gets its own subfolder within its feature,
+  the way the assistant's tool definitions live in `features/assistant/tools/`,
+  but several features have kept growing flat instead: explorer and results in
+  particular carry components and hooks that read as more than one concern living
+  under one folder. Plan the actual split before touching a feature — which files
+  belong to which subfeature is a judgment call, not something to decide item by
+  item while moving files.
+
+- **The README has no screenshots and no coverage signal** — The root README
+  describes the app in prose only, so nobody lands on the repo and sees what it
+  actually looks like before installing it. Add screenshots of the app in use.
+  Separately, nothing in the repo measures test coverage today — no `--coverage`
+  run, no CI step, nothing tracked — so add one, and surface the resulting
+  percentage as a badge in the README once it exists.

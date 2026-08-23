@@ -3,8 +3,8 @@
    can await every engine polymorphically. */
 import type { Database as SqliteDatabase } from 'bun:sqlite';
 
-import type { Driver } from './driver.ts';
-import { sqliteRows } from './sqliteHelpers.ts';
+import type { Driver } from '../driver.ts';
+import { sqliteRows } from './helpers.ts';
 
 export const sqliteDdl: Pick<
     Driver<SqliteDatabase>,

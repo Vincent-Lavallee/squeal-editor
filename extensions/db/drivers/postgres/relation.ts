@@ -1,4 +1,4 @@
-import type { Relation } from './driver.ts';
+import type { Relation } from '../driver.ts';
 
 /**
  * Where a relation lives and what it is called, for a caller that supplied only a

@@ -1,8 +1,8 @@
 import type pg from 'pg';
 
-import { assembleDiagram, type DiagramColumnPart, type DiagramLinkPart } from './common.ts';
-import type { Driver } from './driver.ts';
-import { PG_SYSTEM_SCHEMAS } from './postgresSystemSchemas.ts';
+import { assembleDiagram, type DiagramColumnPart, type DiagramLinkPart } from '../common.ts';
+import type { Driver } from '../driver.ts';
+import { PG_SYSTEM_SCHEMAS } from './systemSchemas.ts';
 
 // The same pg_attribute read `listColumns` makes, widened from one relation to
 // every ordinary table in the database -- see that method for why format_type

@@ -1,7 +1,7 @@
 import type { Database as SqliteDatabase } from 'bun:sqlite';
 
-import type { CellValue } from '../../../shared/protocol/index.ts';
-import { selectExpressionAt } from './common.ts';
+import type { CellValue } from '../../../../shared/protocol/index.ts';
+import { selectExpressionAt } from '../common.ts';
 
 /**
  * SQLite binds a value the way the other two do, with two shapes it will not
