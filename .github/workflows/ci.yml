@@ -57,6 +57,11 @@ jobs:
     # docs/decisions.md for why.
     test-extension:
         runs-on: ubuntu-latest
+        # Job-level, not just on the seeding step: a step-scoped env only reaches
+        # the step it's declared on, and this has to still be set once bun test
+        # itself runs, not only while test:db:up is seeding.
+        env:
+            SQUEAL_TEST_DB_NATIVE: '1'
         steps:
             - uses: actions/checkout@v4
             - uses: oven-sh/setup-bun@v2
@@ -73,8 +78,6 @@ jobs:
                   my-cnf: |
                       port=53306
             - run: bun run test:db:up
-              env:
-                  SQUEAL_TEST_DB_NATIVE: '1'
             # assistant.test.ts and saved.test.ts exercise the real OS keychain
             # (docs/decisions.md: "Saved connections..."), which on Linux is
             # Bun.secrets talking to libsecret -- and libsecret needs a real Secret
@@ -95,6 +98,11 @@ jobs:
     # note in package.json/testing.md -- so there is no separate build step here.
     test-ui:
         runs-on: windows-latest
+        # Job-level: see the comment on test-extension's env above -- ui.test.ts's
+        # own docker-vs-native switch (tests/fixtures/config.ts) needs this at
+        # test-run time, not only while test:db:up is seeding.
+        env:
+            SQUEAL_TEST_DB_NATIVE: '1'
         steps:
             - uses: actions/checkout@v4
             - uses: oven-sh/setup-bun@v2
@@ -133,8 +141,6 @@ jobs:
                   my-cnf: |
                       port=53306
             - run: bun run test:db:up
-              env:
-                  SQUEAL_TEST_DB_NATIVE: '1'
             - run: bun run test:ui
             # The app's own stdout/stderr are discarded (tests/helpers/app.ts), so
             # when it never exposes a CDP page target this is the only way to see
