@@ -114,16 +114,20 @@ jobs:
               env:
                   SQUEAL_TEST_DB_NATIVE: '1'
             # TEMPORARY: bun run test:ui waited 120 real seconds for CDP with
-            # zero response -- too long to be a cold-start issue, so this
-            # launches the app the same way by hand and inspects the process
-            # list, the port and the CDP response directly, instead of guessing
-            # at another timeout. Remove once the real cause is known.
+            # zero response -- too long to be a cold-start issue. The prior run
+            # of this diagnostic confirmed msedgewebview2 processes come up fine
+            # but nothing ever binds :9333, which matches Chrome/Edge 136+
+            # silently ignoring --remote-debugging-port on the *default* profile
+            # directory (developer.chrome.com/blog/remote-debugging-port).
+            # Testing the documented fix -- a non-default WEBVIEW2_USER_DATA_FOLDER
+            # -- before committing it to tests/helpers/app.ts. Remove once known.
             - name: Diagnose the app launch directly
               if: always()
               run: |
                   bun run build
                   bun run build:ext
                   $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
+                  $env:WEBVIEW2_USER_DATA_FOLDER = "$env:RUNNER_TEMP\webview2-diag"
                   Start-Process -FilePath bun -ArgumentList 'x','neu','run' -NoNewWindow
                   Start-Sleep -Seconds 30
                   Write-Output '--- processes ---'
