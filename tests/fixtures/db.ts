@@ -50,16 +50,14 @@ import { $ } from 'bun';
 import { Database } from 'bun:sqlite';
 import { rmSync } from 'node:fs';
 
-import { MYSQL, MYSQL_CONTAINER, PG, PG_CONTAINER, SQLITE_FILE } from './config.ts';
-
-/**
- * CI sets this: GitHub's Windows runners can't run Linux containers, so there is
- * no Docker there at all, on any OS -- see docs/decisions.md. The servers are
- * provisioned as native services by the workflow itself instead, and this just
- * switches how they get seeded: over TCP with the client CLIs rather than
- * `docker exec` into a named container. Same seed, same ports, same passwords.
- */
-const NATIVE = process.env.SQUEAL_TEST_DB_NATIVE === '1';
+import {
+    MYSQL,
+    MYSQL_CONTAINER,
+    NATIVE_TEST_DB as NATIVE,
+    PG,
+    PG_CONTAINER,
+    SQLITE_FILE,
+} from './config.ts';
 
 const PG_SEED = `
 CREATE TABLE users (

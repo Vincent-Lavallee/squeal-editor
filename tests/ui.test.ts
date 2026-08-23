@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { launchApp, REACT_SETTERS, type AppSession } from './helpers/app.ts';
-import { MYSQL, PG, PG_CONTAINER } from './fixtures/config.ts';
+import { MYSQL, NATIVE_TEST_DB, PG, PG_CONTAINER } from './fixtures/config.ts';
 
 const UI_ENABLED = process.env.SQUEAL_UI === '1';
 
@@ -3692,7 +3692,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
          */
         test('the diagram re-reads the schema, from its button and from Ctrl+R', async () => {
             const psql = (sql: string) =>
-                $`docker exec ${PG_CONTAINER} psql -U postgres -d shop -c ${sql}`.quiet();
+                NATIVE_TEST_DB
+                    ? $`psql -h ${PG.host} -p ${PG.port} -U postgres -d shop -c ${sql}`
+                          .env({ ...process.env, PGPASSWORD: PG.password })
+                          .quiet()
+                    : $`docker exec ${PG_CONTAINER} psql -U postgres -d shop -c ${sql}`.quiet();
 
             await psql('CREATE TABLE zzz_fresh (id int primary key)');
             // Nothing polls, so the drawing is still the one that was read on open.
@@ -4144,7 +4148,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === '+ Add').click(); true;`,
             );
-            await Bun.sleep(500);
+            await app.waitFor(`(${envNames}).includes('staging') ? true : null`);
             expect(await app.evaluate<string[]>(envNames)).toEqual([
                 'local',
                 'dev',
