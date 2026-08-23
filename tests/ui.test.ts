@@ -1219,9 +1219,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             const firstId = `${gridCell(0, 0)}.textContent`;
 
             await app.evaluate(clickHeader('id'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${sortState}) === 'id:asc' ? true : null`);
             await app.evaluate(clickHeader('id'));
-            await Bun.sleep(1500);
+            await app.waitFor(
+                `(${sortState}) === 'id:desc' && (${firstId}) === '150' && (${barText}).includes('rows 1–100') ? true : null`,
+            );
 
             // Descending puts the *table's* last row on page one, which is the whole
             // difference between ordering the table and reordering the page: sorting
@@ -1259,9 +1261,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             expect(await app.evaluate<string[]>(names)).toEqual(['Ada', 'Grace']);
 
             await app.evaluate(clickHeader('name'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${sortState}) === 'name:asc' ? true : null`);
             await app.evaluate(clickHeader('name'));
-            await app.waitFor(`(${sortState}) === 'name:desc' ? true : null`);
+            await app.waitFor(
+                `(${sortState}) === 'name:desc' && JSON.stringify(${names}) === JSON.stringify(['Grace', 'Ada']) ? true : null`,
+            );
 
             expect(await app.evaluate<string | null>(sortState)).toBe('name:desc');
             expect(await app.evaluate<string[]>(names)).toEqual(['Grace', 'Ada']);
@@ -1647,7 +1651,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
          */
         test("sorting a selection's result re-runs the selection, not the tab", async () => {
             await app.evaluate(clickHeader('name'));
-            await app.waitFor(`(${sortState}) === 'name:asc' ? true : null`);
+            await app.waitFor(
+                `(${sortState}) === 'name:asc' && JSON.stringify(${gridHeaders}) === JSON.stringify(['name']) ? true : null`,
+            );
 
             expect(await app.evaluate<string | null>(sortState)).toBe('name:asc');
             expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
@@ -2435,7 +2441,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // would be undone by the next render, since a following tree *is* the
             // tab's database. The tab moving with it is what makes the pick land.
             await app.evaluate(selectDatabase('shop'));
-            await app.waitFor(`(${treeDatabase}) === 'shop' ? true : null`);
+            await app.waitFor(
+                `(${treeDatabase}) === 'shop' && (${treeLabels}).includes('users') ? true : null`,
+            );
             expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
             expect(await app.evaluate<string>(editorDatabase)).toBe('shop');
             expect(await app.evaluate<string[]>(treeLabels)).toContain('users');
