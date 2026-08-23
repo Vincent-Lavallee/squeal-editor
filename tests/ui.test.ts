@@ -2613,7 +2613,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(clickTab('logs'));
             await Bun.sleep(600);
             await app.press('r', { ctrl: true });
-            await Bun.sleep(1500);
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(2);
 
             await app.evaluate(closeTab('logs'));
