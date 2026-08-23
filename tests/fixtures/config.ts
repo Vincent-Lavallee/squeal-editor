@@ -48,3 +48,11 @@ export const MYSQL_CONTAINER = 'squeal-mysql';
 
 /** The database the two server engines get seeded with. */
 export const FIXTURE_DB = 'shop';
+
+/**
+ * Set by CI (docs/decisions.md: "CI provisions test databases without
+ * Docker"), never locally: PG/MYSQL above are already listening as native
+ * services, so anything that would otherwise `docker exec` into
+ * PG_CONTAINER/MYSQL_CONTAINER has to reach them over the client CLIs instead.
+ */
+export const NATIVE_TEST_DB = process.env.SQUEAL_TEST_DB_NATIVE === '1';

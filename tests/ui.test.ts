@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { launchApp, REACT_SETTERS, type AppSession } from './helpers/app.ts';
-import { MYSQL, PG, PG_CONTAINER } from './fixtures/config.ts';
+import { MYSQL, NATIVE_TEST_DB, PG, PG_CONTAINER } from './fixtures/config.ts';
 
 const UI_ENABLED = process.env.SQUEAL_UI === '1';
 
@@ -816,7 +816,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await Bun.sleep(200);
 
             await app.evaluate(clickTable('users'));
-            await Bun.sleep(2000);
+            await app.waitFor(
+                `document.querySelectorAll('[data-testid="grid-col-name"]').length > 0 ? true : null`,
+            );
 
             expect(await app.evaluate<string[]>(tabLabels)).toEqual(['Query 1', 'users']);
             expect(await app.evaluate<string>(activeTabLabel)).toBe('users');
@@ -929,13 +931,15 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             ).toBeNull();
 
             await app.evaluate(selectDatabase('shop'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${treeLabels}).includes('users') ? true : null`);
             expect(await app.evaluate<string[]>(treeLabels)).toContain('users');
 
             // Clicking a table from here mints a tab for it -- the picker having
             // something to say from the empty state was the means, not the end.
             await app.evaluate(clickTable('users'));
-            await Bun.sleep(1500);
+            await app.waitFor(
+                `JSON.stringify(${tabLabels}) === JSON.stringify(['users']) ? true : null`,
+            );
             expect(await app.evaluate<string[]>(tabLabels)).toEqual(['users']);
 
             await app.evaluate(closeTab('users'));
@@ -1027,7 +1031,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
         test('a table larger than a page pages forward and back', async () => {
             await app.evaluate(clickTable('events'));
-            await Bun.sleep(2000);
+            await app.waitFor(`(${barText}).includes('rows 1–100') ? true : null`);
 
             expect(await app.evaluate<string>(barText)).toContain('rows 1–100');
             expect(
@@ -1053,7 +1057,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             expect(await app.evaluate<boolean>(`${pagerBtn('Next')}.disabled`)).toBe(true);
 
             await app.evaluate(`${pagerBtn('Prev')}.click(); true;`);
-            await Bun.sleep(1500);
+            await app.waitFor(`(${barText}).includes('rows 1–100') ? true : null`);
             expect(await app.evaluate<string>(barText)).toContain('rows 1–100');
 
             await app.evaluate(closeTab('events'));
@@ -1086,7 +1090,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // A page is a different set of rows, so the height it was left at names
             // nothing -- the new page starts at the top.
             await app.evaluate(`${pagerBtn('Next')}.click(); true;`);
-            await Bun.sleep(1500);
+            await app.waitFor(`(${barText}).includes('rows 101–150') ? true : null`);
             expect(await app.evaluate<string>(barText)).toContain('rows 101–150');
             expect(await app.evaluate<number>(`${gridScroll}.scrollTop`)).toBe(0);
 
@@ -1169,7 +1173,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             expect(await app.evaluate<string | null>(hintFor('name'))).toBe('hidden');
 
             await app.evaluate(clickHeader('name'));
-            await Bun.sleep(1500);
+            await app.waitFor(
+                `(${sortState}) === 'name:asc' && JSON.stringify(${names}) === JSON.stringify(['Ada', 'Grace']) ? true : null`,
+            );
             expect(await app.evaluate<string | null>(sortState)).toBe('name:asc');
             expect(await app.evaluate<string[]>(names)).toEqual(['Ada', 'Grace']);
 
@@ -1183,14 +1189,18 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
             // Second click on the same header reverses it rather than adding to it.
             await app.evaluate(clickHeader('name'));
-            await Bun.sleep(1500);
+            await app.waitFor(
+                `(${sortState}) === 'name:desc' && JSON.stringify(${names}) === JSON.stringify(['Grace', 'Ada']) ? true : null`,
+            );
             expect(await app.evaluate<string | null>(sortState)).toBe('name:desc');
             expect(await app.evaluate<string[]>(names)).toEqual(['Grace', 'Ada']);
 
             // Third click removes the sort outright -- back to the order the server
             // handed back before any of this, not to ascending again.
             await app.evaluate(clickHeader('name'));
-            await Bun.sleep(1500);
+            await app.waitFor(
+                `(${sortState}) === null && JSON.stringify(${names}) === JSON.stringify(${JSON.stringify(natural)}) ? true : null`,
+            );
             expect(await app.evaluate<string | null>(sortState)).toBeNull();
             expect(await app.evaluate<string[]>(names)).toEqual(natural);
 
@@ -1223,7 +1233,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // And the step carries it: page two continues the order rather than
             // being cut from the natural one, which would repeat rows across it.
             await app.evaluate(`${pagerBtn('Next')}.click(); true;`);
-            await Bun.sleep(1500);
+            await app.waitFor(`(${firstId}) === '50' ? true : null`);
             expect(await app.evaluate<string>(firstId)).toBe('50');
             expect(await app.evaluate<string | null>(sortState)).toBe('id:desc');
 
@@ -1251,7 +1261,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(clickHeader('name'));
             await Bun.sleep(1500);
             await app.evaluate(clickHeader('name'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${sortState}) === 'name:desc' ? true : null`);
 
             expect(await app.evaluate<string | null>(sortState)).toBe('name:desc');
             expect(await app.evaluate<string[]>(names)).toEqual(['Grace', 'Ada']);
@@ -1263,7 +1273,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
         test('a filter narrows the grid, and clearing it restores the table', async () => {
             await app.evaluate(clickTable('users'));
-            await Bun.sleep(2000);
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(2);
 
             // The bar is there with a blank condition already on it -- there is no
@@ -1308,13 +1318,13 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.querySelector('[data-testid="filter-apply"]').click(); true;`,
             );
-            await Bun.sleep(1500);
+            await app.waitFor(`(${rowCount}) === 1 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(1);
 
             await app.evaluate(
                 `document.querySelector('[data-testid="filter-clear"]').click(); true;`,
             );
-            await Bun.sleep(1500);
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(2);
 
             await app.evaluate(closeTab('users'));
@@ -1355,7 +1365,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.querySelector('[data-testid="filter-apply"]').click(); true;`,
             );
-            await Bun.sleep(1500);
+            await app.waitFor(`(${rowCount}) === 1 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(1);
 
             await app.evaluate(closeTab('users'));
@@ -1458,7 +1468,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.querySelector('[data-testid="filter-apply"]').click(); true;`,
             );
-            await Bun.sleep(1500);
+            await app.waitFor(`(${rowCount}) === 1 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(1);
 
             await app.evaluate(closeTab('users'));
@@ -1524,7 +1534,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.querySelector('[data-testid="filter-apply"]').click(); true;`,
             );
-            await Bun.sleep(1500);
+            await app.waitFor(`(${rowCount}) === 1 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(1);
 
             await app.evaluate(closeTab('users'));
@@ -1620,7 +1630,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`,
             );
-            await Bun.sleep(1500);
+            await app.waitFor(
+                `JSON.stringify(${gridHeaders}) === JSON.stringify(['name']) ? true : null`,
+            );
 
             expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
             // One statement means no strip at all, not a strip of one.
@@ -1635,7 +1647,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
          */
         test("sorting a selection's result re-runs the selection, not the tab", async () => {
             await app.evaluate(clickHeader('name'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${sortState}) === 'name:asc' ? true : null`);
 
             expect(await app.evaluate<string | null>(sortState)).toBe('name:asc');
             expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
@@ -1679,7 +1691,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`,
             );
-            await Bun.sleep(2500);
+            await app.waitFor(
+                `JSON.stringify(${statementTabs}) === JSON.stringify(['Result 1', 'Result 2']) ? true : null`,
+            );
 
             expect(await app.evaluate<string[]>(statementTabs)).toEqual(['Result 1', 'Result 2']);
             // The first is what shows, so a batch reads in the order it was written.
@@ -1733,7 +1747,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(putCursorAtEndOfLine(2));
             await Bun.sleep(100);
             await app.evaluate(runStatement);
-            await Bun.sleep(1500);
+            await app.waitFor(
+                `JSON.stringify(${gridHeaders}) === JSON.stringify(['email']) ? true : null`,
+            );
 
             expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['email']);
             expect(await app.evaluate<string[]>(statementTabs)).toEqual([]);
@@ -1762,7 +1778,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             ).toBe('Run selection');
 
             await app.evaluate(runStatement);
-            await Bun.sleep(1500);
+            await app.waitFor(
+                `JSON.stringify(${gridHeaders}) === JSON.stringify(['name']) ? true : null`,
+            );
 
             expect(await app.evaluate<string[]>(gridHeaders)).toEqual(['name']);
             expect(await app.evaluate<string[]>(statementTabs)).toEqual([]);
@@ -1785,7 +1803,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`,
             );
-            await Bun.sleep(2500);
+            await app.waitFor(
+                `JSON.stringify(${statementTabs}) === JSON.stringify(['Result 1', 'Result 2']) ? true : null`,
+            );
 
             expect(await app.evaluate<string[]>(statementTabs)).toEqual(['Result 1', 'Result 2']);
             expect(
@@ -2407,7 +2427,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             expect(await app.evaluate<boolean>(syncToggleOn)).toBe(true);
 
             await app.evaluate(selectTabDatabase('postgres'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${editorDatabase}) === 'postgres' ? true : null`);
             expect(await app.evaluate<string>(editorDatabase)).toBe('postgres');
             expect(await app.evaluate<string>(treeDatabase)).toBe('postgres');
 
@@ -2415,7 +2435,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // would be undone by the next render, since a following tree *is* the
             // tab's database. The tab moving with it is what makes the pick land.
             await app.evaluate(selectDatabase('shop'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${treeDatabase}) === 'shop' ? true : null`);
             expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
             expect(await app.evaluate<string>(editorDatabase)).toBe('shop');
             expect(await app.evaluate<string[]>(treeLabels)).toContain('users');
@@ -2453,7 +2473,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             const second = await app.evaluate<string>(activeTabLabel);
 
             await app.evaluate(selectTabDatabase('postgres'));
-            await Bun.sleep(1200);
+            await app.waitFor(`(${editorDatabase}) === 'postgres' ? true : null`);
             expect(await app.evaluate<string>(editorDatabase)).toBe('postgres');
             expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
 
@@ -2477,12 +2497,12 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
          */
         test('the sidebar picker moves the tree, not the tab in front', async () => {
             await app.evaluate(selectDatabase('postgres'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${treeDatabase}) === 'postgres' ? true : null`);
             expect(await app.evaluate<string>(treeDatabase)).toBe('postgres');
             expect(await app.evaluate<string>(editorDatabase)).toBe('shop');
 
             await app.evaluate(selectDatabase('shop'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${treeLabels}).includes('users') ? true : null`);
             expect(await app.evaluate<string[]>(treeLabels)).toContain('users');
         });
 
@@ -2496,11 +2516,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
          */
         test('a table opens on the database the tree is browsing', async () => {
             await app.evaluate(selectTabDatabase('postgres'));
-            await Bun.sleep(1200);
+            await app.waitFor(`(${editorDatabase}) === 'postgres' ? true : null`);
             expect(await app.evaluate<string>(editorDatabase)).toBe('postgres');
 
             await app.evaluate(clickTable('users'));
-            await Bun.sleep(2000);
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(2);
             expect(
                 await app.evaluate<string>(
@@ -2527,7 +2547,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
          */
         test('a grid tab moves database from the caret on Search', async () => {
             await app.evaluate(clickTable('users'));
-            await Bun.sleep(2000);
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(2);
             expect(
                 await app.evaluate<string>(
@@ -2548,7 +2568,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
             await app.evaluate(`${REACT_SETTERS}
         pickOption(document.querySelector('[data-testid="grid-db-select"]'), 'shop');`);
-            await Bun.sleep(2000);
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(2);
             expect(
                 await app.evaluate<string>(
@@ -2579,7 +2599,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
          */
         test('a real Ctrl+R re-reads the rows, and does not reload the app', async () => {
             await app.evaluate(clickTable('logs'));
-            await Bun.sleep(2000);
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(2);
 
             await app.evaluate(newTab);
@@ -2603,7 +2623,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             expect(await app.evaluate<number>(rowCount)).toBe(2);
 
             await app.press('r', { ctrl: true });
-            await Bun.sleep(1500);
+            await app.waitFor(`(${rowCount}) === 3 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(3);
             // The app is still the one that was running: a reload lands on the
             // connections list with no tabs at all.
@@ -2613,7 +2633,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(clickTab('logs'));
             await Bun.sleep(600);
             await app.press('r', { ctrl: true });
-            await Bun.sleep(1500);
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(2);
 
             await app.evaluate(closeTab('logs'));
@@ -2699,7 +2719,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(rightClickTable('users'));
             await Bun.sleep(200);
             await app.evaluate(clickContextItem('Star'));
-            await Bun.sleep(400);
+            await app.waitFor(
+                `document.querySelector('[data-testid="tree-pinned"]') ? true : null`,
+            );
 
             expect(
                 await app.evaluate<boolean>(
@@ -3346,7 +3368,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(rightClickTable('users'));
             await Bun.sleep(300);
             await app.evaluate(clickContextItem('Open definition'));
-            await Bun.sleep(1200);
+            await app.waitFor(
+                `JSON.stringify(${tabLabels}) === JSON.stringify(['users']) ? true : null`,
+            );
             expect(await app.evaluate<string[]>(tabLabels)).toEqual(['users']);
 
             await app.evaluate(closeTab('users'));
@@ -3380,7 +3404,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(selectDatabase('shop'));
             await Bun.sleep(1500);
             await app.evaluate(selectTabDatabase('postgres'));
-            await Bun.sleep(1200);
+            await app.waitFor(`(${treeDatabase}) === 'shop' ? true : null`);
             expect(await app.evaluate<string>(treeDatabase)).toBe('shop');
             expect(await app.evaluate<string>(editorDatabase)).toBe('postgres');
 
@@ -3598,11 +3622,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
          */
         test("a node opens on the diagram's database, wherever the tree has gone", async () => {
             await app.evaluate(selectDatabase('postgres'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${treeDatabase}) === 'postgres' ? true : null`);
             expect(await app.evaluate<string>(treeDatabase)).toBe('postgres');
 
             await app.evaluate(clickNode('cities'));
-            await Bun.sleep(2000);
+            await app.waitFor(`(${rowCount}) === 1 ? true : null`);
             expect(
                 await app.evaluate<number>(
                     `document.querySelectorAll('[data-testid="note-error"]').length`,
@@ -3692,7 +3716,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
          */
         test('the diagram re-reads the schema, from its button and from Ctrl+R', async () => {
             const psql = (sql: string) =>
-                $`docker exec ${PG_CONTAINER} psql -U postgres -d shop -c ${sql}`.quiet();
+                NATIVE_TEST_DB
+                    ? $`psql -h ${PG.host} -p ${PG.port} -U postgres -d shop -c ${sql}`
+                          .env({ ...process.env, PGPASSWORD: PG.password })
+                          .quiet()
+                    : $`docker exec ${PG_CONTAINER} psql -U postgres -d shop -c ${sql}`.quiet();
 
             await psql('CREATE TABLE zzz_fresh (id int primary key)');
             // Nothing polls, so the drawing is still the one that was read on open.
@@ -4144,7 +4172,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === '+ Add').click(); true;`,
             );
-            await Bun.sleep(500);
+            await app.waitFor(`(${envNames}).includes('staging') ? true : null`);
             expect(await app.evaluate<string[]>(envNames)).toEqual([
                 'local',
                 'dev',
@@ -4161,7 +4189,12 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(`${stagingRow}.querySelector('button').click(); true;`); // Delete
             await Bun.sleep(200);
             await app.evaluate(`${stagingRow}.querySelector('button').click(); true;`); // Yes
-            await Bun.sleep(500);
+            await app.waitFor(`JSON.stringify(${envNames}) === JSON.stringify([
+                'local',
+                'dev',
+                'qa',
+                'production',
+            ]) ? true : null`);
             expect(await app.evaluate<string[]>(envNames)).toEqual([
                 'local',
                 'dev',
@@ -4701,7 +4734,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // The grid tab refetches its rows the first time it is viewed -- lazily, so
             // it had none until the click above's sibling here brings it forward.
             await app.evaluate(clickTab('users'));
-            await Bun.sleep(1500);
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBeGreaterThan(0);
 
             await disconnect();
@@ -4773,7 +4806,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.querySelector('[data-testid="save-query-submit"]').click(); true;`,
             );
-            await Bun.sleep(600);
+            await app.waitFor(
+                `JSON.stringify(${tabLabels}) === JSON.stringify(['ui-saved']) ? true : null`,
+            );
 
             expect(await app.evaluate<string[]>(tabLabels)).toEqual(['ui-saved']);
             expect(await app.evaluate<boolean>(dialogOpen)).toBe(false);
@@ -4823,7 +4858,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
             // Back to saved, so the tests after this one start where they expect to.
             await app.evaluate(pressSave);
-            await Bun.sleep(800);
+            await app.waitFor(
+                `JSON.stringify(${slots}) === JSON.stringify(['close']) ? true : null`,
+            );
             expect(await app.evaluate<string[]>(slots)).toEqual(['close']);
         });
 
@@ -4837,14 +4874,16 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // Always a *new* tab, never re-pointing the current one -- the same rule
             // clicking a table follows, so an edit can be compared against what is stored.
             await app.evaluate(pickQuery('ui-saved'));
-            await Bun.sleep(800);
+            await app.waitFor(
+                `JSON.stringify(${tabLabels}) === JSON.stringify(['ui-saved', 'ui-saved']) ? true : null`,
+            );
             expect(await app.evaluate<string[]>(tabLabels)).toEqual(['ui-saved', 'ui-saved']);
             // What the test above left stored -- the copy is seeded from the query,
             // not from whatever the tab it was opened beside happens to hold.
             expect(await app.evaluate<string>(editorText)).toBe('select 9 as saved');
 
             await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
-            await Bun.sleep(2000);
+            await app.waitFor(`(${rowCount}) === 1 ? true : null`);
             expect(await app.evaluate<number>(rowCount)).toBe(1);
         });
 
@@ -4860,7 +4899,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             expect(await app.evaluate<number>(unsavedMarks)).toBe(1);
 
             await app.evaluate(pressSave);
-            await Bun.sleep(800);
+            await app.waitFor(`(${unsavedMarks}) === 0 ? true : null`);
             expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
 
             // The other tab is carrying the saved text, in its own Monaco model --
@@ -4881,7 +4920,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await Bun.sleep(500);
             expect(await app.evaluate<number>(unsavedMarks)).toBe(1);
             await app.evaluate(pressSave);
-            await Bun.sleep(800);
+            await app.waitFor(`(${unsavedMarks}) === 0 ? true : null`);
             expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
 
             await closeTabConfirmed('ui-saved');
@@ -4896,7 +4935,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `${savedRow('pg-queries')}.querySelector('[data-testid="saved-pick"]').click(); true;`,
             );
-            await Bun.sleep(3000);
+            await app.waitFor(
+                `JSON.stringify(${tabLabels}) === JSON.stringify(['ui-saved']) ? true : null`,
+            );
 
             expect(await app.evaluate<string[]>(tabLabels)).toEqual(['ui-saved']);
             await app.evaluate(setEditorText('select 3 as saved'));
@@ -4904,7 +4945,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             expect(await app.evaluate<number>(unsavedMarks)).toBe(1);
 
             await app.evaluate(pressSave);
-            await Bun.sleep(700);
+            await app.waitFor(`(${dialogOpen}) === false && (${unsavedMarks}) === 0 ? true : null`);
             expect(await app.evaluate<boolean>(dialogOpen)).toBe(false);
             expect(await app.evaluate<number>(unsavedMarks)).toBe(0);
         });
@@ -4915,7 +4956,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
             await deleteFirstSavedQuery();
             await app.evaluate(openPicker);
-            await Bun.sleep(400);
+            await app.waitFor(
+                `JSON.stringify(${pickerNames}) === JSON.stringify([]) ? true : null`,
+            );
             expect(await app.evaluate<string[]>(pickerNames)).toEqual([]);
             await app.evaluate(pressEscape);
 
@@ -4998,7 +5041,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
         test('a second workspace makes the picker the way in, counting what each holds', async () => {
             await app.reload();
-            await Bun.sleep(600);
+            await app.waitFor(
+                `JSON.stringify(${names}) === JSON.stringify(['Acme', 'Default']) ? true : null`,
+            );
 
             expect(await app.evaluate<string[]>(names)).toEqual(['Acme', 'Default']);
             expect(
@@ -5025,7 +5070,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `${savedRow('Default')}.querySelector('[data-testid="saved-delete"]').click(); true;`,
             );
-            await Bun.sleep(800);
+            await app.waitFor(
+                `JSON.stringify(${names}) === JSON.stringify(['Acme']) ? true : null`,
+            );
             expect(await app.evaluate<string[]>(names)).toEqual(['Acme']);
 
             // Back to one workspace, so the picker is skipped again -- and Acme is
@@ -5216,7 +5263,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // Disconnect is the titlebar's, and it has always meant the one in front.
             // Shop dev is in front, from the test above.
             await disconnect();
-            await Bun.sleep(600);
+            await app.waitFor(
+                `JSON.stringify(${railNames}) === JSON.stringify(['Shop prod']) ? true : null`,
+            );
 
             expect(await app.evaluate<string[]>(railNames)).toEqual(['Shop prod']);
             expect(await app.evaluate<number>(activeRail)).toBe(0);

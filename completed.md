@@ -877,3 +877,17 @@ This is a record, not a plan. Nothing here is waiting on anything.
 - **2026-08-22** — **A hand-written query had no way back to its own values** — Running raw SQL through the assistant answered with a row count and nothing else, and the only tool that returns real values only reaches a tab's own grid — which a hand-written query never lands in. So a query the model wrote itself, to answer its own question, could tell you how many rows came back and nothing about what was in them. It now answers with the real cells too, capped per call, and what gets written to disk when the conversation is saved stays reduced to the shape — the row count and the columns, never the values.
 
 - **2026-08-22** — **The assistant's context described its own tab as "the active tab"** — An assistant conversation is itself a tab, so the moment the user was looking at it to send a message, the context sent to the model named *it* as the tab in front — no SQL, no result, nothing useful — instead of whatever query tab the user actually meant. It happened every time the assistant wasn't sitting in a split pane beside the real tab, which is most of the time. The context now describes every open tab of the connection (SQL trimmed, last result's shape, whichever one is genuinely in front marked as such) rather than guessing at a single one, and two related spots — the connection's "current database" and the table listing — that picked a database by the first open tab that happened to have one set now read the same "tab in front, falling back to the connection's seed" the rest of the app already uses.
+
+- **2026-08-23** — **Adopt a linter and formatter** — Style is left to discipline: there is no
+  linter or formatter, so nothing mechanically enforces what the conventions ask
+  for and drift is only caught by eye in review. Adopt both for what is
+  mechanical and wire them into the PR pipeline — this is the linting the CI item
+  leaves for later.
+
+- **2026-08-23** — **Continuous integration on pull requests** — Nothing runs on a PR today, so a
+  change that breaks the build or a test is only caught when someone runs it
+  locally by hand — and the suites that run against real databases are the whole
+  safety net this project leans on. Add a pipeline that builds, typechecks, and
+  runs the extension suite (real MySQL/Postgres plus the seeded SQLite file) on
+  every PR, and the Windows-only UI suite on a Windows runner. Linting joins it
+  once a linter is adopted — its own item below.

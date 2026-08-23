@@ -6947,3 +6947,72 @@ version-sniffing, which calls a `context.getFilename()` that ESLint 10
 removed — it crashes the whole lint run, not just one rule. Pinning sidesteps
 the codepath entirely; revisit once eslint-plugin-react ships an ESLint 10
 fix.
+
+---
+
+## CI provisions test databases without Docker
+
+**Why.** `test-ui` (`.github/workflows/ci.yml`) has to run on a Windows
+runner — WebView2 only exposes CDP through a browser argument Windows can
+supply (`docs/testing.md`) — and it has to run against real MySQL and
+Postgres, for the same reason nothing else here runs against a mock. Those two
+requirements don't fit together on GitHub-hosted runners: Docker Desktop on
+`windows-latest` is configured for Windows containers, and the images
+`tests/fixtures/db.ts` starts (`postgres:16-alpine`, `mysql:8`) are Linux
+ones. Switching the daemon to Linux containers on a hosted Windows runner is a
+known trick, not a supported one, and it was rejected specifically because it
+can't be verified without spending real Windows-runner minutes on the
+failures — this project has no way to run a `windows-latest` job locally.
+
+**What ships instead.** `ikalnytskyi/action-setup-postgres` and
+`shogo82148/actions-setup-mysql` install real Postgres/MySQL as native
+services — no Docker at all — and both are tested by their own upstream CI
+against `windows-latest`. `test-extension` uses the same two actions on
+`ubuntu-latest`, not Docker, even though Linux containers would have worked
+there: one seeding path for both jobs is one thing to keep correct instead of
+two.
+
+**Consequence for `tests/fixtures/db.ts`.** `up()`/`down()` gained a
+`SQUEAL_TEST_DB_NATIVE` branch. Unset (the default, what `bun run
+test:db:up` still does on a dev machine), it is exactly what it was: `docker
+run` two named containers and seed them with `docker exec`. Set (CI only), it
+skips starting anything — the workflow's setup actions already have servers
+listening on the usual `127.0.0.1:55432` / `:53306` — and seeds over the
+client CLIs (`psql`, `mysql`) addressed by host and port instead of by
+container name. The seed SQL itself, `PG_SEED`/`MYSQL_SEED`, is untouched;
+only how it gets sent moved.
+
+---
+
+## `test-ui` pins WebView2 to a Fixed Version, off the installed one
+
+**Why.** Every GitHub-hosted Windows runner runs job steps elevated (High
+Integrity Level), and WebView2 Runtime 150+ has a confirmed, currently
+unresolved regression where the CDP debug port never binds when the host
+process is elevated (`MicrosoftEdge/WebView2Feedback#5340`, `#5640`). This was
+verified directly, not assumed: a diagnostic step launched the app by hand and
+found `neutralino-win_x64.exe` and every `msedgewebview2.exe` child running
+normally, with nothing ever listening on the debug port — no crash, no error,
+just silence. `WEBVIEW2_USER_DATA_FOLDER` (the fix for the *different*,
+unrelated Chrome 136+ "default profile" restriction) was tried first and ruled
+out; it made no difference, confirming this is the elevated-process regression
+specifically, not the profile one.
+
+**What ships instead.** The `test-ui` job downloads WebView2 Fixed Version
+`149.0.4022.98` (the last release before the regression landed, per the
+upstream issue) and points every WebView2 app on the runner at it via the
+`BrowserExecutableFolder` policy (`HKLM:\SOFTWARE\Policies\Microsoft\Edge\
+WebView2\BrowserExecutableFolder`, value name `*`) before `neu run` ever
+launches. The build is fetched from the `WebView2.Runtime.X64` NuGet package
+(published by `ProKn1fe/WebView2.Runtime`, which republishes Microsoft's own
+Fixed Version archives) rather than Microsoft's own download page, because
+that page hands out the file through a dynamic, unscriptable button rather
+than a stable URL.
+
+**This is explicitly a stopgap, not a real fix.** The upstream reporter called
+pinning "not sustainable long-term" — a Fixed Version build gets no security
+patches and this pin will eventually need bumping to whatever version
+Microsoft's fix lands in, or dropping outright once it does. Check
+`MicrosoftEdge/WebView2Feedback#5640` before touching this step; if it is
+closed, remove the pin first and see whether `test-ui` still passes on the
+plain installed runtime before assuming anything else is wrong.

@@ -50,7 +50,14 @@ import { $ } from 'bun';
 import { Database } from 'bun:sqlite';
 import { rmSync } from 'node:fs';
 
-import { MYSQL_CONTAINER, PG_CONTAINER, SQLITE_FILE } from './config.ts';
+import {
+    MYSQL,
+    MYSQL_CONTAINER,
+    NATIVE_TEST_DB as NATIVE,
+    PG,
+    PG_CONTAINER,
+    SQLITE_FILE,
+} from './config.ts';
 
 const PG_SEED = `
 CREATE TABLE users (
@@ -271,40 +278,58 @@ async function waitFor(label: string, probe: () => Promise<boolean>, tries = 60)
     throw new Error(`${label} never became ready`);
 }
 
-export async function up(): Promise<void> {
-    await $`docker run -d --name ${PG_CONTAINER} -e POSTGRES_PASSWORD=secret -p 55432:5432 postgres:16-alpine`
-        .quiet()
-        .nothrow();
-    await $`docker run -d --name ${MYSQL_CONTAINER} -e MYSQL_ROOT_PASSWORD=secret -p 53306:3306 mysql:8`
-        .quiet()
-        .nothrow();
+async function pgReady() {
+    return NATIVE
+        ? $`pg_isready -h 127.0.0.1 -p ${PG.port} -U postgres`.quiet().nothrow()
+        : $`docker exec ${PG_CONTAINER} pg_isready -U postgres`.quiet().nothrow();
+}
 
-    await waitFor('postgres', async () => {
-        const r = await $`docker exec ${PG_CONTAINER} pg_isready -U postgres`.quiet().nothrow();
-        return r.exitCode === 0;
-    });
-    await waitFor('mysql', async () => {
-        const r = await $`docker exec ${MYSQL_CONTAINER} mysqladmin ping -uroot -psecret`
+async function mysqlPing() {
+    return NATIVE
+        ? $`mysqladmin ping -h 127.0.0.1 -P ${MYSQL.port} -uroot -psecret`.quiet().nothrow()
+        : $`docker exec ${MYSQL_CONTAINER} mysqladmin ping -uroot -psecret`.quiet().nothrow();
+}
+
+async function pgExec(sql: string, database = 'postgres') {
+    return NATIVE
+        ? $`psql -h 127.0.0.1 -p ${PG.port} -U postgres -d ${database} -c ${sql}`
+              .env({ ...process.env, PGPASSWORD: PG.password })
+              .quiet()
+              .nothrow()
+        : $`docker exec ${PG_CONTAINER} psql -U postgres -d ${database} -c ${sql}`
+              .quiet()
+              .nothrow();
+}
+
+async function mysqlExec(sql: string) {
+    return NATIVE
+        ? $`mysql -h 127.0.0.1 -P ${MYSQL.port} -uroot -psecret -e ${sql}`.quiet().nothrow()
+        : $`docker exec ${MYSQL_CONTAINER} mysql -uroot -psecret -e ${sql}`.quiet().nothrow();
+}
+
+export async function up(): Promise<void> {
+    if (!NATIVE) {
+        await $`docker run -d --name ${PG_CONTAINER} -e POSTGRES_PASSWORD=secret -p 55432:5432 postgres:16-alpine`
             .quiet()
             .nothrow();
+        await $`docker run -d --name ${MYSQL_CONTAINER} -e MYSQL_ROOT_PASSWORD=secret -p 53306:3306 mysql:8`
+            .quiet()
+            .nothrow();
+    }
+
+    await waitFor('postgres', async () => (await pgReady()).exitCode === 0);
+    await waitFor('mysql', async () => {
+        const r = await mysqlPing();
         return r.exitCode === 0 && r.stdout.toString().includes('alive');
     });
 
     // Seeding is idempotent-ish: drop first so `up` twice is harmless.
-    await $`docker exec ${PG_CONTAINER} psql -U postgres -c ${'DROP DATABASE IF EXISTS shop'}`
-        .quiet()
-        .nothrow();
-    await $`docker exec ${PG_CONTAINER} psql -U postgres -c ${'CREATE DATABASE shop'}`
-        .quiet()
-        .nothrow();
-    await $`docker exec ${PG_CONTAINER} psql -U postgres -d shop -c ${PG_SEED}`.quiet().nothrow();
+    await pgExec('DROP DATABASE IF EXISTS shop');
+    await pgExec('CREATE DATABASE shop');
+    await pgExec(PG_SEED, 'shop');
 
-    await $`docker exec ${MYSQL_CONTAINER} mysql -uroot -psecret -e ${'DROP DATABASE IF EXISTS shop'}`
-        .quiet()
-        .nothrow();
-    await $`docker exec ${MYSQL_CONTAINER} mysql -uroot -psecret -e ${MYSQL_SEED}`
-        .quiet()
-        .nothrow();
+    await mysqlExec('DROP DATABASE IF EXISTS shop');
+    await mysqlExec(MYSQL_SEED);
 
     // No container to wait for: a file engine is ready the moment it is written.
     seedSqlite();
@@ -313,7 +338,7 @@ export async function up(): Promise<void> {
 }
 
 export async function down(): Promise<void> {
-    await $`docker rm -f ${PG_CONTAINER} ${MYSQL_CONTAINER}`.quiet().nothrow();
+    if (!NATIVE) await $`docker rm -f ${PG_CONTAINER} ${MYSQL_CONTAINER}`.quiet().nothrow();
     rmSync(SQLITE_FILE, { force: true });
     console.log('test databases removed');
 }

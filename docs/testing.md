@@ -30,6 +30,15 @@ bun run test:ui        # builds, then drives the real app (Windows-only, ~4min)
 bun run test:db:down   # remove them
 ```
 
+**CI seeds the same way without Docker.** `.github/workflows/ci.yml` runs
+`test:db:up` with `SQUEAL_TEST_DB_NATIVE=1`, which points `tests/fixtures/db.ts`
+at MySQL/Postgres already provisioned as native services on the runner
+(`ikalnytskyi/action-setup-postgres`, `shogo82148/actions-setup-mysql`) instead
+of starting Docker containers — see "CI provisions test databases without
+Docker" in `docs/decisions.md` for why Docker isn't an option on the Windows
+runner `test-ui` needs. Locally, `bun run test:db:up` is still Docker; nothing
+here changes for a dev machine.
+
 **The SQLite fixture is a file, not a container**, seeded by the same `test:db:up`
 so one command still puts every engine in place. It is
 `tests/fixtures/shop.db` (gitignored — it is output, seeded from `SQLITE_SEED`),

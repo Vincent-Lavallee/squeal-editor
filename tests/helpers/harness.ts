@@ -9,15 +9,13 @@
 
 import { WebSocketServer, type WebSocket as WsSocket } from 'ws';
 import type { Subprocess } from 'bun';
+import { fileURLToPath } from 'node:url';
 
 import type { CommandName, CommandReq, DbResponse } from '../../shared/protocol/index.ts';
 
 const EXT_ID = 'js.squeal.db';
 const TOKEN = 'test-token';
-const EXT_MAIN = new URL('../../extensions/db/main.ts', import.meta.url).pathname.replace(
-    /^\//,
-    '',
-);
+const EXT_MAIN = fileURLToPath(new URL('../../extensions/db/main.ts', import.meta.url));
 
 export interface Harness {
     /** Dispatch a command and await the extension's reply, ok or not. */

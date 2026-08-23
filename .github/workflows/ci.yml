@@ -1,0 +1,150 @@
+name: CI
+
+on:
+    pull_request:
+        branches: [dev]
+    push:
+        branches: [dev]
+
+concurrency:
+    group: ci-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    lint:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - run: bun run lint
+            - run: bun run format:check
+
+    knip:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - run: bun run knip
+
+    typecheck:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - run: bun run typecheck
+
+    # A smoke test that the frontend and the extension actually compile. It is
+    # not the cross-platform packaging release.yml does (the window chrome DLL,
+    # the installer, the signed update assets) -- that only runs on a merge to
+    # dev, needs secrets a PR from a fork can't see, and would triple the runner
+    # cost of every push. The Windows half of this same build is exercised for
+    # real by test-ui below, which builds both before it launches the app.
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - run: bun run build
+            - run: bun run build:ext
+
+    # `bun test` needs real MySQL and Postgres (docs/testing.md: every bug found
+    # here was invisible to a mock), and SQUEAL_TEST_DB_NATIVE keeps CI off
+    # Docker entirely -- see "CI provisions test databases without Docker" in
+    # docs/decisions.md for why.
+    test-extension:
+        runs-on: ubuntu-latest
+        # Job-level, not just on the seeding step: a step-scoped env only reaches
+        # the step it's declared on, and this has to still be set once bun test
+        # itself runs, not only while test:db:up is seeding.
+        env:
+            SQUEAL_TEST_DB_NATIVE: '1'
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - uses: ikalnytskyi/action-setup-postgres@v8
+              with:
+                  username: postgres
+                  password: secret
+                  port: 55432
+            - uses: shogo82148/actions-setup-mysql@v1
+              with:
+                  mysql-version: '8.0'
+                  root-password: secret
+                  my-cnf: |
+                      port=53306
+            - run: bun run test:db:up
+            # assistant.test.ts and saved.test.ts exercise the real OS keychain
+            # (docs/decisions.md: "Saved connections..."), which on Linux is
+            # Bun.secrets talking to libsecret -- and libsecret needs a real Secret
+            # Service behind it. gnome-keyring provides one; dbus-run-session wraps
+            # the step in its own D-Bus session so the daemon started inside it is
+            # what `bun test` finds. Same recipe zalando/go-keyring's own CI uses.
+            - name: Install a keyring for libsecret
+              run: sudo apt-get update -qq && sudo apt-get install -y -qq gnome-keyring dbus-x11 libsecret-1-0
+            - name: Run the extension suite
+              shell: dbus-run-session -- bash --noprofile --norc -eo pipefail {0}
+              run: |
+                  echo 'test' | gnome-keyring-daemon --unlock
+                  bun test
+
+    # WebView2 only exposes CDP through a browser argument (docs/testing.md), so
+    # this suite is Windows-only. `bun run test:ui` builds the frontend and
+    # compiles the extension itself before it launches the app -- see its own
+    # note in package.json/testing.md -- so there is no separate build step here.
+    test-ui:
+        runs-on: windows-latest
+        # Job-level: see the comment on test-extension's env above -- ui.test.ts's
+        # own docker-vs-native switch (tests/fixtures/config.ts) needs this at
+        # test-run time, not only while test:db:up is seeding.
+        env:
+            SQUEAL_TEST_DB_NATIVE: '1'
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            # Every GitHub-hosted Windows runner runs job steps elevated, and
+            # WebView2 150+ has a confirmed, unresolved regression where the CDP
+            # port never binds on an elevated process
+            # (MicrosoftEdge/WebView2Feedback#5640) -- verified directly here: the
+            # app and its msedgewebview2.exe children all launch fine, nothing
+            # ever listens on the port. The only known workaround is pinning to
+            # the last known-good Fixed Version (149.0.4022.98) via the
+            # BrowserExecutableFolder policy. ProKn1fe/WebView2.Runtime republishes
+            # Fixed Version builds as ordinary NuGet packages, so this is just an
+            # unzip and a registry value. Revisit -- and drop this step -- once
+            # Microsoft ships a real fix; see docs/decisions.md.
+            - name: Pin WebView2 to the last version without the elevated-CDP regression
+              run: |
+                  $ProgressPreference = 'SilentlyContinue'
+                  $version = '149.0.4022.98'
+                  $nupkg = "$env:RUNNER_TEMP\webview2-fixed.zip"
+                  $dest = "$env:RUNNER_TEMP\webview2-fixed"
+                  curl.exe -sL -o $nupkg "https://api.nuget.org/v3-flatcontainer/webview2.runtime.x64/$version/webview2.runtime.x64.$version.nupkg"
+                  Expand-Archive -Path $nupkg -DestinationPath $dest -Force
+                  $runtimeFolder = "$dest\contentFiles\any\any\WebView2"
+                  New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\BrowserExecutableFolder' -Force | Out-Null
+                  Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\BrowserExecutableFolder' -Name '*' -Value $runtimeFolder
+            - uses: ikalnytskyi/action-setup-postgres@v8
+              with:
+                  username: postgres
+                  password: secret
+                  port: 55432
+            - uses: shogo82148/actions-setup-mysql@v1
+              with:
+                  mysql-version: '8.0'
+                  root-password: secret
+                  my-cnf: |
+                      port=53306
+            - run: bun run test:db:up
+            - run: bun run test:ui
+            # The app's own stdout/stderr are discarded (tests/helpers/app.ts), so
+            # when it never exposes a CDP page target this is the only way to see
+            # why -- neutralino.config.json turns on writeToLogFile.
+            - name: Show the app's log if it never came up
+              if: failure()
+              run: if (Test-Path neutralinojs.log) { Get-Content neutralinojs.log } else { Write-Output 'no neutralinojs.log was written' }

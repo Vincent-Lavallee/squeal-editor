@@ -23,7 +23,8 @@
         "test:ui": "bun run tests/helpers/reap.ts && bun run build && bun run build:ext && SQUEAL_UI=1 bun test tests/ui.test.ts --timeout 120000",
         "test:db:up": "bun run tests/fixtures/db.ts up",
         "test:db:down": "bun run tests/fixtures/db.ts down",
-        "neu:update": "neu update"
+        "neu:update": "neu update",
+        "keygen": "bun run scripts/keygen.ts"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
