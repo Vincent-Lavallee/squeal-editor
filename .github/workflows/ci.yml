@@ -1,0 +1,104 @@
+name: CI
+
+on:
+    pull_request:
+        branches: [dev]
+    push:
+        branches: [dev]
+
+concurrency:
+    group: ci-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    lint:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - run: bun run lint
+            - run: bun run format:check
+
+    knip:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - run: bun run knip
+
+    typecheck:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - run: bun run typecheck
+
+    # A smoke test that the frontend and the extension actually compile. It is
+    # not the cross-platform packaging release.yml does (the window chrome DLL,
+    # the installer, the signed update assets) -- that only runs on a merge to
+    # dev, needs secrets a PR from a fork can't see, and would triple the runner
+    # cost of every push. The Windows half of this same build is exercised for
+    # real by test-ui below, which builds both before it launches the app.
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - run: bun run build
+            - run: bun run build:ext
+
+    # `bun test` needs real MySQL and Postgres (docs/testing.md: every bug found
+    # here was invisible to a mock), and SQUEAL_TEST_DB_NATIVE keeps CI off
+    # Docker entirely -- see "CI provisions test databases without Docker" in
+    # docs/decisions.md for why.
+    test-extension:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - uses: ikalnytskyi/action-setup-postgres@v8
+              with:
+                  username: postgres
+                  password: secret
+                  port: 55432
+            - uses: shogo82148/actions-setup-mysql@v1
+              with:
+                  mysql-version: '8.0'
+                  root-password: secret
+                  my-cnf: |
+                      port=53306
+            - run: bun run test:db:up
+              env:
+                  SQUEAL_TEST_DB_NATIVE: '1'
+            - run: bun test
+
+    # WebView2 only exposes CDP through a browser argument (docs/testing.md), so
+    # this suite is Windows-only. `bun run test:ui` builds the frontend and
+    # compiles the extension itself before it launches the app -- see its own
+    # note in package.json/testing.md -- so there is no separate build step here.
+    test-ui:
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+            - run: bun install
+            - uses: ikalnytskyi/action-setup-postgres@v8
+              with:
+                  username: postgres
+                  password: secret
+                  port: 55432
+            - uses: shogo82148/actions-setup-mysql@v1
+              with:
+                  mysql-version: '8.0'
+                  root-password: secret
+                  my-cnf: |
+                      port=53306
+            - run: bun run test:db:up
+              env:
+                  SQUEAL_TEST_DB_NATIVE: '1'
+            - run: bun run test:ui

@@ -35,6 +35,7 @@ reading the others first, except `architecture.md`, which is the map.
 | wondering *why* something is the way it is, before changing it | `decisions.md` |
 | packaging, distribution, or the Neutralino config | `architecture.md` + `decisions.md` |
 | the auto-updater, release signing, or update assets | `extension.md` + `decisions.md` |
+| touching CI, its workflows, or how a PR gets checked | `testing.md` + `decisions.md` |
 
 ## The docs
 

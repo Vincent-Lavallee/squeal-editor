@@ -1,6 +1,6 @@
 {
     "$schema": "https://unpkg.com/knip@6/schema.json",
-    "ignoreBinaries": ["pkill"],
+    "ignoreBinaries": ["pkill", "psql", "pg_isready", "mysql", "mysqladmin"],
     "rules": {
         "exports": "off",
         "types": "off",

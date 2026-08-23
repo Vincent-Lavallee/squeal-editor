@@ -132,14 +132,6 @@ Things that do not exist yet.
 
 Things that should be improved on code wise
 
-- **Continuous integration on pull requests** — Nothing runs on a PR today, so a
-  change that breaks the build or a test is only caught when someone runs it
-  locally by hand — and the suites that run against real databases are the whole
-  safety net this project leans on. Add a pipeline that builds, typechecks, and
-  runs the extension suite (real MySQL/Postgres plus the seeded SQLite file) on
-  every PR, and the Windows-only UI suite on a Windows runner. Linting joins it
-  once a linter is adopted — its own item below.
-
 - **macOS UI test suite** — The UI suite drives the app through WebView2's CDP,
   which exists only on Windows, so on macOS — a supported target — nothing
   exercises the running app and a regression that shows only in the mac webview
@@ -153,12 +145,6 @@ Things that should be improved on code wise
   (naming, self-describing code, why-not-what comments), the docs-routing
   discipline, how to add an engine, the non-negotiables, and the real-database
   testing requirement.
-
-- **Adopt a linter and formatter** — Style is left to discipline: there is no
-  linter or formatter, so nothing mechanically enforces what the conventions ask
-  for and drift is only caught by eye in review. Adopt both for what is
-  mechanical and wire them into the PR pipeline — this is the linting the CI item
-  leaves for later.
 
 - **Strip what-comments** — The codebase carries comments that narrate what the
   code already says, against the standing rule that a comment explains why and

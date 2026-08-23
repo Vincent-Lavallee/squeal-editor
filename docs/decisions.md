@@ -6947,3 +6947,37 @@ version-sniffing, which calls a `context.getFilename()` that ESLint 10
 removed — it crashes the whole lint run, not just one rule. Pinning sidesteps
 the codepath entirely; revisit once eslint-plugin-react ships an ESLint 10
 fix.
+
+---
+
+## CI provisions test databases without Docker
+
+**Why.** `test-ui` (`.github/workflows/ci.yml`) has to run on a Windows
+runner — WebView2 only exposes CDP through a browser argument Windows can
+supply (`docs/testing.md`) — and it has to run against real MySQL and
+Postgres, for the same reason nothing else here runs against a mock. Those two
+requirements don't fit together on GitHub-hosted runners: Docker Desktop on
+`windows-latest` is configured for Windows containers, and the images
+`tests/fixtures/db.ts` starts (`postgres:16-alpine`, `mysql:8`) are Linux
+ones. Switching the daemon to Linux containers on a hosted Windows runner is a
+known trick, not a supported one, and it was rejected specifically because it
+can't be verified without spending real Windows-runner minutes on the
+failures — this project has no way to run a `windows-latest` job locally.
+
+**What ships instead.** `ikalnytskyi/action-setup-postgres` and
+`shogo82148/actions-setup-mysql` install real Postgres/MySQL as native
+services — no Docker at all — and both are tested by their own upstream CI
+against `windows-latest`. `test-extension` uses the same two actions on
+`ubuntu-latest`, not Docker, even though Linux containers would have worked
+there: one seeding path for both jobs is one thing to keep correct instead of
+two.
+
+**Consequence for `tests/fixtures/db.ts`.** `up()`/`down()` gained a
+`SQUEAL_TEST_DB_NATIVE` branch. Unset (the default, what `bun run
+test:db:up` still does on a dev machine), it is exactly what it was: `docker
+run` two named containers and seed them with `docker exec`. Set (CI only), it
+skips starting anything — the workflow's setup actions already have servers
+listening on the usual `127.0.0.1:55432` / `:53306` — and seeds over the
+client CLIs (`psql`, `mysql`) addressed by host and port instead of by
+container name. The seed SQL itself, `PG_SEED`/`MYSQL_SEED`, is untouched;
+only how it gets sent moved.
