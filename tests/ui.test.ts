@@ -5002,7 +5002,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         test('one workspace is skipped, and the bar names the one you are in', async () => {
             await connect(PG, 'ws-local');
             await disconnect();
-            await Bun.sleep(400);
+            await app.waitFor(
+                `JSON.stringify(${names}) === JSON.stringify(['ws-local']) ? true : null`,
+            );
 
             // Straight to the connections: nothing was picked on the way in.
             expect(
@@ -5018,7 +5020,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
             await connect(PG, 'ws-prod', 'production');
             await disconnect();
-            await Bun.sleep(400);
+            await app.waitFor(
+                `JSON.stringify(${groupLabels}) === JSON.stringify(['local', 'production']) ? true : null`,
+            );
 
             // local before production, and no headings for the two nobody used.
             expect(await app.evaluate<string[]>(groupLabels)).toEqual(['local', 'production']);
