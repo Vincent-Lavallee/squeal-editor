@@ -113,6 +113,29 @@ jobs:
             - run: bun run test:db:up
               env:
                   SQUEAL_TEST_DB_NATIVE: '1'
+            # TEMPORARY: bun run test:ui waited 120 real seconds for CDP with
+            # zero response -- too long to be a cold-start issue, so this
+            # launches the app the same way by hand and inspects the process
+            # list, the port and the CDP response directly, instead of guessing
+            # at another timeout. Remove once the real cause is known.
+            - name: Diagnose the app launch directly
+              if: always()
+              run: |
+                  bun run build
+                  bun run build:ext
+                  $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
+                  Start-Process -FilePath bun -ArgumentList 'x','neu','run' -NoNewWindow
+                  Start-Sleep -Seconds 30
+                  Write-Output '--- processes ---'
+                  Get-Process | Where-Object { $_.ProcessName -match 'neutralino|webview|msedge|squeal' } | Format-Table Id, ProcessName, Path -AutoSize
+                  Write-Output '--- netstat 9333 ---'
+                  netstat -ano | Select-String ':9333'
+                  Write-Output '--- GET /json ---'
+                  try { (Invoke-WebRequest -Uri 'http://127.0.0.1:9333/json' -UseBasicParsing -TimeoutSec 5).Content } catch { Write-Output "request failed: $_" }
+                  Write-Output '--- neutralinojs.log ---'
+                  if (Test-Path neutralinojs.log) { Get-Content neutralinojs.log } else { Write-Output 'no neutralinojs.log was written' }
+                  Get-Process neutralino-win_x64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+                  Get-Process squeal-db-ext -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             - run: bun run test:ui
             # The app's own stdout/stderr are discarded (tests/helpers/app.ts), so
             # when it never exposes a CDP page target this is the only way to see
