@@ -3602,7 +3602,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             expect(await app.evaluate<string>(treeDatabase)).toBe('postgres');
 
             await app.evaluate(clickNode('cities'));
-            await Bun.sleep(2000);
+            await app.waitFor(`(${rowCount}) === 1 ? true : null`);
             expect(
                 await app.evaluate<number>(
                     `document.querySelectorAll('[data-testid="note-error"]').length`,
