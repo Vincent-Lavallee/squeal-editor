@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.18.0...v0.18.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* the saved-connection delete confirm races its own arm state ([#43](https://github.com/Vincent-Lavallee/squeal-editor/issues/43)) ([7c2ca1b](https://github.com/Vincent-Lavallee/squeal-editor/commit/7c2ca1b075cce09a03f7c9e45d6859b98e11f597))
+
 ## [0.18.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.17.0...v0.18.0) (2026-08-24)
 
 
