@@ -3,13 +3,13 @@
    can await every engine polymorphically. */
 import type { Database as SqliteDatabase } from 'bun:sqlite';
 
-import type { Driver } from './driver.ts';
-import { describeOk, runWrites, toDisplayRow } from './common.ts';
-import { sqliteCatalog } from './sqliteCatalog.ts';
-import { sqliteColumnNames, toSqliteParam, withStatement } from './sqliteHelpers.ts';
-import { sqliteDdl } from './sqliteDdl.ts';
-import { sqliteLifecycle } from './sqliteLifecycle.ts';
-import { sqliteRelationships } from './sqliteRelationships.ts';
+import type { Driver } from '../driver.ts';
+import { describeOk, runWrites, toDisplayRow } from '../common.ts';
+import { sqliteCatalog } from './catalog.ts';
+import { sqliteColumnNames, toSqliteParam, withStatement } from './helpers.ts';
+import { sqliteDdl } from './ddl.ts';
+import { sqliteLifecycle } from './lifecycle.ts';
+import { sqliteRelationships } from './relationships.ts';
 
 export const sqliteDriver: Driver<SqliteDatabase> = {
     // There is no port to default: the address is a file path, carried in

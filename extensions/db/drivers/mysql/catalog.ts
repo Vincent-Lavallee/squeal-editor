@@ -1,7 +1,7 @@
 import type { Connection as MysqlConnection, FieldPacket } from 'mysql2/promise';
 
-import { assembleDiagram, pickForeignKeys, pickRowKey, tableSearchClause } from './common.ts';
-import type { Driver } from './driver.ts';
+import { assembleDiagram, pickForeignKeys, pickRowKey, tableSearchClause } from '../common.ts';
+import type { Driver } from '../driver.ts';
 
 // System schemas we hide from the tree.
 const MYSQL_SYSTEM_DBS = new Set(['information_schema', 'mysql', 'performance_schema', 'sys']);

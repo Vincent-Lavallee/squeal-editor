@@ -1,12 +1,12 @@
 import type pg from 'pg';
 
-import type { Driver } from './driver.ts';
-import { describeOk, runWrites, selectExpressionAt, toDisplayRow } from './common.ts';
-import { postgresCatalog } from './postgresCatalog.ts';
-import { postgresDdl } from './postgresDdl.ts';
-import { postgresLifecycle } from './postgresLifecycle.ts';
-import { splitRelation } from './postgresRelation.ts';
-import { postgresRelationships } from './postgresRelationships.ts';
+import type { Driver } from '../driver.ts';
+import { describeOk, runWrites, selectExpressionAt, toDisplayRow } from '../common.ts';
+import { postgresCatalog } from './catalog.ts';
+import { postgresDdl } from './ddl.ts';
+import { postgresLifecycle } from './lifecycle.ts';
+import { splitRelation } from './relation.ts';
+import { postgresRelationships } from './relationships.ts';
 
 export const postgresDriver: Driver<pg.Client> = {
     defaultPort: 5432,

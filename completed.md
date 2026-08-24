@@ -891,3 +891,16 @@ This is a record, not a plan. Nothing here is waiting on anything.
   runs the extension suite (real MySQL/Postgres plus the seeded SQLite file) on
   every PR, and the Windows-only UI suite on a Windows runner. Linting joins it
   once a linter is adopted — its own item below.
+
+- **2026-08-23** — **Each database engine's files sit flat in `drivers/` instead of its own
+  folder** — Postgres alone is `postgres.ts`, `postgresCatalog.ts`,
+  `postgresDdl.ts`, `postgresLifecycle.ts`, `postgresRelation.ts`,
+  `postgresRelationships.ts`, `postgresSystemSchemas.ts`, and MySQL and SQLite
+  each carry a smaller version of the same spread, all sharing one directory with
+  the common assemblers. Give each engine its own folder (`drivers/postgres/`,
+  `drivers/mysql/`, `drivers/sqlite/`) and drop the now-redundant engine prefix
+  from the files inside it (`catalog.ts`, `ddl.ts`, `lifecycle.ts`, …).
+  `common.ts` and its siblings stay directly under `drivers/`, shared across all
+  three rather than owned by one, and the barrel rule in `docs/extension.md`
+  (import `drivers/index.ts`, never a file beside it) still has to hold once the
+  engine files move.

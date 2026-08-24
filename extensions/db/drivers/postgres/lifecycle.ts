@@ -1,7 +1,7 @@
 import pg from 'pg';
 
-import { KEEPALIVE_DELAY_MS, tlsOptions } from './common.ts';
-import type { Driver } from './driver.ts';
+import { KEEPALIVE_DELAY_MS, tlsOptions } from '../common.ts';
+import type { Driver } from '../driver.ts';
 
 const { Client: PgClient, DatabaseError, types: pgTypes } = pg;
 

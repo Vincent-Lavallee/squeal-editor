@@ -1,9 +1,9 @@
 import type pg from 'pg';
 
-import { pickForeignKeys, pickRowKey, tableSearchClause } from './common.ts';
-import type { Driver } from './driver.ts';
-import { splitRelation } from './postgresRelation.ts';
-import { PG_SYSTEM_SCHEMAS } from './postgresSystemSchemas.ts';
+import { pickForeignKeys, pickRowKey, tableSearchClause } from '../common.ts';
+import type { Driver } from '../driver.ts';
+import { splitRelation } from './relation.ts';
+import { PG_SYSTEM_SCHEMAS } from './systemSchemas.ts';
 
 export const postgresCatalog: Pick<
     Driver<pg.Client>,

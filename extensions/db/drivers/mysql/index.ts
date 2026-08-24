@@ -1,10 +1,10 @@
 import type { Connection as MysqlConnection, FieldPacket } from 'mysql2/promise';
 
-import type { Driver } from './driver.ts';
-import { describeOk, runWrites, toDisplayRow } from './common.ts';
-import { mysqlCatalog } from './mysqlCatalog.ts';
-import { mysqlDdl } from './mysqlDdl.ts';
-import { mysqlLifecycle } from './mysqlLifecycle.ts';
+import type { Driver } from '../driver.ts';
+import { describeOk, runWrites, toDisplayRow } from '../common.ts';
+import { mysqlCatalog } from './catalog.ts';
+import { mysqlDdl } from './ddl.ts';
+import { mysqlLifecycle } from './lifecycle.ts';
 
 export const mysqlDriver: Driver<MysqlConnection> = {
     defaultPort: 3306,

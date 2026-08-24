@@ -44,16 +44,21 @@ about the transport, and `store.ts` and `chrome.ts` know nothing about either.
 |---|---|
 | `driver.ts` | the contract: `Driver<C>`, `Relation`, `TableMeta`, `QueryOutcome` |
 | `common.ts` | a re-export barrel over `commonValues.ts` (`toDisplayValue`, the TLS options), `commonCatalog.ts` (`pickRowKey`, `pickForeignKeys`, `assembleDiagram`), `commonWrites.ts` (`runWrites`), `commonQuery.ts` (`buildWhere`, `orderByClause`, `selectExpressionAt`) — split for length, never for meaning; every engine still imports `common.ts` itself |
-| `mysql.ts`, `postgres.ts`, `sqlite.ts` | one engine each, assembled by spreading a handful of `Pick<Driver<C>, ...> & ThisType<Driver<C>>` objects from sibling `<engine>Lifecycle.ts` / `<engine>Catalog.ts` / `<engine>Ddl.ts` (/ `<engine>Relationships.ts` where `listRelationships` alone needs the room) files into one object literal — see *Splitting an engine file* below |
+| `mysql/`, `postgres/`, `sqlite/` | one folder per engine, each an `index.ts` assembling the `Driver<C>` by spreading a handful of `Pick<Driver<C>, ...> & ThisType<Driver<C>>` objects from sibling `lifecycle.ts` / `catalog.ts` / `ddl.ts` (/ `relationships.ts` where `listRelationships` alone needs the room) files into one object literal — see *Splitting an engine file* below |
 | `index.ts` | the barrel: `withDriver`, and the contract re-exported |
+
+`common.ts` and its siblings (`commonValues.ts`, `commonCatalog.ts`,
+`commonWrites.ts`, `commonQuery.ts`) stay directly under `drivers/`, shared
+across all three engines rather than owned by one.
 
 **Import `drivers/index.ts`, never a file beside it** — the same rule
 `shared/protocol/` follows, and for the same reason: a helper can move between
-`common.ts` and an engine without touching a caller. The engine files are the one
-exception, importing `driver.ts` and `common.ts` directly, because importing the
-barrel that imports them would be the cycle. This exception is by *file*, not by
-symbol: `postgres.ts`'s own split-out siblings (`postgresCatalog.ts` and friends)
-are outside the barrel rule too, since nothing outside `postgres.ts` imports them.
+`common.ts` and an engine without touching a caller. The engine folders are the
+one exception, their `index.ts` importing `../driver.ts` and `../common.ts`
+directly, because importing the barrel that imports them would be the cycle.
+This exception is by *file*, not by symbol: `postgres/index.ts`'s own
+split-out siblings (`postgres/catalog.ts` and friends) are outside the barrel
+rule too, since nothing outside `postgres/index.ts` imports them.
 
 An engine file knows nothing of the other two. Anything two of them would
 otherwise both spell is a `common.ts` assembler taking `quoteIdent` and
@@ -62,8 +67,8 @@ having three answers.
 
 #### Splitting an engine file
 
-`mysql.ts`, `postgres.ts` and `sqlite.ts` each assemble their exported
-`Driver<C>` as one object literal built from object spreads:
+`mysql/index.ts`, `postgres/index.ts` and `sqlite/index.ts` each assemble their
+exported `Driver<C>` as one object literal built from object spreads:
 
 ```ts
 export const mysqlDriver: Driver<MysqlConnection> = {
@@ -97,8 +102,8 @@ exactly as it was.
 ## Adding an engine
 
 1. Add the name to `EngineType` in `shared/protocol/config.ts`.
-2. Write `extensions/db/drivers/<engine>.ts`, exporting a `Driver<C>` where `C`
-   is the library's client type.
+2. Write `extensions/db/drivers/<engine>/index.ts`, exporting a `Driver<C>`
+   where `C` is the library's client type.
    Its `dialect` is how the editor will highlight it *and* which words it will
    suggest — one of Monaco's SQL language ids, or `sql` if it has no grammar of
    its own. Do not invent one: `sql` is the deliberate fallback, and a dialect

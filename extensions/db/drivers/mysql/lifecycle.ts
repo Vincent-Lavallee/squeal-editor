@@ -1,8 +1,8 @@
 import mysql from 'mysql2/promise';
 import type { Connection as MysqlConnection, FieldPacket } from 'mysql2/promise';
 
-import { KEEPALIVE_DELAY_MS, tlsOptions } from './common.ts';
-import type { Driver } from './driver.ts';
+import { KEEPALIVE_DELAY_MS, tlsOptions } from '../common.ts';
+import type { Driver } from '../driver.ts';
 
 export const mysqlLifecycle: Pick<
     Driver<MysqlConnection>,

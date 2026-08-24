@@ -3,9 +3,9 @@
    can await every engine polymorphically. */
 import type { Database as SqliteDatabase } from 'bun:sqlite';
 
-import { type KeyPart, pickForeignKeys, pickRowKey, tableSearchClause } from './common.ts';
-import type { Driver } from './driver.ts';
-import { sqliteRows } from './sqliteHelpers.ts';
+import { type KeyPart, pickForeignKeys, pickRowKey, tableSearchClause } from '../common.ts';
+import type { Driver } from '../driver.ts';
+import { sqliteRows } from './helpers.ts';
 
 export const sqliteCatalog: Pick<
     Driver<SqliteDatabase>,
