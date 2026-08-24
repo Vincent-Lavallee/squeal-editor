@@ -479,20 +479,25 @@ async function addConnection(
  */
 async function clearSavedConnections(): Promise<void> {
     await app.reload();
-    await Bun.sleep(600);
+    // Zero saved connections skips straight to the bare form -- `fillConnectForm`
+    // has the same fork, and no list worth showing means no `saved-new` either.
+    await app.waitFor(
+        `document.querySelector('[data-testid="saved-new"]') || document.querySelector('#type') ? true : null`,
+    );
+    const deleteBtn = `document.querySelector('[data-testid="saved-row"]')?.querySelector('[data-testid="saved-delete"]')`;
     for (let guard = 0; guard < 20; guard++) {
         const rows = await app.evaluate<number>(
             `document.querySelectorAll('[data-testid="saved-row"]').length`,
         );
         if (rows === 0) break;
-        await app.evaluate(
-            `document.querySelector('[data-testid="saved-row"]').querySelector('[data-testid="saved-delete"]').click(); true;`,
+        await app.evaluate(`${deleteBtn}?.click(); true;`);
+        await app.waitFor(
+            `(${deleteBtn})?.title === 'Click again to delete' || (${deleteBtn}) === undefined ? true : null`,
         );
-        await Bun.sleep(300);
-        await app.evaluate(
-            `document.querySelector('[data-testid="saved-row"]').querySelector('[data-testid="saved-delete"]').click(); true;`,
+        await app.evaluate(`${deleteBtn}?.click(); true;`);
+        await app.waitFor(
+            `document.querySelectorAll('[data-testid="saved-row"]').length < ${rows} ? true : null`,
         );
-        await Bun.sleep(600);
     }
 }
 
@@ -4603,7 +4608,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `${savedRow('pg-renamed')}.querySelector('[data-testid="saved-delete"]').click(); true;`,
             );
-            await Bun.sleep(400);
+            await app.waitFor(
+                `${savedRow('pg-renamed')}.querySelector('[data-testid="saved-delete"]').title === 'Click again to delete' ? true : null`,
+            );
             expect(
                 await app.evaluate<string>(
                     `${savedRow('pg-renamed')}.querySelector('[data-testid="saved-delete"]').title`,
@@ -5104,7 +5111,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `${savedRow('Default')}.querySelector('[data-testid="saved-delete"]').click(); true;`,
             );
-            await Bun.sleep(400);
+            await app.waitFor(
+                `${savedRow('Default')}.querySelector('[data-testid="saved-delete"]').title === 'Click again to delete with its 2 connections' ? true : null`,
+            );
             // The confirmation names the count because the connections go too -- and
             // their stored passwords with them -- in the armed button's tooltip.
             expect(
