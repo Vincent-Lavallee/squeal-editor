@@ -1,13 +1,13 @@
 import type { SqlDialect, TableFilter } from '../../../../shared/protocol/index.ts';
 import type { ResultsView } from './ResultsContext.tsx';
-import type { useActiveResultPart } from './useActiveResultPart.ts';
-import type { useResultsBrowsing } from './useResultsBrowsing.ts';
-import type { useResultsCopy } from './useResultsCopy.ts';
-import type { useResultsFilterDraft } from './useResultsFilterDraft.ts';
-import type { useResultsRowIdentity } from './useResultsRowIdentity.ts';
-import type { useResultsRunActions } from './useResultsRunActions.ts';
-import type { useResultsStagingActions } from './useResultsStagingActions.ts';
-import type { useResultsViewPrefs } from './useResultsViewPrefs.ts';
+import type { useActiveResultPart } from './core/hooks/useActiveResultPart.ts';
+import type { useResultsBrowsing } from './core/hooks/useResultsBrowsing.ts';
+import type { useResultsCopy } from './core/hooks/useResultsCopy.ts';
+import type { useResultsFilterDraft } from './filter/hooks/useResultsFilterDraft.ts';
+import type { useResultsRowIdentity } from './core/hooks/useResultsRowIdentity.ts';
+import type { useResultsRunActions } from './core/hooks/useResultsRunActions.ts';
+import type { useResultsStagingActions } from './editing/hooks/useResultsStagingActions.ts';
+import type { useResultsViewPrefs } from './core/hooks/useResultsViewPrefs.ts';
 
 interface Args {
     activeTabId: string | null;

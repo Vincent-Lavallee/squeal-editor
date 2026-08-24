@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 
 import SelectPopup from './SelectPopup.tsx';
 import SelectTrigger from './SelectTrigger.tsx';
-import { useSelect } from './useSelect.ts';
+import { useSelect } from './hooks/useSelect.ts';
 
 /**
  * The app's one dropdown: a trigger naming the current value, and a floating

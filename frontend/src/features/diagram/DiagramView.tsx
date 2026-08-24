@@ -1,7 +1,7 @@
 import DiagramCanvas from './DiagramCanvas.tsx';
 import DiagramStatus from './DiagramStatus.tsx';
 import DiagramToolbar from './DiagramToolbar.tsx';
-import type { useDiagramCanvas } from './useDiagramCanvas.ts';
+import type { useDiagramCanvas } from './hooks/useDiagramCanvas.ts';
 
 type DiagramViewProps = {
     database: string | null;

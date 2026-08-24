@@ -1,15 +1,15 @@
 import { useAppSelector } from '../../store/hooks.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import * as t from '../../common/tokens';
-import Menu from './Menu.tsx';
-import NewAssistantChatButton from './NewAssistantChatButton.tsx';
-import TitlebarDialogs from './TitlebarDialogs.tsx';
+import Menu from './menu/Menu.tsx';
+import NewAssistantChatButton from './assistant/NewAssistantChatButton.tsx';
+import TitlebarDialogs from './dialogs/TitlebarDialogs.tsx';
 import TitlebarTitle from './TitlebarTitle.tsx';
-import { WindowResizeTop } from './WindowResizeEdge.tsx';
-import WindowControls from './WindowControls.tsx';
-import { useAbout } from './useAbout.ts';
-import { useTitlebarDialogs } from './useTitlebarDialogs.ts';
-import { useWindowChrome } from './useWindowChrome.ts';
+import { WindowResizeTop } from './window-chrome/WindowResizeEdge.tsx';
+import WindowControls from './window-chrome/WindowControls.tsx';
+import { useAbout } from './dialogs/hooks/useAbout.ts';
+import { useTitlebarDialogs } from './dialogs/hooks/useTitlebarDialogs.ts';
+import { useWindowChrome } from './window-chrome/hooks/useWindowChrome.ts';
 
 interface Props {
     onCheckForUpdates: () => void;

@@ -1,4 +1,4 @@
-import type { Tool } from '../features/assistant/toolHelpers.ts';
+import type { Tool } from '../features/assistant/tools/toolHelpers.ts';
 import {
     approvalRequested,
     autoApproved,

@@ -7,7 +7,7 @@ import { Titlebar, TitlebarMacos } from './features/titlebar/index.ts';
 import WindowResizeEdge, {
     WindowResizeCornerBL,
     WindowResizeCornerBR,
-} from './features/titlebar/WindowResizeEdge.tsx';
+} from './features/titlebar/window-chrome/WindowResizeEdge.tsx';
 import { UpdateBanner, useUpdater } from './features/updater/index.ts';
 
 const IS_MACOS = typeof NL_OS !== 'undefined' && NL_OS === 'Darwin';

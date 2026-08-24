@@ -71,37 +71,129 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
   conversationRecord.ts    what a conversation looks like written down, values removed
   conversationSyncListener.ts  when that record is written
 src/features/
-  connections/          ConnectScreen (composes ConnectScreenBody's per-view
-                        components), ConnectionForm (composes its field-group
-                        components, each with a matching name), SavedConnectionList
-                        (composes SavedConnectionGroup/Row/...), WorkspacePicker
-                        (composes WorkspaceRow/...), WorkspaceForm, PasswordPrompt,
-                        AwsSignInButton, AwsSignInStatus, AwsSignInVeil (composes
-                        AwsSignInVeilBlocked/Action)
+  connections/          index.ts, connectPhaseLabel -- the feature's own barrel
+                        and the one helper both connect-screen/ and
+                        saved-connection-list/ read, too small to hand to either
+    connect-screen/     ConnectScreen (composes ConnectScreenBody's per-view
+                        components), connectScreenTypes/Logic, PasswordPrompt,
+                        ConnectionListSkeleton -- the shell that switches between
+                        the list, a connection form, workspaces and the password
+                        prompt, importing one top-level component from each of
+                        the subfeatures below to render whichever is active
+    connection-form/    ConnectionForm (composes its field-group components,
+                        each with a matching name), connectionFormTypes/Logic
+    saved-connection-list/  SavedConnectionList (composes SavedConnectionGroup/
+                        Row/...), ConnectionsWorkspaceBar, savedConnectionRowTypes
+    workspaces/         WorkspacePicker (composes WorkspaceRow/...), WorkspaceForm
+    aws-sign-in/        AwsSignInButton, AwsSignInStatus, AwsSignInVeil (composes
+                        AwsSignInVeilBlocked/Action) -- pulled into three of the
+                        subfeatures above, pulls from none of them
     hooks/              useSavedConnections, useWorkspaces, useConnectionForm
                         (+ its Fields/Test halves), useConnectScreen (+ its
                         Nav/Actions/Submits halves), useConnectionRows
-  titlebar/             Titlebar, Menu, AboutDialog, EnvironmentsDialog, ShortcutsDialog,
-                        ExportConnectionsDialog + ImportConnectionsDialog,
-                        WindowResizeEdge (the app's own resize strips),
-                        useAbout, useWindowChrome
+  titlebar/             index.ts, Titlebar, TitlebarTitle -- the non-macOS shell;
+                        `App.tsx` reaches `window-chrome/WindowResizeEdge.tsx`
+                        directly, the one file the barrel doesn't cover
+    window-chrome/      WindowResizeEdge (the app's own resize strips), WindowControls
+      hooks/            useWindowChrome (+ its frame/maximize/drag/macOS-focus halves)
+    menu/               Menu, MenuItems
+      hooks/            useNativeMenuBridge
+    dialogs/            AboutDialog, TitlebarDialogs -- orchestrates all five
+                        dialogs; About has no cluster of its own so it sits here
+                        rather than in a folder for one file
+      hooks/            useAbout, useTitlebarDialogs
+      environments/     EnvironmentsDialog, AddEnvironmentForm, EnvironmentRow
+      shortcuts/        ShortcutsDialog, ShortcutGroup/Row
+        hooks/          useShortcutRecorder
+      connections-transfer/  ExportConnectionsDialog + ImportConnectionsDialog,
+                        ExportedSummary
+    assistant/          NewAssistantChatButton, AssistantBusyDot,
+                        MacosAssistantButton (reaches into macos/ for the
+                        traffic lights' layout constants, to align beside them)
+    macos/              TitlebarMacos, MacosTitlebarTitle, TrafficLights
   rail/                 ConnectionRail: the open connections, the way between, and Disconnect
   tabs/                 TabStrip: the strip, its menu, and its drag; CloseTabsConfirm
-  explorer/             Sidebar, DropTableConfirm, useExplorer
+  explorer/             index.ts -- the feature's own barrel; every other file
+                        below is a subfeature
+    hooks/              useExplorer
+    sidebar/            Sidebar, SidebarShell, the bars -- the panel shell
+      hooks/            useSidebarController
+    tree/               SidebarTree, the row/group components, TreeRowContext --
+                        the tree widget; SidebarTree and useSidebarExplorerData
+                        (in hooks/) are this subfeature's own two entry points,
+                        called only from sidebar/
+      hooks/            useSidebarExplorerData (+ its expansion/filter/listing/
+                        pinned/schema-group hooks) -- the data shaping behind the tree
+    table-fields/       Columns/ColumnRow, Triggers/TriggerRow -- nested under a row
+    functions/          TreeFunctions and its row/toggle/name-button -- the
+                        function branch, a sibling of a row rather than nested in one
+    menus/              (no components of its own; see hooks/)
+      hooks/            useSidebarMenus, useSidebarMenuItems, useSidebarTableMenuItems
+    copy-hint/          CopyHintBadge, DatabasePickerWithCopyHint
+      hooks/            useCopyHint
+    drop-table/         DropTableConfirm -- not on the feature's public surface;
+                        only sidebar/SidebarOverlays reaches it
+      hooks/            useDropSubmit
+    catalog/            (no components of its own; see hooks/)
+      hooks/            useCatalogFetch/Ddl/Stars/Refresh, useRelationCache,
+                        useShownListing, useSettledSearch -- the bridge-fetching
+                        hooks useExplorer composes
   queries/              SavedQueriesButton (the strip's picker), SaveQueryDialog
-  editor/               EditorPane, useEditor (text surface over the tabs slice), monaco (theme + worker),
-                        completion + keywords + sqlScope + useSqlCompletion,
-                        format + useSqlFormatter, useEditorKeybindings (Monaco's own commands, on our chords)
-  results/              ResultsTable, StatementTabs, FilterBar, JsonCellDrawer,
-                        ResultsContext (useResultsView), useResults
+    hooks/              useAutoClose
+  editor/               EditorPane, monaco (theme + worker), completion + keywords
+                        + sqlScope, format
+    hooks/              useEditor (text surface over the tabs slice),
+                        useSqlCompletion, useSqlFormatter, useEditorKeybindings
+                        (Monaco's own commands, on our chords)
+  results/              ResultsTable, ResultsContext (useResultsView),
+                        buildResultsApi, ResultsTabBars -- the hub every
+                        subfeature below both feeds and reads, so it stays here
+                        rather than inside any one of them
+    hooks/              useResults
+    core/               resultsKeys (filterKey/sortKey/nextSort)
+      hooks/            the tab/result state machine: run, page, sort, copy, row identity
+    grid/               the grid's own rendering shell
+      hooks/            selection, resize, scroll
+    editing/            CellEditor, JsonCellDrawer
+      hooks/            staged edits, Save
+    filter/             FilterBar
+      hooks/            the WHERE builder's state
+    statement-tabs/     StatementTabs -- the multi-statement strip
+    bar/                ResultsBar, ResultsPager, ResultsSaveBar
+    states/             the mutually-exclusive full-pane states (error/empty/
+                        running/finished) and GridSkeleton
   diagram/              RelationshipDiagram, layout + layoutGraph +
-                        diagramExtent + edgePath (pure), useDiagram, useDiagramCanvas
+                        diagramExtent + edgePath (pure) -- flat on purpose:
+                        `layout.ts`'s node/edge types thread through nearly
+                        every file here and it is mutually dependent with
+                        layoutGraph.ts/diagramExtent.ts, so there is no
+                        subfeature seam the way explorer/results/titlebar/
+                        connections/assistant each have one
+    hooks/              useDiagram, useDiagramCanvas, useDiagramLayout,
+                        useDiagramZoomPan, useNodeDrag
   statusbar/            StatusBar + ReadOnlyConfirm: the bottom bar and its lock
-  updater/              UpdateBanner, useUpdater: the found-update strip
-  assistant/            AssistantPanel, Thread, Markdown (an answer, rendered),
-                        Connect, History (past conversations), context (rebuilt per
-                        turn), prompts (the questions the app asks on the user's
-                        behalf), tools (the fifteen)
+    hooks/              useQueryElapsed
+  updater/              UpdateBanner: the found-update strip
+    hooks/              useUpdater
+  assistant/            index.ts, AssistantPanel, AssistantBar, context (rebuilt
+                        per turn), prompts (the questions the app asks on the
+                        user's behalf), tokenCount -- fan out to every subfeature
+                        below; nothing below reaches back up except for markdown/
+    tools/              toolHelpers, schemaTools, connectionTools, runTools,
+                        tabEditTools, tabInspectionTools, tabTools, tools (the
+                        fifteen, `toolByName`/`TOOL_DEFS`) -- `toolHelpers.ts`
+                        stays directly importable at this path since
+                        `store/assistantApproval.ts` reaches it without going
+                        through `tools.ts`
+    markdown/           Markdown (an answer, rendered), Prose, markdownBlocks
+                        + markdownInline -- a leaf rendering utility, read only
+                        by thread/
+    thread/             Thread, ThreadMessage, ToolRow (+ Summary/Detail),
+                        ApprovalCard, Snippet, EmptyState
+    composer/           AssistantComposer (composes Footer + Input)
+    history/            History (past conversations), HistoryPanel, HistoryRow
+      hooks/            useHistoryPopup
+    connect/            Connect (composes AiConnectIntro/Actions, AiKeyStatusNotice)
 src/neutralino.d.ts     ambient types for the global Neutralino client
 src/styles/             the design system
 ```

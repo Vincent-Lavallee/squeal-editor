@@ -1,2 +1,2 @@
 export { default as UpdateBanner } from './UpdateBanner.tsx';
-export { useUpdater } from './useUpdater.ts';
+export { useUpdater } from './hooks/useUpdater.ts';

@@ -8,7 +8,7 @@ import DisconnectButton from './DisconnectButton.tsx';
 import LostConnectionBanner from './LostConnectionBanner.tsx';
 import ReadOnlyConfirm from './ReadOnlyConfirm.tsx';
 import ReadOnlyLock from './ReadOnlyLock.tsx';
-import { useQueryElapsed } from './useQueryElapsed.ts';
+import { useQueryElapsed } from './hooks/useQueryElapsed.ts';
 
 const segment: React.CSSProperties = {
     display: 'flex',

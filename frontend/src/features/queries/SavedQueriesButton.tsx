@@ -5,7 +5,7 @@ import { useSavedQueries } from '../../store/savedQueriesSlice.ts';
 import { SavedQueryIcon } from '../../common/icons/icons.ts';
 import * as t from '../../common/tokens';
 import SavedQueriesPanel from './SavedQueriesPanel.tsx';
-import { useAutoClose } from './useAutoClose.ts';
+import { useAutoClose } from './hooks/useAutoClose.ts';
 
 const iconSvg = { flex: 'none', width: t.ICON, height: t.ICON };
 

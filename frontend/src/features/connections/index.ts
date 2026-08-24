@@ -1,1 +1,1 @@
-export { default as ConnectScreen } from './ConnectScreen.tsx';
+export { default as ConnectScreen } from './connect-screen/ConnectScreen.tsx';

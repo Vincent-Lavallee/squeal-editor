@@ -904,3 +904,21 @@ This is a record, not a plan. Nothing here is waiting on anything.
   three rather than owned by one, and the barrel rule in `docs/extension.md`
   (import `drivers/index.ts`, never a file beside it) still has to hold once the
   engine files move.
+
+- **2026-08-24** — **Some features have grown subfeatures that were never split out** — The
+  working agreement says a subfeature gets its own subfolder within its feature,
+  the way the assistant's tool definitions live in `features/assistant/tools/`,
+  but several features have kept growing flat instead: explorer and results in
+  particular carry components and hooks that read as more than one concern living
+  under one folder. Plan the actual split before touching a feature — which files
+  belong to which subfeature is a judgment call, not something to decide item by
+  item while moving files.
+
+- **2026-08-24** — **Hooks sit loose in most features instead of a `hooks/`
+  subfolder** — The working agreement says hooks get their own `hooks/`
+  subfolder within whichever folder owns them, and `features/connections` and
+  `shell/` already followed it, but everywhere else a feature's hooks sat
+  directly beside its components: editor, results, and explorer each carried a
+  few dozen, and titlebar, tabs, diagram, assistant, queries, statusbar, and
+  updater carried fewer but were just as loose. `common/components` had the
+  same problem for the Select/dropdown hooks.

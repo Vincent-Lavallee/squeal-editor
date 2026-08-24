@@ -2,7 +2,7 @@ import Button from '../../common/components/Button.tsx';
 import { AssistantIcon, NewConversationIcon } from '../../common/icons/icons.ts';
 import * as t from '../../common/tokens';
 import type { useConversation } from '../../store/assistantSlice.ts';
-import History from './History.tsx';
+import History from './history/History.tsx';
 import { formatTokenCount } from './tokenCount.ts';
 
 const barStyle: React.CSSProperties = {

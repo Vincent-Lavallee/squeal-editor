@@ -20,7 +20,7 @@
  *   the user's server inventory in somebody else's prompt log.
  */
 
-import { TABLE_LIMIT } from './tools.ts';
+import { TABLE_LIMIT } from './tools/tools.ts';
 import { activePart } from '../../store/resultsSlice.ts';
 import { selectDatabase } from '../../store/tabsSlice.ts';
 import type { RootState } from '../../store/index.ts';

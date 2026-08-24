@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import type { SavedConnection, TestPassword } from '../../../../../shared/protocol/index.ts';
 import { useAwsSignIn } from '../../../store/awsSignInSlice.ts';
 import { useConnectionTest } from '../../../store/connectionTestSlice.ts';
-import type { FormState } from '../connectionFormTypes.ts';
+import type { FormState } from '../connection-form/connectionFormTypes.ts';
 
 /**
  * The connection test and the AWS sign-in it may need, plus the actions row's

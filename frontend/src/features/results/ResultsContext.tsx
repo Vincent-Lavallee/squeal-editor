@@ -1,15 +1,15 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 
 import { useAppSelector } from '../../store/hooks.ts';
-import { type ColumnWidths, useColumnWidthsState } from './useColumnWidthsState.ts';
-import { type FilterDraft, useFilterDraftState } from './useFilterDraftState.ts';
-import { type GridScroll, useGridScrollState } from './useGridScrollState.ts';
+import { type ColumnWidths, useColumnWidthsState } from './grid/hooks/useColumnWidthsState.ts';
+import { type FilterDraft, useFilterDraftState } from './filter/hooks/useFilterDraftState.ts';
+import { type GridScroll, useGridScrollState } from './grid/hooks/useGridScrollState.ts';
 import {
     EMPTY_PENDING,
     type Pending,
     type SetCellArgs,
     useStagingState,
-} from './useStagingState.ts';
+} from './editing/hooks/useStagingState.ts';
 
 export type { ColumnWidths, FilterDraft, GridScroll, Pending };
 export { EMPTY_PENDING };
