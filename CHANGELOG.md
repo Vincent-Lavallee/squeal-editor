@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.18.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.17.0...v0.18.0) (2026-08-24)
+
+
+### Features
+
+* LLM progress status ([3b222d6](https://github.com/Vincent-Lavallee/squeal-editor/commit/3b222d630694fec4b118719511b119b83eec6abe))
+
+
+### Bug Fixes
+
+* LLM can't restart after truncated convo ([f68995b](https://github.com/Vincent-Lavallee/squeal-editor/commit/f68995bc7922556453cc8badfe6de2e4ded0bd97))
+* LLM stale context + missing context size ([e6e4794](https://github.com/Vincent-Lavallee/squeal-editor/commit/e6e47948f878065d12a03bc79e8cabc2a59be4ef))
+* Macos cell copy issue, disabled auto-completion on tab rename and fixed updater not restarting app ([cdcf3c2](https://github.com/Vincent-Lavallee/squeal-editor/commit/cdcf3c28effca56405bc7bf82002507bdd1f325d))
+* Windows installer not restarting app ([9449642](https://github.com/Vincent-Lavallee/squeal-editor/commit/94496423539e9fef0bb8ae93c484dcd7619b69b0))
+* Windows resize behavior ([8b2f5fe](https://github.com/Vincent-Lavallee/squeal-editor/commit/8b2f5fee9472ea3439c49c1f96e944f395b2ba41))
+
 ## [0.17.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.16.0...v0.17.0) (2026-08-21)
 
 
