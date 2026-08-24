@@ -4527,7 +4527,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
         test('editing renames it in place', async () => {
             await disconnect();
-            await Bun.sleep(400);
+            await app.waitFor(
+                `${savedRow('pg-fixture')} && !${savedRow('pg-fixture')}.querySelector('[data-testid="saved-open"]') ? true : null`,
+            );
 
             // Closed, so the mark is gone and the form is reachable again.
             expect(
