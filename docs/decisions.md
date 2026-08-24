@@ -7016,3 +7016,31 @@ Microsoft's fix lands in, or dropping outright once it does. Check
 `MicrosoftEdge/WebView2Feedback#5640` before touching this step; if it is
 closed, remove the pin first and see whether `test-ui` still passes on the
 plain installed runtime before assuming anything else is wrong.
+
+## `build-window-chrome.ts` runs the vcvars call from a `.bat`, not a `cmd /c` argument
+
+**Why.** The `--required` build on `windows-latest` started failing with
+`vcvars64.bat` reported as "not recognized," even though `vswhere` had found it
+correctly and the same path worked when printed and run by hand. The command
+was built as `['cmd', '/c', '"<vcvars>" >nul && <compile...>']` — a single argv
+entry that already contained embedded double quotes. Bun's `Bun.spawn` quotes
+that whole entry again when it assembles the Windows `CreateProcess` command
+line, and the escaping it uses (backslash-escaped quotes, the normal MSVCRT
+argv convention) is not how `cmd.exe` parses its own `/c` line. The result was
+a mangled token cmd could not recognize as a path at all. This had nothing to
+do with the runner's Visual Studio version moving from a `2022` install folder
+to an `18` one — that just changed what the failing path looked like in the
+log.
+
+**What ships instead.** `developerPrompt()` writes the `call "<vcvars>" >nul`
+line and the quoted `cl` invocation into `compile.bat` inside the same scratch
+`BUILD_DIR` the link step already uses, and spawns `['cmd', '/c', script]` —
+one argument, no embedded quotes, nothing for Bun's re-quoting to collide with.
+cmd parses a batch file with its normal script parser instead of reparsing a
+command line assembled by something else, which is the mismatch this bug came
+from.
+
+**If this changes again:** any command built for `cmd /c` (or any shell) as a
+single string containing its own quotes is suspect the moment it goes through
+`Bun.spawn`'s array form — write it to a script file instead of trying to get
+the quoting to survive two different parsers.

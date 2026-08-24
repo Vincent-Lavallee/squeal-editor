@@ -9,7 +9,7 @@
 // uses -- shipping an installer that quietly lost the window chrome is the one
 // case where "best effort" is the wrong answer.
 
-import { mkdirSync, copyFileSync, rmSync } from 'node:fs';
+import { mkdirSync, copyFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -100,7 +100,15 @@ function developerPrompt(): string[] | null {
     const compile = msvc('cl')
         .map((arg) => (arg.includes(' ') ? `"${arg}"` : arg))
         .join(' ');
-    return ['cmd', '/c', `"${vcvars}" >nul && ${compile}`];
+
+    // Written to a .bat rather than passed as one `cmd /c "..."` argument: Bun
+    // re-quotes an argv entry that already contains quotes when it builds the
+    // CreateProcess command line, and cmd's own line parsing does not agree with
+    // that quoting, so the vcvars path gets mangled before cmd ever sees it. A
+    // batch file sidesteps that mismatch entirely -- cmd parses it as a script.
+    const script = join(BUILD_DIR, 'compile.bat');
+    writeFileSync(script, `call "${vcvars}" >nul\r\nif errorlevel 1 exit /b 1\r\n${compile}\r\n`);
+    return ['cmd', '/c', script];
 }
 
 function toolchain(): string[] | null {
