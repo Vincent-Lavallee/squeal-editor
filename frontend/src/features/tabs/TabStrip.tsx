@@ -3,7 +3,7 @@ import ContextMenu from '../../common/components/ContextMenu.tsx';
 import * as t from '../../common/tokens';
 import TabStripRows from './TabStripRows.tsx';
 import NewTabButton from './NewTabButton.tsx';
-import { useTabStripController } from './useTabStripController.ts';
+import { useTabStripController } from './hooks/useTabStripController.ts';
 
 interface Props {
     /**

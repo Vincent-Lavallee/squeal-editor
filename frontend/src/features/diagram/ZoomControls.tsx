@@ -1,6 +1,6 @@
 import Button from '../../common/components/Button.tsx';
 import * as t from '../../common/tokens';
-import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from './useDiagramZoomPan.ts';
+import { ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from './hooks/useDiagramZoomPan.ts';
 
 export default function ZoomControls({
     zoom,

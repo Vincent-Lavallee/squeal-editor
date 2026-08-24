@@ -13,9 +13,9 @@ import * as t from '../../common/tokens';
 import { loadModels, useAssistantAccount, useConversation } from '../../store/assistantSlice.ts';
 import { useAppDispatch } from '../../store/hooks.ts';
 import AssistantBar from './AssistantBar.tsx';
-import AssistantComposer from './AssistantComposer.tsx';
-import Connect from './Connect.tsx';
-import Thread from './Thread.tsx';
+import AssistantComposer from './composer/AssistantComposer.tsx';
+import Connect from './connect/Connect.tsx';
+import Thread from './thread/Thread.tsx';
 import { latestContextTokens } from './tokenCount.ts';
 
 export default function AssistantPanel({ tabId }: { tabId: string }) {

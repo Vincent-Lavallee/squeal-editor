@@ -4,7 +4,7 @@ import { useAwsSignIn } from '../../../store/awsSignInSlice.ts';
 import type { useSavedConnections } from './useSavedConnections.ts';
 import type { useSession } from '../../../store/sessionSlice.ts';
 import type { useWorkspaces } from './useWorkspaces.ts';
-import type { Screen } from '../connectScreenTypes.ts';
+import type { Screen } from '../connect-screen/connectScreenTypes.ts';
 
 /**
  * Which screen is showing, the in-flight connect attempt's id and clock, and

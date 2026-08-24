@@ -7,8 +7,12 @@ import {
     initialFormState,
     missingFields,
     submitValues,
-} from '../connectionFormLogic.ts';
-import type { AuthMethod, FormState, RequiredField } from '../connectionFormTypes.ts';
+} from '../connection-form/connectionFormLogic.ts';
+import type {
+    AuthMethod,
+    FormState,
+    RequiredField,
+} from '../connection-form/connectionFormTypes.ts';
 
 function setAuthMethodOn(
     setForm: React.Dispatch<React.SetStateAction<FormState>>,

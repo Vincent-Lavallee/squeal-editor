@@ -1,4 +1,4 @@
-import { useUpdater } from './useUpdater.ts';
+import { useUpdater } from './hooks/useUpdater.ts';
 import BannerShell from './BannerShell.tsx';
 import CheckFailedBanner from './CheckFailedBanner.tsx';
 import DownloadFailed from './DownloadFailed.tsx';

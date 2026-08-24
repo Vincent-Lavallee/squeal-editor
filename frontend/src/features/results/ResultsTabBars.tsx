@@ -1,6 +1,6 @@
 import type { Tab } from '../../store/tabsSlice.ts';
-import FilterBar from './FilterBar.tsx';
-import StatementTabs from './StatementTabs.tsx';
+import FilterBar from './filter/FilterBar.tsx';
+import StatementTabs from './statement-tabs/StatementTabs.tsx';
 
 interface Props {
     tab: Tab | null;

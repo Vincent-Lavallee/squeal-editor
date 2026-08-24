@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import * as t from '../tokens';
 import SelectOptionsList from './SelectOptionsList.tsx';
 import SelectPopupSearch from './SelectPopupSearch.tsx';
-import type { useSelect } from './useSelect.ts';
+import type { useSelect } from './hooks/useSelect.ts';
 
 const popupStyle: CSSProperties = {
     position: 'fixed',

@@ -162,25 +162,6 @@ Things that should be improved on code wise
   accepted rather than replaced with a lint rule. Extension-side barrels
   (`drivers/index.ts`, `protocol/index.ts`) are out of scope — they stay.
 
-- **Hooks sit loose in most features instead of a `hooks/` subfolder** — The
-  working agreement says hooks get their own `hooks/` subfolder within whichever
-  folder owns them, and `features/connections` and `shell/` already follow it,
-  but everywhere else a feature's hooks sit directly beside its components:
-  editor, results, and explorer each carry a few dozen, and titlebar, tabs,
-  diagram, assistant, queries, statusbar, and updater carry fewer but are just as
-  loose. `common/components` has the same problem for the Select/dropdown hooks.
-  Move every feature's hooks into its own `hooks/` folder, `common/components`
-  included, so the convention is actually followed everywhere it claims to be.
-
-- **Some features have grown subfeatures that were never split out** — The
-  working agreement says a subfeature gets its own subfolder within its feature,
-  the way the assistant's tool definitions live in `features/assistant/tools/`,
-  but several features have kept growing flat instead: explorer and results in
-  particular carry components and hooks that read as more than one concern living
-  under one folder. Plan the actual split before touching a feature — which files
-  belong to which subfeature is a judgment call, not something to decide item by
-  item while moving files.
-
 - **The README has no screenshots and no coverage signal** — The root README
   describes the app in prose only, so nobody lands on the repo and sees what it
   actually looks like before installing it. Add screenshots of the app in use.

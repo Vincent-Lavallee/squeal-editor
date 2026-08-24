@@ -3,7 +3,7 @@ import type { ShortcutId } from '../../common/shortcuts.ts';
 import EditorSurface from './EditorSurface.tsx';
 import EditorToolbar from './EditorToolbar.tsx';
 import type { monaco } from './monaco.ts';
-import { useEditorPaneController } from './useEditorPaneController.ts';
+import { useEditorPaneController } from './hooks/useEditorPaneController.ts';
 
 interface Props {
     /**

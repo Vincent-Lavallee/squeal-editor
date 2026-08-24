@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import * as t from '../tokens';
 import SelectTriggerContent from './SelectTriggerContent.tsx';
 import TriggerCaret from './TriggerCaret.tsx';
-import type { useSelect } from './useSelect.ts';
+import type { useSelect } from './hooks/useSelect.ts';
 
 const base: CSSProperties = {
     display: 'flex',

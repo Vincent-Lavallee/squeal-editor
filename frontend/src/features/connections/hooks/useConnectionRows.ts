@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 
 import type { SavedConnection } from '../../../../../shared/protocol/index.ts';
 import { useAwsSignIn, type ProfileStatus } from '../../../store/awsSignInSlice.ts';
-import type { ConnectionRowHandlers, ConnectionRowState } from '../savedConnectionRowTypes.ts';
+import type {
+    ConnectionRowHandlers,
+    ConnectionRowState,
+} from '../saved-connection-list/savedConnectionRowTypes.ts';
 
 /**
  * Why this row cannot be opened, or null.

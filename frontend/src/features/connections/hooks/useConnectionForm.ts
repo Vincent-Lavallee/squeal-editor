@@ -1,5 +1,5 @@
 import type { SavedConnection } from '../../../../../shared/protocol/index.ts';
-import type { submitValues } from '../connectionFormLogic.ts';
+import type { submitValues } from '../connection-form/connectionFormLogic.ts';
 import { useConnectionFormFields } from './useConnectionFormFields.ts';
 import { useConnectionFormTest } from './useConnectionFormTest.ts';
 

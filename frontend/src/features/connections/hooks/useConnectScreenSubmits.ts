@@ -1,8 +1,8 @@
 import type { SavedConnection } from '../../../../../shared/protocol/index.ts';
-import type { FormValues } from '../ConnectionForm.tsx';
-import { passwordUpdate } from '../connectScreenLogic.ts';
-import type { Screen } from '../connectScreenTypes.ts';
-import type { WorkspaceFormValues } from '../WorkspaceForm.tsx';
+import type { FormValues } from '../connection-form/ConnectionForm.tsx';
+import { passwordUpdate } from '../connect-screen/connectScreenLogic.ts';
+import type { Screen } from '../connect-screen/connectScreenTypes.ts';
+import type { WorkspaceFormValues } from '../workspaces/WorkspaceForm.tsx';
 import type { useSavedConnections } from './useSavedConnections.ts';
 import type { useSession } from '../../../store/sessionSlice.ts';
 import type { useWorkspaces } from './useWorkspaces.ts';

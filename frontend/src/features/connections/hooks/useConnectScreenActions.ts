@@ -1,7 +1,7 @@
 import { cancelConnect } from '../../../store/sessionSlice.ts';
 import type { useSession } from '../../../store/sessionSlice.ts';
 import { isFileBased } from '../../../common/db/engines.ts';
-import type { Screen } from '../connectScreenTypes.ts';
+import type { Screen } from '../connect-screen/connectScreenTypes.ts';
 import type { SavedConnection } from '../../../../../shared/protocol/index.ts';
 import { useConnectScreenSubmits } from './useConnectScreenSubmits.ts';
 import type { useSavedConnections } from './useSavedConnections.ts';

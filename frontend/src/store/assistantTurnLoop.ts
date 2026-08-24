@@ -3,7 +3,7 @@ import { nanoid } from '@reduxjs/toolkit';
 import type { AiToolCall } from '../../../shared/protocol/index.ts';
 import { call } from '../common/bridge/bridge.ts';
 import { buildContext } from '../features/assistant/context.ts';
-import { TOOL_DEFS, type ToolContext } from '../features/assistant/tools.ts';
+import { TOOL_DEFS, type ToolContext } from '../features/assistant/tools/tools.ts';
 import { preferredModel } from './assistantAccountThunks.ts';
 import { resetCancel, wasCancelled } from './assistantApproval.ts';
 import { buildToolContext, prettyArgs, runOneCall } from './assistantRunTool.ts';

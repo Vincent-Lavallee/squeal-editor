@@ -5,8 +5,8 @@ import type { Tab } from '../../store/tabsSlice.ts';
 import { formatChord } from '../../common/shortcuts.ts';
 import { useShortcuts } from '../../store/settingsSlice.ts';
 import DiagramView from './DiagramView.tsx';
-import { useDiagram } from './useDiagram.ts';
-import { useDiagramCanvas } from './useDiagramCanvas.ts';
+import { useDiagram } from './hooks/useDiagram.ts';
+import { useDiagramCanvas } from './hooks/useDiagramCanvas.ts';
 
 interface Props {
     /** The tab this diagram is, so it draws the database that tab is pointed at. */

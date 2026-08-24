@@ -1,14 +1,14 @@
 import type { Tab } from '../../store/tabsSlice.ts';
-import ResultsBar from './ResultsBar.tsx';
-import ResultsErrorState from './ResultsErrorState.tsx';
-import ResultsGridOverlays from './ResultsGridOverlays.tsx';
-import ResultsGridScrollArea from './ResultsGridScrollArea.tsx';
-import ResultsNoRowsYet from './ResultsNoRowsYet.tsx';
-import ResultsQueryFinished from './ResultsQueryFinished.tsx';
-import ResultsRunningState from './ResultsRunningState.tsx';
-import ResultsSaveBar from './ResultsSaveBar.tsx';
+import ResultsBar from './bar/ResultsBar.tsx';
+import ResultsErrorState from './states/ResultsErrorState.tsx';
+import ResultsGridOverlays from './grid/ResultsGridOverlays.tsx';
+import ResultsGridScrollArea from './grid/ResultsGridScrollArea.tsx';
+import ResultsNoRowsYet from './states/ResultsNoRowsYet.tsx';
+import ResultsQueryFinished from './states/ResultsQueryFinished.tsx';
+import ResultsRunningState from './states/ResultsRunningState.tsx';
+import ResultsSaveBar from './bar/ResultsSaveBar.tsx';
 import ResultsTabBars from './ResultsTabBars.tsx';
-import { useResultsGridController } from './useResultsGridController.ts';
+import { useResultsGridController } from './grid/hooks/useResultsGridController.ts';
 
 interface Props {
     tab: Tab | null;

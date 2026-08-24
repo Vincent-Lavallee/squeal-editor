@@ -1,5 +1,5 @@
 import type { AiToolCall } from '../../../shared/protocol/index.ts';
-import { toolByName, type ToolContext } from '../features/assistant/tools.ts';
+import { toolByName, type ToolContext } from '../features/assistant/tools/tools.ts';
 import { gateApproval } from './assistantApproval.ts';
 import { toolAnswered } from './assistantSlice.ts';
 import { errorMessage } from './thunk.ts';
