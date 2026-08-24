@@ -2744,7 +2744,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // The menu now offers to reverse it, worded for the state it found.
             expect(await app.evaluate<string[]>(menuItemLabels)).toContain('Unstar');
             await app.evaluate(clickContextItem('Unstar'));
-            await Bun.sleep(400);
+            await app.waitFor(
+                `document.querySelector('[data-testid="tree-pinned"]') ? null : true`,
+            );
 
             expect(
                 await app.evaluate<boolean>(
@@ -4585,7 +4587,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `${savedRow('pg-renamed')}.querySelector('[data-testid="saved-delete"]').click(); true;`,
             );
-            await Bun.sleep(800);
+            await app.waitFor(
+                `document.querySelectorAll('[data-testid="saved-row"]').length === 0 ? true : null`,
+            );
             expect(
                 await app.evaluate<number>(
                     `document.querySelectorAll('[data-testid="saved-row"]').length`,
