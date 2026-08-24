@@ -433,7 +433,7 @@ async function fillConnectForm(
     }
 
     await app.evaluate(`document.querySelector('[data-testid="connect-submit"]').click(); true;`);
-    await Bun.sleep(3000);
+    await app.waitFor(`document.querySelector('#host') ? null : true`);
 }
 
 async function connect(
