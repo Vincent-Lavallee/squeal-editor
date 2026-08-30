@@ -4582,13 +4582,12 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.querySelector('[data-testid="connect-submit"]').click(); true;`,
             );
-            await Bun.sleep(1500);
 
-            expect(
-                await app.evaluate<string[]>(
-                    `[...document.querySelectorAll('[data-testid="saved-name"]')].map(e => e.textContent)`,
-                ),
-            ).toEqual(['pg-renamed']);
+            const savedNames = `[...document.querySelectorAll('[data-testid="saved-name"]')].map(e => e.textContent)`;
+            await app.waitFor(
+                `JSON.stringify(${savedNames}) === JSON.stringify(['pg-renamed']) ? true : null`,
+            );
+            expect(await app.evaluate<string[]>(savedNames)).toEqual(['pg-renamed']);
         });
 
         test('the kept password still connects after an edit that never saw it', async () => {
