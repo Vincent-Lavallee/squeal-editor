@@ -22,10 +22,9 @@ interface Props {
     onOpenDiagram?: () => void;
     /**
      * Undefined on the connect screen, for `onOpenDiagram`'s reason: the tab it
-     * opens lives in a connection's strip, and there is not one. Drawn disabled
-     * rather than hidden, exactly as on Windows -- it sits in the row that
-     * balances the traffic lights, and a gap there would slide the window title
-     * off centre.
+     * opens lives in a connection's strip, and there is not one. The button is
+     * hidden there rather than drawn disabled; hiding it drops the row that
+     * balances the traffic lights, so the title leaves centre -- accepted.
      */
     onOpenAssistant?: () => void;
 }

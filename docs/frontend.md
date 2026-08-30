@@ -3082,7 +3082,9 @@ it.** The traffic lights are a fixed-width group on the left, and the right-hand
 row is declared the same width; the assistant button is drawn *inside* that row
 rather than beside it, so the row stays `LIGHTS_W` either way and the flexible
 middle stays symmetric. A control appended after the balance row would slide the
-title off centre by its own width.
+title off centre by its own width. The button is hidden on the connect screen,
+so with nothing connected the balance row is gone and the title leaves centre —
+accepted.
 
 **The traffic lights are revealed by hovering the group, not the dot.** Pointing
 at any one of macOS' three lights labels all three, so `lightsHovered` gates the
@@ -3742,8 +3744,9 @@ holding the thread that was in it — see *Conversations are kept* below.
 them.** It is the app's button rather than the platform's, and matching their
 46px would read as a fourth window control. It carries a dot while a turn is in
 flight: a turn running against a database with the tab in the background has no
-other way to show. It is disabled on the connect screen, where the tab it opens
-would have no strip to live in.
+other way to show. It is hidden on the connect screen, where the tab it opens
+would have no strip to live in — drawn disabled there it reads as a control that
+should work but does not.
 
 ### Conversations are kept, and an attached result is kept as its shape
 

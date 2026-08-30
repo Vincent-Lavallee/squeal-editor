@@ -22,6 +22,18 @@ Things that already work, but not well enough.
   way it already declares that it mutates, so the exception is a property beside
   the definition rather than a name the thread happens to skip.
 
+- **Open a table on single click, pin it on double click** — Clicking a table in
+  the tree opens it into a tab, and there is no way to look at several in turn
+  without minting a tab for each. Make single-click open a table in a reusable
+  preview tab (the next single-click replaces it) and double-click pin it into
+  its own permanent tab, the way VSCode's explorer does.
+
+- **New assistant chat opens beside your SQL, not over it** — The *New assistant
+  chat* button and `Ctrl+Shift+A` open the assistant into the pane being worked
+  in, so with no split yet they cover the editor instead of appearing next to it.
+  Open them into the split (secondary) pane instead — creating the split when
+  there is none — so the query stays in view while you ask.
+
 ## Bugs
 
 Things that are wrong.
@@ -45,6 +57,42 @@ Things that are wrong.
   softening it: if the install lands somewhere else, the relaunch brings back
   the copy that was not replaced, on the old version, looking like an update
   that silently did nothing.
+
+- **Native autofill and autocorrect over the connection fields on macOS** —
+  macOS's webview draws its own autofill, spelling and text-substitution popups
+  over the connection form — host, port, user, password and the database file
+  path — because those inputs only turn off autocomplete, which WebKit ignores
+  on a password field, and leave autocorrect and text substitution on. The
+  tab-rename field already turns all of them off for the same reason; the
+  connection form should match.
+
+- **The native titlebar reappears while resizing on macOS** — Dragging a window
+  edge to resize makes the transparent custom titlebar give way to the macOS
+  native one for the length of the drag, then vanish again. The chrome hides the
+  titlebar at rest but not during a live resize.
+
+- **A manually-typed SQLite path fails in some cases** — Typing a database file
+  path by hand rather than using Browse misbehaves, with spaces in the path the
+  suspected trigger; the exact symptom is not yet pinned down and needs
+  reproducing before the fix.
+
+- **The connection color picker misbehaves when several swatches are clicked** —
+  Reported by a Windows 11 user (a screenshot), the connection screen's color
+  picker goes wrong when multiple swatches are clicked in a row; it has not been
+  reproduced locally on Linux or Windows yet, so the exact failure is still to
+  be pinned down.
+
+- **The error card's actions sit on top of the error text** — The "Diagnose with
+  AI" and copy buttons are absolutely positioned in the error card's top corner,
+  so they float over the message's first line instead of beside it. Put them in
+  the card's normal flow next to the text, where they cannot cover it.
+
+- **Sorting resets the grid's horizontal scroll** — Changing a column's sort
+  order discards the whole remembered scroll offset, horizontal included,
+  because the sort is folded into the same key that gates scroll restore — so a
+  sort change reads as new rows and the grid snaps back to the left edge. The
+  columns did not change, so only the vertical offset is stale and the
+  horizontal one should survive.
 
 ## Features
 
@@ -127,6 +175,25 @@ Things that do not exist yet.
   .desktop file and the app icon, so Linux users get the same download-and-run
   experience as the other platforms. AppImage only for now; deb and other
   formats can follow once the format is proven to work.
+
+- **Reorder columns in the result grid** — Columns are fixed in the order the
+  query returned them, and rearranging them means editing the SQL. Drag the
+  column headers to reorder the columns on screen.
+
+- **Use the installed Claude CLI instead of an API key** — The Claude provider
+  asks for a pasted API key even when the developer's own signed-in `claude` CLI
+  is already on the machine, so the assistant costs a key that was never needed.
+  Re-scoped rather than built, because the CLI is not a model endpoint to point
+  at: it is the full agent harness, it will not take this app's tool definitions
+  over stdin (custom tools reach it only through MCP), and it always executes
+  tools itself — there is no "hand back a `tool_use`, I run it" mode, which is
+  what the Messages API does and what the webview-hosted loop depends on. Nine of
+  the fifteen tools answer from tab/editor/result state the CLI's own process
+  cannot see, so backing the loop with the CLI means one of two things, each a
+  cost this has not paid: a chat-only assistant with no tools at all, or an MCP
+  bridge plus the reverse-RPC into the webview that `docs/decisions.md` already
+  rejected as the largest new machinery the feature could have had. Parked until
+  one of those is chosen; the API-key path stays the tool-capable one.
 
 ## Tech debts
 
