@@ -33,3 +33,5 @@ dist/
 installer/*.exe
 installer/*.sig
 SHA256SUMS*
+
+settings.local.json
