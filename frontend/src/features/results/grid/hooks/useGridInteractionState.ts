@@ -52,7 +52,7 @@ export function useGridInteractionState(
         menuState.setMenu(null);
     }, [api.result]);
 
-    useGridScrollRestore(grid, api.recallScroll, activeTabId, api.rowsKey);
+    useGridScrollRestore(grid, api.recallScroll, activeTabId, api.result);
 
     return { grid, resize, selection, lookups, editingState, menuState, elapsed };
 }

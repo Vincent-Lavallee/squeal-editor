@@ -1192,28 +1192,36 @@ the filter is a grid tab's and two statements can only be an editor tab's.
 `useResults` builds one string for *which rows these are*, `rowsKey`: a browsed
 page is `table@offset@filter@sort`, and a hand query is
 `query@statement@runSeq` — it has none of the first four, and `runSeq` is what
-tells two runs of the identical text apart. **Its two readers are the two things
-anchored to a row index**: the staged edits, and the grid's scroll offset. Rows
-are positional and the server's order is not guaranteed stable between runs, so
-anything holding a position has to stop meaning something the moment any of those
-terms move.
+tells two runs of the identical text apart. **Its readers are the things
+anchored to a row index**: the staged edits, and the grid's *vertical* scroll.
+Rows are positional and the server's order is not guaranteed stable between
+runs, so anything holding a position has to stop meaning something the moment
+any of those terms move.
 
 **The grid comes back to where the tab left it.** There is one scrolling node per
 pane and it shows whichever tab is in front, so a tab switch swaps the rows under
 a node still holding the *other* tab's offset — clamped to the new content, which
 is why a short table reads as "reset to the top" and a long one as a position
 nobody scrolled to. `ResultsTable` writes the offset back itself, in a layout
-effect keyed on `(tabId, rowsKey)`: **layout**, because an offset applied after
-paint is a visible jump, and **keyed on those two alone**, because re-applying a
-remembered offset on any other render would fight a wheel gesture already in
-flight — a scroll event lands after the render that provoked it.
+effect keyed on `(tabId, result)`: **layout**, because an offset applied after
+paint is a visible jump, and **keyed on the result — a stable reference between
+runs —** because re-applying a remembered offset on any other render would fight
+a wheel gesture already in flight, a scroll event landing after the render that
+provoked it. Keying on `result` rather than `rowsKey` is what keeps a query's
+re-run honest: its `rowsKey` moves on `pending`, while the grid is unmounted for
+the running state, so a key that fired then would restore against nothing;
+`result` changes on `fulfilled`, exactly when the fresh grid is mounted.
 
-**A re-run starts at the top, and gets there through the key rather than through
-a reset.** Running again, paging, filtering and sorting each mint a new
-`rowsKey`, so what was remembered no longer matches and nothing is restored.
-There is no clear-the-offset action to remember to dispatch, and so no way for
-the two to disagree. Saving a browsed edit re-reads the *same* page and therefore
-keeps its place, which is the whole point of the key naming the rows rather than
+**The offset is two axes on two keys, not one thing on `rowsKey`.** The vertical
+offset is remembered against `rowsKey`: running again, paging, filtering and
+sorting each mint a new one, so what was remembered no longer matches and the
+grid starts at the top — through the key rather than through a clear-the-offset
+action, so there is no way for the two to disagree. The horizontal offset is
+remembered against `columnsKey` — the columns on screen as one string — because a
+sort, a page and a re-run all leave the columns in place while changing the rows
+under them, so sorting a wide table must not drag the view sideways to column
+zero. Saving a browsed edit re-reads the *same* page and therefore keeps both,
+which is the whole point of the keys naming the rows and the columns rather than
 the fetch.
 
 **It is a ref in `ResultsContext`, not state and not a slice.** Not a slice by
@@ -1235,9 +1243,10 @@ ref like the offset: the grid renders from them, so a drag has to paint.
 **They are keyed by column *name*, and deliberately not by `rowsKey`.** A width
 is a fact about the column, not about the rows under it, so paging, filtering,
 sorting and re-running all keep it — which is the point, since a column widened
-to read one value should still be that wide on the next page. That is the
-opposite rule from its two neighbours in the same context, and the reason is the
-same one that gives them theirs: nothing here is anchored to a row index.
+to read one value should still be that wide on the next page. The grid's
+horizontal scroll is keyed by the columns for the same reason (see *What names
+the rows on screen*), which is the opposite rule from the two things in this
+context that are anchored to a row index: the staging, and the vertical scroll.
 
 **A width is three CSS properties, not one** (`columnSize` in
 `ResultsTable.tsx`). The grid is an *auto-layout* table whose cells are

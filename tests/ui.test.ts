@@ -1152,11 +1152,13 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             expect(await app.evaluate<number>(`${gridScroll}.scrollLeft`)).toBe(300);
 
             // The same text run again is still a different set of rows -- the server's
-            // order is not promised -- so the offset it was left at is discarded.
+            // order is not promised -- so the vertical offset is discarded. The
+            // horizontal one is kept: the columns are unchanged, and a sort, which is
+            // also a re-run, must not drag the view sideways.
             await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
             await Bun.sleep(2000);
             expect(await app.evaluate<number>(`${gridScroll}.scrollTop`)).toBe(0);
-            expect(await app.evaluate<number>(`${gridScroll}.scrollLeft`)).toBe(0);
+            expect(await app.evaluate<number>(`${gridScroll}.scrollLeft`)).toBe(300);
 
             await app.evaluate(closeTab('tags'));
             await Bun.sleep(300);
@@ -4580,13 +4582,12 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.querySelector('[data-testid="connect-submit"]').click(); true;`,
             );
-            await Bun.sleep(1500);
 
-            expect(
-                await app.evaluate<string[]>(
-                    `[...document.querySelectorAll('[data-testid="saved-name"]')].map(e => e.textContent)`,
-                ),
-            ).toEqual(['pg-renamed']);
+            const savedNames = `[...document.querySelectorAll('[data-testid="saved-name"]')].map(e => e.textContent)`;
+            await app.waitFor(
+                `JSON.stringify(${savedNames}) === JSON.stringify(['pg-renamed']) ? true : null`,
+            );
+            expect(await app.evaluate<string[]>(savedNames)).toEqual(['pg-renamed']);
         });
 
         test('the kept password still connects after an edit that never saw it', async () => {

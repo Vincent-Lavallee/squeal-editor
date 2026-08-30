@@ -1,9 +1,7 @@
 import { useLayoutEffect } from 'react';
 
-interface Scroll {
-    top: number;
-    left: number;
-}
+import type { QueryResult } from '../../../../../../shared/protocol/index.ts';
+import { type GridOffset } from './useGridScrollState.ts';
 
 /*
  * A plain top-level function, not a closure inside the hook below: this hook
@@ -11,9 +9,9 @@ interface Scroll {
  * parameters -- including through a nested closure -- as mutating a hook
  * argument. Moving the write outside the hook's body is what satisfies it.
  */
-function applyScroll(el: HTMLDivElement, remembered: Scroll | null) {
-    el.scrollTop = remembered?.top ?? 0;
-    el.scrollLeft = remembered?.left ?? 0;
+function applyOffset(el: HTMLDivElement, offset: GridOffset) {
+    el.scrollTop = offset.top;
+    el.scrollLeft = offset.left;
 }
 
 /**
@@ -26,18 +24,21 @@ function applyScroll(el: HTMLDivElement, remembered: Scroll | null) {
  * Neither is this tab's, so it is written back by hand. A layout effect, not a
  * plain one: an offset applied after paint is a visible jump.
  *
- * Keyed on what is on screen and nothing else. Re-running it whenever
- * `recallScroll` changed identity would re-apply the remembered offset in the
+ * Keyed on the tab and the result, and nothing else. A re-run, a sort and a page
+ * each mint a new `result`; the offset is then resolved from the two keys
+ * `recallScroll` holds -- vertical against the rows, horizontal against the
+ * columns -- so a sort resets the top but keeps the left. `result` is a stable
+ * reference between runs, which is what keeps the effect from re-firing in the
  * middle of a wheel gesture -- the app fighting the user for a frame -- since a
  * scroll event lands after the render that provoked it.
  */
 export function useGridScrollRestore(
     grid: React.RefObject<HTMLDivElement | null>,
-    recallScroll: () => Scroll | null,
+    recallScroll: () => GridOffset,
     activeTabId: string | null,
-    rowsKey: string,
+    result: QueryResult | null,
 ) {
     useLayoutEffect(() => {
-        if (grid.current) applyScroll(grid.current, recallScroll());
-    }, [activeTabId, rowsKey]);
+        if (grid.current) applyOffset(grid.current, recallScroll());
+    }, [activeTabId, result]);
 }

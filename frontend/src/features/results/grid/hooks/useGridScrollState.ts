@@ -1,15 +1,25 @@
 import { useCallback, useMemo, useRef } from 'react';
 
 /**
- * Where a tab's result grid was scrolled to, and which rows it was showing.
+ * Where a tab's result grid was scrolled to, and what it was scrolled over.
  *
- * `key` is `useResults`' `rowsKey` -- the same string that names a staging page,
- * and for the same reason: an offset means something only against the rows it
- * was taken over. A remembered one whose key no longer matches is dropped rather
- * than applied to whatever a re-run put at that height.
+ * The two axes carry two keys rather than one, because they name different
+ * things. `rowsKey` names the rows -- `useResults`' same string that keys a
+ * staging page -- and the vertical offset means something only against them, so
+ * a remembered `top` whose `rowsKey` no longer matches is dropped. `columnsKey`
+ * names the columns, which a sort, a page and a re-run all leave in place, so a
+ * remembered `left` survives every one of those and is dropped only when the
+ * columns themselves change.
  */
 export interface GridScroll {
-    key: string;
+    rowsKey: string;
+    columnsKey: string;
+    top: number;
+    left: number;
+}
+
+/** The offset to put back, each axis resolved against its own key with a miss reading as 0. */
+export interface GridOffset {
     top: number;
     left: number;
 }
@@ -30,10 +40,18 @@ export function useGridScrollState() {
     const rememberScroll = useCallback((tabId: string, scroll: GridScroll) => {
         scrollByTab.current[tabId] = scroll;
     }, []);
-    const recallScroll = useCallback((tabId: string, key: string): GridScroll | null => {
-        const remembered = scrollByTab.current[tabId];
-        return remembered && remembered.key === key ? remembered : null;
-    }, []);
+
+    const recallScroll = useCallback(
+        (tabId: string, rowsKey: string, columnsKey: string): GridOffset => {
+            const remembered = scrollByTab.current[tabId];
+            if (!remembered) return { top: 0, left: 0 };
+            return {
+                top: remembered.rowsKey === rowsKey ? remembered.top : 0,
+                left: remembered.columnsKey === columnsKey ? remembered.left : 0,
+            };
+        },
+        [],
+    );
 
     // A ref, so it is pruned in place rather than through a setter -- same list,
     // same rule as the state-backed ones beside it, no render.
