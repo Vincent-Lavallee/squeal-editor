@@ -5349,6 +5349,14 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
                     `!!document.querySelector('[data-testid="saved-row"], #host')`,
                 ),
             ).toBe(true);
+            // The connect screen hides the assistant button rather than drawing it
+            // disabled: there is no strip for its tab, and a control that should work
+            // but does not reads as broken.
+            expect(
+                await app.evaluate<boolean>(
+                    `!!document.querySelector('[data-testid="titlebar-assistant"]')`,
+                ),
+            ).toBe(false);
         });
     });
 });

@@ -23,8 +23,9 @@ interface Props {
     /**
      * Undefined on the connect screen, for `onOpenDiagram`'s reason: the tab it
      * opens lives in a connection's strip, and there is not one. The button is
-     * drawn disabled rather than hidden, unlike the *Database* menu, because it is
-     * in a fixed row of controls and a gap would move its neighbours.
+     * hidden there rather than drawn disabled -- a disabled control that should
+     * work reads as broken -- and the title's centring, which the button balances,
+     * is accepted as the cost.
      */
     onOpenAssistant?: () => void;
 }

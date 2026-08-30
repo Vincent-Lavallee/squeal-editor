@@ -922,3 +922,9 @@ This is a record, not a plan. Nothing here is waiting on anything.
   few dozen, and titlebar, tabs, diagram, assistant, queries, statusbar, and
   updater carried fewer but were just as loose. `common/components` had the
   same problem for the Select/dropdown hooks.
+
+- **2026-08-30** — **The assistant button is shown while disconnected** — The titlebar draws the
+  assistant button (disabled) on the connect screen with nothing connected, so
+  it reads as a control that should work but does not. Hide it there; the
+  title's centering, which the button currently balances, is accepted as the
+  cost.

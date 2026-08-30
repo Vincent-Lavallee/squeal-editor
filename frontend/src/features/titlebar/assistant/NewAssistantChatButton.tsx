@@ -15,10 +15,10 @@ export default function NewAssistantChatButton({
     running: boolean;
 }) {
     const [hovered, setHovered] = useState(false);
+    if (!onOpenAssistant) return null;
     return (
         <button
             data-testid="titlebar-assistant"
-            disabled={!onOpenAssistant}
             style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -29,12 +29,11 @@ export default function NewAssistantChatButton({
                 border: 'none',
                 background: hovered ? t.HOVER : 'none',
                 color: hovered ? t.TEXT : t.TEXT_MUTED,
-                opacity: onOpenAssistant ? 1 : 0.4,
-                cursor: onOpenAssistant ? 'pointer' : 'default',
+                cursor: 'pointer',
             }}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
-            onClick={() => onOpenAssistant?.()}
+            onClick={onOpenAssistant}
             aria-label="New assistant chat"
             title="New assistant chat"
         >
