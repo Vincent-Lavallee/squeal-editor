@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.2](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.18.1...v0.18.2) (2026-08-30)
+
+
+### Bug Fixes
+
+* hide the assistant button while disconnected ([#46](https://github.com/Vincent-Lavallee/squeal-editor/issues/46)) ([a3f352e](https://github.com/Vincent-Lavallee/squeal-editor/commit/a3f352e47e370d40648ee821ab3ac985e8f32945))
+* preserve the grid's horizontal scroll when sorting ([#48](https://github.com/Vincent-Lavallee/squeal-editor/issues/48)) ([2f03b81](https://github.com/Vincent-Lavallee/squeal-editor/commit/2f03b8167e9c6bad76c81832dee5ec0968e6854a))
+
 ## [0.18.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.18.0...v0.18.1) (2026-08-24)
 
 
