@@ -3,7 +3,11 @@ import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'r
 import { useAppSelector } from '../../store/hooks.ts';
 import { type ColumnWidths, useColumnWidthsState } from './grid/hooks/useColumnWidthsState.ts';
 import { type FilterDraft, useFilterDraftState } from './filter/hooks/useFilterDraftState.ts';
-import { type GridScroll, useGridScrollState } from './grid/hooks/useGridScrollState.ts';
+import {
+    type GridOffset,
+    type GridScroll,
+    useGridScrollState,
+} from './grid/hooks/useGridScrollState.ts';
 import {
     EMPTY_PENDING,
     type Pending,
@@ -31,7 +35,7 @@ export interface ResultsView {
     setFilterDraft: (tabId: string, draft: FilterDraft) => void;
     clearFilterDraft: (tabId: string) => void;
     rememberScroll: (tabId: string, scroll: GridScroll) => void;
-    recallScroll: (tabId: string, key: string) => GridScroll | null;
+    recallScroll: (tabId: string, rowsKey: string, columnsKey: string) => GridOffset;
     columnWidthsFor: (tabId: string) => ColumnWidths;
     setColumnWidth: (tabId: string, column: string, width: number) => void;
     /** Give a column back to the browser's sizing -- the double-click on a handle. */

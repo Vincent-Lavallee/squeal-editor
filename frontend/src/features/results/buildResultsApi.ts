@@ -91,7 +91,6 @@ export function buildResultsApi(a: Args) {
         next: browsing.next,
         prev: browsing.prev,
 
-        rowsKey: identity.rowsKey,
         rememberScroll: viewPrefs.rememberScroll,
         recallScroll: viewPrefs.recallScroll,
 

@@ -82,7 +82,12 @@ export function useResults(tab: Tab | null) {
     });
 
     const copy = useResultsCopy({ result: part.result, browse: part.browse, tab, dialect });
-    const viewPrefs = useResultsViewPrefs({ activeTabId, rowsKey: identity.rowsKey });
+    // The columns on screen, as one string. The grid's horizontal offset means
+    // something only against them, and a sort leaves them in place while changing
+    // the rows -- so it is keyed apart from `rowsKey`. `\u0000` never appears in
+    // a column name, so it cannot collide the way a comma could.
+    const columnsKey = (part.result?.columns ?? []).join('\u0000');
+    const viewPrefs = useResultsViewPrefs({ activeTabId, rowsKey: identity.rowsKey, columnsKey });
 
     const canSort = makeCanSort(part.result?.columns ?? []);
 
