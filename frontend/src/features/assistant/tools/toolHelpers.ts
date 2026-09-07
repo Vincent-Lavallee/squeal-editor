@@ -22,6 +22,17 @@ export interface ToolContext {
 export interface Tool {
     def: AiToolDef;
     mutating?: boolean;
+    /**
+     * This call draws no row in the thread.
+     *
+     * The rule that every call leaves one is for calls whose effect is
+     * otherwise invisible — a read especially. A tool whose effect is already
+     * on screen the moment it runs (`renameConversation`: the tab's own title
+     * changes) does not need a second, redundant announcement of the same
+     * thing. A property beside the definition, the way `mutating` already is,
+     * rather than the thread special-casing a tool by name.
+     */
+    silent?: boolean;
     /** A short "what this is about" for the thread's collapsed row and the approval card. */
     target: (args: Record<string, unknown>, ctx: ToolContext) => string;
     run: (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>;

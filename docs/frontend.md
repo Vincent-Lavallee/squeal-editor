@@ -3817,6 +3817,14 @@ other way to show. It is hidden on the connect screen, where the tab it opens
 would have no strip to live in — drawn disabled there it reads as a control that
 should work but does not.
 
+**Both the button and its shortcut (`Ctrl+Shift+A`) open into the *other*
+pane**, the same rule `askAssistant` follows below and for the same reason:
+the assistant sits beside whatever you were doing, not over it. With no split
+yet, that is what creates one. `useExternalTabRequests` answers the button (it
+arrives as a bumped counter, the diagram's shape) and `useShellCommands`
+answers the chord; both compute the pane the same way rather than one calling
+the other, since a keydown and a click are not the same event to route through.
+
 ### Conversations are kept, and an attached result is kept as its shape
 
 A thread survives a quit. `store/conversationRecord.ts` is what one looks like
@@ -3947,14 +3955,15 @@ means. `openAssistantTab` now answers with the id it minted, the way
 `openGridTab` does, because sending that first message means naming the tab it
 belongs to.
 
-**It opens in the *other* pane, splitting the view**, and this is the one place
-in the app that does not use `workingPane`. The exception is the point of both
-entry points: the question is *about what is on screen*, so an answer that
-replaces it with itself makes you flip between the error and the explanation of
-the error. Beside it, the two are readable together — the gesture
-`Ctrl+Shift+T` already exists for, taken automatically because here the app is
-the one deciding to open a tab. With no split yet, minting into the secondary
-pane is what creates one.
+**It opens in the *other* pane, splitting the view**, the same rule the
+titlebar button and `Ctrl+Shift+A` follow (see above). The reasoning is the
+point of both entry points here specifically: the question is *about what is
+on screen*, so an answer that replaces it with itself makes you flip between
+the error and the explanation of the error. Beside it, the two are readable
+together — the gesture `Ctrl+Shift+T` already exists for, taken automatically
+here because the app itself is deciding to open a tab rather than the user
+asking for one by name. With no split yet, minting into the secondary pane is
+what creates one.
 
 **The question carries its own subject, and that is load-bearing rather than
 verbose.** `context.ts` describes *the tab in front*, and by the time the first

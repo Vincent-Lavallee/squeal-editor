@@ -13,26 +13,11 @@ Items name features, never files or functions. Files move; the feature doesn't.
 
 Things that already work, but not well enough.
 
-- **Naming the conversation leaves a tool row nobody needs** — The assistant
-  names its own tab on its first reply, and that call draws a row like every
-  other, so the first thing in every thread is the assistant announcing what it
-  called itself. The rule that every call leaves a row exists for calls whose
-  effect is invisible — a read especially — and this one's effect is the tab
-  title changing in front of you. Let a tool declare that it draws no row, the
-  way it already declares that it mutates, so the exception is a property beside
-  the definition rather than a name the thread happens to skip.
-
 - **Open a table on single click, pin it on double click** — Clicking a table in
   the tree opens it into a tab, and there is no way to look at several in turn
   without minting a tab for each. Make single-click open a table in a reusable
   preview tab (the next single-click replaces it) and double-click pin it into
   its own permanent tab, the way VSCode's explorer does.
-
-- **New assistant chat opens beside your SQL, not over it** — The *New assistant
-  chat* button and `Ctrl+Shift+A` open the assistant into the pane being worked
-  in, so with no split yet they cover the editor instead of appearing next to it.
-  Open them into the split (secondary) pane instead — creating the split when
-  there is none — so the query stays in view while you ask.
 
 ## Bugs
 
@@ -58,14 +43,6 @@ Things that are wrong.
   the copy that was not replaced, on the old version, looking like an update
   that silently did nothing.
 
-- **Native autofill and autocorrect over the connection fields on macOS** —
-  macOS's webview draws its own autofill, spelling and text-substitution popups
-  over the connection form — host, port, user, password and the database file
-  path — because those inputs only turn off autocomplete, which WebKit ignores
-  on a password field, and leave autocorrect and text substitution on. The
-  tab-rename field already turns all of them off for the same reason; the
-  connection form should match.
-
 - **A manually-typed SQLite path fails in some cases** — Typing a database file
   path by hand rather than using Browse misbehaves, with spaces in the path the
   suspected trigger; the exact symptom is not yet pinned down and needs
@@ -81,13 +58,6 @@ Things that are wrong.
   AI" and copy buttons are absolutely positioned in the error card's top corner,
   so they float over the message's first line instead of beside it. Put them in
   the card's normal flow next to the text, where they cannot cover it.
-
-- **Sorting resets the grid's horizontal scroll** — Changing a column's sort
-  order discards the whole remembered scroll offset, horizontal included,
-  because the sort is folded into the same key that gates scroll restore — so a
-  sort change reads as new rows and the grid snaps back to the left edge. The
-  columns did not change, so only the vertical offset is stale and the
-  horizontal one should survive.
 
 ## Features
 

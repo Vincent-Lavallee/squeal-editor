@@ -6521,12 +6521,22 @@ app's chords — one spelling of a keybinding, rebindable from the shortcuts
 screen. This has no chord; it is a menu item. A row there would have invented a
 keyboard shortcut nobody asked for and a settings row that has to be given a key.
 
-**The conversation opens in the *other* pane**, which is the one place in the app
-that does not open into `workingPane`. The exception is the point: the question
-is about what is on screen, so an answer that replaces it with itself makes you
-flip between the error and the explanation of the error. It is the gesture
-`Ctrl+Shift+T` already exists for, taken automatically because here the app is
-the one deciding to open a tab.
+**The conversation opens in the *other* pane**, rather than into `workingPane`.
+The exception is the point: the question is about what is on screen, so an
+answer that replaces it with itself makes you flip between the error and the
+explanation of the error. It is the gesture `Ctrl+Shift+T` already exists for,
+taken automatically because here the app is the one deciding to open a tab.
+
+**The titlebar button and `Ctrl+Shift+A` opened into `workingPane` regardless,
+which was the same problem on the entry point that draws the most traffic:**
+asking for a new conversation with no split yet covered the query it was
+supposed to sit beside, rather than appearing next to it. There was never a
+reason for the manual gesture to answer differently than the automatic ones —
+both are "open the assistant beside what I'm looking at" — so
+`useExternalTabRequests` (the button, arriving as a bumped counter) and
+`newAssistantChat` in `useShellCommands.ts` (the chord) now compute the other
+pane the same way this entry point does, rather than one calling the other,
+since a keydown and a click are not the same event to route through one path.
 
 ---
 

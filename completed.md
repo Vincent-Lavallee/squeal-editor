@@ -972,3 +972,33 @@ This is a record, not a plan. Nothing here is waiting on anything.
   edge to resize makes the transparent custom titlebar give way to the macOS
   native one for the length of the drag, then vanish again. The chrome hides the
   titlebar at rest but not during a live resize.
+
+- **2026-09-07** — **Native autofill and autocorrect over the connection fields on macOS** —
+  macOS's webview draws its own autofill, spelling and text-substitution popups
+  over the connection form — host, port, user, password and the database file
+  path — because those inputs only turn off autocomplete, which WebKit ignores
+  on a password field, and leave autocorrect and text substitution on. The
+  tab-rename field already turns all of them off for the same reason; the
+  connection form should match.
+
+- **2026-09-07** — **Sorting resets the grid's horizontal scroll** — Changing a column's sort
+  order discards the whole remembered scroll offset, horizontal included,
+  because the sort is folded into the same key that gates scroll restore — so a
+  sort change reads as new rows and the grid snaps back to the left edge. The
+  columns did not change, so only the vertical offset is stale and the
+  horizontal one should survive.
+
+- **2026-09-07** — **Naming the conversation leaves a tool row nobody needs** — The assistant
+  names its own tab on its first reply, and that call draws a row like every
+  other, so the first thing in every thread is the assistant announcing what it
+  called itself. The rule that every call leaves a row exists for calls whose
+  effect is invisible — a read especially — and this one's effect is the tab
+  title changing in front of you. Let a tool declare that it draws no row, the
+  way it already declares that it mutates, so the exception is a property beside
+  the definition rather than a name the thread happens to skip.
+
+- **2026-09-07** — **New assistant chat opens beside your SQL, not over it** — The *New assistant
+  chat* button and `Ctrl+Shift+A` open the assistant into the pane being worked
+  in, so with no split yet they cover the editor instead of appearing next to it.
+  Open them into the split (secondary) pane instead — creating the split when
+  there is none — so the query stays in view while you ask.
