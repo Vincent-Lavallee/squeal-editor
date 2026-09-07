@@ -542,7 +542,18 @@ async function closeTabConfirmed(label: string): Promise<void> {
  */
 async function useDatabase(name: string): Promise<void> {
     await app.evaluate(selectDatabase(name));
-    await Bun.sleep(1500);
+    // The switch re-fetches the catalog for `name`; the skeleton is up for exactly
+    // that round trip (see TreeSkeleton.tsx), so its absence is "the tree is
+    // showing `name`'s tables now" -- a fixed sleep here read as the tree already
+    // settled on a slower runner and every click into it landed on the row from
+    // before the switch, or on nothing at all.
+    //
+    // The click's state update paints on the next macrotask, not synchronously
+    // (see the refresh test above), so the first poll below has to happen after
+    // one -- otherwise it can read "no skeleton" before the switch has even
+    // started drawing one.
+    await app.evaluate(`new Promise((r) => setTimeout(r, 0))`);
+    await app.waitFor(`!document.querySelector('[data-testid="tree-skeleton"]') ? true : null`);
     if (
         !(await app.evaluate<boolean>(
             `!!document.querySelector('[data-testid="editor-db-select"]')`,
@@ -2440,10 +2451,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(setEditorText('SELECT * FROM does_not_exist'));
             await Bun.sleep(200);
             await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
-            await Bun.sleep(1500);
 
-            const err = await app.evaluate<string>(
-                `document.querySelector('[data-testid="note-error"]')?.textContent ?? ''`,
+            const err = await app.waitFor<string>(
+                `document.querySelector('[data-testid="note-error"]')?.textContent || null`,
             );
             expect(err).toMatch(/does_not_exist/);
         });
