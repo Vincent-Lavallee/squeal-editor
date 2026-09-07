@@ -32,6 +32,14 @@ export default function ResultsGridScrollArea({ g, result }: Props) {
                     onToggleSort={g.toggleSort}
                     onStartResize={g.startResize}
                     onClearColumnWidth={g.clearColumnWidth}
+                    canReorder={g.canReorderColumns}
+                    draggingColumn={g.draggingColumn}
+                    dropAt={g.dropAt}
+                    onDragColumnStart={g.startColumnDrag}
+                    onDragColumnEnd={g.endColumnDrag}
+                    onDragOverHeader={g.dragOverHeader}
+                    onDragLeaveHeader={g.dragLeaveHeader}
+                    onDropOnHeader={g.dropOnHeader}
                 />
                 <ResultsGridBody
                     rows={result.rows}
