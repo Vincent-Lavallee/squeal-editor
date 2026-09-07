@@ -1091,6 +1091,29 @@ listing; with the group built from the stars, one left behind is a row pointing
 at a table this app has just dropped. The cache only — the stored row costs
 nothing, and a drop is not the moment to fire a write that could fail on its own.
 
+## A query's result is capped too, and this cap has no constant here
+
+A hand-typed query with no `LIMIT` is capped by the extension at 10,000 rows
+(`QUERY_ROW_CAP`, `connectionTypes.ts` — see *Capping a query's result* in
+`docs/extension.md`), so `QueryResult.truncated` can come back `true`.
+`ResultsTruncatedBar` (`features/results/bar/`) draws the same kind of notice
+as the tree's own truncation line above — above the grid, not below it, for
+the identical reason: a grid that is only the first rows of what the statement
+matched looks exactly like a complete one.
+
+**Unlike `CATALOG_LIMIT`, there is no shared constant to import.** The tree's
+cap is chosen by the frontend and sent as `db.tables`' `limit` — a request
+parameter with a caller. `db.query` carries no such parameter and none is being
+added: this cap is the extension's own OOM guard, not something the UI asks
+for, so there is nothing for the UI to choose. `ResultsTruncatedBar` reads its
+count off `result.rows.length` instead — always in sync by construction, never
+a second number to keep equal to the one on the other side of the bridge.
+
+**No "load more."** The tree's cap has a way past it (search), but a query's
+result is deliberately not paged at all — see `docs/decisions.md` — so the
+notice is informational only, the same as the tree's, minus the one thing the
+tree's has that this cannot offer.
+
 ## Running several statements
 
 Running text that holds more than one statement runs **each of them separately,
@@ -1233,6 +1256,62 @@ Not state because a scroll fires once a frame and nothing renders from it, so
 state would re-render a pane per wheel tick to no effect. It is keyed by tab like
 everything else there, and pruned in the same diff-the-list effect — in place,
 since a ref has no setter.
+
+## The grid virtualizes past a point
+
+`ResultsGridBody` used to `.map()` every row in `result.rows` into a real
+`<tr>`. Fine for a browsed page (`PAGE_SIZE`, 100) or an ordinary hand-typed
+result, not fine for a `db.query` result sitting at the row cap
+(`QUERY_ROW_CAP`, 10,000 — see `docs/extension.md`) — ten thousand real DOM
+rows is slow to paint and slow to scroll regardless of how few are ever on
+screen at once.
+
+**`useRowWindow` only windows above `ROW_VIRTUALIZATION_THRESHOLD` (500), and
+below it changes nothing.** This single number resolves two otherwise separate
+problems: `tests/ui.test.ts` counts and indexes rows through `.grid tbody tr`
+in dozens of places, and any spacer row for windowing would corrupt every one
+of them — so below the threshold no spacer `<tr>` is ever rendered, and the
+DOM is byte-for-byte what a plain `.map()` produced. Threshold chosen well
+above `PAGE_SIZE` (every browsed page) and above the largest result any
+existing test drives, specifically so **no existing test needed to change**.
+Above it, `ResultsGridBody` renders a top spacer, the mounted slice
+(`rows.slice(startIndex, endIndex)`, with each row's *absolute* index
+reconstructed as `startIndex + i` — everything downstream, `isDeleted`,
+`selected.has`, the gutter number, already takes that absolute index, so
+nothing else needed to change), and a bottom spacer, each an empty `<td>`
+spanning every column with an explicit pixel `height` standing in for the rows
+it isn't mounting.
+
+**This is the one place scroll position legitimately drives a render.** The
+scroll-*restore* offset just above is deliberately a ref rather than state,
+because nothing renders from it. The virtualized window is the exception —
+`useRowWindow`'s `onScroll` is rAF-throttled (latest position kept in a ref,
+committed to state at most once per animation frame) specifically to keep that
+render to the same "at most once a frame" cost the ref-not-state rule exists
+to protect, rather than reopening it.
+
+**Column auto-width only reflects currently-mounted rows, above the
+threshold.** The table is auto-layout on purpose (below, *Column widths*) so a
+column's content sets its own minimum width; virtualized, that computation can
+only see the rows actually mounted, so a column can in principle size itself
+slightly differently depending on scroll position for a result past the
+threshold. Accepted rather than solved: it is a large, mostly hand-typed
+result noticing it at all, dragging a column to a width (`columnWidths`)
+removes it from auto-layout for good, and the alternative — giving every
+column an explicit width up front — would cost the "content sets its own
+minimum" behaviour `columnSize` exists for, for every result, to fix a cosmetic
+edge case in the rare large one.
+
+**Keyboard focus is kept in view, which is new.** Nothing here ever called
+`scrollIntoView` before — harmless while every row was mounted, since arrow-key
+movement just landed on an already-rendered row somewhere on or off screen.
+Above the threshold that row might not be mounted at all, so `useGridKeyboard`'s
+arrow-key moves (the only keyboard movement here; there is no Home/End/PageUp/
+PageDown) now nudge `scrollTop` directly whenever focus changes and lands
+outside the visible band — `useKeepFocusInView`. Wired unconditionally rather
+than only above the threshold: a click-driven focus change is always already
+visible, so it costs nothing there, and it closes the gap for every grid at
+once rather than only the rare virtualized one.
 
 ## Column widths
 

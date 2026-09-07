@@ -8,6 +8,8 @@ import { useGridMenuState } from './useGridMenuState.ts';
 import { useGridScrollRestore } from './useGridScrollRestore.ts';
 import { useGridSelection } from './useGridSelection.ts';
 import { useGridValueLookups } from './useGridValueLookups.ts';
+import { useKeepFocusInView } from './useKeepFocusInView.ts';
+import { useRowWindow } from './useRowWindow.ts';
 import type { useResults } from '../../hooks/useResults.ts';
 
 /**
@@ -56,5 +58,18 @@ export function useGridInteractionState(
 
     useGridScrollRestore(grid, api.recallScroll, activeTabId, api.result);
 
-    return { grid, resize, reorder, selection, lookups, editingState, menuState, elapsed };
+    const rowWindow = useRowWindow({ grid, rowCount: api.result?.rows.length ?? 0 });
+    useKeepFocusInView({ grid, focusRow: selection.cells?.focus.row ?? null });
+
+    return {
+        grid,
+        resize,
+        reorder,
+        selection,
+        lookups,
+        editingState,
+        menuState,
+        elapsed,
+        rowWindow,
+    };
 }

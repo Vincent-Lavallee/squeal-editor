@@ -26,7 +26,14 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
     ...sqliteRelationships,
     ...sqliteDdl,
 
-    async query(client, sql, params) {
+    // `rowCap` is not honoured here -- see *Capping a query's result* in
+    // `docs/extension.md`. bun:sqlite's only lazy iterator (`.iterate()`) returns
+    // plain objects, which silently collapse duplicate column names (`SELECT *`
+    // over a join sharing one is a realistic way to hit this); `.values()` is
+    // what this driver already relies on to keep that data intact, and it has no
+    // lazy, array-mode sibling to stop early with.
+    async query(client, sql, options) {
+        const { params } = options ?? {};
         return withStatement(client, sql, (stmt) => {
             // No columns means the statement returns no grid -- DML or DDL. Same test
             // the Postgres driver makes, and the same shape of answer. It has to be

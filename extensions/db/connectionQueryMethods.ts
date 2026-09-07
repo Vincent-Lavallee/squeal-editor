@@ -1,10 +1,11 @@
 import { buildWhere, orderByClause, type Driver } from './drivers/index.ts';
-import type { UseClient } from './connectionState.ts';
-import { PAGE_SIZE, type ConnectionHandle } from './connectionTypes.ts';
+import type { ConnectionState, UseClient } from './connectionState.ts';
+import { PAGE_SIZE, QUERY_ROW_CAP, type ConnectionHandle } from './connectionTypes.ts';
 
 export function connectionQueryMethods<C>(
     use: UseClient<C>,
     driver: Driver<C>,
+    state: ConnectionState<C>,
 ): Pick<ConnectionHandle, 'query' | 'browse'> {
     return {
         /**
@@ -23,6 +24,12 @@ export function connectionQueryMethods<C>(
          * same, the `LIMIT/OFFSET` rule exactly -- an engine that does not makes this
          * a `Driver` method rather than an `if`. The alias is not optional: MySQL and
          * Postgres both refuse an unaliased derived table.
+         *
+         * `rowCap` bounds how many rows are ever materialized, the same "ask for
+         * one past the limit" trick `browse` plays below -- it is not a `LIMIT`, so
+         * it changes nothing about what ran, only how much of the result this side
+         * kept. See `Driver.query` and *Capping a query's result* in
+         * `docs/extension.md`.
          */
         async query(database, sql, sort) {
             const order = orderByClause(sort, (name) => driver.quoteIdent(name));
@@ -33,7 +40,30 @@ export function connectionQueryMethods<C>(
             const statement = order
                 ? `SELECT * FROM (${sql.trim().replace(/;+\s*$/, '')}) squeal_sorted${order}`
                 : sql;
-            return use(database, (client) => driver.query(client, statement));
+
+            const key = database ?? null;
+            const outcome = await use(database, (client) =>
+                driver.query(client, statement, {
+                    rowCap: QUERY_ROW_CAP + 1,
+                    // Fires synchronously the instant the cap is hit, before the driver
+                    // destroys the socket -- evicting here first, in that order, is what
+                    // tells `getClient`'s own `onClientLost` guard this ending is ours
+                    // and not a drop worth reporting, the same way `close()` clears the
+                    // map before it says goodbye. Identity-checked in case a concurrent
+                    // call already replaced this client under the same key.
+                    onCapExceeded: () => {
+                        if (state.clients.get(key) === client) state.clients.delete(key);
+                    },
+                }),
+            );
+            if ('affectedRows' in outcome) return outcome;
+
+            const truncated = outcome.rows.length > QUERY_ROW_CAP;
+            return {
+                columns: outcome.columns,
+                rows: truncated ? outcome.rows.slice(0, QUERY_ROW_CAP) : outcome.rows,
+                truncated,
+            };
         },
 
         /**
@@ -99,7 +129,7 @@ export function connectionQueryMethods<C>(
                 const outcome = await driver.query(
                     client,
                     `SELECT * FROM ${driver.qualify(relation)}${where}${order} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`,
-                    params,
+                    { params },
                 );
                 const keyColumns = await driver.rowKey(client, database, relation);
                 const columnInfo = await driver.listColumns(client, database, relation);

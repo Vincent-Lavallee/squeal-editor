@@ -17,9 +17,10 @@ export default function ResultsGridScrollArea({ g, result }: Props) {
             style={{ flex: 1, overflow: 'auto', minHeight: 0 }}
             tabIndex={0}
             onKeyDown={g.onKeyDown}
-            onScroll={(e) =>
-                g.rememberScroll(e.currentTarget.scrollTop, e.currentTarget.scrollLeft)
-            }
+            onScroll={(e) => {
+                g.rememberScroll(e.currentTarget.scrollTop, e.currentTarget.scrollLeft);
+                g.rowWindow.onScroll(e.currentTarget.scrollTop);
+            }}
         >
             <table className="grid" style={gridTableStyle}>
                 <ResultsGridHeader
@@ -51,6 +52,10 @@ export default function ResultsGridScrollArea({ g, result }: Props) {
                     isDeleted={g.isDeleted}
                     lookups={g.rowLookups}
                     handlers={g.rowHandlers}
+                    startIndex={g.rowWindow.startIndex}
+                    endIndex={g.rowWindow.endIndex}
+                    topSpacerHeight={g.rowWindow.topSpacerHeight}
+                    bottomSpacerHeight={g.rowWindow.bottomSpacerHeight}
                 />
             </table>
         </div>

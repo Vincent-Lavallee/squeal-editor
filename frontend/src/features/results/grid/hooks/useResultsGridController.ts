@@ -55,8 +55,9 @@ export function useResultsGridController(tab: Tab | null) {
      * and one place names a thing.
      */
     const gridDatabase = tab?.kind === 'grid' ? tab.database : null;
+    const interaction = useGridInteractionState(api, activeTabId);
     const { grid, resize, reorder, selection, lookups, editingState, menuState, elapsed } =
-        useGridInteractionState(api, activeTabId);
+        interaction;
 
     const cellMarks = makeCellMarks(selection.cells);
     const moveCell = (dr: number, dc: number, extend: boolean) =>
@@ -111,5 +112,6 @@ export function useResultsGridController(tab: Tab | null) {
         count,
         firstRow,
         paged,
+        rowWindow: interaction.rowWindow,
     };
 }

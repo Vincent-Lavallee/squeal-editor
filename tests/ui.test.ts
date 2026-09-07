@@ -1203,6 +1203,61 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await Bun.sleep(300);
         });
 
+        /*
+         * `ROW_VIRTUALIZATION_THRESHOLD` (500, `resultsGridStyles.ts`) is well past
+         * anything else in this suite, so this is the one test that deliberately
+         * crosses it -- 2000 rows, nowhere near mountable in full.
+         */
+        test('a huge query result virtualizes its rows', async () => {
+            await app.evaluate(newTab);
+            await Bun.sleep(600);
+            const queryTab = await app.evaluate<string>(activeTabLabel);
+
+            await app.evaluate(setEditorText('SELECT n FROM generate_series(1, 2000) AS n'));
+            await Bun.sleep(300);
+            await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
+            await Bun.sleep(300);
+
+            // Far fewer than 2000 real rows ever exist in the DOM at once.
+            const mounted = await app.evaluate<number>(rowCount);
+            expect(mounted).toBeGreaterThan(0);
+            expect(mounted).toBeLessThan(200);
+
+            const firstCell = `document.querySelector('.grid tbody tr td:not(.gutter):not(.spacer)')?.textContent ?? null`;
+            expect(await app.evaluate<string | null>(firstCell)).toBe('1');
+
+            // Scrolling moves the window, not just the scrollbar -- the mounted
+            // rows' own values change, and the count stays just as small.
+            await app.evaluate(`${gridScroll}.scrollTop = 15000; true;`);
+            await Bun.sleep(500);
+            expect(await app.evaluate<string | null>(firstCell)).not.toBe('1');
+            expect(await app.evaluate<number>(rowCount)).toBeLessThan(200);
+
+            // Arrow-key focus movement keeps working past the mounted window: it
+            // scrolls the target row into view rather than moving focus onto
+            // nothing. Clicking the *first* mounted cell puts focus at the
+            // window's own start, so a single ArrowUp immediately asks for the
+            // row just above it -- one that is not mounted -- which
+            // `useKeepFocusInView` is what answers.
+            const scrollBefore = await app.evaluate<number>(`${gridScroll}.scrollTop`);
+            await app.evaluate(
+                `document.querySelector('.grid tbody tr td:not(.gutter):not(.spacer)').click(); true;`,
+            );
+            for (let i = 0; i < 5; i++) {
+                await app.evaluate(
+                    `${gridScroll}.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })); true;`,
+                );
+            }
+            await Bun.sleep(300);
+            expect(await app.evaluate<number>(`${gridScroll}.scrollTop`)).toBeLessThan(
+                scrollBefore,
+            );
+
+            await closeTabConfirmed(queryTab);
+            await Bun.sleep(300);
+        });
+
         test('clicking a header cycles the sort, and the last click gives the order back', async () => {
             await app.evaluate(clickTable('users'));
             await app.waitFor(`(${rowCount}) === 2 ? true : null`);

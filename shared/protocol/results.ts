@@ -144,6 +144,14 @@ export interface QueryResult {
     /** Set instead of columns/rows for statements that return no grid. */
     affectedRows?: number;
     message?: string;
+    /**
+     * Set when the extension stopped reading before the statement's own result
+     * was exhausted, to bound memory on a `SELECT` with no `LIMIT` of its own.
+     * `rows` is the truth, never inferred: its length *is* the count shown, so
+     * the UI's notice reads off it rather than carrying a copy of the cap.
+     * Absent (not `false`) when nothing was cut off. See `docs/extension.md`.
+     */
+    truncated?: boolean;
 }
 
 /**
