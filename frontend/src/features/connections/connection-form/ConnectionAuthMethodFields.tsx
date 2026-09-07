@@ -2,7 +2,7 @@ import type { Engine } from '../../../common/db/engines.ts';
 import Select from '../../../common/components/Select.tsx';
 import Input from '../../../common/components/Input.tsx';
 import Field from '../../../common/components/Field.tsx';
-import { OPTIONAL } from './connectionFormFieldHelpers.tsx';
+import { NO_NATIVE_SUGGESTIONS, OPTIONAL } from './connectionFormFieldHelpers.tsx';
 import type { AuthMethod } from './connectionFormTypes.ts';
 
 interface Props {
@@ -39,6 +39,7 @@ export default function ConnectionAuthMethodFields({
                     id="user"
                     value={user}
                     placeholder={engine.defaultUser}
+                    {...NO_NATIVE_SUGGESTIONS}
                     onChange={(e) => onUserChange(e.target.value)}
                 />
             </Field>

@@ -66,11 +66,6 @@ Things that are wrong.
   tab-rename field already turns all of them off for the same reason; the
   connection form should match.
 
-- **The native titlebar reappears while resizing on macOS** — Dragging a window
-  edge to resize makes the transparent custom titlebar give way to the macOS
-  native one for the length of the drag, then vanish again. The chrome hides the
-  titlebar at rest but not during a live resize.
-
 - **A manually-typed SQLite path fails in some cases** — Typing a database file
   path by hand rather than using Browse misbehaves, with spaces in the path the
   suspected trigger; the exact symptom is not yet pinned down and needs

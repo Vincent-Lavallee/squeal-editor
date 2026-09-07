@@ -2,7 +2,7 @@ import Button from '../../../common/components/Button.tsx';
 import Input from '../../../common/components/Input.tsx';
 import Field from '../../../common/components/Field.tsx';
 import * as t from '../../../common/tokens';
-import { invalidBox, requiredHint } from './connectionFormFieldHelpers.tsx';
+import { invalidBox, NO_NATIVE_SUGGESTIONS, requiredHint } from './connectionFormFieldHelpers.tsx';
 
 interface Props {
     database: string;
@@ -29,6 +29,7 @@ export default function ConnectionFileField({
                         placeholder="C:\path\to\app.db"
                         aria-invalid={invalid || undefined}
                         style={invalidBox(invalid)}
+                        {...NO_NATIVE_SUGGESTIONS}
                         onChange={(e) => onChange(e.target.value)}
                     />
                 </div>

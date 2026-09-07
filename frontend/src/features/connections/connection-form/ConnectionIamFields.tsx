@@ -3,7 +3,7 @@ import Input from '../../../common/components/Input.tsx';
 import Field from '../../../common/components/Field.tsx';
 import AwsSignInButton from '../aws-sign-in/AwsSignInButton.tsx';
 import AwsSignInStatus from '../aws-sign-in/AwsSignInStatus.tsx';
-import { invalidBox, requiredHint } from './connectionFormFieldHelpers.tsx';
+import { invalidBox, NO_NATIVE_SUGGESTIONS, requiredHint } from './connectionFormFieldHelpers.tsx';
 
 interface Props {
     awsProfile: string;
@@ -39,6 +39,7 @@ export default function ConnectionIamFields({
                             placeholder="default"
                             aria-invalid={awsProfileInvalid || undefined}
                             style={invalidBox(awsProfileInvalid)}
+                            {...NO_NATIVE_SUGGESTIONS}
                             onChange={(e) => onProfileChange(e.target.value)}
                         />
                     </Field>
@@ -51,6 +52,7 @@ export default function ConnectionIamFields({
                             placeholder="us-east-1"
                             aria-invalid={awsRegionInvalid || undefined}
                             style={invalidBox(awsRegionInvalid)}
+                            {...NO_NATIVE_SUGGESTIONS}
                             onChange={(e) => onRegionChange(e.target.value)}
                         />
                     </Field>

@@ -967,3 +967,8 @@ This is a record, not a plan. Nothing here is waiting on anything.
 - **2026-09-07** — **Reorder columns in the result grid** — Columns are fixed in the order the
   query returned them, and rearranging them means editing the SQL. Drag the
   column headers to reorder the columns on screen.
+
+- **2026-09-07** — **The native titlebar reappears while resizing on macOS** — Dragging a window
+  edge to resize makes the transparent custom titlebar give way to the macOS
+  native one for the length of the drag, then vanish again. The chrome hides the
+  titlebar at rest but not during a live resize.

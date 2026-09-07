@@ -205,6 +205,13 @@ export async function reapStaleApp(force = false): Promise<void> {
     );
 }
 
+// How long the bundle-parse-and-round-trip to first paint is allowed to take,
+// for both `launchApp` and `reload()` below -- see the comment on `reload`.
+// The GitHub-hosted Windows runner is markedly slower than a dev machine and
+// has been observed to blow past 30s on `reload()` alone, so this carries
+// enough headroom for that runner rather than just a local one.
+const FIRST_PAINT_TIMEOUT_MS = 60_000;
+
 /**
  * `env` reaches the extension: Neutralino spawns it as a child, so it inherits
  * whatever `neu run` was given. That is how the UI suite points the saved
@@ -345,7 +352,7 @@ export async function launchApp(env: Record<string, string> = {}): Promise<AppSe
             // whichever helper touched it first. Same budget `launchApp` gives the
             // first paint below: a reload repeats the same bundle-parse-and-round-trip
             // work, not a cheaper version of it.
-            await this.waitFor(rootRendered, 30_000);
+            await this.waitFor(rootRendered, FIRST_PAINT_TIMEOUT_MS);
         },
 
         async screenshot(path: string) {
@@ -379,7 +386,7 @@ export async function launchApp(env: Record<string, string> = {}): Promise<AppSe
     // start against a page that was "up enough to accept an evaluate and not up
     // enough to have rendered", the collapse `docs/testing.md` describes. Wait
     // for the same thing `reload()` waits for before handing the session back.
-    await page.waitFor(rootRendered, 30_000);
+    await page.waitFor(rootRendered, FIRST_PAINT_TIMEOUT_MS);
 
     return page;
 }
