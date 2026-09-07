@@ -86,11 +86,31 @@ jobs:
             # what `bun test` finds. Same recipe zalando/go-keyring's own CI uses.
             - name: Install a keyring for libsecret
               run: sudo apt-get update -qq && sudo apt-get install -y -qq gnome-keyring dbus-x11 libsecret-1-0
+            # --coverage's own text reporter prints an "All files" summary row;
+            # its % Lines column is what the badge below reports.
             - name: Run the extension suite
+              id: coverage
               shell: dbus-run-session -- bash --noprofile --norc -eo pipefail {0}
               run: |
                   echo 'test' | gnome-keyring-daemon --unlock
-                  bun test
+                  bun test --coverage --coverage-reporter=text 2>&1 | tee coverage-output.txt
+                  pct=$(grep '^All files' coverage-output.txt | awk -F'|' '{gsub(/ /,"",$3); print $3}')
+                  echo "percentage=$pct" >> "$GITHUB_OUTPUT"
+            # Only a merge to dev updates the badge everyone sees on the README --
+            # a PR from a fork has no access to GIST_SECRET anyway, and updating on
+            # every PR push would make the badge flicker with in-progress work.
+            # Depends on the GIST_SECRET repo secret (a PAT scoped to just `gist`)
+            # -- see "The coverage badge" in docs/decisions.md.
+            - name: Update coverage badge gist
+              if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+              uses: schneegans/dynamic-badges-action@v1.7.0
+              with:
+                  auth: ${{ secrets.GIST_SECRET }}
+                  gistID: 08a69b0d2852c5e0398ca05ed3af7f50
+                  filename: squeal-editor-coverage.json
+                  label: coverage
+                  message: ${{ steps.coverage.outputs.percentage }}%
+                  color: blue
 
     # WebView2 only exposes CDP through a browser argument (docs/testing.md), so
     # this suite is Windows-only. `bun run test:ui` builds the frontend and

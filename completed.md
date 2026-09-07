@@ -923,6 +923,25 @@ This is a record, not a plan. Nothing here is waiting on anything.
   updater carried fewer but were just as loose. `common/components` had the
   same problem for the Select/dropdown hooks.
 
+- **2026-08-24** — **Frontend feature barrels add indirection with nothing
+  behind it** — Every feature under `frontend/src` has an `index.ts` that only
+  re-exports a handful of its own files, and the composition root imports the
+  barrel instead of the file directly. Unlike the extension's
+  `drivers/index.ts`, which is load-bearing because it breaks a real import
+  cycle, the frontend barrels don't prevent anything — they're a style choice,
+  not a fix for a cycle. Remove them and import each feature's files directly
+  from `Shell`; this drops the one place that declared a feature's "public"
+  files versus its internals, and that's accepted rather than replaced with a
+  lint rule. Extension-side barrels (`drivers/index.ts`, `protocol/index.ts`)
+  are out of scope — they stay.
+
+- **2026-08-24** — **The README has no screenshots and no coverage signal** —
+  The root README describes the app in prose only, so nobody lands on the repo
+  and sees what it actually looks like before installing it. Add screenshots
+  of the app in use. Separately, nothing in the repo measures test coverage
+  today — no `--coverage` run, no CI step, nothing tracked — so add one, and
+  surface the resulting percentage as a badge in the README once it exists.
+
 - **2026-08-30** — **The assistant button is shown while disconnected** — The titlebar draws the
   assistant button (disabled) on the connect screen with nothing connected, so
   it reads as a control that should work but does not. Hide it there; the

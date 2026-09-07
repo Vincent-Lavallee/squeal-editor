@@ -1,4 +1,4 @@
-import { EditorPane } from '../features/editor/index.ts';
+import EditorPane from '../features/editor/EditorPane.tsx';
 import type { useShell } from './hooks/useShell.ts';
 import type { shellPaneView } from './shellPaneView.ts';
 

@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { diagnosePrompt, explainPrompt } from '../../features/assistant/index.ts';
+import { diagnosePrompt, explainPrompt } from '../../features/assistant/prompts.ts';
 import { sendMessage } from '../../store/assistantSlice.ts';
 import type { Tab } from '../../store/tabsSlice.ts';
 import type { useShellData } from './useShellData.ts';

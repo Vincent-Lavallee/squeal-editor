@@ -1,4 +1,4 @@
-import { Sidebar } from '../features/explorer/index.ts';
+import Sidebar from '../features/explorer/sidebar/Sidebar.tsx';
 import ResizeHandle from '../common/components/ResizeHandle.tsx';
 import type { useShell } from './hooks/useShell.ts';
 import ShellPane from './ShellPane.tsx';

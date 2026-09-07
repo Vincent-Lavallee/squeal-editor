@@ -30,6 +30,14 @@ bun run test:ui        # builds, then drives the real app (Windows-only, ~4min)
 bun run test:db:down   # remove them
 ```
 
+`bun run test:coverage` is `bun test --coverage`, same suite, same database
+requirement, with a per-file table printed alongside the pass/fail count. CI
+runs it in `test-extension` and reads the `All files` row's `% Lines` back out
+to keep the README's coverage badge current — see *The coverage badge* in
+`docs/decisions.md`. There is no separate coverage run for `test:ui`; WebView2
+is Windows-only and CDP-driven, which is not where Bun's coverage
+instrumentation reaches.
+
 **CI seeds the same way without Docker.** `.github/workflows/ci.yml` runs
 `test:db:up` with `SQUEAL_TEST_DB_NATIVE=1`, which points `tests/fixtures/db.ts`
 at MySQL/Postgres already provisioned as native services on the runner

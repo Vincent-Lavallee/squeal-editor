@@ -2,13 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { useSession } from './store/sessionSlice.ts';
 import Shell from './Shell.tsx';
-import { ConnectScreen } from './features/connections/index.ts';
-import { Titlebar, TitlebarMacos } from './features/titlebar/index.ts';
+import ConnectScreen from './features/connections/connect-screen/ConnectScreen.tsx';
+import Titlebar from './features/titlebar/Titlebar.tsx';
+import TitlebarMacos from './features/titlebar/macos/TitlebarMacos.tsx';
 import WindowResizeEdge, {
     WindowResizeCornerBL,
     WindowResizeCornerBR,
 } from './features/titlebar/window-chrome/WindowResizeEdge.tsx';
-import { UpdateBanner, useUpdater } from './features/updater/index.ts';
+import UpdateBanner from './features/updater/UpdateBanner.tsx';
+import { useUpdater } from './features/updater/hooks/useUpdater.ts';
 
 const IS_MACOS = typeof NL_OS !== 'undefined' && NL_OS === 'Darwin';
 

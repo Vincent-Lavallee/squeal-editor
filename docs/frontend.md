@@ -71,9 +71,9 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
   conversationRecord.ts    what a conversation looks like written down, values removed
   conversationSyncListener.ts  when that record is written
 src/features/
-  connections/          index.ts, connectPhaseLabel -- the feature's own barrel
-                        and the one helper both connect-screen/ and
-                        saved-connection-list/ read, too small to hand to either
+  connections/          connectPhaseLabel -- the one helper both connect-screen/
+                        and saved-connection-list/ read, too small to hand to
+                        either
     connect-screen/     ConnectScreen (composes ConnectScreenBody's per-view
                         components), connectScreenTypes/Logic, PasswordPrompt,
                         ConnectionListSkeleton -- the shell that switches between
@@ -91,9 +91,9 @@ src/features/
     hooks/              useSavedConnections, useWorkspaces, useConnectionForm
                         (+ its Fields/Test halves), useConnectScreen (+ its
                         Nav/Actions/Submits halves), useConnectionRows
-  titlebar/             index.ts, Titlebar, TitlebarTitle -- the non-macOS shell;
-                        `App.tsx` reaches `window-chrome/WindowResizeEdge.tsx`
-                        directly, the one file the barrel doesn't cover
+  titlebar/             Titlebar, TitlebarTitle -- the non-macOS shell;
+                        `App.tsx` also reaches `window-chrome/WindowResizeEdge.tsx`
+                        and `macos/TitlebarMacos.tsx` directly
     window-chrome/      WindowResizeEdge (the app's own resize strips), WindowControls
       hooks/            useWindowChrome (+ its frame/maximize/drag/macOS-focus halves)
     menu/               Menu, MenuItems
@@ -113,8 +113,7 @@ src/features/
     macos/              TitlebarMacos, MacosTitlebarTitle, TrafficLights
   rail/                 ConnectionRail: the open connections, the way between, and Disconnect
   tabs/                 TabStrip: the strip, its menu, and its drag; CloseTabsConfirm
-  explorer/             index.ts -- the feature's own barrel; every other file
-                        below is a subfeature
+  explorer/             every file below is a subfeature
     hooks/              useExplorer
     sidebar/            Sidebar, SidebarShell, the bars -- the panel shell
       hooks/            useSidebarController
@@ -175,7 +174,7 @@ src/features/
     hooks/              useQueryElapsed
   updater/              UpdateBanner: the found-update strip
     hooks/              useUpdater
-  assistant/            index.ts, AssistantPanel, AssistantBar, context (rebuilt
+  assistant/            AssistantPanel, AssistantBar, context (rebuilt
                         per turn), prompts (the questions the app asks on the
                         user's behalf), tokenCount -- fan out to every subfeature
                         below; nothing below reaches back up except for markdown/

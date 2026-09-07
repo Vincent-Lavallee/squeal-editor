@@ -1,9 +1,11 @@
 import type { SqlDialect } from '../../../../shared/protocol/index.ts';
 import { useShortcuts } from '../../store/settingsSlice.ts';
 import type { Tab } from '../../store/tabsSlice.ts';
-import { useEditor, useEditorKeybindings, useSqlFormatter } from '../../features/editor/index.ts';
-import { useExplorer } from '../../features/explorer/index.ts';
-import { useResults } from '../../features/results/index.ts';
+import { useEditor } from '../../features/editor/hooks/useEditor.ts';
+import { useEditorKeybindings } from '../../features/editor/hooks/useEditorKeybindings.ts';
+import { useSqlFormatter } from '../../features/editor/hooks/useSqlFormatter.ts';
+import { useExplorer } from '../../features/explorer/hooks/useExplorer.ts';
+import { useResults } from '../../features/results/hooks/useResults.ts';
 import { useSavedQueries } from '../../store/savedQueriesSlice.ts';
 
 interface Params {

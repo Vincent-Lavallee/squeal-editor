@@ -7046,3 +7046,58 @@ from.
 single string containing its own quotes is suspect the moment it goes through
 `Bun.spawn`'s array form — write it to a script file instead of trying to get
 the quoting to survive two different parsers.
+
+## The coverage badge is gist-backed, not a third-party host
+
+**Why.** The README needed a coverage signal, and Bun's `--coverage` only
+ever prints to stdout or writes `lcov` locally — there is no badge host
+behind it. The choice was between a third-party service (Codecov and
+similar, each its own account and its own upload token) and a small
+self-hosted badge: a `shields.io` "endpoint badge" that reads a JSON file
+from a gist. The gist route adds no external account, and the JSON it reads
+is one line CI already has after parsing `bun test --coverage`'s own
+summary — no separate coverage host to trust or configure.
+
+**What ships instead.** `.github/workflows/ci.yml`'s `test-extension` job
+runs `bun test --coverage --coverage-reporter=text`, greps the `All files`
+row's `% Lines` column out of the printed table, and — only on a push to
+`dev`, never on a PR — hands it to `schneegans/dynamic-badges-action`, which
+writes `{label, message, color}` JSON into a gist. The README's badge is a
+plain `img.shields.io/endpoint` URL pointed at that gist's raw file, so
+shields renders it without either side running any badge-specific code
+beyond the one grep.
+
+**This needed one manual, one-time setup that CI cannot do for itself,** and
+it is done: a GitHub PAT scoped to just `gist` (token creation has no CLI/API
+path — GitHub only issues one through the web UI) saved as the `GIST_SECRET`
+repository secret, and the gist itself
+(`08a69b0d2852c5e0398ca05ed3af7f50`, owned by `Vincent-Lavallee`) whose id is
+what `ci.yml`'s `gistID` and the README's badge URL both point at. A repo
+without that secret set has the badge step no-op on every push (nothing to
+authenticate with) and the README badge render as shields' own "not found"
+image rather than the build breaking.
+
+**Only a push to `dev` writes the badge**, deliberately: a PR from a fork
+cannot see `GIST_SECRET` regardless, and writing on every PR push would make
+the badge flicker with coverage from work nobody has merged yet.
+
+## Frontend feature barrels were removed
+
+**Why.** Every feature under `frontend/src/features` had grown its own
+`index.ts` re-exporting a handful of its own files, and `Shell`/`App` imported
+the barrel instead of the file. Unlike `extensions/db/drivers/index.ts` and
+`shared/protocol/index.ts`, neither frontend barrel prevented an import cycle
+— nothing forced going through them, they were a style choice that had
+accreted feature by feature. Each one also re-exported only *some* of a
+feature's files (`assistant/index.ts` skipped most of `tools/`, `titlebar/
+index.ts` skipped `window-chrome/`), so "the barrel is the public surface"
+was never actually true.
+
+**What ships instead.** The barrels are gone; `Shell`, `App` and every other
+caller import each file directly by its real path. There is no lint rule
+standing in for the barrel's old "public vs internal" declaration — that
+distinction is accepted as lost rather than replaced.
+
+**Out of scope, deliberately:** `extensions/db/drivers/index.ts` and
+`shared/protocol/index.ts` stay. Both are load-bearing — they break a real
+import cycle — which is exactly the property the frontend barrels lacked.

@@ -44,6 +44,7 @@ writing down. If nothing changed conceptually, change nothing.
 | `bun run knip`       | find files nothing imports                                   |
 | `bun run test:db:up` | start throwaway MySQL + Postgres in Docker                  |
 | `bun test`           | extension suite (needs the test databases; UI suite skips)  |
+| `bun run test:coverage` | extension suite with a per-file coverage table           |
 | `bun run test:ui`    | drive the real app (Windows-only, needs the test databases) |
 
 ## Non-negotiables

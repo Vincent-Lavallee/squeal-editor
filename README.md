@@ -1,9 +1,15 @@
 # Squeal Editor
 
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Vincent-Lavallee/08a69b0d2852c5e0398ca05ed3af7f50/raw/squeal-editor-coverage.json)](https://github.com/Vincent-Lavallee/squeal-editor/actions/workflows/ci.yml)
+
 A multi-database SQL editor for PostgreSQL, MySQL, and SQLite.
 
 Browse databases and tables in a sidebar, click a table to preview it, or write
 SQL by hand and run it.
+
+|                                     |                                 |
+| ----------------------------------- | ------------------------------- |
+| ![Browsing a table](docs/images/browse-table.png) | ![Running a query](docs/images/run-query.png) |
 
 ## Install
 
@@ -16,8 +22,8 @@ Download the latest release for your OS from the
 | macOS   | `squeal-editor-macos-*.dmg`                                                          |
 | Linux   | not shipped yet — build from source                                                  |
 
-Windows builds check for updates on launch and can update themselves; other
-platforms don't yet.
+
+<img src="docs/images/connect-screen.png" alt="The connect screen" width="480">
 
 ## Features
 
