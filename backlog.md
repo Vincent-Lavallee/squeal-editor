@@ -160,10 +160,6 @@ Things that do not exist yet.
   experience as the other platforms. AppImage only for now; deb and other
   formats can follow once the format is proven to work.
 
-- **Reorder columns in the result grid** — Columns are fixed in the order the
-  query returned them, and rearranging them means editing the SQL. Drag the
-  column headers to reorder the columns on screen.
-
 - **Use the installed Claude CLI instead of an API key** — The Claude provider
   asks for a pasted API key even when the developer's own signed-in `claude` CLI
   is already on the machine, so the assistant costs a key that was never needed.

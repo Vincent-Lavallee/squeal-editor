@@ -963,3 +963,7 @@ This is a record, not a plan. Nothing here is waiting on anything.
   exists to hold, and neither exists yet. It arrives with whichever of Light theme
   or French/English UI lands first, as that feature's own screen rather than as an
   empty shell waiting for one.
+
+- **2026-09-07** — **Reorder columns in the result grid** — Columns are fixed in the order the
+  query returned them, and rearranging them means editing the SQL. Drag the
+  column headers to reorder the columns on screen.
