@@ -7,6 +7,7 @@ import ResultsNoRowsYet from './states/ResultsNoRowsYet.tsx';
 import ResultsQueryFinished from './states/ResultsQueryFinished.tsx';
 import ResultsRunningState from './states/ResultsRunningState.tsx';
 import ResultsSaveBar from './bar/ResultsSaveBar.tsx';
+import ResultsTruncatedBar from './bar/ResultsTruncatedBar.tsx';
 import ResultsTabBars from './ResultsTabBars.tsx';
 import { useResultsGridController } from './grid/hooks/useResultsGridController.ts';
 
@@ -77,6 +78,8 @@ export default function ResultsTable({
         <>
             {tabBars}
             <ResultsBar g={g} />
+
+            {g.result.truncated && <ResultsTruncatedBar rowCount={g.result.rows.length} />}
 
             {(g.dirtyCount > 0 || g.saving || g.saveError) && (
                 <ResultsSaveBar

@@ -1142,6 +1142,54 @@ describe.each([
         expect(typeof res.durationMs).toBe('number');
     });
 
+    /*
+     * `QUERY_ROW_CAP` in `connectionTypes.ts` is 10_000 -- generated in-query
+     * rather than grown into the fixture. SQLite is excluded on purpose: it has
+     * no lazy, array-mode read to cap with, and the one lazy API it does have
+     * would trade this for silently wrong data on a query with duplicate column
+     * names -- see *Capping a query's result* in `docs/extension.md`.
+     */
+    test.if(label !== 'sqlite')(
+        'a query past the row cap is truncated, not left to run the process out of memory',
+        async () => {
+            if (label === 'mysql') {
+                // The default recursion depth (1000) is well under the cap; this is a
+                // session setting, not a privilege, and it persists for the capped
+                // query issued right after on the same connection.
+                await query('SET SESSION cte_max_recursion_depth = 20000');
+            }
+            const sql =
+                label === 'postgres'
+                    ? 'SELECT n FROM generate_series(1, 10001) AS n'
+                    : 'WITH RECURSIVE seq AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM seq WHERE n < 10001) SELECT n FROM seq';
+            const res = await query(sql);
+            expect(res.truncated).toBe(true);
+            expect(res.rows).toHaveLength(10_000);
+
+            // The socket the driver hung up on itself, once the cap was hit, must not
+            // read as a real drop: no `lost` broadcast for this connection.
+            await expect(
+                h.waitFor(
+                    'connection.state',
+                    (d: { connectionId: string; state: string }) =>
+                        d.connectionId === connectionId && d.state === 'lost',
+                    500,
+                ),
+            ).rejects.toThrow();
+
+            // And the connection keeps answering right away -- the evicted client is
+            // replaced on this very next command, not left dead in the registry.
+            const after = await query('SELECT 1 AS ok');
+            expect(Number(after.rows[0]![0])).toBe(1);
+        },
+    );
+
+    test.if(label !== 'sqlite')('a query under the row cap is not truncated', async () => {
+        const res = await query('SELECT * FROM events');
+        expect(res.truncated).toBeFalsy();
+        expect(res.rows).toHaveLength(150);
+    });
+
     test('disconnect closes the connection for good', async () => {
         const { connectionId: temp } = (await h.ok('db.connect', { config })) as {
             connectionId: string;

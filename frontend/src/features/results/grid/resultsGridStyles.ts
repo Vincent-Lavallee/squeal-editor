@@ -76,6 +76,21 @@ export const MIN_COL_W = 48;
 export const DEFAULT_MAX_COL_W = 380;
 
 /**
+ * Below this many rows, `useRowWindow` renders everything and windows nothing
+ * -- see `docs/frontend.md`, *The grid virtualizes past a point*. Comfortably
+ * above `PAGE_SIZE` (100, every browsed page) so a browsed grid never sees a
+ * spacer row, which is what keeps `.grid tbody tr` -- the selector the UI
+ * suite uses everywhere -- an exact count of real rows below this line.
+ */
+export const ROW_VIRTUALIZATION_THRESHOLD = 500;
+/**
+ * Extra rows kept mounted past each edge of the visible window, so a fling or
+ * a held arrow key does not outrun rendering and show a blank band before the
+ * next frame catches up.
+ */
+export const ROW_OVERSCAN = 20;
+
+/**
  * The grab strip on a header's right edge -- see `residual.css` for the line it
  * lights up. Wholly inside the header rather than straddling its border: the
  * header clips (it ellipsises long names), so anything hanging past the edge is

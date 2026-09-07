@@ -228,3 +228,20 @@ export function selectExpressionAt(sql: string, index: number): string | null {
     const expr = exprs[index]!;
     return sql.slice(expr.start, expr.end).trim().replace(/\s+/g, ' ');
 }
+
+/**
+ * A settle guard for a capped, event-driven query: the first call runs, every
+ * one after it is a no-op. Shared between the mysql and postgres drivers'
+ * capped `query` branches, which both need it for the same reason -- a DML
+ * statement's completion event still follows its result event, and the
+ * abort this side issues after the cap can itself race an `error` against an
+ * `end` that was already in flight.
+ */
+export function settleOnce(): (run: () => void) => void {
+    let settled = false;
+    return (run) => {
+        if (settled) return;
+        settled = true;
+        run();
+    };
+}

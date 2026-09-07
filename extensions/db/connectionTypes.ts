@@ -11,7 +11,7 @@ import type {
     TableFilter,
     TableInfo,
 } from '../../shared/protocol/index.ts';
-import type { QueryOutcome, Relation, TableSearch } from './drivers/index.ts';
+import type { Relation, TableSearch } from './drivers/index.ts';
 
 /**
  * Rows per page when browsing a table. Lives here because this is where the page
@@ -20,8 +20,29 @@ import type { QueryOutcome, Relation, TableSearch } from './drivers/index.ts';
  */
 export const PAGE_SIZE = 100;
 
+/**
+ * Rows kept from a hand-typed `db.query`, whatever the statement itself asked
+ * for. It carries no `LIMIT` of its own -- appending one would be the rewrite
+ * `db.query` exists to refuse -- so this is enforced by each driver reading no
+ * further once it is reached, not by the SQL. See *Capping a query's result* in
+ * `docs/extension.md`. Extension-only, unlike `PAGE_SIZE`: the frontend's
+ * truncation notice reads its count off the response it got back rather than
+ * carrying a second copy of this number.
+ */
+export const QUERY_ROW_CAP = 10_000;
+
 /** What an already-open connection can do without being asked -- see `ConnectionState`. */
 export type ConnectionLifecycle = (state: 'lost' | 'restored', reason?: string) => void;
+
+/**
+ * A hand-typed query's result, before the transport times it. `truncated` is
+ * answered from one spare row past `QUERY_ROW_CAP`, the same "ask, don't
+ * infer" rule `TableRows.hasMore` follows -- never set on the DML/DDL arm,
+ * which has no rows to cap in the first place.
+ */
+export type QueryPage =
+    | { columns: string[]; rows: CellValue[][]; truncated: boolean }
+    | { columns: []; rows: []; affectedRows: number; message: string };
 
 /** One page of rows, before the transport times it. */
 export interface TableRows {
@@ -71,7 +92,7 @@ export interface ConnectionHandle {
      * one thing that wraps it. See the implementation for why that wrap is allowed
      * where paging and filtering a query's result are not.
      */
-    query(database: string | undefined, sql: string, sort?: SortOrder): Promise<QueryOutcome>;
+    query(database: string | undefined, sql: string, sort?: SortOrder): Promise<QueryPage>;
     /**
      * One page of a table, optionally narrowed by `filter` and ordered by `sort`.
      * A builder filter's values are bound as parameters; a raw one is the user's

@@ -3894,6 +3894,105 @@ rather than asserting which engine it is talking to.
 
 ---
 
+## A query's row count is capped, and this is not the rewrite ban bent again
+
+**Why this needs an entry.** The rule this file keeps repeating — the editor
+must not run something other than what is on screen, and `db.query` must not
+be repaged — sounds like it forbids ever bounding a query's rows too. It does
+not. Every earlier refusal (paging, filtering, sorting the grid instead of the
+server) is about **which rows come back**. This is about **how many of the
+same rows the extension keeps**, after the statement already ran, whole,
+exactly as typed. A `SELECT` with no `LIMIT` against a huge table was OOMing
+the extension process; the statement is never touched, only the number of
+rows this side ever materializes from its own result.
+
+**The mechanism is the existing "ask for one past the limit" idiom, not a new
+one.** `browse`'s `hasMore` and `db.tables`' `truncated` already answer this
+question — from a spare row, never inferred — for their own callers. `QUERY_ROW_CAP`
+(10,000) is the same idiom applied to `db.query`, where the row count can't be
+bounded by an authored `LIMIT` because there is no SQL here for this side to
+author.
+
+**Rejected: SQLite gets the same cap.** bun:sqlite has no lazy API that
+returns array-mode rows. `.values()` (used today) is eager, and `.iterate()`
+is the only lazy one, but it returns plain objects, which silently collapse
+duplicate column names — not merely mislabel them, *lose the value* — for a
+query as ordinary as `SELECT * FROM a JOIN b USING(id)`. Capping SQLite would
+have traded a rare OOM for a realistic wrong-data bug, which this app's value-
+handling rule ranks as strictly worse. SQLite's `query()` stays unbounded; see
+*Capping a query's result* in `docs/extension.md`.
+
+**Rejected: `pg-cursor` for a true server-side stop on Postgres.** Postgres
+does have a way to make the *server* stop after N rows, via a cursor package
+this repo does not depend on. Taken as far as evaluating it, and rejected for
+what it would cost against what it would buy: a new dependency, for a
+guarantee MySQL has no equivalent for (mysql2 has no cursor API at all), which
+would leave the two engines protected differently for the same feature. Both
+engines instead stream rows client-side and hang up the socket once the cap is
+hit — this bounds the extension's own memory, which is the actual OOM being
+fixed, even though the server behind it briefly did more work than a page's
+`LIMIT` would have asked of it. No new dependency, symmetric behaviour across
+both server engines.
+
+**The self-inflicted hang-up must never be reported as a dropped connection.**
+`Driver.query`'s `onCapExceeded` fires before the socket is touched, and
+`connectionQueryMethods.ts` evicts the client from the registry right there —
+the same order `connectionLifecycleMethods.close()` already established
+("the map is cleared first, which is what tells the `onClientLost` handlers
+these endings are ours"). Getting the order backwards costs nothing
+observable in the row count that comes back — the truncated result still
+arrives correctly — which is exactly why it was found by a real-database test
+rather than by reading the code: a spurious "connection lost" broadcast for a
+query that plainly worked, on both server engines, every time the cap fired.
+
+---
+
+## The results grid virtualizes only past a threshold, not always
+
+**Why this needs an entry.** The obvious version of row virtualization windows
+unconditionally: compute the visible range from scroll position and render
+only that, at any row count. Rejected in favour of a `ROW_VIRTUALIZATION_THRESHOLD`
+(500) below which nothing changes, because "always" would have quietly broken
+two things that have nothing to do with each other on the surface.
+
+**The first: `tests/ui.test.ts`'s `.grid tbody tr` selector.** It counts rows,
+indexes into them, and dumps their content, in dozens of places, all on the
+assumption that every `<tr>` in the body is a real row. Windowing needs spacer
+rows to keep the scrollbar honest about a result's true length, and a spacer
+row is still a `<tr>` — indistinguishable from a real one to that selector
+without touching every call site. A threshold sidesteps this instead of
+solving it: chosen above `PAGE_SIZE` (100, the largest a browsed page ever is)
+and above the largest result any existing test drives
+(`generate_series(1, 200)`, `tests/ui.test.ts`), so no spacer row has ever
+existed where an existing test could see one, and none of them needed to
+change.
+
+**The second: the table is auto-layout on purpose.** `docs/frontend.md`
+documents this already — a column's content sets its own minimum width, which
+is what lets `description` widen itself without every column carrying an
+explicit size. That computation can only see rows currently in the DOM;
+unconditional windowing would make a column's width a function of scroll
+position for every result, not just the rare huge one. Below the threshold the
+question does not arise, because nothing is windowed.
+
+**Accepted rather than solved: above the threshold, a column's auto-width
+still only reflects mounted rows.** Giving every column an explicit width up
+front would remove the effect, at the cost of the "content sets its own
+minimum" behaviour for every result to fix a cosmetic edge case in the rare
+one large enough to be windowed at all. A user hitting this can drag the
+column to a width, which is already how a column leaves auto-layout for good.
+
+**Rejected: a virtualization library.** `react-window`/`@tanstack/react-virtual`
+solve a harder problem than this grid has — row height here is already fixed
+via CSS (`ROW_H_DENSE`), so the range math is a few lines, and this grid's
+selection, editing and copy logic were already keyed by pure row/column index
+rather than by DOM position (confirmed by reading every hook that touches
+either before starting), which is the part a library would otherwise exist to
+paper over. No new dependency for a problem this grid's own architecture had
+already made small.
+
+---
+
 ## Windows names its own processes, and it takes two mechanisms to do it
 
 Task Manager labels a row with the executable's `FileDescription`, falling back
@@ -6521,12 +6620,22 @@ app's chords — one spelling of a keybinding, rebindable from the shortcuts
 screen. This has no chord; it is a menu item. A row there would have invented a
 keyboard shortcut nobody asked for and a settings row that has to be given a key.
 
-**The conversation opens in the *other* pane**, which is the one place in the app
-that does not open into `workingPane`. The exception is the point: the question
-is about what is on screen, so an answer that replaces it with itself makes you
-flip between the error and the explanation of the error. It is the gesture
-`Ctrl+Shift+T` already exists for, taken automatically because here the app is
-the one deciding to open a tab.
+**The conversation opens in the *other* pane**, rather than into `workingPane`.
+The exception is the point: the question is about what is on screen, so an
+answer that replaces it with itself makes you flip between the error and the
+explanation of the error. It is the gesture `Ctrl+Shift+T` already exists for,
+taken automatically because here the app is the one deciding to open a tab.
+
+**The titlebar button and `Ctrl+Shift+A` opened into `workingPane` regardless,
+which was the same problem on the entry point that draws the most traffic:**
+asking for a new conversation with no split yet covered the query it was
+supposed to sit beside, rather than appearing next to it. There was never a
+reason for the manual gesture to answer differently than the automatic ones —
+both are "open the assistant beside what I'm looking at" — so
+`useExternalTabRequests` (the button, arriving as a bumped counter) and
+`newAssistantChat` in `useShellCommands.ts` (the chord) now compute the other
+pane the same way this entry point does, rather than one calling the other,
+since a keydown and a click are not the same event to route through one path.
 
 ---
 

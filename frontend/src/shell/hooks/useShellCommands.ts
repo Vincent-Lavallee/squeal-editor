@@ -93,10 +93,14 @@ function buildShellCommands({
         toggleSidebar,
         syncTree: toggleTreeSync,
         filterTables: focusTableFilter,
-        // Named `toggle` because that is the gesture: `openAssistantTab` focuses the
-        // one already open rather than minting a second, so pressing it twice lands
-        // you back where you were.
-        newAssistantChat: () => openAssistantTab(workingPane),
+        /*
+         * Into the *other* pane, the way `askAssistant` already does: the question
+         * is about what is on screen, so answering into the pane you are working
+         * in would cover the very thing you are asking about. With no split yet,
+         * minting into the secondary pane is what creates one.
+         */
+        newAssistantChat: () =>
+            openAssistantTab(workingPane === 'secondary' ? 'primary' : 'secondary'),
     };
 }
 

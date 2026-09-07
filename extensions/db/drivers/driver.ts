@@ -180,8 +180,29 @@ export interface Driver<C> {
      * browsed page's filter binds its values rather than interpolating them. The
      * user's own statement arrives through `db.query` with no parameters, because
      * it is text they wrote and there is nothing in it for us to bind.
+     *
+     * `rowCap`, when given, bounds how many rows this call ever materializes --
+     * it does not touch the SQL. `db.query` runs a hand-typed statement with no
+     * `LIMIT` of its own, so a huge table would otherwise be read into memory
+     * whole; this is the seam that stops it without rewriting what the user
+     * wrote. `db.browse`'s page never passes it, because its own `LIMIT` in the
+     * SQL already bounds the row count -- see *Capping a query's result* in
+     * `docs/extension.md` for which engines honour it and why SQLite does not.
+     *
+     * `onCapExceeded`, required alongside `rowCap`, fires synchronously the
+     * moment the cap is hit, *before* the socket is torn down -- the driver has
+     * no reach into the connection registry, so evicting the about-to-die client
+     * from it is the caller's job, and it must happen in that order. Getting it
+     * backwards is quiet: `getClient`'s own `onClientLost` guard only recognises
+     * a self-inflicted ending by finding the client already gone from the
+     * registry, so destroying first reports a perfectly fine connection as
+     * dropped to the UI.
      */
-    query(client: C, sql: string, params?: CellValue[]): Promise<QueryOutcome>;
+    query(
+        client: C,
+        sql: string,
+        options?: { params?: CellValue[]; rowCap?: number; onCapExceeded?: () => void },
+    ): Promise<QueryOutcome>;
     /**
      * Put this client's session into read-only mode, or back to read-write, so the
      * *server* refuses writes rather than the app trying to parse them out of the

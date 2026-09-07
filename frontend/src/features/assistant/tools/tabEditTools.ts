@@ -180,6 +180,10 @@ export const TAB_EDIT_TOOLS: Tool[] = [
                 required: ['title'],
             },
         },
+        // The tab's own title changing is the effect, right there in the strip --
+        // a row saying so as well would be the transcript announcing something
+        // already on screen.
+        silent: true,
         target: (args) => str(args.title) ?? 'this conversation',
         async run(args, ctx) {
             const title = String(args.title).trim().slice(0, 40);

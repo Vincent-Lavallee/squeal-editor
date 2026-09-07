@@ -2,6 +2,7 @@ import * as t from '../../../common/tokens';
 import type { ToolRecord } from '../../../store/assistantSlice.ts';
 import type { AiMessage } from '../../../../../shared/protocol/index.ts';
 import Prose from '../markdown/Prose.tsx';
+import { toolByName } from '../tools/tools.ts';
 import ToolRow from './ToolRow.tsx';
 
 export default function ThreadMessage({
@@ -37,9 +38,11 @@ export default function ThreadMessage({
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: t.GAP_SM }}>
             {message.content ? <Prose text={message.content} /> : null}
-            {message.toolCalls?.map((call) => (
-                <ToolRow key={call.id} record={tools[call.id]} name={call.name} />
-            ))}
+            {message.toolCalls
+                ?.filter((call) => !toolByName(call.name)?.silent)
+                .map((call) => (
+                    <ToolRow key={call.id} record={tools[call.id]} name={call.name} />
+                ))}
         </div>
     );
 }

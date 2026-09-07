@@ -10,10 +10,13 @@ import type { useTreeDatabase } from './useTreeDatabase.ts';
  *
  * The diagram opens on **the database the tree is showing**, for the reason a
  * table clicked in the tree does: the menu belongs to no pane and no tab, so
- * the only database it can mean is the one being looked at. Both open into
+ * the only database it can mean is the one being looked at. It opens into
  * the pane being worked in, the rule every control attached to no pane
  * follows. The assistant carries no database: the conversation is about no
- * one database, and its tools name whichever connection they used.
+ * one database, and its tools name whichever connection they used. It opens
+ * into the *other* pane instead, like `askAssistant` and the shortcut in
+ * `useShellCommands.ts` -- the question is about what is on screen, so
+ * answering into the pane you are working in would cover it.
  *
  * The refs are what make a counter a counter: an effect keyed on the value
  * alone would also fire on mount, opening a tab nobody asked for the moment a
@@ -42,6 +45,6 @@ export function useExternalTabRequests(args: {
     useEffect(() => {
         if (openAssistantRequest === lastAssistantRequest.current) return;
         lastAssistantRequest.current = openAssistantRequest;
-        openAssistantTab(workingPane);
+        openAssistantTab(workingPane === 'secondary' ? 'primary' : 'secondary');
     }, [openAssistantRequest, openAssistantTab, workingPane]);
 }

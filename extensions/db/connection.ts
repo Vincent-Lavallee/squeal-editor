@@ -68,7 +68,7 @@ function build<C>(
             return state.readOnly;
         },
         ...connectionCatalogMethods(use, driver, config),
-        ...connectionQueryMethods(use, driver),
+        ...connectionQueryMethods(use, driver, state),
         ...connectionWriteMethods(use, driver),
         ...connectionLifecycleMethods(state, driver),
     };

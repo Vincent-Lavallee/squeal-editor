@@ -21,4 +21,5 @@ export {
     tableSearchClause,
     orderByClause,
     selectExpressionAt,
+    settleOnce,
 } from './commonQuery.ts';

@@ -368,6 +368,72 @@ The wrap is written in `connection.ts` beside the page SQL rather than in a
 driver, for the `LIMIT/OFFSET` reason: all three engines spell it identically. An
 engine that does not makes it a `Driver` method, not an `if` here.
 
+## Capping a query's result
+
+A hand-typed `SELECT` with no `LIMIT` against a huge table used to OOM the
+extension: every driver's `query()` fully materialized the result before
+returning. `db.query`'s statement is never rewritten (see above), so the fix
+does not touch the SQL — it bounds how many rows the extension ever pulls off
+the wire, the same "ask for one past the limit, let the caller decide" idiom
+`browse`'s `hasMore` and `db.tables`' `truncated` already use.
+
+`QUERY_ROW_CAP` (10,000, in `connectionTypes.ts`) is passed as `rowCap` on
+`Driver.query`'s options. `connectionQueryMethods.ts::query()` asks for
+`QUERY_ROW_CAP + 1` and slices, exactly like `browse`'s `PAGE_SIZE + 1` — the
+spare row is what answers `truncated` rather than inferring it from a full
+result being no evidence anything was cut off.
+
+**MySQL and Postgres only. SQLite's `query()` stays unbounded.** bun:sqlite's
+only lazy read is `.iterate()`, which returns plain objects — and objects
+silently collapse duplicate column names (`stmt.columnNames` dedupes, the same
+bug `sqliteColumnNames` already works around for the *header*). `.values()`,
+which this driver uses today, returns the correct array even when the header
+would collide; `.iterate()` cannot, because the collision happens inside
+bun's native binding before a value ever reaches JS to be rebuilt positionally
+— the second `x` in `SELECT 1 AS x, 2 AS x` is gone from the object, not just
+mislabeled. `SELECT * FROM a JOIN b USING(id)` is the realistic way to hit
+this, not a contrived one, so trading today's OOM for silently wrong data was
+rejected. SQLite is a local file rather than a server this app does not
+administer, which is what makes leaving it unbounded an acceptable line to
+draw rather than a gap to close later.
+
+**Neither `mysql2` nor `pg` can tell the *server* to stop after N rows without
+a SQL-level `LIMIT`.** Both, however, can be read one row at a time without
+buffering the rest, which is what actually fixes the OOM (the extension's own
+heap, not the server's): mysql2's promise wrapper always buffers, but its
+`Connection` keeps a real, public `connection` property
+(`mysql2/lib/promise/connection.js`) onto the raw, event-based connection
+underneath, whose `query()` emits `'result'` per row; `pg`'s own exported
+`Query` class emits `'row'` per row and — the detail that matters — stops
+accumulating internally the moment something listens for it
+(`this._accumulateRows = this.callback || !this.listeners('row').length` in
+pg's own source). Neither needed a new dependency (`pg-cursor` would give
+Postgres a true server-side stop, at the cost of an asymmetric guarantee
+between the two engines and one more package; not taken).
+
+Once the cap is hit, the only way to stop the rest from arriving is to hang up:
+each driver calls its own `destroyClient` on itself, mid-query. **This is
+deliberate self-harm and must never be reported as a dropped connection.**
+`Driver.query`'s `onCapExceeded` is why: it fires synchronously the instant the
+cap is hit, *before* the socket is touched, and it is the caller's job
+(`connectionQueryMethods.ts`) — the driver has no reach into the connection
+registry. Order matters here the same way it does in
+`connectionLifecycleMethods.close()`: the client is evicted from
+`state.clients` first, which is what tells `getClient`'s own `onClientLost`
+guard that this ending is ours, not a drop worth telling the UI about. Getting
+the order backwards is quiet — the client is still in the registry when the
+socket dies, so the guard sees a perfectly normal connection and reports it
+lost, and the truncated query's own result arrives correctly a moment later
+regardless, which is exactly the kind of "looks fine, isn't" bug that only
+shows up against a real server.
+
+A DML statement's completion event still follows its result event on both
+libraries (mysql2's OkPacket arrives via `'result'`, then `'end'` fires anyway;
+`pg` has no equivalent case in practice, but the risk is symmetric enough to
+guard identically) — `settleOnce` (`drivers/commonQuery.ts`) is what keeps a
+second, late event from re-resolving or, worse, throwing on state the first
+resolution already consumed.
+
 ## Listing a table's columns
 
 `db.columns` names a table and answers with its columns, in **ordinal order** —
