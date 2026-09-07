@@ -2,7 +2,7 @@ import Checkbox from '../../../common/components/Checkbox.tsx';
 import Input from '../../../common/components/Input.tsx';
 import Field from '../../../common/components/Field.tsx';
 import * as t from '../../../common/tokens';
-import { OPTIONAL } from './connectionFormFieldHelpers.tsx';
+import { NO_NATIVE_SUGGESTIONS, OPTIONAL } from './connectionFormFieldHelpers.tsx';
 
 interface Props {
     password: string;
@@ -29,6 +29,7 @@ export default function ConnectionPasswordField({
                 value={password}
                 disabled={!passwordUsed}
                 placeholder={keepPlaceholder ? 'unchanged' : ''}
+                {...NO_NATIVE_SUGGESTIONS}
                 onChange={(e) => onPasswordChange(e.target.value)}
             />
             <div style={{ marginTop: t.GAP_XS }}>

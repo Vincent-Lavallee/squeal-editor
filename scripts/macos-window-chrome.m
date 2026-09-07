@@ -1,6 +1,7 @@
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
 #import <dlfcn.h>
+#import <objc/runtime.h>
 
 /*
  * Injected into the Neutralino shell via DYLD_INSERT_LIBRARIES (the launcher
@@ -58,7 +59,29 @@ static void useBundleDockIcon(void) {
   NSApp.applicationIconImage = icon;
 }
 
-static void restyle(NSWindow *window) {
+/*
+ * Marks a window as ours, independent of any style bit that might later be
+ * reset — see the resize observer below for why that independence matters.
+ * Nothing else in the process sets this.
+ */
+static const void *kSquealRestyled = &kSquealRestyled;
+
+static BOOL isSquealWindow(NSWindow *window) {
+  return objc_getAssociatedObject(window, kSquealRestyled) != nil;
+}
+
+/*
+ * Everything that makes the native titlebar invisible, bundled so it can be
+ * redone as a unit. A height-changing resize was found to revert more than
+ * just the button visibility this originally covered -- re-hiding the
+ * buttons alone on NSWindowDidResizeNotification (see below) left the native
+ * bar itself, not just its buttons, flashing back on every drag from the
+ * bottom edge. Whatever exactly AppKit resets on that path, re-asserting the
+ * whole set is what closes it, since there is no cheaper way to find out
+ * which subset actually needs it without instrumenting a live drag this
+ * dylib cannot do on its own.
+ */
+static void reapplyChrome(NSWindow *window) {
   window.styleMask |= NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                       NSWindowStyleMaskMiniaturizable |
                       NSWindowStyleMaskResizable |
@@ -70,6 +93,11 @@ static void restyle(NSWindow *window) {
   [window standardWindowButton:NSWindowCloseButton].hidden = YES;
   [window standardWindowButton:NSWindowMiniaturizeButton].hidden = YES;
   [window standardWindowButton:NSWindowZoomButton].hidden = YES;
+}
+
+static void restyle(NSWindow *window) {
+  reapplyChrome(window);
+  objc_setAssociatedObject(window, kSquealRestyled, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
   /* The window may have failed to become key while it was borderless. */
   [window makeKeyAndOrderFront:nil];
@@ -308,8 +336,11 @@ __attribute__((constructor)) static void squealWindowChromeInit(void) {
    * Neutralino applies its borderless mask partway through startup — hence a
    * notification observer rather than a one-shot. Guards:
    *
-   * - FullSizeContentView is the already-restyled marker; nothing else in the
-   *   process ever sets it, so each window is restyled exactly once.
+   * - `isSquealWindow` is the already-restyled marker. It used to be read off
+   *   FullSizeContentView instead, on the assumption that nothing else in the
+   *   process would ever touch it — wrong, per the resize observer below, so
+   *   this now tracks it independently rather than through a bit that turned
+   *   out to be someone else's to reset too.
    * - Closable + normal level excludes the borderless child windows WKWebView
    *   creates for dropdowns and autocomplete, which must stay borderless. So
    *   does having no parent window: a popup attached to the app window that
@@ -323,13 +354,44 @@ __attribute__((constructor)) static void squealWindowChromeInit(void) {
                    queue:[NSOperationQueue mainQueue]
               usingBlock:^(NSNotification *note) {
                 NSWindow *window = note.object;
-                BOOL restyled =
-                    (window.styleMask & NSWindowStyleMaskFullSizeContentView) != 0;
                 BOOL isAppWindow =
                     (window.styleMask & NSWindowStyleMaskClosable) != 0 &&
                     window.level == NSNormalWindowLevel &&
                     window.parentWindow == nil;
-                if (isAppWindow && !restyled) restyle(window);
+                if (isAppWindow && !isSquealWindow(window)) restyle(window);
+              }];
+
+  /*
+   * A resize that changes the window's *height* was found to revert this
+   * dylib's whole restyle, not just the button visibility first suspected --
+   * dragging the bottom edge (or a bottom corner) brought the native titlebar
+   * back, dragging left/right never did. The app's own resize strips
+   * (WindowResizeEdge.tsx) drive every edge from `setSize` on pointermove
+   * rather than the OS's native resize loop, so this fires on every single
+   * pointermove of such a drag, not just once.
+   *
+   * This is why the guard here reads `isSquealWindow` rather than a style
+   * bit: whatever resets the restyle may be resetting the very bit
+   * (FullSizeContentView) an earlier version of this guard checked to decide
+   * whether to fix it, which would have suppressed the fix on exactly the
+   * event meant to trigger it.
+   *
+   * `queue:nil` -- not `[NSOperationQueue mainQueue]`, the choice everywhere
+   * else in this file -- delivers the block synchronously, on the same
+   * thread and call stack that posted the notification, which is what makes
+   * the fix land before that frame is on screen. A queue is delivered on the
+   * next run-loop turn; a fast drag posts far more of these than one run-loop
+   * turn can drain, so reapplying would keep falling further behind the drag
+   * instead of catching each frame, which is exactly the flashing this exists
+   * to remove.
+   */
+  [[NSNotificationCenter defaultCenter]
+      addObserverForName:NSWindowDidResizeNotification
+                  object:nil
+                   queue:nil
+              usingBlock:^(NSNotification *note) {
+                NSWindow *window = note.object;
+                if (isSquealWindow(window)) reapplyChrome(window);
               }];
 
   /*

@@ -2658,10 +2658,51 @@ only what passes three guards, each excluding something specific:
   handed a titlebar with the traffic lights hidden on it is a native panel
   redrawn as a stray frame over the page.
 
-*Not verified on the alternative:* intercepting `setStyleMask:` instead — so the
-window is born titled and never spends an instant borderless — is the shape that
-would remove the guessing about *when* the observer fires. It has never been
-built or measured against this.
+**A second observer re-asserts the restyle through a height-changing resize,
+and getting there took two wrong-sized fixes first.** `WindowResizeEdge.tsx`
+drives every edge on macOS from `Neutralino.window.setSize()` on `pointermove`
+(see its own doc comment for why — the native ~3px border is unusable), not
+the OS's resize loop, so a drag posts far more resize events than one native
+gesture would. Dragging the bottom edge (or a bottom corner) — anything that
+changes the window's *height* — brought the native titlebar back; left/right,
+width-only, never did.
+
+*First cut:* re-hide the three buttons on `NSWindowDidResizeNotification`,
+reasoned from AppKit anchoring the titlebar's button cluster to the top of the
+frame and re-laying it out (un-hiding the buttons) whenever height changes.
+Did nothing observable. *Second cut:* the observer was registered with
+`[NSOperationQueue mainQueue]`, which defers its block to the next run-loop
+turn — a fast drag posts events faster than one turn can drain, so re-hiding
+would keep falling further behind instead of catching each frame. Switched to
+`queue:nil`, which delivers synchronously on the call stack that posted the
+notification. Still did nothing observable, which said the first cut had
+diagnosed the wrong surface, not just the wrong timing.
+
+**What actually needed reasserting was more than the buttons, and the guard
+was checking the wrong thing to notice.** `reapplyChrome` now redoes the whole
+restyle on every resize event — the style mask bits, `titlebarAppearsTransparent`,
+`titleVisibility`, and the three buttons — rather than the buttons alone, since
+there is no cheap way from inside this dylib to instrument a live drag and find
+out which subset actually reverts. And the guard that decided *whether* to
+reapply used to read `NSWindowStyleMaskFullSizeContentView`, on the assumption
+that nothing else would ever clear it — the same assumption the first entry in
+this section made about it being a safe "already restyled" marker. If the
+resize is what clears that bit, gating the fix on its presence means the fix
+never runs on exactly the event meant to trigger it. `isSquealWindow` replaces
+it with an Objective-C associated object set once in `restyle()`, which no
+style-mask reset can touch.
+
+*Reasoned, not verified*: same limitation as the dylib's other macOS entries —
+this dylib cannot drive a live mouse drag to confirm against, so each cut above
+was shipped on reasoning and only disproved by the next report back. If a
+height-changing resize still shows the native titlebar after this, the next
+suspect is `setStyleMask:` being called directly (Neutralino's own "rewrites
+the whole style word on `setSize`" — see *Windows gets its titlebar from an
+injected DLL* — may not be Windows-only), which `reapplyChrome` reacting after
+the fact cannot beat if that call also forces a synchronous redraw before this
+observer's block runs; the fix for that shape is swizzling `setStyleMask:`
+itself so the required bits are enforced at the point of assignment rather
+than restored after it.
 
 **Rejected: patching Neutralino and building the shell from source.** It is the
 "proper" fix and the wrong trade: a fork of the shell to maintain and a C++

@@ -1,7 +1,12 @@
 import type { Engine } from '../../../common/db/engines.ts';
 import Input from '../../../common/components/Input.tsx';
 import Field from '../../../common/components/Field.tsx';
-import { invalidBox, OPTIONAL, requiredHint } from './connectionFormFieldHelpers.tsx';
+import {
+    invalidBox,
+    NO_NATIVE_SUGGESTIONS,
+    OPTIONAL,
+    requiredHint,
+} from './connectionFormFieldHelpers.tsx';
 
 interface Props {
     engine: Engine;
@@ -34,6 +39,7 @@ export default function ConnectionServerFields({
                             value={host}
                             aria-invalid={hostInvalid || undefined}
                             style={invalidBox(hostInvalid)}
+                            {...NO_NATIVE_SUGGESTIONS}
                             onChange={(e) => onHostChange(e.target.value)}
                         />
                     </Field>
@@ -44,6 +50,7 @@ export default function ConnectionServerFields({
                             id="port"
                             value={port}
                             placeholder={String(engine.defaultPort)}
+                            {...NO_NATIVE_SUGGESTIONS}
                             onChange={(e) => onPortChange(e.target.value)}
                         />
                     </Field>
@@ -58,6 +65,7 @@ export default function ConnectionServerFields({
                 <Input
                     id="database"
                     value={database}
+                    {...NO_NATIVE_SUGGESTIONS}
                     onChange={(e) => onDatabaseChange(e.target.value)}
                 />
             </Field>
