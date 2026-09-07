@@ -114,6 +114,24 @@ export function useBooleanSetting(
     return [stored === undefined ? fallback : stored === 'true', set];
 }
 
+/**
+ * One string preference: what it is now, and how to change it.
+ *
+ * The second shape beside `useBooleanSetting`, for the same reason that one
+ * exists: a hook per shape rather than per key. `fallback` is spelled by the
+ * caller, same as the boolean hook -- the store holds no opinion about what a
+ * key means, so nothing here can default it either.
+ */
+export function useStringSetting(key: string, fallback: string): [string, (value: string) => void] {
+    const dispatch = useAppDispatch();
+    const stored = useAppSelector((s) => s.settings.values[key]);
+    const set = useCallback(
+        (value: string) => void dispatch(saveSetting({ key, value })),
+        [dispatch, key],
+    );
+    return [stored === undefined ? fallback : stored, set];
+}
+
 const KEYBINDINGS = 'keybindings';
 
 export interface ShortcutSettings {

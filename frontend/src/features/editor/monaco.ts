@@ -15,6 +15,7 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 
 import { parseChord } from '../../common/shortcuts.ts';
+import type { ResolvedTheme } from '../../common/theme/theme.ts';
 
 /*
  * Monaco loads its worker itself, and left alone it resolves one from a CDN.
@@ -34,6 +35,10 @@ self.MonacoEnvironment = {
 
 export const THEME = 'squeal';
 
+/** Which built-in base a resolved theme's colour rules sit on top of. */
+export const monacoBase = (theme: ResolvedTheme): 'vs-dark' | 'vs' =>
+    theme === 'dark' ? 'vs-dark' : 'vs';
+
 export const token = (name: string): string =>
     getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -48,26 +53,32 @@ const bare = (name: string): string => token(name).replace(/^#/, '');
 export const px = (name: string): number => parseFloat(token(name));
 
 /**
- * Reads the tokens and defines the theme. Called once, before the first editor
- * is created -- the values come from `tokens.css`, which stays the one place any
- * colour in this app is written, exactly as the window frame's paint does.
+ * Reads the custom properties and (re)defines the theme -- the values come from
+ * `residual.css`, which stays the one place any colour in this app is written,
+ * exactly as the window frame's paint does. Re-defining an already-registered
+ * theme updates every live editor, so this is safe to call again whenever the
+ * app's theme changes; each caller does, keyed on the resolved theme.
+ *
+ * `base` has to travel with it: it is what resolves every widget colour the
+ * `colors` map below leaves unset, so a light theme built on `vs-dark` comes up
+ * with a dark scrollbar and a dark suggest-widget shadow no rule here names.
  */
-export function defineTheme(): void {
+export function defineTheme(base: 'vs-dark' | 'vs'): void {
     monaco.editor.defineTheme(THEME, {
-        base: 'vs-dark',
+        base,
         /*
          * `inherit: false` is load-bearing, and this is the whole reason:
          *
-         * vs-dark does not only define `string` and `predefined`, it defines
-         * `string.sql` (bright red) and `predefined.sql` (magenta). The SQL grammars
-         * postfix every token with `.sql`, and Monaco resolves a token to the
-         * *longest* matching rule -- so inheriting means vs-dark's `string.sql`
-         * outranks anything spelled `string` here, and the editor comes up wearing
-         * red strings and magenta functions no matter what these rules say.
+         * Both built-in bases define `string.sql` and `predefined.sql` on top of
+         * plain `string`/`predefined` (bright red and magenta on vs-dark; their own
+         * pair on vs). The SQL grammars postfix every token with `.sql`, and Monaco
+         * resolves a token to the *longest* matching rule -- so inheriting means the
+         * base's `string.sql` outranks anything spelled `string` here, and the editor
+         * comes up wearing the base's colours no matter what these rules say.
          *
          * Off, these rules are the entire token palette. The widget colours below
-         * are unaffected: `base` still resolves anything they leave unset to the
-         * dark defaults.
+         * are unaffected: `base` still resolves anything they leave unset to its own
+         * defaults.
          */
         inherit: false,
         rules: [

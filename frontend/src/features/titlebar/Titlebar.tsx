@@ -9,6 +9,7 @@ import { WindowResizeTop } from './window-chrome/WindowResizeEdge.tsx';
 import WindowControls from './window-chrome/WindowControls.tsx';
 import { useAbout } from './dialogs/hooks/useAbout.ts';
 import { useTitlebarDialogs } from './dialogs/hooks/useTitlebarDialogs.ts';
+import { useTitlebarMenus } from './menu/hooks/useTitlebarMenus.ts';
 import { useWindowChrome } from './window-chrome/hooks/useWindowChrome.ts';
 
 interface Props {
@@ -49,20 +50,13 @@ export default function Titlebar({ onCheckForUpdates, onOpenDiagram, onOpenAssis
     );
     const { version, openDataDir } = useAbout();
     const dialogs = useTitlebarDialogs();
-
-    const fileItems = [
-        { label: 'Environments', onSelect: dialogs.open.environments },
-        { label: 'Export connections', onSelect: dialogs.open.export },
-        { label: 'Import connections', onSelect: dialogs.open.import },
-        { label: 'Exit', onSelect: close },
-    ];
-    const databaseItems = [{ label: 'Relationship diagram', onSelect: () => onOpenDiagram?.() }];
-    const preferencesItems = [{ label: 'Keyboard shortcuts', onSelect: dialogs.open.shortcuts }];
-    const aboutItems = [
-        { label: 'Check for updates', onSelect: onCheckForUpdates },
-        { label: 'Version', onSelect: dialogs.open.about },
-        { label: 'Open app data', onSelect: openDataDir },
-    ];
+    const { fileItems, databaseItems, preferencesItems, aboutItems } = useTitlebarMenus({
+        dialogs,
+        close,
+        onOpenDiagram,
+        onCheckForUpdates,
+        openDataDir,
+    });
 
     return (
         <header

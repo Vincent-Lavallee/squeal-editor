@@ -6,6 +6,7 @@ export function useTitlebarDialogs() {
     const [showingExport, setShowingExport] = useState(false);
     const [showingImport, setShowingImport] = useState(false);
     const [showingShortcuts, setShowingShortcuts] = useState(false);
+    const [showingSettings, setShowingSettings] = useState(false);
 
     // Memoized so a consumer that depends on `open`/`close` as a whole (the
     // native menu bridge's effect deps) does not see a new object -- and
@@ -17,6 +18,7 @@ export function useTitlebarDialogs() {
             export: () => setShowingExport(true),
             import: () => setShowingImport(true),
             shortcuts: () => setShowingShortcuts(true),
+            settings: () => setShowingSettings(true),
         }),
         [],
     );
@@ -27,6 +29,7 @@ export function useTitlebarDialogs() {
             export: () => setShowingExport(false),
             import: () => setShowingImport(false),
             shortcuts: () => setShowingShortcuts(false),
+            settings: () => setShowingSettings(false),
         }),
         [],
     );
@@ -38,6 +41,7 @@ export function useTitlebarDialogs() {
             export: showingExport,
             import: showingImport,
             shortcuts: showingShortcuts,
+            settings: showingSettings,
         },
         open,
         close,

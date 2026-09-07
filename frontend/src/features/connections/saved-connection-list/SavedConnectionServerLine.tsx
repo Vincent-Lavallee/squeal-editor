@@ -34,7 +34,7 @@ export default function SavedConnectionServerLine({
                     state="shaping"
                     speed={1.33}
                     size={20}
-                    theme="dark"
+                    theme="auto"
                     aria-label={connectPhaseLabel(connectingPhase)}
                 />
                 {connectPhaseLabel(connectingPhase)}

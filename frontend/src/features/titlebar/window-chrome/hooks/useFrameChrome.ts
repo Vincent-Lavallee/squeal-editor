@@ -16,10 +16,9 @@ import { IS_MACOS } from './useMacosFocusWorkaround.ts';
  *
  * Keeping the frame means Windows draws ~7px of it above our titlebar, in the
  * non-client area no webview can paint. So the extension paints it: it is the
- * process that can make the native calls we cannot. The colour comes from
- * tokens.css rather than being written twice, and the pid has to be sent
- * because Neutralino spawns extensions through a shell -- the extension's own
- * parent is that shell, not this window.
+ * process that can make the native calls we cannot. The colour itself is
+ * `useFrameColour`'s job, split out because it is the one part of this that
+ * has to run again -- on a theme change -- while everything below is one-shot.
  *
  * `installChrome` is what removes that band instead of recolouring it, and
  * what gives the window back the minimise and maximise animations Windows
@@ -53,13 +52,6 @@ export function useFrameChrome(): boolean {
             const { width, height } = await Neutralino.window.getSize();
             await Neutralino.window.setSize({ width: width + 1, height, resizable: true });
             await Neutralino.window.setSize({ width, height, resizable: true });
-
-            const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg');
-            // Best-effort chrome: a window that keeps its own frame colour is a
-            // cosmetic loss, and not something to fail startup or shout about.
-            await call('window.matchFrame', { pid: NL_PID, colour: bg.trim() }).catch(
-                () => undefined,
-            );
 
             /* Last, because it is the one that changes the client area: the nudge
              * above has to have happened against the frame the window started with.

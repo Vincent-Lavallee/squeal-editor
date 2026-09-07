@@ -1,7 +1,8 @@
 import { serverLabel, type OpenConnection } from '../../store/sessionSlice.ts';
 import { connectionColor } from '../../common/icons/connectionColors.ts';
+import { useResolvedTheme } from '../../common/theme/hooks/useResolvedTheme.ts';
 import * as t from '../../common/tokens';
-import { ACTIVE_FILL_TINT, CHIP_BORDER_TINT, CHIP_WASH_TINT, blendOverBg } from './railColors.ts';
+import { blendOverBg, chipTints } from './railColors.ts';
 import RailChipLabel from './RailChipLabel.tsx';
 
 interface Props {
@@ -19,10 +20,12 @@ export default function RailChip({
     onActivate,
     onContextMenu,
 }: Props) {
+    const theme = useResolvedTheme();
+    const tints = chipTints(theme);
     const tint = connectionColor(c.color);
-    const chipBorder = blendOverBg(tint, CHIP_BORDER_TINT);
-    const wash = blendOverBg(tint, CHIP_WASH_TINT);
-    const activeFill = blendOverBg(tint, ACTIVE_FILL_TINT);
+    const chipBorder = blendOverBg(tint, tints.border);
+    const wash = blendOverBg(tint, tints.wash);
+    const activeFill = blendOverBg(tint, tints.activeFill);
     return (
         <li>
             <button

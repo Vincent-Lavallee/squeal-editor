@@ -3,6 +3,7 @@ import { useCallback } from 'react';
 import type { ResizeEdge } from '../../../../../../shared/protocol/index.ts';
 import { call } from '../../../../common/bridge/bridge.ts';
 import { useFrameChrome } from './useFrameChrome.ts';
+import { useFrameColour } from './useFrameColour.ts';
 import { useMacosFocusWorkaround } from './useMacosFocusWorkaround.ts';
 import { useMaximizeState } from './useMaximizeState.ts';
 import { useWindowDrag } from './useWindowDrag.ts';
@@ -19,13 +20,15 @@ import { useWindowDrag } from './useWindowDrag.ts';
  * nothing to keep and, when the platform says no, there is nothing to tell the
  * user. A slice for it would hold no state.
  *
- * Composed from four narrower hooks, each its own file: `useMacosFocusWorkaround`,
- * `useFrameChrome` (the OS frame paint and the injected chrome DLL),
+ * Composed from five narrower hooks, each its own file: `useMacosFocusWorkaround`,
+ * `useFrameChrome` (the one-shot resize fixup and the injected chrome DLL),
+ * `useFrameColour` (the frame's colour, repainted on every theme change),
  * `useMaximizeState` and `useWindowDrag`.
  */
 export function useWindowChrome() {
     useMacosFocusWorkaround();
     const chromeInstalled = useFrameChrome();
+    useFrameColour();
     const { maximized, toggleMaximize } = useMaximizeState();
     const { onPointerDown, onPointerMove, onPointerUp } = useWindowDrag();
 

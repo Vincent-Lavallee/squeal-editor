@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { useSession } from './store/sessionSlice.ts';
+import { useThemeAttribute } from './common/theme/hooks/useThemeAttribute.ts';
 import Shell from './Shell.tsx';
 import ConnectScreen from './features/connections/connect-screen/ConnectScreen.tsx';
 import Titlebar from './features/titlebar/Titlebar.tsx';
@@ -15,6 +16,7 @@ import { useUpdater } from './features/updater/hooks/useUpdater.ts';
 const IS_MACOS = typeof NL_OS !== 'undefined' && NL_OS === 'Darwin';
 
 export default function App() {
+    useThemeAttribute();
     const { connected, activeConnectionId } = useSession();
     const { check } = useUpdater();
     const [adding, setAdding] = useState(false);

@@ -4357,7 +4357,10 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
             await app.evaluate(openMenu('Preferences'));
             await Bun.sleep(200);
-            expect(await app.evaluate<string[]>(openMenuItems)).toEqual(['Keyboard shortcuts']);
+            expect(await app.evaluate<string[]>(openMenuItems)).toEqual([
+                'Keyboard shortcuts',
+                'Settings',
+            ]);
 
             await app.evaluate(clickMenuItem('Keyboard shortcuts'));
             await app.waitFor(`document.querySelector('[data-shortcut="run"]') ? true : null`);
@@ -4405,6 +4408,39 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
             await closeTabConfirmed(opened);
             await Bun.sleep(300);
+        });
+
+        test('Settings switches the theme, live', async () => {
+            await app.evaluate(openMenu('Preferences'));
+            await Bun.sleep(200);
+            await app.evaluate(clickMenuItem('Settings'));
+            await app.waitFor(`document.querySelector('#theme') ? true : null`);
+
+            expect(await app.evaluate<string>(`document.documentElement.dataset.theme`)).toBe(
+                'dark',
+            );
+
+            await app.evaluate(
+                `${REACT_SETTERS} pickOption(document.querySelector('#theme'), 'light');`,
+            );
+            await app.waitFor(`document.documentElement.dataset.theme === 'light' ? true : null`);
+            expect(
+                await app.evaluate<string>(
+                    `getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`,
+                ),
+            ).toBe('#fcfcfd');
+
+            // Put it back, or every test after this one is running under a theme
+            // this one changed.
+            await app.evaluate(
+                `${REACT_SETTERS} pickOption(document.querySelector('#theme'), 'dark');`,
+            );
+            await app.waitFor(`document.documentElement.dataset.theme === 'dark' ? true : null`);
+
+            await app.evaluate(
+                `[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === 'Close').click(); true;`,
+            );
+            await Bun.sleep(200);
         });
     });
 

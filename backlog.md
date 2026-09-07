@@ -108,15 +108,6 @@ Things that do not exist yet.
   value is emitted exactly as the server sent it, quoted per engine — never
   reformatted through a JS `Date` or `Number`.
 
-- **Light theme** — The design system is Radix dark and nothing else: no token
-  has a light value, so the app is dark or it is broken. Give every token a light
-  counterpart and somewhere to choose — theme is the first user setting, so it
-  brings that screen with it. Three things have to follow the switch, and each
-  will otherwise be found by noticing it looks wrong: the editor's theme is built
-  once by reading the tokens, the OS window frame is painted `--bg` by the
-  extension because Windows draws 7px above the titlebar that no webview can
-  reach, and the app icon has the dark plate deliberately baked in.
-
 - **French and English UI** — Every string is English, written where it is used,
   so there is no seam to translate at. Add one, with French beside it and the
   language picked from settings. The rule that has to survive it: chrome is
@@ -138,22 +129,15 @@ Things that do not exist yet.
 
 - **GitHub sync** — Authenticate via browser-based OAuth (no hosted backend) and sync workspaces, connections, and user settings to a private gist automatically on change. Connection passwords are never included in the synced data.
 
-- **Preferences: Settings screen** — The Preferences menu ships with Keyboard
-  shortcuts and nothing else, because the Settings item it was meant to sit beside
-  would be a screen of placeholders: theme and language are the preferences it
-  exists to hold, and neither exists yet. It arrives with whichever of Light theme
-  or French/English UI lands first, as that feature's own screen rather than as an
-  empty shell waiting for one.
-
 - **Turn off the update banner** — The launch check is silent when it finds
   nothing, but when it finds something the strip is back at every launch and
   dismissing it only lasts the run. Add a remembered preference that stops the
   app raising it on its own. It is about being told, not about the lookup:
   "Check for updates" in the About menu keeps working with the setting off,
   because asking for a check is still asking, and a switch that removed it too
-  would leave no way to update at all. It needs the Settings screen, which does
-  not exist yet — a second reason to build it, and the first one that is not a
-  theme or a language.
+  would leave no way to update at all. The Settings screen exists now (theme
+  lives there); this is the first preference in it that is not a theme or a
+  language.
 
 - **Command palette** — Every action is reachable exactly one way: a menu, a
   button, or a keybinding you already have to know. Put the common ones behind a

@@ -78,7 +78,7 @@ export default function Thread({
                         fontSize: t.TEXT_BODY,
                     }}
                 >
-                    <ThinkingOrb state="shaping" size={20} theme="dark" aria-label="Thinking" />
+                    <ThinkingOrb state="shaping" size={20} theme="auto" aria-label="Thinking" />
                     Thinking…
                 </div>
             ) : null}

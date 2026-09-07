@@ -1,14 +1,19 @@
 /**
- * Design tokens — the one source of truth for every colour, size, and radius.
+ * Design tokens — names every colour, size, and radius a component may spend.
  *
- * Lineage: Radix Colors *dark*. Nearly every value below lands on a Radix dark
- * step — #111113 is slate-1, #EDEEF0/#B0B4BA are slate-12/11, #E5484D is red-9,
- * #3DD68C is green-11. Values sampled from the reference UI are used verbatim
- * where they differ slightly from stock Radix (see --border-strong).
+ * Lineage: Radix Colors, dark and light. Nearly every value in residual.css
+ * lands on a Radix step — #111113 is dark slate-1, #FCFCFD is light slate-1,
+ * #E5484D is red-9 in both. Values sampled from the reference UI are used
+ * verbatim where they differ slightly from stock Radix (see --border-strong).
  *
- * Colours are hex (#RRGGBBAA), never rgba(). A token is not only read by CSS —
- * the extension parses one to paint the frame and Monaco parses several to build
- * its theme, and neither speaks rgba(). Same colour; this is the form that travels.
+ * Colours below are `var(--token)` references, not hex — the hex lives in
+ * `residual.css`, one value per theme, because that is the one place a colour
+ * is actually *written* now. A token is not only read by CSS — the extension
+ * parses one to paint the window frame and Monaco parses several to build its
+ * theme, and both do it via `getComputedStyle()` against the CSS custom
+ * property, already resolved for whichever theme is active. See
+ * `docs/decisions.md` for why the indirection moved here instead of tokens.ts
+ * picking the palette itself.
  *
  * The one rule that matters most: THERE IS ONE BACKGROUND. Canvas, sidebar, top
  * bar, cards and table rows are all BG. There is no elevation and there are no
@@ -17,26 +22,22 @@
  * Second rule: chrome is grayscale. The only non-gray in the chrome is ACCENT
  * (teal) for interactive things. Every other hue is semantic
  * (error/success/warning), never decorative.
- *
- * These values mirror tokens.css for the benefit of inline styles. CSS custom
- * properties must still exist at runtime — Monaco's theme and the window frame
- * paint read them via getComputedStyle().
  */
 
 /* ---- Surface: one background, borders do the work ---- */
 
-export const BG = '#111113'; /* slate-1: every surface */
-export const BORDER = '#272a2d'; /* slate-4: panel dividers, table rules */
-export const BORDER_STRONG = '#363a3f'; /* card + input outlines */
-export const HOVER = '#ffffff0a'; /* white at 4% */
-export const SELECTED = '#0eb39e24'; /* ACCENT at 14% */
+export const BG = 'var(--bg)'; /* slate-1: every surface */
+export const BORDER = 'var(--border)'; /* slate-4: panel dividers, table rules */
+export const BORDER_STRONG = 'var(--border-strong)'; /* card + input outlines */
+export const HOVER = 'var(--hover)'; /* a hint of contrast on the one background */
+export const SELECTED = 'var(--selected)'; /* ACCENT at 14% */
 
 /*
  * The dim behind a modal. The one place a shade is allowed: it is not a lighter
  * surface *inside* the app breaking "one background", it is the app itself
- * pushed back so a blocking dialog reads as blocking. Hex-with-alpha — black at 60%.
+ * pushed back so a blocking dialog reads as blocking. Black at 60% in both themes.
  */
-export const SCRIM = '#00000099';
+export const SCRIM = 'var(--scrim)';
 
 /**
  * The app's own background, thinned, laid over content that is *there but not
@@ -50,17 +51,18 @@ export const SCRIM = '#00000099';
  * Thin because it is not what does the obscuring: VEIL_BLUR is. A wash heavy
  * enough to obscure on its own reads as paint, and the frost is the point.
  */
-export const VEIL = '#11111359';
+export const VEIL = 'var(--veil)';
 /**
  * What makes the veil read as glass rather than as a flat wash: a hairline along
- * its edges and a sheen down its top half, both white at very low alpha. Same
- * family as HOVER (white at 4%) — light *added* to the one background, never a
- * second surface underneath it.
+ * its edges and a sheen down its top half, both contrast at very low alpha —
+ * white on the dark theme, black on the light one; either way it is added to
+ * the one background, never a second surface underneath it. Same family as
+ * HOVER for the same reason.
  */
-export const VEIL_EDGE = '#ffffff1f';
-export const VEIL_SHEEN = '#ffffff14';
+export const VEIL_EDGE = 'var(--veil-edge)';
+export const VEIL_SHEEN = 'var(--veil-sheen)';
 /** The far end of the veil, where its label sits and needs a settled ground. */
-export const VEIL_DEEP = '#111113e6';
+export const VEIL_DEEP = 'var(--veil-deep)';
 /**
  * How hard the frost bites, in px of `backdrop-filter: blur()`. Deep enough that
  * what it covers is unreadable — anything less looks like a mistake rather than
@@ -75,41 +77,43 @@ export const VEIL_BLUR = 12;
  * Not a second surface and not a border: it is a *texture* on the one
  * background, and the only thing it means is "this area pans and zooms" -- which
  * is a real fact about the one view that has it, not decoration. Grayscale, so
- * rule 2 holds. Same white-at-low-alpha family as HOVER and VEIL_SHEEN, a step
+ * rule 2 holds. Same contrast-at-low-alpha family as HOVER and VEIL_SHEEN, a step
  * up from HOVER because a 4% dot at 24px spacing is invisible and a grid nobody
  * can see is worse than none.
  */
-export const CANVAS_DOT = '#ffffff1a';
+export const CANVAS_DOT = 'var(--canvas-dot)';
 
 /* ---- Text ---- */
-export const TEXT = '#edeef0'; /* slate-12: primary */
-export const TEXT_MUTED = '#b0b4ba'; /* slate-11: labels, axes, secondary */
-export const TEXT_FAINT = '#696e77'; /* slate-9: disabled, placeholders */
+export const TEXT = 'var(--text)'; /* slate-12: primary */
+export const TEXT_MUTED = 'var(--text-muted)'; /* slate-11: labels, axes, secondary */
+export const TEXT_FAINT = 'var(--text-faint)'; /* slate-9: disabled, placeholders */
 
 /* ---- Interactive (the only non-semantic hue) ---- */
-export const ACCENT = '#0eb39e'; /* teal-10: the one chrome accent */
-export const ACCENT_BG = '#0d2d2a'; /* teal-3: badge/chip background */
-export const ON_ACCENT = '#0d1514'; /* teal-1: solid accent buttons take DARK text */
+export const ACCENT = 'var(--accent)'; /* the one chrome accent, teal in both themes */
+export const ACCENT_BG = 'var(--accent-bg)'; /* badge/chip background */
+/** Solid accent buttons take this, not a fixed light or dark: see docs/decisions.md. */
+export const ON_ACCENT = 'var(--on-accent)';
 
 /*
- * Primary button hover: ACCENT brightened toward white (color-mix 85%).
- * Pre-computed so inline styles never need a color-mix() polyfill.
+ * Primary button hover: ACCENT pushed toward the background — brightened on the
+ * dark theme, darkened on the light one, since "more contrast against BG" is
+ * what a hover means and that points opposite ways in each theme.
  */
-export const ACCENT_HOVER = '#24baa7';
+export const ACCENT_HOVER = 'var(--accent-hover)';
 
 /* ---- Semantic. Badge pattern is always: step-3 bg + step-11 text ---- */
-export const RED = '#e5484d'; /* red-9: error borders/solids */
-export const RED_BG = '#3b1219'; /* red-3 */
-export const RED_TEXT = '#ff9592'; /* red-11 */
+export const RED = 'var(--red)'; /* red-9: error borders/solids */
+export const RED_BG = 'var(--red-bg)'; /* red-3 */
+export const RED_TEXT = 'var(--red-text)'; /* red-11 */
 
-export const GREEN = '#3dd68c'; /* green-11: success */
-export const GREEN_BG = '#132d21'; /* green-3 */
+export const GREEN = 'var(--green)'; /* green-11: success */
+export const GREEN_BG = 'var(--green-bg)'; /* green-3 */
 
-export const AMBER = '#ffca16'; /* amber-11: warning */
-export const AMBER_BG = '#341c00'; /* amber-3 */
+export const AMBER = 'var(--amber)'; /* amber-11: warning */
+export const AMBER_BG = 'var(--amber-bg)'; /* amber-3 */
 
-export const PURPLE = '#bf7af0'; /* purple-11 */
-export const PURPLE_BG = '#301c3b'; /* purple-3 */
+export const PURPLE = 'var(--purple)'; /* purple-11 */
+export const PURPLE_BG = 'var(--purple-bg)'; /* purple-3 */
 
 /*
  * ---- Syntax: the one place colour describes content, not chrome ----
@@ -131,22 +135,22 @@ export const SYNTAX_PUNCTUATION = TEXT_MUTED;
  *
  * Its own ramp for the same reason --syntax-* was: a connection's identity is
  * not a status. Retuning GREEN for a callout must not repaint a connection that
- * happens to be green. Same Radix dark lineage (~step-11).
+ * happens to be green. Same Radix step-11 lineage in both themes.
  *
  * Unlike --env-*, this is not an ordered ramp — a connection's colour means
  * nothing but "this one", so the set is a palette to tell one from another, not
  * a pipeline to read down. CONN_SLATE is the neutral default. A workspace
  * carries no colour of its own; see `docs/decisions.md`.
  */
-export const CONN_SLATE = '#b0b4ba'; /* slate-11: the neutral default */
-export const CONN_BLUE = '#5eb0ef'; /* blue-11 */
-export const CONN_CYAN = '#4ccce6'; /* cyan-11 */
-export const CONN_GREEN = '#3dd68c'; /* green-11 */
-export const CONN_AMBER = '#ffca16'; /* amber-11 */
-export const CONN_ORANGE = '#ffa057'; /* orange-11 */
-export const CONN_RED = '#ff9592'; /* red-11 */
-export const CONN_PINK = '#ff8dcc'; /* pink-11 */
-export const CONN_PURPLE = '#bf7af0'; /* purple-11 */
+export const CONN_SLATE = 'var(--conn-slate)'; /* the neutral default */
+export const CONN_BLUE = 'var(--conn-blue)';
+export const CONN_CYAN = 'var(--conn-cyan)';
+export const CONN_GREEN = 'var(--conn-green)';
+export const CONN_AMBER = 'var(--conn-amber)';
+export const CONN_ORANGE = 'var(--conn-orange)';
+export const CONN_RED = 'var(--conn-red)';
+export const CONN_PINK = 'var(--conn-pink)';
+export const CONN_PURPLE = 'var(--conn-purple)';
 
 /* ---- Shape: pills for status, 6-8px for everything else ---- */
 export const RADIUS_PILL = 999; /* badges, chips, filter controls, search */

@@ -79,3 +79,4 @@ These are load-bearing. Each one cost real debugging; see `docs/decisions.md`.
   in `features/assistant/`)
 - Hooks get their own `hooks/` subfolder within whichever folder owns them —
   a feature, `common/`, or a subfeature (e.g. `features/sidebar/hooks/`)
+- Make sure every feature ships with both themes in mind (light / dark)
