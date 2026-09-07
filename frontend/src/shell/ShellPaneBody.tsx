@@ -1,7 +1,7 @@
 import type { TableInfo } from '../../../shared/protocol/index.ts';
-import { AssistantPanel } from '../features/assistant/index.ts';
-import { RelationshipDiagram } from '../features/diagram/index.ts';
-import { ResultsTable } from '../features/results/index.ts';
+import AssistantPanel from '../features/assistant/AssistantPanel.tsx';
+import RelationshipDiagram from '../features/diagram/RelationshipDiagram.tsx';
+import ResultsTable from '../features/results/ResultsTable.tsx';
 import Note from '../common/components/Note.tsx';
 import * as t from '../common/tokens';
 import type { Tab } from '../store/tabsSlice.ts';

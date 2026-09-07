@@ -1,5 +1,5 @@
-import { SaveQueryDialog } from '../features/queries/index.ts';
-import { CloseTabsConfirm } from '../features/tabs/index.ts';
+import SaveQueryDialog from '../features/queries/SaveQueryDialog.tsx';
+import CloseTabsConfirm from '../features/tabs/CloseTabsConfirm.tsx';
 import type { useShell } from './hooks/useShell.ts';
 
 export default function ShellDialogs({ s }: { s: ReturnType<typeof useShell> }) {

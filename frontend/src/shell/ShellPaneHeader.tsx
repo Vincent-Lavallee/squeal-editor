@@ -1,6 +1,6 @@
 import type { SavedQuery } from '../../../shared/protocol/index.ts';
-import { SavedQueriesButton } from '../features/queries/index.ts';
-import { TabStrip } from '../features/tabs/index.ts';
+import SavedQueriesButton from '../features/queries/SavedQueriesButton.tsx';
+import TabStrip from '../features/tabs/TabStrip.tsx';
 import type { CloseIntent, Tab } from '../store/tabsSlice.ts';
 
 interface Props {

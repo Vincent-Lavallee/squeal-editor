@@ -1,7 +1,7 @@
 import { useShell } from './shell/hooks/useShell.ts';
-import { ConnectionRail } from './features/rail/index.ts';
-import { ResultsProvider } from './features/results/index.ts';
-import { StatusBar } from './features/statusbar/index.ts';
+import ConnectionRail from './features/rail/ConnectionRail.tsx';
+import { ResultsProvider } from './features/results/ResultsContext.tsx';
+import StatusBar from './features/statusbar/StatusBar.tsx';
 import ShellBody from './shell/ShellBody.tsx';
 import ShellDialogs from './shell/ShellDialogs.tsx';
 

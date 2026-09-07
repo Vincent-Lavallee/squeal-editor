@@ -1,4 +1,4 @@
-import { useSqlCompletion } from '../../features/editor/index.ts';
+import { useSqlCompletion } from '../../features/editor/hooks/useSqlCompletion.ts';
 import type { useShellData } from './useShellData.ts';
 import type { usePaneLayout } from './usePaneLayout.ts';
 

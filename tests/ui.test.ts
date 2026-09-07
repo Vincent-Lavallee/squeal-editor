@@ -5087,7 +5087,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(
                 `document.querySelector('[data-testid="connect-submit"]').click(); true;`,
             );
-            await Bun.sleep(1000);
+            await app.waitFor(`document.querySelector('#host') ? true : null`);
 
             // A new workspace is empty, so it opens on the form rather than an empty box.
             expect(await app.evaluate<boolean>(`!!document.querySelector('#host')`)).toBe(true);

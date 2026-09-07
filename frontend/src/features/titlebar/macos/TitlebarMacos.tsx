@@ -9,7 +9,7 @@ import { useAbout } from '../dialogs/hooks/useAbout.ts';
 import { useNativeMenuBridge } from '../menu/hooks/useNativeMenuBridge.ts';
 import { useTitlebarDialogs } from '../dialogs/hooks/useTitlebarDialogs.ts';
 import { useWindowChrome } from '../window-chrome/hooks/useWindowChrome.ts';
-import { useUpdater } from '../../updater/index.ts';
+import { useUpdater } from '../../updater/hooks/useUpdater.ts';
 
 interface Props {
     /**
