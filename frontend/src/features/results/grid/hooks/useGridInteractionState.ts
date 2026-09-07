@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import { useElapsedSeconds } from './useElapsedSeconds.ts';
+import { useGridColumnReorder } from './useGridColumnReorder.ts';
 import { useGridColumnResize } from './useGridColumnResize.ts';
 import { useGridEditingState } from '../../editing/hooks/useGridEditingState.ts';
 import { useGridMenuState } from './useGridMenuState.ts';
@@ -21,6 +22,7 @@ export function useGridInteractionState(
     const grid = useRef<HTMLDivElement>(null);
 
     const resize = useGridColumnResize(api.setColumnWidth);
+    const reorder = useGridColumnReorder(api.moveColumn, api.dirtyCount === 0);
     const selection = useGridSelection(grid);
     const lookups = useGridValueLookups({
         result: api.result,
@@ -54,5 +56,5 @@ export function useGridInteractionState(
 
     useGridScrollRestore(grid, api.recallScroll, activeTabId, api.result);
 
-    return { grid, resize, selection, lookups, editingState, menuState, elapsed };
+    return { grid, resize, reorder, selection, lookups, editingState, menuState, elapsed };
 }

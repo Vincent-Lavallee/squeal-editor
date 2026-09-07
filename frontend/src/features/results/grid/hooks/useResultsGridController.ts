@@ -55,7 +55,7 @@ export function useResultsGridController(tab: Tab | null) {
      * and one place names a thing.
      */
     const gridDatabase = tab?.kind === 'grid' ? tab.database : null;
-    const { grid, resize, selection, lookups, editingState, menuState, elapsed } =
+    const { grid, resize, reorder, selection, lookups, editingState, menuState, elapsed } =
         useGridInteractionState(api, activeTabId);
 
     const cellMarks = makeCellMarks(selection.cells);
@@ -91,6 +91,11 @@ export function useResultsGridController(tab: Tab | null) {
         grid,
         elapsed,
         ...resize,
+        ...reorder,
+        // Header cells aren't draggable while there are staged edits/deletes: a
+        // reorder would leave `pending`, keyed by the index the edit was made
+        // at, pointing at whatever column now sits there instead.
+        canReorderColumns: api.dirtyCount === 0,
         ...selection,
         ...editingState,
         ...menuState,

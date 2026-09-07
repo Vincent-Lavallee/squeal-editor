@@ -7081,6 +7081,44 @@ image rather than the build breaking.
 cannot see `GIST_SECRET` regardless, and writing on every PR push would make
 the badge flicker with coverage from work nobody has merged yet.
 
+## Column reordering projects the result once, instead of a second index space
+
+**Why.** The grid's selection, staged edits, FK/key detection, Save and Copy
+all already key a cell off `result.columns[c]`/`result.rows[r][c]` — the same
+raw index in both arrays. Letting a drag rearrange the columns *without*
+touching that data meant one of two shapes: teach every one of those a second,
+"visual position" index distinct from the raw one (so a selection rectangle,
+the keyboard's left/right movement and the fill-handle drag all still read as
+spatially adjacent after a drag pulls two columns apart), or permute the
+result itself so the raw index *is* the visual position and nothing downstream
+has to know reordering exists at all.
+
+**What ships instead.** `useResultsCore` permutes the fetched `QueryResult`
+into the tab's dragged-to order once (`resultColumnOrder.ts`) and hands that
+projected result to everything else `useResults` composes. Every reader stays
+correct for free, Copy included — copying a rearranged result copies it
+arranged, which was the one consequence of this worth confirming rather than
+assuming (asked and confirmed rather than decided alone).
+
+**What this costs, accepted:** a reorder while cells are staged for edit would
+leave a staged edit pointing at whichever column now sits at that index, since
+the staging is keyed by the same raw index the projection just moved. Rather
+than remapping staged edits through a reorder — more surface area for exactly
+the kind of subtle bug that class of state already invites, see *Closing a
+grid tab discards its staged edits silently* in `backlog.md` — a header simply
+is not draggable while any cell is staged (`useGridColumnReorder`'s
+`canReorder`), checked in the handler itself and not only through the DOM's
+`draggable` attribute, which stops a real drag but not a handler invoked
+directly the way the UI suite drives one.
+
+**Not persisted, deliberately — same lifetime as column widths.** The order
+lives in `ResultsContext`, session-local and keyed by column name; a restored
+session, like a resized column, starts back at the server's own order. Scoping
+it wider (per table, across restarts) was on the table and set aside rather
+than ruled out — it would need a store slice, a bridge round trip, and a rule
+for what happens when the table's real columns change, none of which this
+needed to answer yet.
+
 ## Frontend feature barrels were removed
 
 **Why.** Every feature under `frontend/src/features` had grown its own

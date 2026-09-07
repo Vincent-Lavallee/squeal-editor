@@ -1,6 +1,9 @@
+import { useMemo } from 'react';
+
 import { useSession } from '../../../../store/sessionSlice.ts';
 import type { Tab } from '../../../../store/tabsSlice.ts';
 import { useResultsView } from '../../ResultsContext.tsx';
+import { applyColumnOrder } from '../../grid/resultColumnOrder.ts';
 import { useActiveResultPart } from './useActiveResultPart.ts';
 import { useResultsRowIdentity } from './useResultsRowIdentity.ts';
 import { useResultsRunActions } from './useResultsRunActions.ts';
@@ -26,7 +29,21 @@ export function useResultsCore(tab: Tab | null) {
      */
     const gridTable = tab?.kind === 'grid' ? (tab.table ?? null) : null;
 
-    const part = useActiveResultPart(activeTabId);
+    const rawPart = useActiveResultPart(activeTabId);
+    /*
+     * The result every reader below sees is already in this tab's dragged-to
+     * column order -- projected once, here, rather than each of selection,
+     * staging, FK/key lookups, Save and Copy learning that reordering exists.
+     * They all read a cell by `result.columns[c]`/`result.rows[r][c]`, so a
+     * `result` that is already in display order is the whole of what makes a
+     * drag apply everywhere. See `resultColumnOrder.ts`.
+     */
+    const order = activeTabId ? view.columnOrderFor(activeTabId) : [];
+    const result = useMemo(
+        () => (rawPart.result ? applyColumnOrder(rawPart.result, order) : rawPart.result),
+        [rawPart.result, order],
+    );
+    const part = result === rawPart.result ? rawPart : { ...rawPart, result };
     const identity = useResultsRowIdentity({
         activeTabId,
         browse: part.browse,

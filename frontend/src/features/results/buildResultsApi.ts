@@ -97,6 +97,7 @@ export function buildResultsApi(a: Args) {
         columnWidths: viewPrefs.columnWidths,
         setColumnWidth: viewPrefs.setColumnWidth,
         clearColumnWidth: viewPrefs.clearColumnWidth,
+        moveColumn: viewPrefs.moveColumn,
 
         // The sort surface. `sort` is what the result on screen was fetched with,
         // which is what the header draws its arrow from; `canSort` is which headers
