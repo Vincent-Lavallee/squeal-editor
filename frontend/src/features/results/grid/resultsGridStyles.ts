@@ -139,6 +139,18 @@ export const thStyle: React.CSSProperties = {
     fontWeight: 600,
     fontSize: t.TEXT_BADGE,
 };
+/** A header cell's style: its size, the pointer it offers when sortable, and dimmed while it is the one being dragged. */
+export const headerCellStyle = (
+    width: number | undefined,
+    sortable: boolean,
+    isDragging: boolean,
+): React.CSSProperties => ({
+    ...thStyle,
+    ...columnSize(width),
+    ...(sortable ? { cursor: 'pointer', userSelect: 'none' } : {}),
+    opacity: isDragging ? 0.4 : 1,
+});
+
 export const gutterStyle: React.CSSProperties = {
     position: 'sticky',
     left: 0,

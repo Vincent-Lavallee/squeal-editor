@@ -328,6 +328,32 @@ const sortState = `(() => {
   const th = [...document.querySelectorAll('.grid thead th')].find(e => e.dataset.sort);
   return th ? th.querySelector('[data-testid="grid-col-name"]').textContent + ':' + th.dataset.sort : null;
 })()`;
+/** A grid header cell by column name -- the drag source and drop target both key off this. */
+const header = (name: string) => `
+  [...document.querySelectorAll('.grid thead th')]
+    .find(e => e.querySelector('[data-testid="grid-col-name"]')?.textContent === ${JSON.stringify(name)})`;
+/** The grid's own drag triplet, the header-cell version of `dragTabStart`/`dragTabOver`/`dropTab` above. */
+const dragColStart = (name: string) =>
+    `${header(name)}.dispatchEvent(new MouseEvent('dragstart', { bubbles: true, cancelable: true })); true;`;
+/** Over the left half of `name`'s header, which means "drop it in front of this one". */
+const dragColOver = (name: string) => `(() => {
+  const el = ${header(name)};
+  const r = el.getBoundingClientRect();
+  el.dispatchEvent(new MouseEvent('dragover',
+    { bubbles: true, cancelable: true, clientX: r.left + 4, clientY: r.top + 5 }));
+  return true;
+})()`;
+/** Past the right edge of the last column, which means "drop it at the end". */
+const dragColOverEnd = `(() => {
+  const ths = [...document.querySelectorAll('.grid thead th[data-col-name]')];
+  const last = ths[ths.length - 1];
+  const r = last.getBoundingClientRect();
+  last.dispatchEvent(new MouseEvent('dragover',
+    { bubbles: true, cancelable: true, clientX: r.right - 1, clientY: r.top + 5 }));
+  return true;
+})()`;
+const dropCol = (name: string) =>
+    `${header(name)}.dispatchEvent(new MouseEvent('drop', { bubbles: true, cancelable: true })); true;`;
 /** A data cell (past the row-number gutter) at row r, column c of the grid. */
 const gridCell = (r: number, c: number) =>
     `document.querySelectorAll('.grid tbody tr')[${r}].querySelectorAll('td:not(.gutter)')[${c}]`;
@@ -1301,6 +1327,105 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             expect(await app.evaluate<number>(rowCount)).toBe(2);
             // The editor still holds exactly what was typed; the wrap never reaches it.
             expect(await app.evaluate<string>(`window.squealEditor.getValue()`)).toBe(sql);
+        });
+
+        test('dragging a header reorders the columns, and the rows follow', async () => {
+            await app.evaluate(clickTable('users'));
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
+
+            const headers = `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`;
+            const natural = ['id', 'name', 'email', 'created_at', 'meta', 'avatar', 'eventType'];
+            expect(await app.evaluate<string[]>(headers)).toEqual(natural);
+            const emailBefore = await app.evaluate<string>(`${gridCell(0, 2)}.textContent`);
+
+            // Drag `email` in front of `name` -- one column moving past another,
+            // not just past its immediate neighbour.
+            await app.evaluate(dragColStart('email'));
+            await app.evaluate(dragColOver('name'));
+            await app.evaluate(dropCol('name'));
+
+            const afterFirstMove = [
+                'id',
+                'email',
+                'name',
+                'created_at',
+                'meta',
+                'avatar',
+                'eventType',
+            ];
+            await app.waitFor(
+                `JSON.stringify(${headers}) === JSON.stringify(${JSON.stringify(afterFirstMove)}) ? true : null`,
+            );
+            expect(await app.evaluate<string[]>(headers)).toEqual(afterFirstMove);
+            // The value moved with its header -- column 1 now holds what column 2 held.
+            expect(await app.evaluate<string>(`${gridCell(0, 1)}.textContent`)).toBe(emailBefore);
+
+            // Dropped past the last column lands it at the end, not swapped with it.
+            await app.evaluate(dragColStart('id'));
+            await app.evaluate(dragColOverEnd);
+            await app.evaluate(dropCol('eventType'));
+
+            const afterSecondMove = [
+                'email',
+                'name',
+                'created_at',
+                'meta',
+                'avatar',
+                'eventType',
+                'id',
+            ];
+            await app.waitFor(
+                `JSON.stringify(${headers}) === JSON.stringify(${JSON.stringify(afterSecondMove)}) ? true : null`,
+            );
+            expect(await app.evaluate<string[]>(headers)).toEqual(afterSecondMove);
+
+            // Session-local: closing and reopening the table starts back at the
+            // server's own order, the same lifetime `columnWidths` already has.
+            await app.evaluate(closeTab('users'));
+            await Bun.sleep(300);
+            await app.evaluate(clickTable('users'));
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
+            expect(await app.evaluate<string[]>(headers)).toEqual(natural);
+
+            await app.evaluate(closeTab('users'));
+            await Bun.sleep(300);
+        });
+
+        test('a header cannot be dragged while the grid has unsaved edits', async () => {
+            await app.evaluate(clickTable('users'));
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
+
+            await app.evaluate(dblClick(gridCell(0, 1)));
+            await app.waitFor(
+                `document.querySelector('[data-testid="cell-edit-input"]') ? true : null`,
+            );
+            await app.evaluate(`${REACT_SETTERS}
+        setNative(document.querySelector('[data-testid="cell-edit-input"]'), 'Edited');
+        true;`);
+            await Bun.sleep(200);
+            await app.evaluate(
+                `document.querySelector('[data-testid="cell-edit-input"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); true;`,
+            );
+            await Bun.sleep(300);
+            expect(
+                await app.evaluate<boolean>(`!!document.querySelector('.grid__cell--dirty')`),
+            ).toBe(true);
+
+            const headers = `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`;
+            const before = await app.evaluate<string[]>(headers);
+
+            await app.evaluate(dragColStart('email'));
+            await app.evaluate(dragColOver('name'));
+            await app.evaluate(dropCol('name'));
+            await Bun.sleep(200);
+            expect(await app.evaluate<string[]>(headers)).toEqual(before);
+
+            await app.evaluate(`${saveAction('Discard')}.click(); true;`);
+            await app.waitFor(
+                `!document.querySelector('[data-testid="results-savebar"]') ? true : null`,
+            );
+            await app.evaluate(closeTab('users'));
+            await Bun.sleep(300);
         });
 
         test('a filter narrows the grid, and clearing it restores the table', async () => {

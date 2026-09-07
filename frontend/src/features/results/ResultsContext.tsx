@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 
 import { useAppSelector } from '../../store/hooks.ts';
+import { type ColumnOrder, useColumnOrderState } from './grid/hooks/useColumnOrderState.ts';
 import { type ColumnWidths, useColumnWidthsState } from './grid/hooks/useColumnWidthsState.ts';
 import { type FilterDraft, useFilterDraftState } from './filter/hooks/useFilterDraftState.ts';
 import {
@@ -15,7 +16,7 @@ import {
     useStagingState,
 } from './editing/hooks/useStagingState.ts';
 
-export type { ColumnWidths, FilterDraft, GridScroll, Pending };
+export type { ColumnOrder, ColumnWidths, FilterDraft, GridScroll, Pending };
 export { EMPTY_PENDING };
 
 export interface ResultsView {
@@ -40,6 +41,13 @@ export interface ResultsView {
     setColumnWidth: (tabId: string, column: string, width: number) => void;
     /** Give a column back to the browser's sizing -- the double-click on a handle. */
     clearColumnWidth: (tabId: string, column: string) => void;
+    columnOrderFor: (tabId: string) => ColumnOrder;
+    moveColumn: (
+        tabId: string,
+        displayedColumns: string[],
+        dragged: string,
+        before: string | null,
+    ) => void;
 }
 
 const ResultsViewContext = createContext<ResultsView | null>(null);
@@ -49,6 +57,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     const filter = useFilterDraftState();
     const scroll = useGridScrollState();
     const widths = useColumnWidthsState();
+    const order = useColumnOrderState();
     const tabs = useAppSelector((s) => s.tabs.tabs);
 
     /*
@@ -62,7 +71,8 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         filter.prune(live);
         scroll.prune(live);
         widths.prune(live);
-    }, [tabs, staging.prune, filter.prune, scroll.prune, widths.prune]);
+        order.prune(live);
+    }, [tabs, staging.prune, filter.prune, scroll.prune, widths.prune, order.prune]);
 
     const value = useMemo(
         () => ({
@@ -83,8 +93,10 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
             columnWidthsFor: widths.columnWidthsFor,
             setColumnWidth: widths.setColumnWidth,
             clearColumnWidth: widths.clearColumnWidth,
+            columnOrderFor: order.columnOrderFor,
+            moveColumn: order.moveColumn,
         }),
-        [staging, filter, scroll, widths],
+        [staging, filter, scroll, widths, order],
     );
 
     return <ResultsViewContext.Provider value={value}>{children}</ResultsViewContext.Provider>;

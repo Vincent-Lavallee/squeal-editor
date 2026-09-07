@@ -244,6 +244,7 @@ that lives apart from its values is two sources for one fact.
 | the filter *draft*, and whether the bar is open, per tab | `results` context | never left, until Search |
 | where the result grid is scrolled to, per tab | `results` context (a ref) | never left, and a restored session refetches its rows |
 | how wide a grid column was dragged, by column name, per tab | `results` context | never left, and a new tab starts at the default sizing |
+| the order a grid tab's columns were dragged into, by column name, per tab | `results` context | never left, and a new tab starts at the server's own order |
 | saved connections | `saved` slice | crossed |
 | saved queries | `savedQueries` slice | crossed |
 | whether closing a tab would destroy text (`unsaved`) | `tabs` slice | never left, but it is a fact about a tab, and tabs live here |
@@ -1266,6 +1267,64 @@ the edge to wherever inside the strip the press landed. A full-screen overlay
 keeps the `col-resize` cursor for the length of the drag, and the strip's
 mousedown and click are both stopped — the header underneath it sorts, and a
 resize is not a sort.
+
+## Reordering columns
+
+**A grid column is dragged by its whole header cell**, not a dedicated handle —
+the same choice `TabStrip` made for a tab, and for the same reason: a click with
+no pointer movement still fires the header's own sort, so the two gestures
+coexist on one element with nothing extra to wire. It reuses the tab strip's
+whole drag mechanism rather than inventing a second one: the dragged column's
+name is React state (`useGridColumnReorder.ts`), not read back off
+`dataTransfer`, and the drop target is worked out from the header row's
+geometry (`dropTargetAt`) rather than a `dragover` per cell — see *The tab
+strip* for why both of those are the shape they are. The payload still carries
+a dedicated MIME type, `application/x-squeal-column`, so a column dragged
+across the editor is offered nothing Monaco knows how to take from it. The
+order itself lives in `ResultsContext` beside the column widths, session-local
+and keyed by column name — a new tab, or one restored from disk, starts back
+at the server's own order — and is resolved against a fresh result the same
+way widths are: names it still recognises keep their remembered sequence, and
+a column the remembered order has never seen (a schema change, or every column
+before the first drag) is appended in the result's own order.
+
+**The drag is blocked while any cell is staged, not just discouraged.** Staged
+edits and deletes are keyed by the numeric index a cell was touched at
+(`pending.edits[r][c]`), and a reorder changes what index a given column sits
+at — so a drag mid-edit would leave a staged edit pointing at whatever column
+now occupies that slot. `useGridColumnReorder` takes `canReorder` as an
+argument and checks it inside the handler itself, not only through the header
+cell's `draggable` attribute: the attribute stops a *real* drag the browser
+would otherwise start, but says nothing about a handler invoked directly,
+which is exactly how the UI suite drives every drag in this app (see *What is
+being dragged is React state*, under *Split the editor*).
+
+**The reorder is applied once, as a projection, before it fans out.**
+`useResultsCore` is the one seam: it permutes the fetched `QueryResult`'s
+`columns` and every row's cells into the tab's dragged-to order
+(`resultColumnOrder.ts`) and hands *that* result to everything downstream —
+selection, staging, FK/key detection, Save, Copy, the sort header's `canSort`.
+None of them had to learn that reordering exists, because every one of them
+already reads a cell by `result.columns[c]`/`result.rows[r][c]`, and a result
+that is already in display order is the whole of what makes a drag apply
+everywhere at once — Copy included, deliberately: copying a rearranged result
+copies it the way it is arranged on screen. The alternative was carrying a
+second "visual position" alongside the raw column index through selection's
+rectangle math, the keyboard's left/right movement and the fill-handle drag,
+so that a dragged-apart pair of columns still reads as *adjacent* on screen —
+correct, but it would have meant teaching reordering to every one of those
+separately instead of to one function once.
+
+**Projecting returns the original `result` unchanged when nothing has actually
+moved** — no drag has happened on this tab yet, or the dragged-to order and the
+server's happen to coincide — which is what keeps a reorder that never
+happened from tripping anything keyed on the `result` *reference*. Two things
+are, on purpose: the grid's selection/editing reset (`useGridInteractionState`,
+the same effect a fresh run already fires) and the horizontal scroll restore
+(`columnsKey`, see *What names the rows on screen*) — a real reorder changes
+what `columnsKey` says, the same as it would if the query's own columns had
+changed, so the old horizontal offset is correctly not reused against a layout
+that no longer matches it.
 
 ## The editable grid
 

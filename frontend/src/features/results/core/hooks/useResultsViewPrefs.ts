@@ -5,13 +5,16 @@ interface Options {
     activeTabId: string | null;
     rowsKey: string;
     columnsKey: string;
+    /** The columns on screen right now, in display order -- what a drop reorders against. */
+    columns: string[];
 }
 
 /**
- * Per-tab grid scroll position and column widths, read and written through
- * `ResultsContext`. Split out of `useResults` purely for length.
+ * Per-tab grid scroll position, column widths and column order, read and
+ * written through `ResultsContext`. Split out of `useResults` purely for
+ * length.
  */
-export function useResultsViewPrefs({ activeTabId, rowsKey, columnsKey }: Options) {
+export function useResultsViewPrefs({ activeTabId, rowsKey, columnsKey, columns }: Options) {
     const view = useResultsView();
 
     // Where this tab's grid is scrolled to, on two keys rather than one. `top`
@@ -48,5 +51,21 @@ export function useResultsViewPrefs({ activeTabId, rowsKey, columnsKey }: Option
         [activeTabId, view],
     );
 
-    return { rememberScroll, recallScroll, columnWidths, setColumnWidth, clearColumnWidth };
+    // Drop `dragged` in front of `before` (or at the end, `before === null`) in
+    // this tab's column order -- reordering the header is what calls this.
+    const moveColumn = useCallback(
+        (dragged: string, before: string | null) => {
+            if (activeTabId) view.moveColumn(activeTabId, columns, dragged, before);
+        },
+        [activeTabId, columns, view],
+    );
+
+    return {
+        rememberScroll,
+        recallScroll,
+        columnWidths,
+        setColumnWidth,
+        clearColumnWidth,
+        moveColumn,
+    };
 }
