@@ -1,7 +1,8 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { CellValue } from '../../../../../../shared/protocol/index.ts';
-import { defineTheme, monaco, px, THEME, token } from '../../../editor/monaco.ts';
+import { useResolvedTheme } from '../../../../common/theme/hooks/useResolvedTheme.ts';
+import { defineTheme, monaco, monacoBase, px, THEME, token } from '../../../editor/monaco.ts';
 
 /**
  * Creates and disposes the drawer's own Monaco instance, and tracks JSON
@@ -17,9 +18,10 @@ export function useJsonEditor(host: React.RefObject<HTMLDivElement | null>, init
     const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
     const [valid, setValid] = useState(true);
     const [parseError, setParseError] = useState<string | null>(null);
+    const theme = useResolvedTheme();
 
     useLayoutEffect(() => {
-        defineTheme();
+        defineTheme(monacoBase(theme));
         const model = monaco.editor.createModel(initial === null ? '' : String(initial), 'json');
         const instance = monaco.editor.create(host.current!, {
             model,
@@ -57,6 +59,14 @@ export function useJsonEditor(host: React.RefObject<HTMLDivElement | null>, init
             editorRef.current = null;
         };
     }, []);
+
+    // Same split as the SQL editor's: a passive effect, so the theme attribute
+    // it depends on has already committed by the time this runs, wherever in
+    // the tree that stamp happens.
+    useEffect(() => {
+        defineTheme(monacoBase(theme));
+        monaco.editor.setTheme(THEME);
+    }, [theme]);
 
     return { editorRef, valid, parseError };
 }

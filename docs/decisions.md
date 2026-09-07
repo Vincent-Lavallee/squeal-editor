@@ -7139,3 +7139,107 @@ distinction is accepted as lost rather than replaced.
 **Out of scope, deliberately:** `extensions/db/drivers/index.ts` and
 `shared/protocol/index.ts` stay. Both are load-bearing — they break a real
 import cycle — which is exactly the property the frontend barrels lacked.
+
+## Light theme: tokens became `var()` references, not a `useTokens()` hook
+
+**Why.** `tokens.ts` is 171 files' only source of colour, all of it spent as
+plain hex into inline styles — there was no seam for a theme switch to act on
+without touching every one of them. A hook (`useTokens()`) would have worked
+too, but every call site is a component, and a handful of colour-bearing
+modules (`railColors.ts`, `awsSignInVeilStyles.ts`, `filterBarStyles.ts`,
+`resultsGridStyles.ts`) are plain functions that cannot call a hook — they
+would have needed the palette threaded in as a parameter instead, at every
+call site that reaches them. `var(--token)` costs neither: a token becomes a
+string like `'var(--bg)'`, every consumer keeps importing `* as t from
+'tokens'` unchanged, and the browser resolves it against whichever theme's
+`:root` block is active.
+
+**What ships instead.** `residual.css` gets a second block,
+`:root[data-theme='light']`, naming a light value for every property the dark
+`:root` names. `tokens.ts`'s colour exports become `var()` references onto
+those properties; its size exports (`RADIUS`, `GAP_*`, …) are untouched,
+since they are spent as numbers rather than resolved by the browser.
+
+**Cost, accepted.** This reverses "colours are hex, never `rgba()`" as stated
+in `tokens.ts` — the hex now lives in `residual.css`, one value per theme, and
+`tokens.ts` only *names* which property a token reads. The rule the comment was
+protecting survives intact, just relocated: Monaco and the window frame paint
+already read the custom properties via `getComputedStyle()`, never the TS
+constants, so neither had to change. Two consumers broke and were fixed in the
+same change: `ArrowMarkers.tsx` passed a token to an SVG `fill` *attribute*,
+which does not resolve `var()` (moved to `style`), and `railColors.ts`'s
+`blendOverBg`/`blendOver` parsed a token as hex via `parseInt(fg.slice(1,3),
+16)` (rewritten onto `color-mix()`, already proven elsewhere in the app).
+
+---
+
+## The app icon keeps its dark plate; it does not follow the theme
+
+**Why.** `frontend/public/icon.svg`'s plate is `#111113`, hand-written rather
+than reading a token — SVG source files are not CSS and cannot resolve one.
+It is seen in exactly three places: the taskbar, Alt-Tab, and (on macOS) the
+Dock, and all three are chrome the *operating system* draws and themes, not
+this app's window — a light theme in Squeal says nothing about what a user's
+taskbar looks like. It is also baked into `.exe` at build time
+(`scripts/build-extension.ts`'s `icoWrapping()`) and into `icon.icns` at
+package time (`scripts/package-macos.sh`), both build-time artifacts Windows
+and macOS cache independently of anything the running app could repaint.
+
+**Rejected: redraw the plate to a theme-neutral mid-tone.** Fixes nothing a
+user's theme actually asked for (the taskbar isn't this app's surface to
+theme) and costs a hand-run export step every time `icon.svg` changes, with
+nothing to catch a forgotten one — the same trap `docs/design-system.md`
+already documents for `icon.png` today.
+
+**Rejected: ship two icons and swap the window icon at runtime.** Only the
+*window* icon (and, on macOS, the reclaimed Dock icon — see
+`useBundleDockIcon()`) is capable of changing after launch; the taskbar pin and
+the compiled `.exe`'s own icon resource are not. A user would see the window's
+title-bar icon follow the setting while the taskbar entry for the same window
+did not, which reads as more broken than one icon that simply does not track
+theme at all.
+
+**What ships instead: nothing.** The icon is unchanged by this feature,
+considered and declined rather than overlooked.
+
+---
+
+## `ON_ACCENT` is a token, not a hardcoded dark
+
+**Why.** Rule 4 of the design system was "the solid accent takes dark text",
+stated as a fact about *this* palette rather than about accents in general.
+Radix teal-9 (the dark theme's accent) pairs with a dark foreground; Radix
+teal-9 in the *light* theme pairs with white — the rule was never really "dark
+wins", it was "whatever reads on this exact accent step wins", and that answer
+flips between the two themes. Button.tsx and every other reader of
+`ON_ACCENT` needed no change either way, which is what decided it: a token
+that resolves per-theme costs nothing at every call site, where hardcoding
+"dark unless light theme" into each of them would have.
+
+**What ships instead.** `--on-accent` is `#0d1514` (teal-1) on the dark theme
+and `#ffffff` on the light one. The rule in `docs/design-system.md` is restated
+as "the solid accent takes `--on-accent`" rather than retired — the *shape* of
+the rule (one flat colour, never a gradient or a second surface) is unchanged;
+only which literal answers it is theme-valued now.
+
+---
+
+## The connection rail's chip tints are theme-valued, not shared ratios
+
+**Why.** `RailChip`'s active chip pairs its fill with `BG`-coloured text
+(`color: active ? t.BG : t.TEXT_MUTED`) — the same "dark text on a solid fill"
+idiom `ON_ACCENT` names for the primary button, spent here on a connection's
+own colour instead of the app's one accent. The three blend ratios in
+`railColors.ts` (`CHIP_BORDER_TINT` 0.3, `CHIP_WASH_TINT` 0.07,
+`ACTIVE_FILL_TINT` 0.72) were tuned by eye against a near-black `BG`: blending
+72% of a Radix step-11 tint toward near-black still leaves something dark
+enough for near-white text to read on. Blending the *same* 72% toward a
+near-white `BG` lands on a pale tint, and near-white `BG` text on a pale fill
+is the one pairing this app never allows anywhere else.
+
+**What ships instead.** `chipTints(theme)` returns the existing ratios on the
+dark theme and `{ border: 0.45, wash: 0.1, activeFill: 1 }` on the light one —
+the active fill goes to the tint at full strength, which is exactly the
+Radix-step-11-with-white pairing `ON_ACCENT` already uses for the same reason.
+The numbers are a first pass, expected to be tuned by eye against the nine
+real connection colours the way the dark ones were.

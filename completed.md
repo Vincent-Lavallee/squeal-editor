@@ -947,3 +947,23 @@ This is a record, not a plan. Nothing here is waiting on anything.
   it reads as a control that should work but does not. Hide it there; the
   title's centering, which the button currently balances, is accepted as the
   cost.
+
+- **2026-09-07** — **Light theme** — The design system is Radix dark and nothing else: no token
+  has a light value, so the app is dark or it is broken. Give every token a light
+  counterpart and somewhere to choose — theme is the first user setting, so it
+  brings that screen with it. Three things have to follow the switch, and each
+  will otherwise be found by noticing it looks wrong: the editor's theme is built
+  once by reading the tokens, the OS window frame is painted `--bg` by the
+  extension because Windows draws 7px above the titlebar that no webview can
+  reach, and the app icon has the dark plate deliberately baked in.
+
+- **2026-09-07** — **Preferences: Settings screen** — The Preferences menu ships with Keyboard
+  shortcuts and nothing else, because the Settings item it was meant to sit beside
+  would be a screen of placeholders: theme and language are the preferences it
+  exists to hold, and neither exists yet. It arrives with whichever of Light theme
+  or French/English UI lands first, as that feature's own screen rather than as an
+  empty shell waiting for one.
+
+- **2026-09-07** — **Reorder columns in the result grid** — Columns are fixed in the order the
+  query returned them, and rearranging them means editing the SQL. Drag the
+  column headers to reorder the columns on screen.

@@ -13,7 +13,8 @@ export default function ArrowMarkers() {
                 refY="3.5"
                 orient="auto"
             >
-                <path d="M0 0 L7 3.5 L0 7 z" fill={t.BORDER_STRONG} />
+                {/* A `fill` attribute cannot resolve var() -- style can. */}
+                <path d="M0 0 L7 3.5 L0 7 z" style={{ fill: t.BORDER_STRONG }} />
             </marker>
             <marker
                 id="diagram-arrow-lit"
@@ -23,7 +24,7 @@ export default function ArrowMarkers() {
                 refY="3.5"
                 orient="auto"
             >
-                <path d="M0 0 L7 3.5 L0 7 z" fill={t.ACCENT} />
+                <path d="M0 0 L7 3.5 L0 7 z" style={{ fill: t.ACCENT }} />
             </marker>
         </defs>
     );

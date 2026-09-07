@@ -126,6 +126,7 @@ static void restyle(NSWindow *window) {
 - (void)importConnections:(id)sender { [SquealMenuHandler dispatchEvent:@"importConnections"]; }
 - (void)relationshipDiagram:(id)sender { [SquealMenuHandler dispatchEvent:@"relationshipDiagram"]; }
 - (void)shortcuts:(id)sender { [SquealMenuHandler dispatchEvent:@"shortcuts"]; }
+- (void)settings:(id)sender { [SquealMenuHandler dispatchEvent:@"settings"]; }
 - (void)checkForUpdates:(id)sender { [SquealMenuHandler dispatchEvent:@"checkForUpdates"]; }
 - (void)about:(id)sender { [SquealMenuHandler dispatchEvent:@"about"]; }
 - (void)openDataDir:(id)sender { [SquealMenuHandler dispatchEvent:@"openDataDir"]; }
@@ -189,6 +190,10 @@ static void installMenuBar(void) {
   NSMenuItem *shortcutsItem = [[NSMenuItem alloc] initWithTitle:@"Keyboard shortcuts" action:@selector(shortcuts:) keyEquivalent:@""];
   shortcutsItem.target = handler;
   [preferencesMenu addItem:shortcutsItem];
+
+  NSMenuItem *settingsItem = [[NSMenuItem alloc] initWithTitle:@"Settings" action:@selector(settings:) keyEquivalent:@""];
+  settingsItem.target = handler;
+  [preferencesMenu addItem:settingsItem];
 
   NSMenuItem *aboutMenuItem = [NSMenuItem new];
   [mainMenu addItem:aboutMenuItem];

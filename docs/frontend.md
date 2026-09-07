@@ -26,6 +26,7 @@ src/Shell.tsx           the composition root; wires the features together.
 src/common/             shared infrastructure, no components
   bridge/bridge.ts      typed request/response over the extension channel
   icons/                icon bindings, workspace glyphs, the connection colour palette
+  theme/                theme.ts (the choice/resolved types) + hooks/ (useResolvedTheme, useThemeAttribute)
   db/                   the UI's engine table
   shortcuts.ts          every keyboard shortcut — the app's and Monaco's — and the one spelling of a chord
 src/store/              every slice; bridge-crossed state and the keys it is held under.
@@ -55,7 +56,7 @@ src/store/              every slice; bridge-crossed state and the keys it is hel
   resultsSlice.ts + resultsThunks.ts
                         the result grid, keyed by tab
   updaterSlice.ts       the release check, download progress + useUpdater()
-  settingsSlice.ts      the user's preferences + useBooleanSetting()
+  settingsSlice.ts      the user's preferences + useBooleanSetting()/useStringSetting()
   assistantSlice.ts     the conversations, the account, and their reducers;
                         composes assistantAccountThunks.ts (the stored key,
                         the model catalog), assistantConversationThunks.ts
@@ -95,16 +96,17 @@ src/features/
                         `App.tsx` also reaches `window-chrome/WindowResizeEdge.tsx`
                         and `macos/TitlebarMacos.tsx` directly
     window-chrome/      WindowResizeEdge (the app's own resize strips), WindowControls
-      hooks/            useWindowChrome (+ its frame/maximize/drag/macOS-focus halves)
+      hooks/            useWindowChrome (+ its frame/frame-colour/maximize/drag/macOS-focus halves)
     menu/               Menu, MenuItems
-      hooks/            useNativeMenuBridge
-    dialogs/            AboutDialog, TitlebarDialogs -- orchestrates all five
+      hooks/            useNativeMenuBridge, useTitlebarMenus
+    dialogs/            AboutDialog, TitlebarDialogs -- orchestrates all six
                         dialogs; About has no cluster of its own so it sits here
                         rather than in a folder for one file
       hooks/            useAbout, useTitlebarDialogs
       environments/     EnvironmentsDialog, AddEnvironmentForm, EnvironmentRow
       shortcuts/        ShortcutsDialog, ShortcutGroup/Row
         hooks/          useShortcutRecorder
+      settings/         SettingsDialog -- the theme picker today
       connections-transfer/  ExportConnectionsDialog + ImportConnectionsDialog,
                         ExportedSummary
     assistant/          NewAssistantChatButton, AssistantBusyDot,

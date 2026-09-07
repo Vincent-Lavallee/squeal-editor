@@ -6,8 +6,13 @@
  */
 
 /* ---- Design tokens (CSS custom properties) ---- */
-/* Monaco's theme and useWindowChrome read these at runtime via
-   getComputedStyle(). They must exist on :root. Keep in sync with tokens.ts. */
+/* Monaco's theme and the window frame paint read the colours at runtime via
+   getComputedStyle(). They must exist on :root, and tokens.ts's colour exports
+   are `var()` references onto these -- this file is the one place a colour is
+   actually written now. See docs/decisions.md for why. Radix dark, the default
+   theme; the light counterpart is the `[data-theme='light']` block below, and
+   the two must name the same set of properties or a theme switch leaves a stale
+   value behind. */
 :root {
     --bg: #111113;
     --border: #272a2d;
@@ -26,6 +31,7 @@
     --accent: #0eb39e;
     --accent-bg: #0d2d2a;
     --on-accent: #0d1514;
+    --accent-hover: #24baa7;
     --red: #e5484d;
     --red-bg: #3b1219;
     --red-text: #ff9592;
@@ -36,8 +42,8 @@
     --purple: #bf7af0;
     --purple-bg: #301c3b;
     --syntax-keyword: var(--accent);
-    --syntax-string: #3dd68c;
-    --syntax-number: #ffca16;
+    --syntax-string: var(--green);
+    --syntax-number: var(--amber);
     --syntax-comment: var(--text-faint);
     --syntax-punctuation: var(--text-muted);
     --conn-slate: #b0b4ba;
@@ -49,6 +55,7 @@
     --conn-red: #ff9592;
     --conn-pink: #ff8dcc;
     --conn-purple: #bf7af0;
+    --canvas-dot: #ffffff1a;
     --radius-pill: 999px;
     --radius: 6px;
     --radius-lg: 8px;
@@ -70,6 +77,7 @@
     --button-h-bar: 24px;
     --row-h: 44px;
     --row-h-dense: 30px;
+    --row-h-tight: 22px;
     --gap-xs: 4px;
     --gap-sm: 8px;
     --gap: 12px;
@@ -77,12 +85,65 @@
     --gap-xl: 24px;
 }
 
+/* ---- Light theme ----
+   Radix Colors light, the mirror of the dark set above. Every colour property
+   named in :root must be repeated here -- an omission falls back to the dark
+   value under a light background, which is how a stale-token bug hides. Sizes,
+   type and shape are theme-independent and are not repeated.
+
+   --bg specifically must stay a plain 6-digit #rrggbb: the window frame paint
+   (useFrameColour.ts -> extensions/db/chrome.ts's toColorRef) only matches that
+   pattern and silently no-ops on anything with alpha. */
+:root[data-theme='light'] {
+    --bg: #fcfcfd;
+    --border: #e8e8ec;
+    --border-strong: #d3d4db;
+    --hover: #0000000a;
+    --selected: #12a59424;
+    --scrim: #00000099;
+    --veil: #fcfcfd59;
+    --veil-edge: #0000001f;
+    --veil-sheen: #00000014;
+    --veil-deep: #fcfcfde6;
+    --text: #1c2024;
+    --text-muted: #60646c;
+    --text-faint: #8b8d98;
+    --accent: #12a594;
+    --accent-bg: #d0f2ea;
+    --on-accent: #ffffff;
+    --accent-hover: #0d9b8a;
+    --red: #e5484d;
+    --red-bg: #ffdbdc;
+    --red-text: #ce2c31;
+    --green: #218358;
+    --green-bg: #ddf3e4;
+    --amber: #ab6400;
+    --amber-bg: #fff7c2;
+    --purple: #8347b9;
+    --purple-bg: #f5e1fd;
+    --conn-slate: #60646c;
+    --conn-blue: #0d74ce;
+    --conn-cyan: #107d98;
+    --conn-green: #218358;
+    --conn-amber: #ab6400;
+    --conn-orange: #cc4e00;
+    --conn-red: #ce2c31;
+    --conn-pink: #cd1d8d;
+    --conn-purple: #8347b9;
+    --canvas-dot: #0000001a;
+}
+
 /* ---- Reset ---- */
 /* The one place the palette is told to the browser rather than drawn by it,
    for everything the browser draws for itself and no CSS can reach: scrollbars,
-   focus rings, autofill, and the text-field context menu. */
+   focus rings, autofill, and the text-field context menu. Theme-driven like
+   every other property here -- see useThemeAttribute, which is what stamps
+   [data-theme] on this element before anything else runs. */
 :root {
     color-scheme: dark;
+}
+:root[data-theme='light'] {
+    color-scheme: light;
 }
 *,
 *::before,

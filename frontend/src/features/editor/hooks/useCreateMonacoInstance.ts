@@ -1,5 +1,6 @@
-import { useLayoutEffect } from 'react';
-import { defineTheme, monaco, px, THEME, token } from '../monaco.ts';
+import { useEffect, useLayoutEffect } from 'react';
+import { useResolvedTheme } from '../../../common/theme/hooks/useResolvedTheme.ts';
+import { defineTheme, monaco, monacoBase, px, THEME, token } from '../monaco.ts';
 import type { useLatestEditorState } from './useLatestEditorState.ts';
 
 function editorOptions(): monaco.editor.IStandaloneEditorConstructionOptions {
@@ -81,8 +82,10 @@ export function useCreateMonacoInstance(options: {
         statementToRun,
     } = options;
 
+    const theme = useResolvedTheme();
+
     useLayoutEffect(() => {
-        defineTheme();
+        defineTheme(monacoBase(theme));
 
         const instance = monaco.editor.create(hostRef.current!, editorOptions());
 
@@ -110,4 +113,17 @@ export function useCreateMonacoInstance(options: {
             if (exposeGlobal) delete window.squealEditor;
         };
     }, [setSql, sqlToRun, statementToRun, exposeGlobal]);
+
+    /*
+     * Redefines the live theme rather than recreating the editor. A plain
+     * effect, not a layout one: every layout effect in the tree -- including
+     * the one that stamps `[data-theme]` on `<html>` -- has already committed
+     * by the time any passive effect runs, so this is guaranteed to see the
+     * attribute the theme change is actually about, regardless of where in the
+     * tree that stamp happens relative to this editor.
+     */
+    useEffect(() => {
+        defineTheme(monacoBase(theme));
+        monaco.editor.setTheme(THEME);
+    }, [theme]);
 }

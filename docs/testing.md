@@ -461,11 +461,19 @@ Two things to know:
   and fails its assertion instead of hanging. Much of this suite still uses fixed
   `Bun.sleep`s, and each one encodes how long a step took on the machine that
   wrote it — the failures they cause name a null element deep inside whichever
-  helper touched it first, never the wait that was too short. Two have already
-  been converted for cause: the connect form (`#type`, where a null reaches
-  `setSelect` and surfaces as `Illegal invocation`) and Monaco's tokenizing,
-  which passed or failed according to *how many tests ran before it*. Convert the
-  next one that bites rather than all of them at once.
+  helper touched it first, never the wait that was too short. Several have
+  already been converted for cause: the connect form (`#type`, where a null
+  reaches `setSelect` and surfaces as `Illegal invocation`), Monaco's tokenizing,
+  which passed or failed according to *how many tests ran before it*, the SQL
+  error note (a fixed 1.5s beat the round trip to a real Postgres on the GitHub
+  runner but not always), and `useDatabase`'s post-switch wait, whose miss on a
+  slow runner didn't fail in place — it read as the *next* helper touching a row
+  that was never drawn (`clickTable`/`clickTab` throwing `Cannot read properties
+  of undefined`), which is why `reapStaleApp`'s warning above about failures
+  naming the wrong helper is not hypothetical. `reload()`'s own wait is capped at
+  the same 30s `launchApp` gives first paint, for the same reason: a reload is
+  not cheaper than the first load. Convert the next one that bites rather than
+  all of them at once.
 - **A dispatched `KeyboardEvent` cannot prove a chord is *available*, only that
   the handler works.** It enters at the DOM, below the embedder — so a chord the
   host claims as an accelerator passes the test and closes the window in real

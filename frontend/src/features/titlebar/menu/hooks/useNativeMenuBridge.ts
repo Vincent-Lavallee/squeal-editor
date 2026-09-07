@@ -39,6 +39,9 @@ export function useNativeMenuBridge(options: {
                 case 'shortcuts':
                     open.shortcuts();
                     break;
+                case 'settings':
+                    open.settings();
+                    break;
                 case 'relationshipDiagram':
                     onOpenDiagram?.();
                     break;

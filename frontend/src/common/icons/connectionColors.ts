@@ -10,8 +10,9 @@ import * as t from '../tokens';
  * what may be chosen. The code that colours a status badge knows its hue at
  * compile time; a connection's does not exist until the user chooses it.
  *
- * Each entry holds the hex *value* directly (from tokens.ts) rather than a CSS
- * var reference, so an inline style can consume it without indirection.
+ * Each entry holds a `var(--conn-*)` reference (via tokens.ts), so it follows
+ * the active theme automatically -- nothing here computes or caches a colour,
+ * it only names one.
  *
  * The order is the picker's layout, so it is a list rather than a `Record`: the
  * id-to-value map falls out of it, but an object's key order would carry the

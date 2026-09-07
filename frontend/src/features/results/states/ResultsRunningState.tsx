@@ -27,7 +27,7 @@ export default function ResultsRunningState({ tabBars, elapsed, activeTabId }: P
         <>
             {tabBars}
             <div data-testid="results-bar" style={barStyle}>
-                <ThinkingOrb state="shaping" size={20} theme="dark" aria-label="Running" />
+                <ThinkingOrb state="shaping" size={20} theme="auto" aria-label="Running" />
                 <span>Running for {elapsed}s…</span>
                 {activeTabId && (
                     <Button

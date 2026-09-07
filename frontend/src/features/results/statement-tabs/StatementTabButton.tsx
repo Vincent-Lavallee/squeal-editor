@@ -44,7 +44,7 @@ export default function StatementTabButton({ part, index, active, onSelect }: Pr
         >
             Result {index + 1}
             {part.running && (
-                <ThinkingOrb state="shaping" size={20} theme="dark" aria-label="Running" />
+                <ThinkingOrb state="shaping" size={20} theme="auto" aria-label="Running" />
             )}
             {/* Semantic, the one place a hue is allowed in the chrome: a failed
           statement is why the batch stopped, and the strip is where you are

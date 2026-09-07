@@ -342,8 +342,10 @@ export async function launchApp(env: Record<string, string> = {}): Promise<AppSe
             // waits on the extension answering `db.saved.list`, so how long this takes
             // is a property of the machine -- and the failure when it is too short is
             // a null element, which surfaces as an unrelated-looking TypeError deep in
-            // whichever helper touched it first.
-            await this.waitFor(rootRendered);
+            // whichever helper touched it first. Same budget `launchApp` gives the
+            // first paint below: a reload repeats the same bundle-parse-and-round-trip
+            // work, not a cheaper version of it.
+            await this.waitFor(rootRendered, 30_000);
         },
 
         async screenshot(path: string) {
