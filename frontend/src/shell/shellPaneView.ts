@@ -48,5 +48,6 @@ export function shellPaneMainStyle(view: ReturnType<typeof shellPaneView>): Reac
         flex: view.flex,
         minWidth: 0,
         minHeight: 0,
+        overflow: 'hidden',
     };
 }

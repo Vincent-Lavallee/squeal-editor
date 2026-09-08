@@ -3628,7 +3628,11 @@ on it would make the typecheck fail on a fresh clone before `bun install`.
   since a grid tab's pane is the whole space below the strip and has no split to
   drag. `resultsHeight`'s clamp reads `window.innerHeight` at drag time rather
   than being pinned once, so a window resized between drags does not leave the
-  editor's `minmax` fighting a stale ceiling.
+  editor's `minmax` fighting a stale ceiling. That clamp is still only checked
+  *at drag time* -- a resize with no drag afterward can leave `resultsHeight`
+  taller than what's left once the editor has shrunk to `EDITOR_MIN`, so
+  `shellPaneMainStyle` clips (`overflow: hidden`) rather than adding a resize
+  observer just to keep the row math honest.
 
 ## The assistant
 

@@ -29,19 +29,27 @@ export function useRowWindow(args: {
     const { grid, rowCount } = args;
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
+    const attachedEl = useRef<HTMLDivElement | null>(null);
 
-    // Measured once before paint (so the first frame already windows
-    // correctly) and again whenever the pane resizes -- a splitter drag or the
-    // window itself, neither of which fires a scroll event on its own.
+    // `grid` is a stable ref object -- its identity never changes, so it can't
+    // be a dependency that re-fires this effect. The scroll div itself mounts
+    // and unmounts as the panel switches between the running/error/no-rows/
+    // result states and as tabs change, so this runs on every render and bails
+    // out unless `grid.current` is actually a *different* node than last time
+    // (including null, right after the div unmounts). Once attached it also
+    // remeasures whenever the pane resizes -- a splitter drag or the window
+    // itself, neither of which fires a scroll event on its own.
     useLayoutEffect(() => {
         const el = grid.current;
+        if (el === attachedEl.current) return;
+        attachedEl.current = el;
         if (!el) return;
         setViewportHeight(el.clientHeight);
         setScrollTop(el.scrollTop);
         const observer = new ResizeObserver(() => setViewportHeight(el.clientHeight));
         observer.observe(el);
         return () => observer.disconnect();
-    }, [grid]);
+    });
 
     // A scroll fires far more often than once a frame; `docs/frontend.md`
     // keeps the scroll-*restore* offset a ref for exactly that reason ("a
