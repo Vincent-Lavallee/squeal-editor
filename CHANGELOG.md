@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.19.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.18.1...v0.19.0) (2026-09-07)
+
+
+### Features
+
+* Column ordering ([#50](https://github.com/Vincent-Lavallee/squeal-editor/issues/50)) ([c02309e](https://github.com/Vincent-Lavallee/squeal-editor/commit/c02309e7b80f47f8b8be6886fd33a360aca5679a))
+* Light theme ([#51](https://github.com/Vincent-Lavallee/squeal-editor/issues/51)) ([43dc76d](https://github.com/Vincent-Lavallee/squeal-editor/commit/43dc76d672360320e62c1a0012966dd3fe1afc1f))
+
+
+### Bug Fixes
+
+* hide the assistant button while disconnected ([#46](https://github.com/Vincent-Lavallee/squeal-editor/issues/46)) ([a3f352e](https://github.com/Vincent-Lavallee/squeal-editor/commit/a3f352e47e370d40648ee821ab3ac985e8f32945))
+* Macos resize issues and auto-completion ([#52](https://github.com/Vincent-Lavallee/squeal-editor/issues/52)) ([203bd6b](https://github.com/Vincent-Lavallee/squeal-editor/commit/203bd6b3dc8c21439278b6c4f81dd5ca235361ae))
+* minor improvements ([#53](https://github.com/Vincent-Lavallee/squeal-editor/issues/53)) ([ed56516](https://github.com/Vincent-Lavallee/squeal-editor/commit/ed565160c99fbc4e22b42030c84ad9a24971fab4))
+* preserve the grid's horizontal scroll when sorting ([#48](https://github.com/Vincent-Lavallee/squeal-editor/issues/48)) ([2f03b81](https://github.com/Vincent-Lavallee/squeal-editor/commit/2f03b8167e9c6bad76c81832dee5ec0968e6854a))
+
 ## [0.18.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.18.0...v0.18.1) (2026-08-24)
 
 
