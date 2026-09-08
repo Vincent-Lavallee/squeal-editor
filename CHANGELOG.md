@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.19.0...v0.19.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* Panel results overflow ([#54](https://github.com/Vincent-Lavallee/squeal-editor/issues/54)) ([a9c89f8](https://github.com/Vincent-Lavallee/squeal-editor/commit/a9c89f8705296dd5a2f265d81470707ce7850212))
+
 ## [0.19.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.18.1...v0.19.0) (2026-09-07)
 
 
