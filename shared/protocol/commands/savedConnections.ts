@@ -181,4 +181,33 @@ export interface SavedConnectionCommands {
         };
         res: { ok: true };
     };
+
+    /**
+     * The dragged-to column order a saved connection last left one table's grid
+     * in, or `null` for a table never dragged -- the tab then falls back to the
+     * server's own order, exactly as it does before any drag today.
+     *
+     * `savedConnectionId` names the *saved* row, for `db.stars.list`'s reason:
+     * the order has to outlive the session that dragged it. Fetched per table
+     * rather than listed whole like the stars are, since a table's order is
+     * only ever wanted the moment that table is actually browsed.
+     */
+    'db.columnOrder.get': {
+        req: { savedConnectionId: string; database: string; table: string; schema?: string };
+        res: { columns: string[] | null };
+    };
+    /**
+     * Remember one table's dragged-to order, from the grid's header drag,
+     * replacing whatever it held before.
+     */
+    'db.columnOrder.set': {
+        req: {
+            savedConnectionId: string;
+            database: string;
+            table: string;
+            schema?: string;
+            columns: string[];
+        };
+        res: { ok: true };
+    };
 }

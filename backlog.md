@@ -19,6 +19,27 @@ Things that already work, but not well enough.
   preview tab (the next single-click replaces it) and double-click pin it into
   its own permanent tab, the way VSCode's explorer does.
 
+- **macOS install hits Gatekeeper on first launch** — The app is signed, but
+  notarization needs a paid Apple Developer account, which this project isn't
+  paying for, so Gatekeeper still quarantines the `.dmg` build and blocks the
+  first launch until the user goes into System Settings > Privacy & Security
+  and clicks "Open Anyway." Add a Homebrew tap as a second install path and
+  label it recommended in the README, with the `.dmg` kept as the
+  not-recommended fallback and its manual Gatekeeper workaround documented
+  alongside it. Whether a tap-installed cask actually avoids the quarantine
+  flag needs verifying before this is built out.
+
+- **Windows install hits SmartScreen on first launch** — The installer carries
+  no Authenticode signature (only the detached ed25519 signature the
+  auto-updater checks — see `docs/decisions.md` on why a real code-signing
+  cert was skipped for cost), so SmartScreen flags the `.exe` on first run.
+  Buying a cert is out of scope; find a $0 distribution path that avoids the
+  prompt, preferring the friendliest option that actually works: a plain
+  `.exe` if one is possible without paying, otherwise a winget package,
+  otherwise a curl/`irm | iex`-style install script. Which of these actually
+  dodges SmartScreen needs verifying — it's not distribution channel alone
+  that clears it, so this starts with that research.
+
 ## Bugs
 
 Things that are wrong.
@@ -54,6 +75,15 @@ Things that are wrong.
   reproduced locally on Linux or Windows yet, so the exact failure is still to
   be pinned down.
 
+- **Query timeout is a hardcoded 60 seconds with no way to raise it** —
+  Running SQL (`db.query`) and paging a browsed table (`db.browse`) both hit a
+  60-second client-side timeout hardcoded on the UI-to-extension bridge call
+  in `bridge.ts`, surfacing as "The database did not respond in time" while
+  the query may still be running server-side. A longer analytical query has
+  no way around it. Make it one configurable setting covering both call
+  sites, with a default raised well above 60 seconds and a "no timeout"
+  option for queries with no natural upper bound.
+
 - **The error card's actions sit on top of the error text** — The "Diagnose with
   AI" and copy buttons are absolutely positioned in the error card's top corner,
   so they float over the message's first line instead of beside it. Put them in
@@ -72,6 +102,14 @@ Things that do not exist yet.
   extension produces the rows, since the UI cannot read a database, and every
   value is emitted exactly as the server sent it, quoted per engine — never
   reformatted through a JS `Date` or `Number`.
+
+- **Hide and show grid columns** — There is no way to hide a column in the
+  results grid at all today. Add a right-click "Hide column" entry on column
+  headers, plus a toolbar affordance listing every column with a checkbox so a
+  hidden one (which has no header left to right-click) can be brought back.
+  Deliberately session-only, the same way column order was in-memory before
+  it gained per-table persistence: hidden columns reappear once the tab is
+  closed or the app restarts, with nothing written to the settings store.
 
 - **French and English UI** — Every string is English, written where it is used,
   so there is no seam to translate at. Add one, with French beside it and the

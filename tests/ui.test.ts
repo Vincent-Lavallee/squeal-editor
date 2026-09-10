@@ -1434,12 +1434,37 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             );
             expect(await app.evaluate<string[]>(headers)).toEqual(afterSecondMove);
 
-            // Session-local: closing and reopening the table starts back at the
-            // server's own order, the same lifetime `columnWidths` already has.
+            // Remembered per table now, keyed by the saved connection: closing and
+            // reopening the same table reuses the order it was left in rather than
+            // resetting to the server's, the one thing that changed about a drag's
+            // lifetime (`columnWidths` beside it is still session-only).
             await app.evaluate(closeTab('users'));
             await Bun.sleep(300);
             await app.evaluate(clickTable('users'));
             await app.waitFor(`(${rowCount}) === 2 ? true : null`);
+            // The remembered order is its own round trip, asked for once the tab
+            // knows what table it is -- not carried by the page the row count above
+            // already waited for, so it can still be in flight the instant that
+            // resolves.
+            await app.waitFor(
+                `JSON.stringify(${headers}) === JSON.stringify(${JSON.stringify(afterSecondMove)}) ? true : null`,
+            );
+            expect(await app.evaluate<string[]>(headers)).toEqual(afterSecondMove);
+
+            // Restored to the server's order before the next test, which reads
+            // `users` by column index and would otherwise inherit this drag.
+            await app.evaluate(dragColStart('id'));
+            await app.evaluate(dragColOver('email'));
+            await app.evaluate(dropCol('email'));
+            await app.waitFor(
+                `JSON.stringify(${headers}) === JSON.stringify(${JSON.stringify(afterFirstMove)}) ? true : null`,
+            );
+            await app.evaluate(dragColStart('email'));
+            await app.evaluate(dragColOver('created_at'));
+            await app.evaluate(dropCol('created_at'));
+            await app.waitFor(
+                `JSON.stringify(${headers}) === JSON.stringify(${JSON.stringify(natural)}) ? true : null`,
+            );
             expect(await app.evaluate<string[]>(headers)).toEqual(natural);
 
             await app.evaluate(closeTab('users'));

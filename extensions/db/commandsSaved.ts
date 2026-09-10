@@ -1,10 +1,12 @@
 import {
     deleteSaved,
+    getColumnOrder,
     getSession,
     listSaved,
     listStars,
     resolveSaved,
     saveConnection,
+    setColumnOrder,
     setSession,
     setStar,
 } from './store.ts';
@@ -123,6 +125,21 @@ function commandsSessionsAndStars(): Pick<
     };
 }
 
+function commandsColumnOrder(): Pick<Handlers, 'db.columnOrder.get' | 'db.columnOrder.set'> {
+    return {
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async 'db.columnOrder.get'({ savedConnectionId, database, table, schema }) {
+            return { columns: getColumnOrder(savedConnectionId, { database, schema, table }) };
+        },
+
+        // eslint-disable-next-line @typescript-eslint/require-await
+        async 'db.columnOrder.set'({ savedConnectionId, database, table, schema, columns }) {
+            setColumnOrder(savedConnectionId, { database, schema, table }, columns);
+            return { ok: true };
+        },
+    };
+}
+
 export function commandsSaved(
     send: Send,
 ): Pick<
@@ -136,10 +153,13 @@ export function commandsSaved(
     | 'db.session.save'
     | 'db.stars.list'
     | 'db.stars.set'
+    | 'db.columnOrder.get'
+    | 'db.columnOrder.set'
 > {
     return {
         ...commandsSavedCrud(),
         ...commandsSavedConnectAndFile(send),
         ...commandsSessionsAndStars(),
+        ...commandsColumnOrder(),
     };
 }

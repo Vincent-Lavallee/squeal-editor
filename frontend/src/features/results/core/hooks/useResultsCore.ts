@@ -1,8 +1,10 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 
+import { useAppSelector } from '../../../../store/hooks.ts';
 import { useSession } from '../../../../store/sessionSlice.ts';
 import type { Tab } from '../../../../store/tabsSlice.ts';
 import { useResultsView } from '../../ResultsContext.tsx';
+import type { TableIdentity } from '../../grid/hooks/useColumnOrderState.ts';
 import { applyColumnOrder } from '../../grid/resultColumnOrder.ts';
 import { useActiveResultPart } from './useActiveResultPart.ts';
 import { useResultsRowIdentity } from './useResultsRowIdentity.ts';
@@ -28,6 +30,34 @@ export function useResultsCore(tab: Tab | null) {
      * edit away instead of a re-open.
      */
     const gridTable = tab?.kind === 'grid' ? (tab.table ?? null) : null;
+
+    /*
+     * The identity a table-browse tab's remembered column order is keyed by on
+     * disk -- the *saved* connection, database, schema and table, read off the
+     * tab rather than off `useSession`'s active one for `gridTable`'s own
+     * reason: a tab left behind while the rail moved on still names its own
+     * connection. `null` for an editor/diagram/assistant tab (no `table`), one
+     * with no database yet, or a connection this session never resolved to a
+     * saved row -- all of which leave column order exactly the session-only
+     * behaviour it always was.
+     */
+    const savedConnectionId = useAppSelector(
+        (s) =>
+            (tab ? s.session.connections[tab.connectionId]?.savedConnectionId : undefined) ?? null,
+    );
+    const table = tab?.kind === 'grid' ? (tab.table ?? null) : null;
+    const database = tab?.database ?? null;
+    const schema = tab?.schema;
+    const tableIdentity: TableIdentity | null = useMemo(
+        () =>
+            table && database && savedConnectionId
+                ? { savedConnectionId, database, schema, table }
+                : null,
+        [savedConnectionId, database, schema, table],
+    );
+    useEffect(() => {
+        if (activeTabId && tableIdentity) view.loadColumnOrder(activeTabId, tableIdentity);
+    }, [activeTabId, tableIdentity, view]);
 
     const rawPart = useActiveResultPart(activeTabId);
     /*
@@ -61,5 +91,15 @@ export function useResultsCore(tab: Tab | null) {
         editable: identity.editable,
     });
 
-    return { view, dialect, activeTabId, gridTable, part, identity, runActions, staging };
+    return {
+        view,
+        dialect,
+        activeTabId,
+        gridTable,
+        tableIdentity,
+        part,
+        identity,
+        runActions,
+        staging,
+    };
 }

@@ -932,6 +932,188 @@ describe('starred tables', () => {
     });
 });
 
+describe('remembered column order', () => {
+    const getOrder = async (
+        savedConnectionId: string,
+        table: string,
+        schema?: string,
+    ): Promise<string[] | null> =>
+        (
+            (await h.ok('db.columnOrder.get', {
+                savedConnectionId,
+                database: FIXTURE_DB,
+                table,
+                schema,
+            })) as { columns: string[] | null }
+        ).columns;
+
+    test('a table never dragged has none', async () => {
+        const saved = await save({
+            name: 'order-fresh',
+            config: PG_SERVER,
+            password: { mode: 'none' },
+        });
+        expect(await getOrder(saved.id, 'users', 'public')).toBeNull();
+        await h.ok('db.saved.delete', { id: saved.id });
+    });
+
+    test('setting it is what a later get answers, and a second set replaces it', async () => {
+        const saved = await save({
+            name: 'order-set',
+            config: PG_SERVER,
+            password: { mode: 'none' },
+        });
+
+        await h.ok('db.columnOrder.set', {
+            savedConnectionId: saved.id,
+            database: FIXTURE_DB,
+            table: 'users',
+            schema: 'public',
+            columns: ['name', 'id', 'email'],
+        });
+        expect(await getOrder(saved.id, 'users', 'public')).toEqual(['name', 'id', 'email']);
+
+        // Dragging again replaces the row rather than failing on the primary key.
+        await h.ok('db.columnOrder.set', {
+            savedConnectionId: saved.id,
+            database: FIXTURE_DB,
+            table: 'users',
+            schema: 'public',
+            columns: ['email', 'name', 'id'],
+        });
+        expect(await getOrder(saved.id, 'users', 'public')).toEqual(['email', 'name', 'id']);
+
+        await h.ok('db.saved.delete', { id: saved.id });
+    });
+
+    test('a table with no schema is remembered the same as one twice, not once', async () => {
+        // The same `NOT NULL DEFAULT ''` reason `stars` needs it for: SQLite's
+        // `UNIQUE` treats every `NULL` as its own value, so a nullable schema
+        // would let a second drag on this table insert instead of replacing.
+        const saved = await save({
+            name: 'order-no-schema',
+            config: PG_SERVER,
+            password: { mode: 'none' },
+        });
+
+        await h.ok('db.columnOrder.set', {
+            savedConnectionId: saved.id,
+            database: FIXTURE_DB,
+            table: 'orders',
+            columns: ['total', 'id'],
+        });
+        await h.ok('db.columnOrder.set', {
+            savedConnectionId: saved.id,
+            database: FIXTURE_DB,
+            table: 'orders',
+            columns: ['id', 'total'],
+        });
+        expect(await getOrder(saved.id, 'orders')).toEqual(['id', 'total']);
+
+        await h.ok('db.saved.delete', { id: saved.id });
+    });
+
+    test('two schemas holding the same table name are remembered independently', async () => {
+        const saved = await save({
+            name: 'order-two-schemas',
+            config: PG_SERVER,
+            password: { mode: 'none' },
+        });
+
+        await h.ok('db.columnOrder.set', {
+            savedConnectionId: saved.id,
+            database: FIXTURE_DB,
+            table: 'stats',
+            schema: 'public',
+            columns: ['a', 'b'],
+        });
+        await h.ok('db.columnOrder.set', {
+            savedConnectionId: saved.id,
+            database: FIXTURE_DB,
+            table: 'stats',
+            schema: 'reporting',
+            columns: ['b', 'a'],
+        });
+        expect(await getOrder(saved.id, 'stats', 'public')).toEqual(['a', 'b']);
+        expect(await getOrder(saved.id, 'stats', 'reporting')).toEqual(['b', 'a']);
+
+        await h.ok('db.saved.delete', { id: saved.id });
+    });
+
+    test('two connections holding the same database name do not share an order', async () => {
+        const a = await save({
+            name: 'order-conn-a',
+            config: PG_SERVER,
+            password: { mode: 'none' },
+        });
+        const b = await save({
+            name: 'order-conn-b',
+            config: PG_SERVER,
+            password: { mode: 'none' },
+        });
+
+        await h.ok('db.columnOrder.set', {
+            savedConnectionId: a.id,
+            database: FIXTURE_DB,
+            table: 'users',
+            schema: 'public',
+            columns: ['email', 'id', 'name'],
+        });
+        expect(await getOrder(a.id, 'users', 'public')).toEqual(['email', 'id', 'name']);
+        expect(await getOrder(b.id, 'users', 'public')).toBeNull();
+
+        await h.ok('db.saved.delete', { id: a.id });
+        await h.ok('db.saved.delete', { id: b.id });
+    });
+
+    test('deleting a connection takes its remembered order with it', async () => {
+        const saved = await save({
+            name: 'order-deleted',
+            config: PG_SERVER,
+            password: { mode: 'none' },
+        });
+        await h.ok('db.columnOrder.set', {
+            savedConnectionId: saved.id,
+            database: FIXTURE_DB,
+            table: 'users',
+            schema: 'public',
+            columns: ['id', 'name'],
+        });
+        await h.ok('db.saved.delete', { id: saved.id });
+
+        // The row is gone with the connection it belonged to (the FK's ON DELETE
+        // CASCADE), the same as a star -- not just unreachable through a
+        // `savedConnectionId` that no longer resolves to anything.
+        const db = new Database(DB_FILE);
+        const remaining = db
+            .query('SELECT COUNT(*) AS n FROM column_order WHERE connection_id = ?')
+            .get(saved.id) as { n: number };
+        db.close();
+        expect(remaining.n).toBe(0);
+    });
+
+    test('a remembered order survives a new extension process', async () => {
+        const saved = await save({
+            name: 'order-survivor',
+            config: PG_SERVER,
+            password: { mode: 'none' },
+        });
+        await h.ok('db.columnOrder.set', {
+            savedConnectionId: saved.id,
+            database: FIXTURE_DB,
+            table: 'users',
+            schema: 'public',
+            columns: ['name', 'email', 'id'],
+        });
+
+        await h.stop();
+        h = await startHarness(ENV);
+
+        expect(await getOrder(saved.id, 'users', 'public')).toEqual(['name', 'email', 'id']);
+        await h.ok('db.saved.delete', { id: saved.id });
+    });
+});
+
 describe('saved queries', () => {
     const queries = async (): Promise<SavedQuery[]> =>
         ((await h.ok('queries.list', {})) as { queries: SavedQuery[] }).queries;
@@ -1660,6 +1842,7 @@ const stamps = (): Stamp[] => {
 
 /** What each migration would have to undo, for the rewind below. Newest first. */
 const UNDO: Record<string, string[]> = {
+    'column-order': ['DROP TABLE column_order'],
     conversations: ['DROP TABLE conversations'],
     'saved-queries': ['DROP TABLE saved_queries'],
     // The inverse of a rebuild is the same rebuild with the constraint put back.
@@ -1850,6 +2033,7 @@ describe('migrating a store written before workspaces', () => {
             db.run('DROP TABLE environments');
             db.run('DROP TABLE saved_queries');
             db.run('DROP TABLE conversations');
+            db.run('DROP TABLE column_order');
             db.run('DROP TABLE schema_migrations');
         })();
         const legacyNames = (

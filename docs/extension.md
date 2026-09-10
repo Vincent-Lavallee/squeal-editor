@@ -26,7 +26,7 @@ not an objection.
 | `main.ts` | transport (WebSocket, heartbeat) and dispatch: assembles `COMMANDS` by spreading each `commands*.ts` file's `Pick<Handlers, ...>` slice. `commandTypes.ts` holds the shared `Handlers`/`Send` types. `commandsConnectionCore.ts` is the connection registry and `establish`; `commandsConnection.ts` is the `db.*` handlers that use it (split further into table-catalog/schema-catalog/query sub-groups internally); `commandsSaved.ts`, `commandsWorkspaces.ts`, `commandsAws.ts`, `commandsWindow.ts`, `commandsMisc.ts` (saved queries, conversations, settings, `app.dataDir`), `commandsUpdater.ts`, `commandsAssistant.ts` are the rest, one file per comment-delimited domain the handlers already had |
 | `connection.ts` | one server connection: opens it, verifies it, and assembles the returned `ConnectionHandle` by spreading method groups from its siblings — `connectionState.ts` (per-database clients, the drop/retry plumbing), `connectionCatalogMethods.ts` (the thin listing/DDL passthroughs), `connectionQueryMethods.ts` (`query` and `browse` — the page SQL), `connectionWriteMethods.ts` (`write`), `connectionLifecycleMethods.ts` (`setReadOnly`, `close`); `connectionTypes.ts` holds the `ConnectionHandle`/`TableRows` shapes all of them share |
 | `drivers/` | the engine layer: the contract, the shared assemblers, the dispatch, and one file per engine's SQL and value handling |
-| `store.ts` | re-exports the split below and owns `closeStore` (tests only), which resets both halves of the singleton state. `storeCore.ts` is the SQLite handle, the row shapes, and the default-workspace/-environment invariants; `storeCrypto.ts` is the password encryption; `storeConnections.ts` is the saved-connection CRUD (`writeConnection` is the one write of that table, reused by `storeImport.ts`); `storeWorkspaces.ts`, `storeEnvironments.ts`, `storeSettings.ts`, `storeStars.ts`, `storeQueries.ts`, `storeSessions.ts`, `storeConversations.ts` are each the one table they name |
+| `store.ts` | re-exports the split below and owns `closeStore` (tests only), which resets both halves of the singleton state. `storeCore.ts` is the SQLite handle, the row shapes, and the default-workspace/-environment invariants; `storeCrypto.ts` is the password encryption; `storeConnections.ts` is the saved-connection CRUD (`writeConnection` is the one write of that table, reused by `storeImport.ts`); `storeWorkspaces.ts`, `storeEnvironments.ts`, `storeSettings.ts`, `storeStars.ts`, `storeColumnOrder.ts`, `storeQueries.ts`, `storeSessions.ts`, `storeConversations.ts` are each the one table they name |
 | `transfer.ts` | the connections file: what an export writes, what an import reads, and the validation between |
 | `migrations/` | the store's schema, one file per change, plus the runner that brings a file up to it |
 | `chrome.ts` (+ `chromeLibs.ts`) | the window frame: its colour, the maximise clamp, and injecting the chrome DLL that reclaims the non-client area — all over `bun:ffi`. Windows-only, best-effort. `chromeLibs.ts` is only the three `dlopen` calls, split out for length |
@@ -1263,6 +1263,33 @@ insert reading as a fresh row rather than the same one again. The empty string
 is a real value the `UNIQUE (connection_id, database, schema, table_name)`
 index can actually compare, which a `NULL` cannot be asked to do.
 
+### Remembered column order
+
+`column_order` is shaped and keyed exactly like `stars` above, for the same
+reason: `connection_id REFERENCES saved_connections(id) ON DELETE CASCADE`,
+never the runtime one, because a drag has to outlive the session that made it;
+`schema` is `NOT NULL DEFAULT ''` for the identical `UNIQUE` reason. It holds
+one column — `columns`, the dragged-to order as JSON text — under the same
+`settings` rule as everything else opaque in this file: the store keeps text
+and never parses it, so a tab shape is not a change to this schema.
+
+**Fetched and written per table, not listed whole per connection the way
+`db.stars.list` is.** A star is drawn for every row the tree shows at once, so
+listing them all on connect is one round trip instead of one per row; a
+table's column order is wanted exactly once, the moment that table is actually
+browsed, and every other saved table's order would be dead weight in the
+response. `db.columnOrder.get` therefore takes the full key (`database`,
+`table`, `schema?`) and answers one row or `null`; `db.columnOrder.set` writes
+one row, replacing whatever it held (`ON CONFLICT ... DO UPDATE`, not the
+`INSERT ... ON CONFLICT DO NOTHING` a star's idempotent toggle needs — a drag
+is a fact about where the columns are *now*, and the previous order is not
+worth keeping).
+
+Both calls are best-effort from the UI's side (`useColumnOrderPersistence.ts`):
+a failed read leaves a tab at the server's own order, and a failed write costs
+only that the drag will not be there next time. Neither is retried — the drag
+already applied on screen, so there is nothing waiting on the round trip.
+
 ### Assistant conversations
 
 `conversations` (id, title, updated_at, body) keeps the assistant's threads, so
@@ -1371,6 +1398,7 @@ migrations/
   1785360179-connection-names-not-unique.ts
   1785428731-saved-queries.ts           named statements, referencing nothing
   1786107358-conversations.ts           the assistant's threads, referencing nothing either
+  1788894517-column-order.ts            remembered column order, keyed by saved connection
 ```
 
 A file is `<epoch>-what-it-does.ts` and **that epoch is its `version`** — the

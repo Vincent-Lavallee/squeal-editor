@@ -63,6 +63,7 @@ import { migration as environments } from './1785067675-environments.ts';
 import { migration as connectionNamesNotUnique } from './1785360179-connection-names-not-unique.ts';
 import { migration as savedQueries } from './1785428731-saved-queries.ts';
 import { migration as conversations } from './1786107358-conversations.ts';
+import { migration as columnOrder } from './1788894517-column-order.ts';
 
 /** Oldest first. Append only. */
 export const MIGRATIONS: Migration[] = [
@@ -82,6 +83,7 @@ export const MIGRATIONS: Migration[] = [
     connectionNamesNotUnique,
     savedQueries,
     conversations,
+    columnOrder,
 ];
 
 /*
