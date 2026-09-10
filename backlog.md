@@ -19,6 +19,14 @@ Things that already work, but not well enough.
   preview tab (the next single-click replaces it) and double-click pin it into
   its own permanent tab, the way VSCode's explorer does.
 
+- **Tab context menu mixes closing with everything else** — The tab right-click
+  menu (Rename, Save, Duplicate, Close, Close others, Close Tabs to the Right,
+  Close All) is one flat list with actions before closes. Closing is what gets
+  used most, so split it into two groups with a plain visual divider (no text
+  subheaders): closing behaviors on top, tab actions below. Within the closing
+  group, order by actual usage — Close others and Close Tabs to the Right ahead
+  of plain Close and Close All.
+
 - **macOS install hits Gatekeeper on first launch** — The app is signed, but
   notarization needs a paid Apple Developer account, which this project isn't
   paying for, so Gatekeeper still quarantines the `.dmg` build and blocks the
@@ -39,6 +47,13 @@ Things that already work, but not well enough.
   otherwise a curl/`irm | iex`-style install script. Which of these actually
   dodges SmartScreen needs verifying — it's not distribution channel alone
   that clears it, so this starts with that research.
+
+- **Chrome text is highlightable like a web page** — Dragging anywhere in the
+  UI — resizing a panel, dragging a tab, a stray shift-click — can select text
+  the way it would on a web page, which reads as weird and un-native for a
+  desktop app. Make chrome text (labels, buttons, tabs, sidebar, menus) not
+  highlightable, everywhere except the results grid, the Monaco editor, and
+  form inputs — all places people select text in on purpose.
 
 ## Bugs
 
@@ -64,6 +79,14 @@ Things that are wrong.
   the copy that was not replaced, on the old version, looking like an update
   that silently did nothing.
 
+- **Windows build launches maximized instead of at its last size** — The app
+  opens maximized on Windows every launch rather than restoring the size it
+  was left at. Suspected leftover from an old workaround that forced this to
+  paper over a rendering/border bug before the native window-chrome fix
+  (`scripts/windows-window-chrome.c`) existed to fix it properly — not
+  confirmed, and whether it reproduces every launch or only sometimes isn't
+  pinned down yet either.
+
 - **A manually-typed SQLite path fails in some cases** — Typing a database file
   path by hand rather than using Browse misbehaves, with spaces in the path the
   suspected trigger; the exact symptom is not yet pinned down and needs
@@ -83,6 +106,12 @@ Things that are wrong.
   no way around it. Make it one configurable setting covering both call
   sites, with a default raised well above 60 seconds and a "no timeout"
   option for queries with no natural upper bound.
+
+- **Closing the old process during an update is sometimes very slow** — When
+  applying an update, shutting down the current process before relaunching is
+  fast most of the time but occasionally very slow. Likely the background
+  extension process rather than the app itself, but unconfirmed, and the
+  trigger for the slow case isn't known yet either.
 
 - **The error card's actions sit on top of the error text** — The "Diagnose with
   AI" and copy buttons are absolutely positioned in the error card's top corner,
@@ -162,6 +191,49 @@ Things that do not exist yet.
   .desktop file and the app icon, so Linux users get the same download-and-run
   experience as the other platforms. AppImage only for now; deb and other
   formats can follow once the format is proven to work.
+
+- **Unify selection and the context menu across the results grid** — Selecting
+  a whole column, or everything in a result set, has no gesture at all today —
+  only the row-number gutter and data cells have a right-click menu, and
+  selecting more than one row means dragging or shift-clicking by hand, which
+  is painful on a large result set. Column headers and the corner cell (between
+  the row-number column and the header row) currently do nothing. Applies to
+  both browsed table grids and ad-hoc query results. Add: clicking the corner
+  cell (plus a keyboard shortcut) selects everything; clicking a column header
+  selects every value in that column; and one standardized context menu that
+  reads whatever is currently selected — a cell, a row, a column, or
+  everything — instead of the fixed, click-target-specific menu there is now.
+  As part of that menu, "Copy as SQL" stops being gated on browse mode or a
+  known primary key (today it only shows up when browsing a table) and is
+  always offered, rendering the current selection as a SQL statement even when
+  there's no PK to key an INSERT or UPDATE off of. When the selection includes
+  a cell, the menu also offers copying that cell's column name.
+
+- **Auto-fit a result column's width to its content** — Column resize is
+  drag-only; there is no quick way to size a column to fit what's actually in
+  it. Double-clicking a column's resize handle should size it to its largest
+  currently visible value, the way spreadsheets do.
+
+- **Lazy total row count on a browsed table** — The results bar for a browsed
+  table shows only the loaded range ("rows 1–50"), never how many rows the
+  table actually has, because running `COUNT(*)` on every browse could be slow
+  on a huge table. Add a click-to-reveal affordance next to the row range that
+  runs the count on demand and shows it (e.g. "of 1,204,000") once fetched.
+  Ad-hoc query results are unaffected — they're deliberately unpaged already.
+
+- **Workspace-scoped assistant identity** — The assistant's provider, model, and
+  API key are one global choice for the whole app (a single credential lives in
+  the OS keychain under one fixed name, and `model` is a single value in
+  `assistantSlice`), and saved conversations are one flat list with no workspace
+  column at all — so a workspace meant to separate a client's environment from
+  a personal project still shares one assistant identity and one shared chat
+  history across both. Move provider, model, and key to per-workspace state
+  (each workspace remembers its own), and scope saved conversations to the
+  workspace they were started in. A workspace with no key configured shows the
+  assistant as unavailable rather than silently falling back to another
+  workspace's credential. On upgrade, today's single key/provider/model and the
+  existing conversation list become the seeded Default workspace's, so nothing
+  appears to move for a user who never made a second workspace.
 
 - **Use the installed Claude CLI instead of an API key** — The Claude provider
   asks for a pasted API key even when the developer's own signed-in `claude` CLI
