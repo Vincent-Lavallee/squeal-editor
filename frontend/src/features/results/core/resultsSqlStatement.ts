@@ -1,12 +1,15 @@
 import type { CellValue, SqlDialect } from '../../../../../shared/protocol/index.ts';
 import { quoteIdentifier, sqlLiteral } from '../../../common/db/sql.ts';
 
-interface InsertStatementArgs {
-    table: string;
-    schema: string | undefined;
+interface StatementArgs {
     columns: string[];
     rows: CellValue[][];
     dialect: SqlDialect;
+}
+
+interface InsertStatementArgs extends StatementArgs {
+    table: string;
+    schema: string | undefined;
 }
 
 /**
@@ -38,4 +41,29 @@ export function insertStatement({
         )
         .join(',\n');
     return `INSERT INTO ${qualifiedTable} (${columnList}) VALUES\n${valueList};`;
+}
+
+/**
+ * Renders selected rows as a table-less `SELECT ... UNION ALL SELECT ...`,
+ * for a selection with no known table to `INSERT INTO` -- an ad-hoc query's
+ * result, which has no `browse` to name one. Self-contained and always
+ * runnable: it names no table that might not exist, only the values
+ * themselves. Only the first `SELECT` carries the column aliases, the same
+ * way a real `UNION ALL` only needs them once for every row to share.
+ */
+export function literalSelectStatement({ columns, rows, dialect }: StatementArgs): string {
+    const literalsOf = (row: CellValue[]): string[] =>
+        row.map((cell) => (cell === null ? 'NULL' : sqlLiteral(String(cell))));
+
+    const lines = rows.map((row, r) => {
+        const literals = literalsOf(row);
+        const cells =
+            r === 0
+                ? literals.map(
+                      (literal, c) => `${literal} AS ${quoteIdentifier(columns[c]!, dialect)}`,
+                  )
+                : literals;
+        return `SELECT ${cells.join(', ')}`;
+    });
+    return `${lines.join('\nUNION ALL\n')};`;
 }

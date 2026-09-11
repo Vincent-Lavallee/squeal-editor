@@ -9,6 +9,13 @@ import type { useGridSelection } from './useGridSelection.ts';
 import { useResults } from '../../hooks/useResults.ts';
 import type { RowHandlers, RowLookups } from '../ResultsGridRow.tsx';
 
+type Bounds = { maxRow: number; maxCol: number };
+
+function buildCellMarks(selection: ReturnType<typeof useGridSelection>, bounds: Bounds) {
+    const { cells, selected, selectedCols } = selection;
+    return makeCellMarks({ cells, selected, selectedCols, ...bounds });
+}
+
 function buildRowHandlers(
     selection: ReturnType<typeof useGridSelection>,
     menuState: ReturnType<typeof useGridMenuState>,
@@ -59,18 +66,21 @@ export function useResultsGridController(tab: Tab | null) {
     const { grid, resize, reorder, selection, lookups, editingState, menuState, elapsed } =
         interaction;
 
-    const cellMarks = makeCellMarks(selection.cells);
+    const bounds = {
+        maxRow: (api.result?.rows.length ?? 1) - 1,
+        maxCol: (api.result?.columns.length ?? 1) - 1,
+    };
+    const cellMarks = buildCellMarks(selection, bounds);
     const moveCell = (dr: number, dc: number, extend: boolean) =>
-        selection.moveCell(dr, dc, extend, {
-            maxRow: (api.result?.rows.length ?? 1) - 1,
-            maxCol: (api.result?.columns.length ?? 1) - 1,
-        });
+        selection.moveCell(dr, dc, extend, bounds);
+    const selectAll = () => selection.selectAll(bounds);
     const { onKeyDown } = useGridKeyboard({
         ...selection,
         ...lookups,
         ...api,
         editing: editingState.editing,
         moveCell,
+        selectAll,
     });
 
     const rowLookups: RowLookups = { ...lookups, ...cellMarks };
@@ -102,10 +112,11 @@ export function useResultsGridController(tab: Tab | null) {
         ...menuState,
         ...lookups,
         ...cellMarks,
-        // Overrides `selection`'s own 5-argument version: this one already knows
+        // Overrides `selection`'s own bounds-taking versions: these already know
         // the grid's current bounds, which only `result` (not `useGridSelection`)
         // has visibility into.
         moveCell,
+        selectAll,
         onKeyDown,
         rowLookups,
         rowHandlers,

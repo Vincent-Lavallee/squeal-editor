@@ -80,11 +80,9 @@ export function buildResultsApi(a: Args) {
         discard: staging.discard,
         save: a.save,
         copyRows: copy.copyRows,
-        copyRowsAsSql: copy.copyRowsAsSql,
-        // Same boundary `editable` draws around `browse`, exposed on its own
-        // because copying as SQL needs none of `editable`'s read-only/key-column
-        // reasoning -- only that a table name exists to build the statement from.
-        canCopyAsSql: part.browse !== null,
+        copyColumns: copy.copyColumns,
+        copyCells: copy.copyCells,
+        copyAsSql: copy.copyAsSql,
         dirtyCount: identity.dirtyCount,
         saving: (a.activeTabId && a.view.saving[a.activeTabId]) || false,
         saveError: (a.activeTabId && a.view.saveError[a.activeTabId]) || null,

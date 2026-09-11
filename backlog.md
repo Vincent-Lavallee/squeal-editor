@@ -71,11 +71,6 @@ Things that are wrong.
   suspected trigger; the exact symptom is not yet pinned down and needs
   reproducing before the fix.
 
-- **The connection color picker misbehaves when several swatches are clicked** —
-  Reported by a Windows 11 user (a screenshot), the connection screen's color
-  picker goes wrong when multiple swatches are clicked in a row; it has not been
-  reproduced locally on Linux or Windows yet, so the exact failure is still to
-  be pinned down.
 
 - **Closing the old process during an update is sometimes very slow** — When
   applying an update, shutting down the current process before relaunching is
@@ -170,23 +165,6 @@ Things that do not exist yet.
   experience as the other platforms. AppImage only for now; deb and other
   formats can follow once the format is proven to work.
 
-- **Unify selection and the context menu across the results grid** — Selecting
-  a whole column, or everything in a result set, has no gesture at all today —
-  only the row-number gutter and data cells have a right-click menu, and
-  selecting more than one row means dragging or shift-clicking by hand, which
-  is painful on a large result set. Column headers and the corner cell (between
-  the row-number column and the header row) currently do nothing. Applies to
-  both browsed table grids and ad-hoc query results. Add: clicking the corner
-  cell (plus a keyboard shortcut) selects everything; clicking a column header
-  selects every value in that column; and one standardized context menu that
-  reads whatever is currently selected — a cell, a row, a column, or
-  everything — instead of the fixed, click-target-specific menu there is now.
-  As part of that menu, "Copy as SQL" stops being gated on browse mode or a
-  known primary key (today it only shows up when browsing a table) and is
-  always offered, rendering the current selection as a SQL statement even when
-  there's no PK to key an INSERT or UPDATE off of. When the selection includes
-  a cell, the menu also offers copying that cell's column name.
-
 - **Auto-fit a result column's width to its content** — Column resize is
   drag-only; there is no quick way to size a column to fit what's actually in
   it. Double-clicking a column's resize handle should size it to its largest
@@ -212,6 +190,21 @@ Things that do not exist yet.
   workspace's credential. On upgrade, today's single key/provider/model and the
   existing conversation list become the seeded Default workspace's, so nothing
   appears to move for a user who never made a second workspace.
+
+- **Add SQL Server driver support** — There is no SQL Server engine at all today
+  (only SQLite, MySQL, and Postgres), so a SQL Server database cannot be
+  connected to. Add it at full parity with the existing engines: connect,
+  browse and edit the grid, table/trigger/function DDL, and the relationship
+  diagram — the whole surface `Driver` already declares, not a connect-only
+  first pass.
+
+- **Add MariaDB as its own engine choice** — MariaDB already connects today,
+  silently, through the MySQL driver, since it speaks the same wire protocol
+  — but it has no identity of its own anywhere: the connect form and
+  connection list only ever offer MySQL. Make MariaDB a distinct, selectable
+  engine (own label, own icon) reusing the MySQL driver underneath, and give
+  the test setup a real MariaDB container alongside MySQL and Postgres rather
+  than assuming mysql2 behaves identically against both servers.
 
 - **Use the installed Claude CLI instead of an API key** — The Claude provider
   asks for a pasted API key even when the developer's own signed-in `claude` CLI
@@ -245,6 +238,15 @@ Things that should be improved on code wise
   (naming, self-describing code, why-not-what comments), the docs-routing
   discipline, how to add an engine, the non-negotiables, and the real-database
   testing requirement.
+
+- **Split the oversized test files by feature** — The UI suite, the saved-items
+  suite, and the extension suite have each grown into one huge file (the UI
+  suite alone is over five thousand lines), which makes finding or scrolling to
+  the right test real effort. Each already groups its tests into feature-shaped
+  blocks — the UI suite's postgres browsing, mysql browsing, the relationship
+  diagram, the titlebar, saved connections, saved queries, workspaces, multiple
+  connections, and so on. Split along those existing boundaries, one file per
+  feature area, instead of inventing a new grouping.
 
 - **Strip what-comments** — The codebase carries comments that narrate what the
   code already says, against the standing rule that a comment explains why and

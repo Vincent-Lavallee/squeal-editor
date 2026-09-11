@@ -1465,15 +1465,20 @@ either would mean the extension silently rewriting a statement it promised
 to run as written. `Save` here re-runs the original SQL instead of
 re-browsing a page, since there is no page to read back — and *original* is
 meant literally: it re-runs `results[tabId].sql`, the statement the rows on
-screen came from, not whatever the editor holds now. Copy-as-SQL and
-FK navigation stay gated on `browse !== null` too, unchanged: they need a
-`columnInfo` this path never fetches.
+screen came from, not whatever the editor holds now. FK navigation stays
+gated on `browse !== null`, unchanged: it needs a `columnInfo` this path never
+fetches. Copy-as-SQL-insert used to be gated the same way; it no longer is —
+see *"Copy as SQL insert" needs no table* below.
 
-**Cells are selected as a rectangle, and cell and row selection are mutually
-exclusive** — selecting either clears the other, both directions, so Ctrl+C
-keeps meaning "copy what is selected" without asking which kind. `cells` is
-component state in `ResultsTable`, beside `selected` (the row set) and reset by
-the same effect on a new `result`.
+**Cells are selected as a rectangle, and cell, row and column selection are
+mutually exclusive** — selecting any one clears the other two, every
+direction, so Ctrl+C and the context menu keep meaning "act on what is
+selected" without asking which kind. `cells` (the rectangle), `selected` (the
+row set) and `selectedCols` (the column set) are all `useGridSelection.ts`
+state, reset by the same effect on a new `result`. A rectangle spanning every
+row of one column, or the whole grid, is still `cells` — see *Selecting a
+column or everything* below for why those two reuse it instead of getting
+their own state.
 
 **The range is two corners, not four edges.** `CellRange` is `{ anchor, focus }`
 — where the selection began and where it currently reaches — because that is
@@ -1506,17 +1511,112 @@ Two things there are load-bearing:
   `buttons` is 0.** A release outside the window never reaches the listener, and
   a still-armed press turns the next stray hover into a selection.
 
-Ctrl+C copies the rectangle as tab-separated text — cells on tabs, rows on
-newlines, the shape "Copy row" already produces, so one paste target reads
-either. It reads the *effective* value (staged edit if there is one, else the
-original) rather than `copyRows`' raw row: a copy should match what is
-highlighted on screen. A NULL cell copies as an empty string, never the word the
-grid draws for it. Delete/Backspace still only touches row selection: a selected
-cell is not a selected row, so nothing stages a delete from it. Right-clicking
-clears the range, because the menu it opens is row-level throughout. **The key
+Ctrl+C copies whatever is selected as tab-separated text — cells on tabs, rows
+on newlines, one shape every kind produces, so one paste target reads any of
+them. Every copy path (`useResultsCopy.ts`: `copyRows`, `copyColumns`,
+`copyCells`) reads the *effective* value (staged edit if there is one, else the
+original), not the raw result: a copy should match what is highlighted on
+screen. A NULL cell copies as an empty string, never the word the grid draws
+for it. Delete/Backspace still only touches row selection: a selected cell or
+column is not a selected row, so nothing stages a delete from either. **The key
 handler is the scroller's, so pressing a cell focuses the scroller outright** —
 and on macOS that keystroke arrives only because the window-chrome dylib replays
 it; see *Keyboard shortcuts* below.
+
+**Right-clicking keeps whatever selection the click landed inside, and starts
+a fresh one otherwise.** A gutter click already in the row selection, or a
+cell already inside the active rectangle or column selection, leaves it alone
+— so right-clicking *within* a drag-selected rectangle, a column, or
+"everything" opens a menu scoped to that whole selection rather than
+collapsing it to the one row underneath. A click outside all three starts a
+fresh one, shaped by where it landed: the row gutter still starts a one-row
+selection, but a data cell now starts a 1×1 *cell* selection rather than
+being coerced into one — see *One menu for whatever is selected* below.
+
+## Selecting a column or everything
+
+**A column is `selectedCols`, a `Set<number>` with its own anchor — the same
+shape row selection already has** (`useGridSelection.ts`'s `nextSetSelection`,
+shared by both). It needs its own state rather than reusing `cells`: shift/ctrl
+click has to be able to select non-contiguous columns, e.g. columns 1 and 3
+without 2, which a single rectangle cannot represent. Clicking a header
+selects that column; shift-click extends a contiguous range from the anchor;
+ctrl/cmd-click toggles one column on or off — exactly the row gutter's own
+three gestures, aimed at `ResultsGridHeaderCell` instead of the gutter.
+
+**A header click only selects; sorting lives on the sort mark's own backdrop.**
+The two used to share the header's plain click (modified clicks always meant
+select-only), which meant selecting a column and re-sorting it were the same
+gesture and there was no way to do one without the other. `ResultsGridSortMark`
+now renders its own clickable backdrop — wider than the 14px arrow so it is
+an actual target, not just the glyph's pixels — and `stopPropagation`s its
+click so it never also reaches the header's select handler underneath. See
+*Sorting by a column header* below for the sort half.
+
+**A row or column selection outlines its data cells exactly the way a dragged
+rectangle does — no fill, and nothing drawn on the gutter or header either.**
+`resultsCellMarks.ts`'s `makeCellMarks` picks one of three `Selection`
+implementations (a `CellRange`'s bounds, a row `Set`, a column `Set`) by
+whichever of `cells`/`selected`/`selectedCols` is populated, and all three
+feed the same edge-drawing `cellMarks` — a row or column's edges come from
+whether its *neighbouring* index is also selected (so two adjacent selected
+rows merge into one outline with no line between them, while a non-adjacent
+one gets its own), rather than from a rectangle's corners. `grid__row--selected`
+and `grid__th--selected` are bare test hooks now, the same way
+`grid__cell--selected`/`--editing` already were — the gutter and header carry
+no visual mark of their own, matching a drag or "select all", neither of
+which ever marks them. This replaced an original, row-selection-shaped
+background fill; see `docs/decisions.md` for why it was dropped in favour of
+matching the other two kinds instead.
+
+**Everything is the full-grid rectangle, not a fourth selection state.**
+`selectAll` (in `useGridSelection.ts`) sets `cells` to
+`{ anchor: {0,0}, focus: {maxRow,maxCol} }`, clearing `selected`/`selectedCols`
+the same as any other cell selection — `rangeBounds` and `cellMarks` already
+draw and copy any rectangle correctly regardless of size, so "everything" needs
+no code of its own beyond naming the corners. Reachable two ways: clicking the
+grid's corner cell (`ResultsGridCornerCell.tsx`, the top-left corner between
+the gutter and the header row, previously inert) or Ctrl+A on the grid
+scroller (`useGridKeyboard.ts`, guarded the same way Ctrl+C is — not while a
+cell is being edited). **On macOS, Ctrl+A needs no dylib change**: `Cmd+A` is
+already one of the five keys `scripts/macos-window-chrome.m` unconditionally
+replays as a synthetic keydown at `document.activeElement` (see *Keyboard
+shortcuts* below), the same generic mechanism that already carries the grid's
+own Ctrl+C there — a new JS handler for one of those five keys rides along for
+free as long as it is bound to the same focused element Copy already is.
+
+## One menu for whatever is selected
+
+`useGridMenuState.ts` builds one `items` list per open, branching on which of
+the three selection states is populated — column, cell/rectangle/everything,
+or (the fallback) row:
+
+- **Columns** (`selectedCols` non-empty): "Copy column values" (or "Copy *N*
+  columns values"), "Copy as SQL insert", and "Copy column name" when the
+  click named a real column (`Menu.col !== null`). No edit items — Set NULL
+  and Delete row stay scoped to a single clicked cell/row, deliberately not
+  extended to a multi-column bulk edit; see `docs/decisions.md`.
+- **Cells** (`cells` non-empty): the label depends on the rectangle's
+  shape — "Copy cell value" (1×1), "Copy column values" (one column, every
+  row), "Copy *R* × *C* cell values" spelling out the dimensions for the
+  full-grid case (kept literal rather than a vaguer word like "everything"),
+  else "Copy *N* cell values" — plus "Copy as SQL insert" and "Copy column
+  name" the same way. Every label says *values* rather than just naming the
+  shape, since "Copy column" alone reads as copying the column itself (its
+  name, its definition) rather than what is actually put on the clipboard —
+  the data in it. **Only the 1×1 case** also gets Set NULL / Delete row for
+  that one cell, which is the pre-existing single-cell-right-click behaviour,
+  preserved exactly — a bigger rectangle, a column, or everything is
+  copy-only, the same scoping decision as above.
+- **Rows** (the fallback, `selected`): unchanged from before this — Copy
+  row(s) values, Copy as SQL insert, Delete/Keep row — except Copy as SQL
+  insert is no longer gated on browse mode (see *"Copy as SQL insert" needs
+  no table* below).
+
+This replaces a real bug, not just a gap: right-clicking a lone data cell used
+to coerce the selection to that cell's *row* and show "Copy row", discarding
+the cell you actually clicked. It now shows "Copy cell value" and copies just
+that value.
 
 **The range is one outline around its boundary, and no fill.** `cellMarks` in
 `ResultsTable.tsx` gives each cell only the sides that lie on the rectangle's
@@ -1584,25 +1684,50 @@ identifies the row, and a primary key forbids NULL outright), so the ∅ button 
 the menu item are absent there. Copying is a webview clipboard write
 (`Neutralino.clipboard`), crossing nothing — the same as the tree's *Copy name*.
 
-**"Copy as SQL" builds an `INSERT INTO` client-side, beside "Copy row" in the
-same context menu.** It reads `result.rows`/`result.columns` the same way
-`copyRows` builds its TSV — no round trip, and every value written exactly as
-the server sent it, never through JS `Date` or `Number`; `NULL` is the one
-value that is never a literal. Table, schema and column names are quoted per
-engine through `quoteIdentifier` (`common/db/sql.ts`), the module `FilterBar`
-also reads from now — a second copy of that function was the alternative and
-would have been the two-tables-that-disagree outcome the filter bar's own
-comment already warns about. **Gated on `browse !== null`, the same boundary
-editing and FK navigation draw**: the table name an INSERT needs is the one a
-browsed grid carries, and a hand-typed query's result has none — exposed as
-`canCopyAsSql` since it needs none of `editable`'s read-only/key-column
-reasoning.
+## "Copy as SQL insert" needs no table
 
-**The row gutter opens the same context menu a data cell does.** `Menu.col` is
-`number | null` rather than always a real column — right-clicking the row
-number carries no cell to target, so *Set NULL* (which needs one) leaves
-itself out while *Copy row*, *Copy as SQL* and *Delete row* — all row-level —
-still show.
+`copyAsSql` (`useResultsCopy.ts`) renders whichever rows/columns the active
+selection names as a SQL statement, client-side — no round trip, and every
+value written exactly as the server sent it, never through JS `Date` or
+`Number`; `NULL` is the one value that is never a literal. Table, schema and
+column names are quoted per engine through `quoteIdentifier`
+(`common/db/sql.ts`), the module `FilterBar` also reads from — a second copy
+of that function was the alternative and would have been the
+two-tables-that-disagree outcome the filter bar's own comment already warns
+about.
+
+**Two renderings, chosen by whether a table is known — and "known" is wider
+than `browse`.** A browsed page always names one (`browse.table`); a
+hand-typed query does too whenever `editTarget` does — the same relation
+`detectSingleTable` found for row-identity purposes in `resultsThunks.ts`,
+read here regardless of whether the query also happens to be *editable*
+(selected the table's key columns), since naming a table for `INSERT INTO`
+needs none of that reasoning, only the name. Only when neither can name one —
+a join, a CTE, a query with no `FROM`, or one naming more than one table —
+does `literalSelectStatement` render a self-contained
+`SELECT 'v1' AS "col1", ... UNION ALL SELECT 'v2', ...` instead, aliased from
+the first row only, the same way a real `UNION ALL` only needs the names
+once. It names no table that might not exist, only the values themselves —
+the menu label calls it "Copy as SQL insert" because that is what it renders
+whenever a table is known, but this literal-`SELECT` fallback is still what
+that same item produces the rest of the time.
+This is what let "Copy as SQL insert" drop its old `browse !== null` gate
+(there used to be a `canCopyAsSql` flag on the results API for exactly that;
+it's gone) and become unconditional in every menu — see `docs/decisions.md`
+for why a literal `SELECT` was kept for that residual case over, say, a
+fabricated placeholder table name.
+
+**The row gutter, a column header and the corner cell each open the same
+context menu a data cell does.** `Menu.col` is `number | null` rather than
+always a real column — right-clicking the row number or the corner carries no
+cell to target, so *Set NULL* (which needs one) leaves itself out — while
+*Copy row values*, *Copy as SQL insert* and *Delete row*, all row-level, still
+show from the gutter. See *One menu for whatever is selected* above for the column and
+cell/rectangle/everything cases, and `useGridMenuState.ts`'s `openColumnMenu`/
+`openAllMenu` for the header/corner entry points specifically: a header always
+means its column (whatever it already covers if the click landed inside an
+existing multi-column selection, otherwise a fresh one just for it), and the
+corner always means everything.
 
 The browse page also carries each column's type (`columnInfo`, beside
 `keyColumns`), so the grid header shows the type next to the name the way the tree
@@ -1837,10 +1962,15 @@ changing: `mint` takes the kind, and a diagram tab reopens and re-reads.
 
 ## Sorting by a column header
 
-Clicking a grid header sorts the result by that column. It works on **both** kinds
-of grid, which is the one place the browse/query boundary this feature draws
-everywhere else is deliberately open — see `docs/decisions.md` for why the rewrite
-that costs is allowed here and refused for paging and filtering.
+Clicking a header's sort mark sorts the result by that column. It works on
+**both** kinds of grid, which is the one place the browse/query boundary this
+feature draws everywhere else is deliberately open — see `docs/decisions.md`
+for why the rewrite that costs is allowed here and refused for paging and
+filtering.
+
+Clicking anywhere else on the same header selects the column instead — see
+*Selecting a column or everything* above for that half, and why the sort
+mark needs its own backdrop and `stopPropagation` to keep the two apart.
 
 **One column, three states.** `toggleSort` (in `useResults`) cycles
 asc → desc → unsorted, and clicking a different header replaces the sort rather
@@ -2527,8 +2657,8 @@ hosts, so the monitor sends the standard edit action itself. It then *swallows*
 the event — letting it through as well is what beeped — which means the keydown
 never reaches the DOM at all. Anything the app answers in JS rather than through
 a DOM selection therefore stops happening: Monaco's model-level select-all and
-undo, and the results grid's Copy, which works off a selected cell rectangle
-held in React state with no DOM selection anywhere. All five are replayed into
+undo, and the results grid's Copy and Select-all, all of which work off
+selection state held in React with no DOM selection anywhere. All five are replayed into
 the page as a synthetic keydown for that reason (a synthetic event moves the JS
 handlers and is ignored by the browser's own editing, so it cannot double up).
 **A JS handler for one of those five is written in two places or it is
