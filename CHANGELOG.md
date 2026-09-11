@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.20.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.19.1...v0.20.0) (2026-09-11)
+
+
+### Features
+
+* install scripts ([#58](https://github.com/Vincent-Lavallee/squeal-editor/issues/58)) ([7652265](https://github.com/Vincent-Lavallee/squeal-editor/commit/7652265acc36abe6e49adb8f61223cc266dc8a4f))
+* Remember column ordering ([#56](https://github.com/Vincent-Lavallee/squeal-editor/issues/56)) ([94141bf](https://github.com/Vincent-Lavallee/squeal-editor/commit/94141bfc26c2b2f95a633cce4648fef922a5353e))
+
+
+### Bug Fixes
+
+* Hardcoded query timeout ([#59](https://github.com/Vincent-Lavallee/squeal-editor/issues/59)) ([70bcba4](https://github.com/Vincent-Lavallee/squeal-editor/commit/70bcba49cb695e98103c01b3031c0f7001dbceb1))
+
 ## [0.19.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.19.0...v0.19.1) (2026-09-08)
 
 
