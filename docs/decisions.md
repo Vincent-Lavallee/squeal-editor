@@ -7261,13 +7261,44 @@ is not draggable while any cell is staged (`useGridColumnReorder`'s
 `draggable` attribute, which stops a real drag but not a handler invoked
 directly the way the UI suite drives one.
 
-**Not persisted, deliberately — same lifetime as column widths.** The order
-lives in `ResultsContext`, session-local and keyed by column name; a restored
-session, like a resized column, starts back at the server's own order. Scoping
-it wider (per table, across restarts) was on the table and set aside rather
-than ruled out — it would need a store slice, a bridge round trip, and a rule
-for what happens when the table's real columns change, none of which this
-needed to answer yet.
+**Originally not persisted — same lifetime as column widths**, on the same
+reasoning: a restored session, like a resized column, started back at the
+server's own order, and widening it to survive a restart was set aside rather
+than ruled out. Widened later for table-browse tabs specifically; see
+*Column order persists per table, widths still do not*, directly below.
+
+## Column order persists per table, widths still do not
+
+**Why.** The backlog carried "remember column order per table" as its own item:
+resetting a wide table's carefully-dragged layout every time it is reopened was
+worth fixing on its own, separately from column widths, which nobody asked for
+across a restart. Only a table-browse (`grid`) tab has the identity to key a
+disk row off — a connection, a database, a schema and a table name that all
+outlive the tab — which an ad-hoc query tab simply does not have, the same
+reason a star can only ever be set from the tree and never from a hand-typed
+query result.
+
+**What ships instead.** `column_order`, a store table shaped exactly like
+`stars` (see *Starred tables key off the saved connection, not the runtime
+one*) — same key, same `ON DELETE CASCADE`, same `NOT NULL DEFAULT ''` schema —
+holding one more column, the dragged-to order as JSON text. `db.columnOrder.get`
+and `db.columnOrder.set` are asked and answered **per table**, not listed whole
+per connection the way `db.stars.list` is: a star is drawn for every row the
+tree shows at once, so listing them all on connect is one round trip instead of
+one per row, but a table's order is wanted exactly once, the moment that table
+is actually browsed — listing every saved table's order on connect would answer
+a question almost nothing on screen yet needs. Both calls are fire-and-forget
+from the UI (`useColumnOrderPersistence.ts`): neither is awaited or retried, a
+failed read simply leaves the tab at the server's order, and a failed write
+costs only the next reopen not remembering a drag that already applied on
+screen.
+
+**Column widths were considered for the same treatment and left alone.** They
+already have an answer to "what happens when the table's real columns change"
+(a width for a column that no longer exists is simply never read again), which
+is not the question that stopped them last time — nobody had asked for it. The
+backlog item named the order specifically, not the widths, and widening a
+second preference nobody requested was not this change's to make.
 
 ## Frontend feature barrels were removed
 

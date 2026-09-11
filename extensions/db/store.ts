@@ -16,8 +16,8 @@
  * `storeCrypto.ts` is the password encryption; `storeConnections.ts` is the
  * saved-connection CRUD; `storeImport.ts` merges an exported address book in;
  * `storeWorkspaces.ts`, `storeEnvironments.ts`, `storeSettings.ts`,
- * `storeStars.ts`, `storeQueries.ts`, `storeSessions.ts`, `storeConversations.ts`
- * are each the one table they name.
+ * `storeStars.ts`, `storeColumnOrder.ts`, `storeQueries.ts`, `storeSessions.ts`,
+ * `storeConversations.ts` are each the one table they name.
  */
 
 import { closeCoreStore, dataDir, open } from './storeCore.ts';
@@ -49,6 +49,7 @@ export {
 } from './storeWorkspaces.ts';
 export { listSettings, setSetting } from './storeSettings.ts';
 export { listStars, setStar, type SetStarArgs, type StarredTable } from './storeStars.ts';
+export { getColumnOrder, setColumnOrder, type ColumnOrderKey } from './storeColumnOrder.ts';
 export { deleteQuery, listQueries, saveQuery, type SavedQuery } from './storeQueries.ts';
 export { getSession, setSession } from './storeSessions.ts';
 export {

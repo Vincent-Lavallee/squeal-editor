@@ -56,6 +56,16 @@ the date they were finished.
   its own item: it would have been a screen of placeholders for preferences that
   do not exist yet.*
 
+- **2026-09-08** — **Remember column order per table** — Dragging columns to reorder them
+  already works, but the order lives only in the tab's in-memory state (there
+  is no persistence layer of any kind in the app today) and resets to server
+  order the next time that table is opened or a new tab is started. Persist it
+  through the extension's existing settings store, keyed by connection +
+  schema + table, so browsing the same table again reuses the order it was
+  last left in. Ad-hoc query tabs have no stable identity to key off of, so
+  they keep today's session-only behavior; this covers table-browse tabs
+  only.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

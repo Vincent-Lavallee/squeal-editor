@@ -1360,12 +1360,31 @@ geometry (`dropTargetAt`) rather than a `dragover` per cell — see *The tab
 strip* for why both of those are the shape they are. The payload still carries
 a dedicated MIME type, `application/x-squeal-column`, so a column dragged
 across the editor is offered nothing Monaco knows how to take from it. The
-order itself lives in `ResultsContext` beside the column widths, session-local
-and keyed by column name — a new tab, or one restored from disk, starts back
-at the server's own order — and is resolved against a fresh result the same
-way widths are: names it still recognises keep their remembered sequence, and
-a column the remembered order has never seen (a schema change, or every column
+order itself lives in `ResultsContext` beside the column widths, keyed by tab
+id and by column name, and is resolved against a fresh result the same way
+widths are: names it still recognises keep their remembered sequence, and a
+column the remembered order has never seen (a schema change, or every column
 before the first drag) is appended in the result's own order.
+
+**A table-browse tab's order also survives past the tab, a grid tab's own tab
+id is not what it is remembered *by*.** `useColumnOrderPersistence.ts`
+(`useColumnOrderState.ts`'s bridge half, split out purely for length) reads and
+writes `db.columnOrder.get`/`db.columnOrder.set` off a `TableIdentity` — the
+open connection's *saved* id, `database`, `schema?` and `table` — computed once
+in `useResultsCore` from the tab (`tab.connectionId` resolved through
+`session.connections` to its `savedConnectionId`, never the session's *active*
+connection, for the reason `gridTable` reads off the tab there too) and
+memoised on those primitives so the loading effect fires once per tab rather
+than every render. `null` for anything without that identity — an editor tab
+(no `table`), a tab with no database yet, or a connection this session never
+resolved to a saved row — which is what keeps an ad-hoc query tab's reorder
+exactly the session-only, tab-id-keyed behaviour it always was; see
+`docs/extension.md`'s *Remembered column order*. Both directions are
+best-effort and fire-and-forget: a read that has not resolved yet leaves the
+tab showing the server's own order until it lands (there is no loading state
+for it — a table opens looking normal and its columns settle a moment later,
+the same tradeoff `db.stars.list` already makes elsewhere), and a failed write
+costs only that the drag will not be there next time.
 
 **The drag is blocked while any cell is staged, not just discouraged.** Staged
 edits and deletes are keyed by the numeric index a cell was touched at

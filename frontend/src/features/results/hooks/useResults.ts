@@ -55,8 +55,8 @@ function makeCanSort(resultColumns: string[]) {
  * the one flat object below.
  */
 export function useResults(tab: Tab | null) {
-    const { view, dialect, activeTabId, gridTable, part, identity, runActions, staging } =
-        useResultsCore(tab);
+    const core = useResultsCore(tab);
+    const { view, dialect, activeTabId, gridTable, part, identity, runActions, staging } = core;
 
     const appliedFilter = part.browse?.filter ?? null;
     const filterState = useResultsFilterDraft(activeTabId, appliedFilter);
@@ -93,6 +93,7 @@ export function useResults(tab: Tab | null) {
         rowsKey: identity.rowsKey,
         columnsKey,
         columns,
+        tableIdentity: core.tableIdentity,
     });
 
     const canSort = makeCanSort(part.result?.columns ?? []);

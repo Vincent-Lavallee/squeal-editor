@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useResultsView } from '../../ResultsContext.tsx';
+import type { TableIdentity } from '../../grid/hooks/useColumnOrderState.ts';
 
 interface Options {
     activeTabId: string | null;
@@ -7,6 +8,8 @@ interface Options {
     columnsKey: string;
     /** The columns on screen right now, in display order -- what a drop reorders against. */
     columns: string[];
+    /** What a table-browse tab's reorder is persisted under; null keeps it session-only. */
+    tableIdentity: TableIdentity | null;
 }
 
 /**
@@ -14,7 +17,13 @@ interface Options {
  * written through `ResultsContext`. Split out of `useResults` purely for
  * length.
  */
-export function useResultsViewPrefs({ activeTabId, rowsKey, columnsKey, columns }: Options) {
+export function useResultsViewPrefs({
+    activeTabId,
+    rowsKey,
+    columnsKey,
+    columns,
+    tableIdentity,
+}: Options) {
     const view = useResultsView();
 
     // Where this tab's grid is scrolled to, on two keys rather than one. `top`
@@ -55,9 +64,17 @@ export function useResultsViewPrefs({ activeTabId, rowsKey, columnsKey, columns 
     // this tab's column order -- reordering the header is what calls this.
     const moveColumn = useCallback(
         (dragged: string, before: string | null) => {
-            if (activeTabId) view.moveColumn(activeTabId, columns, dragged, before);
+            if (activeTabId) {
+                view.moveColumn({
+                    tabId: activeTabId,
+                    displayedColumns: columns,
+                    dragged,
+                    before,
+                    identity: tableIdentity,
+                });
+            }
         },
-        [activeTabId, columns, view],
+        [activeTabId, columns, tableIdentity, view],
     );
 
     return {
