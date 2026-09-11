@@ -106,7 +106,7 @@ src/features/
       environments/     EnvironmentsDialog, AddEnvironmentForm, EnvironmentRow
       shortcuts/        ShortcutsDialog, ShortcutGroup/Row
         hooks/          useShortcutRecorder
-      settings/         SettingsDialog -- the theme picker today
+      settings/         SettingsDialog -- the theme picker and the query timeout
       connections-transfer/  ExportConnectionsDialog + ImportConnectionsDialog,
                         ExportedSummary
     assistant/          NewAssistantChatButton, AssistantBusyDot,
@@ -3092,6 +3092,37 @@ failure always carries something renderable. Its `condition` option is where a
 already-fetched case never reaches the bridge. Note what the condition is keyed
 by: the connection *and* the database, because that is what identifies the
 answer.
+
+### `call`'s timeout is a caller's argument, and one caller makes it a setting
+
+`call`'s third argument, `timeoutMs`, defaults to 60s but is not fixed — a
+caller with its own opinion about how long is too long passes its own number.
+`resultsThunks.ts` is the one caller that hands the user that opinion:
+`runQuery` and `browseTable` (the `db.query`/`db.browse` call sites) read
+`queryTimeoutMs(getState())` instead of a constant, which resolves the
+`queryTimeoutSeconds` settings key (`SettingsDialog`'s "Query timeout" field,
+default `DEFAULT_QUERY_TIMEOUT_SECONDS`) rather than hardcoding one. Every
+other caller — `db.test`, `db.saved.connect`, `ai.send` and the rest — still
+passes its own literal; this setting governs query execution and paging only,
+because those are the calls with no natural upper bound the other ones do not
+share.
+
+**Zero means no timeout, and `call` skips the timer rather than being handed
+`Infinity` as a delay.** `setTimeout` does not treat an infinite delay as
+*never fire* — a delay that cannot fit a 32-bit int fires almost immediately —
+so `queryTimeoutMs` resolves zero seconds to `Infinity` and `call` reads
+`!Number.isFinite(timeoutMs)` as "start no timer at all". `Pending.timer` is
+therefore optional; a query with no timeout has nothing to abort but the
+`AbortController` *Cancel* already gives it.
+
+**The generic bridge message is deliberately rewritten for this one caller.**
+`call`'s own `TIMEOUT_ERROR_MESSAGE` ("The database did not respond in time.")
+serves every command and can name neither a setting nor a number, so
+`runQuery`/`browseTable` catch it by exact text (`withQueryTimeoutMessage`) and
+substitute one that does: *"Query timed out after N seconds, aborting. You can
+increase this timeout value in the settings menu."* Matching on the literal
+string is the trade-off that keeps this out of `call`'s own signature, which
+every other caller would otherwise have to grow a parameter to ignore.
 
 ### The caches in `explorerSlice` are all keyed by connection first
 

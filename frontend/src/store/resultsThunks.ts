@@ -1,11 +1,63 @@
 import type { RowDelete, RowEdit, SortOrder, TableFilter } from '../../../shared/protocol/index.ts';
-import { call } from '../common/bridge/bridge.ts';
+import { call, TIMEOUT_ERROR_MESSAGE } from '../common/bridge/bridge.ts';
 import { detectSingleTable } from '../common/db/detectSingleTable.ts';
 import { splitStatements } from '../common/db/splitStatements.ts';
 import { batchStarted } from './resultsSlice.ts';
+import type { RootState } from './index.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
 const queryControllers = new Map<string, AbortController>();
+
+/** The settings key `db.query` and `db.browse` both read their timeout from. */
+export const QUERY_TIMEOUT_KEY = 'queryTimeoutSeconds';
+/** Well above the old hardcoded 60s -- an analytical query is the whole reason this is a setting. */
+export const DEFAULT_QUERY_TIMEOUT_SECONDS = 300;
+
+/**
+ * Whether a stored value would parse to a usable timeout. Blank is not
+ * invalid -- it is the unwritten-key case `queryTimeoutMs` already reads as
+ * "use the default" -- so this is only for a value someone actually typed.
+ *
+ * The Settings field itself only ever produces digits, so this is a defence
+ * against a store written by an older version or edited by hand, not against
+ * anything the field can currently type.
+ */
+function isValidQueryTimeoutSeconds(value: string): boolean {
+    const seconds = Number(value);
+    return Number.isFinite(seconds) && seconds >= 0;
+}
+
+/**
+ * Seconds stored, milliseconds spent -- `call`'s unit. Zero is the "no natural
+ * upper bound" case the setting has to offer: it resolves to `Infinity`, which
+ * `call` reads as "skip the timer", never as a very large number that would
+ * just move where the same problem resurfaces.
+ */
+function queryTimeoutSeconds(state: RootState): number {
+    const stored = state.settings.values[QUERY_TIMEOUT_KEY];
+    if (!stored || !isValidQueryTimeoutSeconds(stored)) return DEFAULT_QUERY_TIMEOUT_SECONDS;
+    return Number(stored);
+}
+
+function queryTimeoutMs(state: RootState): number {
+    const seconds = queryTimeoutSeconds(state);
+    return seconds === 0 ? Infinity : seconds * 1000;
+}
+
+/**
+ * `call`'s own timeout message names no setting and no number, because it
+ * serves every command that passes a `timeoutMs` -- it cannot know this one is
+ * `queryTimeoutMs`. Recognising it by the exact text `call` rejects with and
+ * substituting this message is what turns "did not respond in time" into
+ * something a user can act on.
+ */
+function withQueryTimeoutMessage(state: RootState, err: unknown): unknown {
+    if (!(err instanceof Error) || err.message !== TIMEOUT_ERROR_MESSAGE) return err;
+    return new Error(
+        `Query timed out after ${queryTimeoutSeconds(state)} seconds, aborting. ` +
+            'You can increase this timeout value in the settings menu.',
+    );
+}
 
 /** Abort a running query on `tabId` so the UI can move on immediately. */
 export function cancelQuery(tabId: string): void {
@@ -82,7 +134,7 @@ export const runQuery = createAppThunk(
                     // header that puts it here. See `db.query` in the protocol.
                     sort: arg.sort ?? undefined,
                 },
-                60_000,
+                queryTimeoutMs(getState()),
                 controller.signal,
             );
 
@@ -123,7 +175,7 @@ export const runQuery = createAppThunk(
             // actually sent, so it is what a re-run has to send again.
             return { result, editTarget, sql, sort: arg.sort ?? null };
         } catch (err) {
-            return rejectWithValue(errorMessage(err));
+            return rejectWithValue(errorMessage(withQueryTimeoutMessage(getState(), err)));
         } finally {
             if (queryControllers.get(arg.tabId) === controller) queryControllers.delete(arg.tabId);
         }
@@ -238,7 +290,7 @@ export const browseTable = createAppThunk(
                     // ordered and *then* cut, so page 2 is the second page of this order.
                     sort: arg.sort ?? undefined,
                 },
-                60_000,
+                queryTimeoutMs(getState()),
                 controller.signal,
             );
             // The filter and the sort are echoed into the payload rather than read
@@ -252,7 +304,7 @@ export const browseTable = createAppThunk(
                 page,
             };
         } catch (err) {
-            return rejectWithValue(errorMessage(err));
+            return rejectWithValue(errorMessage(withQueryTimeoutMessage(getState(), err)));
         } finally {
             if (queryControllers.get(arg.tabId) === controller) queryControllers.delete(arg.tabId);
         }

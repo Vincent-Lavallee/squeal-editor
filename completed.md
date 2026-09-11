@@ -1033,3 +1033,12 @@ This is a record, not a plan. Nothing here is waiting on anything.
   otherwise a curl/`irm | iex`-style install script. Which of these actually
   dodges SmartScreen needs verifying — it's not distribution channel alone
   that clears it, so this starts with that research.
+
+- **2026-09-10** — **Query timeout is a hardcoded 60 seconds with no way to raise it** —
+  Running SQL (`db.query`) and paging a browsed table (`db.browse`) both hit a
+  60-second client-side timeout hardcoded on the UI-to-extension bridge call
+  in `bridge.ts`, surfacing as "The database did not respond in time" while
+  the query may still be running server-side. A longer analytical query has
+  no way around it. Make it one configurable setting covering both call
+  sites, with a default raised well above 60 seconds and a "no timeout"
+  option for queries with no natural upper bound.

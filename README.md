@@ -16,11 +16,25 @@ SQL by hand and run it.
 
 ## Install
 
-| OS      | Get it                                                                                                                                                                                                                    |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows | (recommended)<br> <pre>irm https://raw.githubusercontent.com/Vincent-Lavallee/squeal-editor/dev/scripts/install-windows.ps1 \| iex</pre> or download `squeal-editor-*.exe` from the [Releases page][releases] — see [SmartScreen on Windows](#smartscreen-on-windows) |
-| macOS   | (recommended)<br> <pre>curl -fsSL https://raw.githubusercontent.com/Vincent-Lavallee/squeal-editor/dev/scripts/install-macos.sh \| bash</pre> or download `squeal-editor-macos-*.dmg` from the [Releases page][releases] — see [Gatekeeper on macOS](#gatekeeper-on-macos) |
-| Linux   | not shipped yet — build from source                                                                                                                                                                                     |
+**Windows** (recommended):
+
+```powershell
+irm https://raw.githubusercontent.com/Vincent-Lavallee/squeal-editor/dev/scripts/install-windows.ps1 | iex
+```
+
+Or download `squeal-editor-*.exe` from the [Releases page][releases] — see
+[SmartScreen on Windows](#smartscreen-on-windows).
+
+**macOS** (recommended):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Vincent-Lavallee/squeal-editor/dev/scripts/install-macos.sh | bash
+```
+
+Or download `squeal-editor-macos-*.dmg` from the [Releases page][releases] —
+see [Gatekeeper on macOS](#gatekeeper-on-macos).
+
+**Linux**: not shipped yet — build from source.
 
 [releases]: https://github.com/Vincent-Lavallee/squeal-editor/releases/latest
 
