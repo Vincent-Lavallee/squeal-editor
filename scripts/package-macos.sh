@@ -13,7 +13,8 @@
 # while its extension cannot is the hang documented in docs/architecture.md.
 #
 # There is no Apple Developer account, so the signature is ad-hoc: Gatekeeper
-# shows "unidentified developer" on first launch, cleared with right-click-Open.
+# shows "unidentified developer" on first launch, cleared via System Settings >
+# Privacy & Security > Open Anyway.
 
 set -euo pipefail
 

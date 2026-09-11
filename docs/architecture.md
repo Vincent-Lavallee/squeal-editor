@@ -299,6 +299,14 @@ and a later signature on one of them invalidates the outer seal.
 
 The `.dmg` is **arm64 only**, and ad-hoc signed. See `docs/decisions.md` for both.
 
+`scripts/install-macos.sh` is the recommended way to install on macOS:
+`curl … | bash` fetches the latest release's `.dmg` and copies the app into
+`/Applications` itself, entirely with `curl`/`hdiutil`/`ditto`. Nothing in that
+chain sets the `com.apple.quarantine` extended attribute the way a browser
+download does, so the ad-hoc-signed app never trips Gatekeeper's first-launch
+block — see `docs/decisions.md` for why that holds and why a Homebrew tap does
+not.
+
 Each Windows release also carries what the in-app updater needs to trust it: a
 detached ed25519 signature over the installer (`squeal-editor-vX.Y.Z.exe.sig`) and a
 `SHA256SUMS`, signed in CI by `scripts/sign-release.ts` with a key held only as
@@ -310,3 +318,10 @@ installer exists. The updater is Windows-only and lives in the extension
 version it compares against is injected into the frontend at build time
 (`__APP_VERSION__`), because the compiled extension carries no config to read one
 from.
+
+`scripts/install-windows.ps1` is the recommended way to install on Windows:
+`irm … | iex` fetches the latest release's installer with
+`Invoke-WebRequest` and launches it. Nothing in that chain sets the
+`Zone.Identifier` alternate data stream (Mark-of-the-Web) a browser download
+does, so the unsigned installer never trips SmartScreen's first-run block —
+see `docs/decisions.md`.

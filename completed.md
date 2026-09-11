@@ -1012,3 +1012,24 @@ This is a record, not a plan. Nothing here is waiting on anything.
   in, so with no split yet they cover the editor instead of appearing next to it.
   Open them into the split (secondary) pane instead — creating the split when
   there is none — so the query stays in view while you ask.
+
+- **2026-09-10** — **macOS install hits Gatekeeper on first launch** — The app is signed, but
+  notarization needs a paid Apple Developer account, which this project isn't
+  paying for, so Gatekeeper still quarantines the `.dmg` build and blocks the
+  first launch until the user goes into System Settings > Privacy & Security
+  and clicks "Open Anyway." Add a Homebrew tap as a second install path and
+  label it recommended in the README, with the `.dmg` kept as the
+  not-recommended fallback and its manual Gatekeeper workaround documented
+  alongside it. Whether a tap-installed cask actually avoids the quarantine
+  flag needs verifying before this is built out.
+
+- **2026-09-10** — **Windows install hits SmartScreen on first launch** — The installer carries
+  no Authenticode signature (only the detached ed25519 signature the
+  auto-updater checks — see `docs/decisions.md` on why a real code-signing
+  cert was skipped for cost), so SmartScreen flags the `.exe` on first run.
+  Buying a cert is out of scope; find a $0 distribution path that avoids the
+  prompt, preferring the friendliest option that actually works: a plain
+  `.exe` if one is possible without paying, otherwise a winget package,
+  otherwise a curl/`irm | iex`-style install script. Which of these actually
+  dodges SmartScreen needs verifying — it's not distribution channel alone
+  that clears it, so this starts with that research.

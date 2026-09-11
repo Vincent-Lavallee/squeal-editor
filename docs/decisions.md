@@ -2528,10 +2528,46 @@ never that — it was the absence of packaging.
 
 **Ad-hoc signed, deliberately, and this will not change.** There is no Apple
 Developer account and there will not be one, so notarization is out of reach.
-Gatekeeper's "unidentified developer" on first launch, cleared with
-right-click-Open, is the accepted cost. Ad-hoc still earns its place: without any
-signature at all, macOS refuses a downloaded bundle outright rather than offering
-the override.
+Gatekeeper's "unidentified developer" on first launch, cleared through System
+Settings > Privacy & Security > Open Anyway (Sequoia removed the
+right-click/Control-click override this used to take), is the accepted cost.
+Ad-hoc still earns its place: without any signature at all, macOS refuses a
+downloaded bundle outright rather than offering the override.
+
+## macOS install is a curl script, not a Homebrew tap, to dodge Gatekeeper
+
+The backlog item that started this asked for a Homebrew tap as the
+recommended macOS install path, ahead of the `.dmg`, on the premise that a
+tap-installed cask might not carry the quarantine flag that makes Gatekeeper
+block the ad-hoc-signed app's first launch — flagged as needing verification
+before being built out.
+
+**Verified false.** Since [Homebrew/brew#4656](https://github.com/Homebrew/brew/pull/4656)
+(merged 2018), `brew install --cask` deliberately applies
+`com.apple.quarantine` to everything it downloads, specifically to close this
+loophole. A tap would hit the exact same Gatekeeper block the `.dmg` does; it
+would only have bought easier updates via `brew upgrade`, not a cleaner first
+launch. Not built, for that reason.
+
+**What actually avoids it: curl.** Gatekeeper's "unidentified developer"
+block only fires on files carrying `com.apple.quarantine` — the flag
+Safari/Chrome/Mail set on anything they download. `curl` and `scp`
+deliberately do not set it; this is long-standing, documented Apple behaviour
+(the same reason Homebrew had to special-case it), not a bug being leaned on.
+`scripts/install-macos.sh` downloads the release `.dmg` with `curl` and copies
+the app out with `ditto`, so neither file ever carries the flag, and the
+ad-hoc signature is never checked. It's the recommended path in the README; the
+`.dmg` stays as a fallback for anyone who'd rather not pipe a script into
+`bash`, with the manual System Settings > Privacy & Security workaround
+documented next to it (see the arm64 `.dmg` section above for why there is no
+right-click override to fall back to instead).
+
+**Accepted gap: unverified on a real Mac**, same as the rest of the macOS
+release — there is no Mac to run it on. The curl-exemption behaviour is
+years-stable and Apple's own stated position, not an implementation detail
+that could silently vanish, but it is also not a documented guarantee; if
+Apple ever closes it, this degrades to needing the same System Settings
+workaround the `.dmg` needs today, not to failing outright.
 
 ## macOS embeds resources.neu because codesign reads Contents/MacOS as code
 
@@ -3663,6 +3699,40 @@ line), and the asset names `docs/architecture.md` and the README's download
 table both quote.
 
 ---
+
+## Windows install is a PowerShell script, to dodge SmartScreen
+
+The backlog item asked for a $0 distribution path that avoids SmartScreen,
+in order of preference: a plain `.exe` if that alone was enough, otherwise
+winget, otherwise a curl/`irm | iex`-style script — with a note that
+distribution channel alone doesn't clear it and needs verifying.
+
+**Verified true, for the script.** SmartScreen's "Windows protected your PC"
+only fires against files carrying the `Zone.Identifier` alternate data stream
+— Mark-of-the-Web — which Explorer, Edge and Chrome apply to anything they
+download. Command-line downloaders (`Invoke-WebRequest`, `curl.exe`,
+`bitsadmin`) deliberately do not apply it; this is the same MOTW mechanism
+`scripts/install-macos.sh` leans on via `curl`, just the Windows half of it.
+`scripts/install-windows.ps1` fetches the latest release's installer with
+`Invoke-WebRequest` and launches it, so the installer never carries the
+stream and SmartScreen never blocks it. It's the recommended path in the
+README; the plain `.exe` stays as a fallback for anyone who'd rather not pipe
+a script into `iex`, with the manual More info → Run anyway workaround
+documented next to it.
+
+**Plain `.exe` alone was not enough** — that is the download today, and it is
+exactly what SmartScreen already blocks; distribution channel alone (an
+`.exe` sitting on a release page) does nothing without the download client
+that fetches it also skipping MOTW. **winget was not evaluated** — the script
+alone was asked for, and was sufficient, so the cascade stopped there rather
+than spending a second install path on a problem the first one already
+solves.
+
+**Accepted gap: unverified on a real Windows SmartScreen prompt.** The MOTW
+mechanics are documented, stable Windows behaviour (this is the exact
+technique flagged in threat-intel writeups about MOTW-bypass droppers, not a
+guess), but nobody has run this script against a real, MOTW-eligible download
+of this specific installer end to end.
 
 ## The Linux release ships nothing, for now — CI still builds it
 
