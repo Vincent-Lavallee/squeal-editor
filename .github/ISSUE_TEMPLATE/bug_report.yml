@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in Squeal Editor is broken or behaving unexpectedly
+labels: [bug]
+body:
+    - type: textarea
+      id: description
+      attributes:
+          label: What happened?
+          description: A clear description of the bug. Include what you expected instead.
+      validations:
+          required: true
+
+    - type: textarea
+      id: steps
+      attributes:
+          label: Steps to reproduce
+          placeholder: |
+              1. Connect to a Postgres database
+              2. Open a table with a JSON column
+              3. ...
+      validations:
+          required: true
+
+    - type: dropdown
+      id: database
+      attributes:
+          label: Database type
+          options:
+              - PostgreSQL
+              - MySQL
+              - SQLite
+              - Not database-related
+      validations:
+          required: true
+
+    - type: dropdown
+      id: os
+      attributes:
+          label: Operating system
+          options:
+              - Windows
+              - macOS
+              - Linux
+      validations:
+          required: true
+
+    - type: input
+      id: os_version
+      attributes:
+          label: OS version
+          placeholder: e.g. Windows 11 23H2, macOS 14.5, Ubuntu 22.04
+      validations:
+          required: true
+
+    - type: input
+      id: version
+      attributes:
+          label: Squeal Editor version
+          description: Found in the title bar or Settings dialog
+      validations:
+          required: true
+
+    - type: textarea
+      id: media
+      attributes:
+          label: Screenshots or video
+          description: Drag and drop images or a screen recording showing the problem.
+
+    - type: textarea
+      id: logs
+      attributes:
+          label: Logs
+          description: |
+              From the titlebar menu, choose **Open app data**, then attach `squeal-ext.log` (and `squeal-ext.log.old` if present).
+          placeholder: Paste log contents or drag the log file here
+
+    - type: textarea
+      id: additional
+      attributes:
+          label: Anything else you'd like to mention?

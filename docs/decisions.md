@@ -7494,3 +7494,34 @@ the active fill goes to the tint at full strength, which is exactly the
 Radix-step-11-with-white pairing `ON_ACCENT` already uses for the same reason.
 The numbers are a first pass, expected to be tuned by eye against the nine
 real connection colours the way the dark ones were.
+
+---
+
+## The query timeout is a setting on the caller, not a parameter on `call`
+
+**Why.** `db.query`/`db.browse` had the same hardcoded 60s as every other
+bridge call, but they are the two with no natural upper bound — an analytical
+query can legitimately run longer, and the fix has to be something the user
+can raise. `call`'s `timeoutMs` already varies per caller (`aws.ssoLogin`,
+`update.download` and others pass their own), so the setting lives entirely in
+`resultsThunks.ts`: `queryTimeoutMs(getState())` reads the `queryTimeoutSeconds`
+settings key the same way any other preference is read, and `call` itself
+needed no new parameter to carry it.
+
+**Zero is "no timeout", resolved to `Infinity`, and `call` skips its timer
+rather than starting one with an infinite delay.** `setTimeout` does not
+clamp an out-of-range delay to *never* — on a 32-bit-int overflow it fires
+almost immediately, the opposite of what "no timeout" asked for — so
+`Number.isFinite(timeoutMs)` gates whether `call` starts a timer at all.
+`Pending.timer` became optional for it.
+
+**Rejected: grow `call`'s signature to carry a timeout message.** The generic
+"The database did not respond in time." cannot name a setting or a number, and
+only `runQuery`/`browseTable` need it to. Adding a `timeoutMessage` parameter
+(or turning the trailing options into an object, which `call`'s four
+positional parameters already arguably want) would still leave every other
+caller — a dozen-plus call sites across the store — carrying a parameter it
+never uses. Exporting `TIMEOUT_ERROR_MESSAGE` and matching on it by exact text
+in the one caller that cares keeps the signature untouched at the cost of a
+string comparison that would break silently if the generic message's wording
+ever changed without updating both places.

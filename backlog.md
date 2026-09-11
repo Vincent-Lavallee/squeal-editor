@@ -77,15 +77,6 @@ Things that are wrong.
   reproduced locally on Linux or Windows yet, so the exact failure is still to
   be pinned down.
 
-- **Query timeout is a hardcoded 60 seconds with no way to raise it** —
-  Running SQL (`db.query`) and paging a browsed table (`db.browse`) both hit a
-  60-second client-side timeout hardcoded on the UI-to-extension bridge call
-  in `bridge.ts`, surfacing as "The database did not respond in time" while
-  the query may still be running server-side. A longer analytical query has
-  no way around it. Make it one configurable setting covering both call
-  sites, with a default raised well above 60 seconds and a "no timeout"
-  option for queries with no natural upper bound.
-
 - **Closing the old process during an update is sometimes very slow** — When
   applying an update, shutting down the current process before relaunching is
   fast most of the time but occasionally very slow. Likely the background
@@ -96,6 +87,14 @@ Things that are wrong.
   AI" and copy buttons are absolutely positioned in the error card's top corner,
   so they float over the message's first line instead of beside it. Put them in
   the card's normal flow next to the text, where they cannot cover it.
+
+- **Fonts fall back to whatever the OS has installed, not what's designed** —
+  The app names a chrome font and a monospace font (used throughout: the SQL
+  editor, the results grid, diagrams, the assistant) but never ships them as
+  files, so each OS silently substitutes its own default sans-serif and
+  monospace instead — nothing is actually standardized. Bundle both fonts
+  locally so they render identically on Windows, macOS, and Linux, independent
+  of what happens to be installed on the machine.
 
 ## Features
 

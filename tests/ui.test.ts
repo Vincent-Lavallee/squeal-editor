@@ -2664,6 +2664,55 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
         });
 
         /*
+         * The query timeout is a setting, not a constant: `db.query` still ran
+         * against a real server here, so what proves this is the message naming
+         * the number the user set, not the generic bridge one. `pg_sleep` is the
+         * one statement guaranteed to still be running when the clock runs out.
+         */
+        test('a query past its timeout names the setting, not the generic bridge message', async () => {
+            const openSettings = `document.querySelector('[data-menu="Preferences"]').click(); true;`;
+            const clickSettingsItem = `[...document.querySelectorAll('[data-testid="menu-item"]')].find(e => e.textContent === 'Settings').click(); true;`;
+            const closeModal = `[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === 'Close').click(); true;`;
+            const setQueryTimeoutTo = (seconds: string) =>
+                `${REACT_SETTERS} setNative(document.querySelector('#query-timeout'), '${seconds}');`;
+
+            await app.evaluate(openSettings);
+            await Bun.sleep(200);
+            await app.evaluate(clickSettingsItem);
+            await app.waitFor(`document.querySelector('#query-timeout') ? true : null`);
+            await app.evaluate(setQueryTimeoutTo('1'));
+            await app.waitFor(
+                `document.querySelector('#query-timeout').value === '1' ? true : null`,
+            );
+            await app.evaluate(closeModal);
+            await Bun.sleep(200);
+
+            await app.evaluate(setEditorText('SELECT pg_sleep(3)'));
+            await Bun.sleep(200);
+            await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
+
+            const err = await app.waitFor<string>(
+                `document.querySelector('[data-testid="note-error"]')?.textContent || null`,
+            );
+            expect(err).toBe(
+                'Query timed out after 1 seconds, aborting. ' +
+                    'You can increase this timeout value in the settings menu.',
+            );
+
+            // Put it back, or every test after this one runs under a 1-second timeout.
+            await app.evaluate(openSettings);
+            await Bun.sleep(200);
+            await app.evaluate(clickSettingsItem);
+            await app.waitFor(`document.querySelector('#query-timeout') ? true : null`);
+            await app.evaluate(setQueryTimeoutTo('300'));
+            await app.waitFor(
+                `document.querySelector('#query-timeout').value === '300' ? true : null`,
+            );
+            await app.evaluate(closeModal);
+            await Bun.sleep(200);
+        });
+
+        /*
          * The tree and the tab in front are paired by default, and the pairing runs
          * both ways -- which is the whole of what the two arrows on the toggle say.
          * Every test below this one is about them being *un*paired, so this is also
@@ -4651,6 +4700,62 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
                 `${REACT_SETTERS} pickOption(document.querySelector('#theme'), 'dark');`,
             );
             await app.waitFor(`document.documentElement.dataset.theme === 'dark' ? true : null`);
+
+            await app.evaluate(
+                `[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === 'Close').click(); true;`,
+            );
+            await Bun.sleep(200);
+        });
+
+        test('Settings persists the query timeout', async () => {
+            await app.evaluate(openMenu('Preferences'));
+            await Bun.sleep(200);
+            await app.evaluate(clickMenuItem('Settings'));
+            await app.waitFor(`document.querySelector('#query-timeout') ? true : null`);
+
+            expect(
+                await app.evaluate<string>(`document.querySelector('#query-timeout').value`),
+            ).toBe('300');
+
+            await app.evaluate(
+                `${REACT_SETTERS} setNative(document.querySelector('#query-timeout'), '120');`,
+            );
+            await app.waitFor(
+                `document.querySelector('#query-timeout').value === '120' ? true : null`,
+            );
+
+            await app.evaluate(
+                `[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === 'Close').click(); true;`,
+            );
+            await Bun.sleep(200);
+
+            // Reopening reads the same store `runQuery`/`browseTable` read, so this is
+            // the round trip that matters -- not just that the input can be typed into.
+            await app.evaluate(openMenu('Preferences'));
+            await Bun.sleep(200);
+            await app.evaluate(clickMenuItem('Settings'));
+            await app.waitFor(`document.querySelector('#query-timeout') ? true : null`);
+            expect(
+                await app.evaluate<string>(`document.querySelector('#query-timeout').value`),
+            ).toBe('120');
+
+            // Anything that is not a digit is dropped rather than accepted and marked
+            // invalid -- there is no way to leave the field holding "-5" or "1.5".
+            await app.evaluate(
+                `${REACT_SETTERS} setNative(document.querySelector('#query-timeout'), '-5');`,
+            );
+            await app.waitFor(
+                `document.querySelector('#query-timeout').value === '5' ? true : null`,
+            );
+
+            // Put it back, or every test after this one runs under a timeout this one
+            // changed.
+            await app.evaluate(
+                `${REACT_SETTERS} setNative(document.querySelector('#query-timeout'), '300');`,
+            );
+            await app.waitFor(
+                `document.querySelector('#query-timeout').value === '300' ? true : null`,
+            );
 
             await app.evaluate(
                 `[...document.querySelectorAll('[data-testid="modal"] button')].find(e => e.textContent === 'Close').click(); true;`,

@@ -21,10 +21,19 @@ import {
 const EXT_ID = 'js.squeal.db';
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+/**
+ * What every timed-out call rejects with, generically. Exported so a caller
+ * that asked for a specific `timeoutMs` -- `runQuery`/`browseTable`, naming a
+ * setting the user can raise -- can tell "this is the timeout" apart from any
+ * other rejection and say something more useful than this can.
+ */
+export const TIMEOUT_ERROR_MESSAGE = 'The database did not respond in time.';
+
 interface Pending {
     resolve: (value: never) => void;
     reject: (reason: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
+    /** Absent when the caller asked for no timeout at all -- see `call`. */
+    timer?: ReturnType<typeof setTimeout>;
 }
 
 let nextReqId = 1;
@@ -99,10 +108,17 @@ export async function call<K extends CommandName>(
 
         signal?.addEventListener('abort', onAbort, { once: true });
 
-        const timer = setTimeout(() => {
-            cleanup();
-            reject(new Error('The database did not respond in time.'));
-        }, timeoutMs);
+        // `Infinity` is a caller asking for no timeout at all -- a long-running
+        // query someone raised the setting for. Skipping the timer rather than
+        // handing `setTimeout` an infinite delay matters: a delay that does not
+        // fit in a 32-bit int fires almost immediately instead of never, which
+        // is the opposite of what was asked for.
+        const timer = Number.isFinite(timeoutMs)
+            ? setTimeout(() => {
+                  cleanup();
+                  reject(new Error(TIMEOUT_ERROR_MESSAGE));
+              }, timeoutMs)
+            : undefined;
 
         pending.set(reqId, { resolve, reject, timer });
 

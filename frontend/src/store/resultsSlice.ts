@@ -9,6 +9,8 @@ import type {
 import {
     browseTable,
     cancelQuery,
+    DEFAULT_QUERY_TIMEOUT_SECONDS,
+    QUERY_TIMEOUT_KEY,
     runQuery,
     runStatements,
     saveEdits,
@@ -17,7 +19,16 @@ import {
 import { disconnect } from './sessionSlice.ts';
 import { tabsClosed } from './tabsSlice.ts';
 
-export { browseTable, cancelQuery, runQuery, runStatements, saveEdits, type EditTarget };
+export {
+    browseTable,
+    cancelQuery,
+    DEFAULT_QUERY_TIMEOUT_SECONDS,
+    QUERY_TIMEOUT_KEY,
+    runQuery,
+    runStatements,
+    saveEdits,
+    type EditTarget,
+};
 
 /**
  * Which table the grid is paging through, and where in it.
