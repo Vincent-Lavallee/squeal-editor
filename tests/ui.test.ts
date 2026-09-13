@@ -304,6 +304,9 @@ const pagerBtn = (label: 'Prev' | 'Next') => `
   [...document.querySelectorAll('[data-testid="results-pager"] button')]
     .find(e => e.textContent.trim() === ${JSON.stringify(label)})`;
 
+/** The results bar's click-to-reveal total, before it has been asked for. */
+const revealCountBtn = `document.querySelector('[data-testid="results-row-count-reveal"]')`;
+
 /**
  * How many rows the grid is showing -- what a filter changes. Reports 0 while
  * `GridSkeleton` is up: its placeholder rows share the exact `.grid tbody tr`
@@ -1115,6 +1118,27 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(`${pagerBtn('Prev')}.click(); true;`);
             await app.waitFor(`(${barText}).includes('rows 1–100') ? true : null`);
             expect(await app.evaluate<string>(barText)).toContain('rows 1–100');
+
+            await app.evaluate(closeTab('events'));
+            await Bun.sleep(300);
+        });
+
+        test('the total is revealed on click and survives paging the same table', async () => {
+            await app.evaluate(clickTable('events'));
+            await app.waitFor(`(${barText}).includes('rows 1–100') ? true : null`);
+
+            // Not asked for yet: the bar offers the button, not a number.
+            expect(await app.evaluate<string>(barText)).not.toContain('of 150');
+            expect(await app.evaluate<boolean>(`!!${revealCountBtn}`)).toBe(true);
+
+            await app.evaluate(`${revealCountBtn}.click(); true;`);
+            await app.waitFor(`(${barText}).includes('of 150') ? true : null`);
+
+            // Paging is the same table under the same (absent) filter, so the total
+            // already paid for stays on screen rather than reverting to the button.
+            await app.evaluate(`${pagerBtn('Next')}.click(); true;`);
+            await app.waitFor(`(${barText}).includes('rows 101–150') ? true : null`);
+            expect(await app.evaluate<string>(barText)).toContain('of 150');
 
             await app.evaluate(closeTab('events'));
             await Bun.sleep(300);

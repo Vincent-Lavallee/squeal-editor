@@ -1,5 +1,7 @@
 import type { BrowseState } from '../../../store/resultsSlice.ts';
+import type { RowCountState } from '../../../store/resultsRowCount.ts';
 import * as t from '../../../common/tokens';
+import ResultsRowCount from './ResultsRowCount.tsx';
 
 interface Props {
     gridDatabase: string | null;
@@ -9,6 +11,8 @@ interface Props {
     durationMs: number;
     readOnlyReason: string | null;
     editBlockedHint: string | null;
+    rowCount: RowCountState | null;
+    onRevealRowCount: () => void;
 }
 
 export default function ResultsBarSummary({
@@ -19,6 +23,8 @@ export default function ResultsBarSummary({
     durationMs,
     readOnlyReason,
     editBlockedHint,
+    rowCount,
+    onRevealRowCount,
 }: Props) {
     return (
         <span>
@@ -32,9 +38,14 @@ export default function ResultsBarSummary({
                     {' · '}
                 </>
             )}
-            {browse
-                ? `rows ${firstRow}–${browse.offset + count}`
-                : `${count} row${count === 1 ? '' : 's'}`}{' '}
+            {browse ? (
+                <>
+                    {`rows ${firstRow}–${browse.offset + count}`}{' '}
+                    <ResultsRowCount rowCount={rowCount} onReveal={onRevealRowCount} />
+                </>
+            ) : (
+                `${count} row${count === 1 ? '' : 's'}`
+            )}{' '}
             · {durationMs} ms
             {/* `readOnlyReason` is a standing fact about the connection or the
               table, shown unprompted; `editBlockedHint` is the opposite -- it

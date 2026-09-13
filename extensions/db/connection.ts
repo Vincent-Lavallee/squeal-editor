@@ -2,7 +2,7 @@ import type { ConnectionConfig } from '../../shared/protocol/index.ts';
 import { withDriver, type Driver } from './drivers/index.ts';
 import { connectionCatalogMethods } from './connectionCatalogMethods.ts';
 import { connectionLifecycleMethods } from './connectionLifecycleMethods.ts';
-import { connectionQueryMethods } from './connectionQueryMethods.ts';
+import { connectionQueryMethods, runCount } from './connectionQueryMethods.ts';
 import { useClient, type ConnectionState } from './connectionState.ts';
 import {
     PAGE_SIZE,
@@ -69,6 +69,8 @@ function build<C>(
         },
         ...connectionCatalogMethods(use, driver, config),
         ...connectionQueryMethods(use, driver, state),
+        count: (database, relation, filter) =>
+            runCount(use, driver, { database, relation, filter }),
         ...connectionWriteMethods(use, driver),
         ...connectionLifecycleMethods(state, driver),
     };

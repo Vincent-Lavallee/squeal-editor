@@ -162,13 +162,6 @@ Things that do not exist yet.
   it. Double-clicking a column's resize handle should size it to its largest
   currently visible value, the way spreadsheets do.
 
-- **Lazy total row count on a browsed table** — The results bar for a browsed
-  table shows only the loaded range ("rows 1–50"), never how many rows the
-  table actually has, because running `COUNT(*)` on every browse could be slow
-  on a huge table. Add a click-to-reveal affordance next to the row range that
-  runs the count on demand and shows it (e.g. "of 1,204,000") once fetched.
-  Ad-hoc query results are unaffected — they're deliberately unpaged already.
-
 - **Workspace-scoped assistant identity** — The assistant's provider, model, and
   API key are one global choice for the whole app (a single credential lives in
   the OS keychain under one fixed name, and `model` is a single value in

@@ -27,6 +27,8 @@ export default function ResultsBar({ g }: { g: ReturnType<typeof useResultsGridC
                 durationMs={g.result!.durationMs}
                 readOnlyReason={g.readOnlyReason}
                 editBlockedHint={g.editBlockedHint}
+                rowCount={g.rowCount}
+                onRevealRowCount={g.revealRowCount}
             />
 
             <div

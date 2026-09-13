@@ -6,6 +6,10 @@ import type {
     SortOrder,
     TableFilter,
 } from '../../../shared/protocol/index.ts';
+// Namespaced (not four named imports) purely to keep this file under the
+// line-count cap; `rc`, not `rowCount`, because the field of that name below
+// would otherwise read as shadowing it. See `resultsRowCount.ts` for each export.
+import * as rc from './resultsRowCount.ts';
 import {
     browseTable,
     cancelQuery,
@@ -67,6 +71,14 @@ export interface BrowseState {
 export interface ResultsState {
     result: QueryResult | null;
     browse: BrowseState | null;
+    /**
+     * Null until the results bar's click-to-reveal affordance is used for the
+     * page currently browsed. Carried apart from `browse` rather than inside
+     * it, because a total is only worth re-fetching when the table or the
+     * filter changes -- see `buildBrowseTableReducers`, which keeps it across
+     * a plain page step and drops it on anything else.
+     */
+    rowCount: rc.RowCountState | null;
     editTarget: EditTarget | null;
     /**
      * The statement the result on screen came from, or null when it came from
@@ -170,13 +182,14 @@ export interface TabResults {
  * Keyed rather than singular because the grid belongs to the tab that asked for
  * it: one grid would paint the last tab's rows under this one's query.
  */
-type ResultsByTab = Record<string, TabResults>;
+export type ResultsByTab = Record<string, TabResults>;
 
 const initialState: ResultsByTab = {};
 
 const blank = (): ResultsState => ({
     result: null,
     browse: null,
+    rowCount: null,
     editTarget: null,
     sql: null,
     sort: null,
@@ -247,7 +260,7 @@ function buildRunQueryReducers(builder: ActionReducerMapBuilder<ResultsByTab>): 
             s.running = false;
             s.startedAt = null;
             s.result = action.payload.result;
-            s.browse = null;
+            rc.clearBrowse(s);
             s.editTarget = action.payload.editTarget;
             s.sql = action.payload.sql;
             s.sort = action.payload.sort;
@@ -263,7 +276,7 @@ function buildRunQueryReducers(builder: ActionReducerMapBuilder<ResultsByTab>): 
             s.running = false;
             s.startedAt = null;
             s.result = null;
-            s.browse = null;
+            rc.clearBrowse(s);
             s.editTarget = null;
             s.sql = null;
             s.sort = null;
@@ -289,6 +302,7 @@ function buildBrowseTableReducers(builder: ActionReducerMapBuilder<ResultsByTab>
             const s = state[action.meta.arg.tabId]?.parts[0];
             if (!s) return;
             const { database, table, filter, sort, page } = action.payload;
+            const keepRowCount = rc.sameCountedPage(s.browse, database, table, filter);
             s.running = false;
             s.startedAt = null;
             s.result = page.result;
@@ -302,6 +316,7 @@ function buildBrowseTableReducers(builder: ActionReducerMapBuilder<ResultsByTab>
                 columnInfo: page.columnInfo,
                 filter,
             };
+            if (!keepRowCount) s.rowCount = null;
             s.sort = sort;
             s.editTarget = null;
             s.sql = null;
@@ -315,7 +330,7 @@ function buildBrowseTableReducers(builder: ActionReducerMapBuilder<ResultsByTab>
             s.running = false;
             s.startedAt = null;
             s.result = null;
-            s.browse = null;
+            rc.clearBrowse(s);
             s.sort = null;
             s.error = action.payload ?? 'Could not read the table.';
             // A page's SQL was authored by the extension and never crossed to this
@@ -364,6 +379,7 @@ const resultsSlice = createSlice({
         buildTabClosedReducers(builder);
         buildRunQueryReducers(builder);
         buildBrowseTableReducers(builder);
+        rc.buildRowCountReducers(builder);
     },
 });
 

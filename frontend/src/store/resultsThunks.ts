@@ -39,7 +39,7 @@ function queryTimeoutSeconds(state: RootState): number {
     return Number(stored);
 }
 
-function queryTimeoutMs(state: RootState): number {
+export function queryTimeoutMs(state: RootState): number {
     const seconds = queryTimeoutSeconds(state);
     return seconds === 0 ? Infinity : seconds * 1000;
 }
@@ -51,7 +51,7 @@ function queryTimeoutMs(state: RootState): number {
  * substituting this message is what turns "did not respond in time" into
  * something a user can act on.
  */
-function withQueryTimeoutMessage(state: RootState, err: unknown): unknown {
+export function withQueryTimeoutMessage(state: RootState, err: unknown): unknown {
     if (!(err instanceof Error) || err.message !== TIMEOUT_ERROR_MESSAGE) return err;
     return new Error(
         `Query timed out after ${queryTimeoutSeconds(state)} seconds, aborting. ` +

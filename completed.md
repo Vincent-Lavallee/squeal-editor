@@ -1067,3 +1067,10 @@ This is a record, not a plan. Nothing here is waiting on anything.
   subheaders): closing behaviors on top, tab actions below. Within the closing
   group, order by actual usage — Close others and Close Tabs to the Right ahead
   of plain Close and Close All.
+
+- **2026-09-13** — **Lazy total row count on a browsed table** — The results bar for a browsed
+  table shows only the loaded range ("rows 1–50"), never how many rows the
+  table actually has, because running `COUNT(*)` on every browse could be slow
+  on a huge table. Added a click-to-reveal affordance next to the row range that
+  runs the count on demand and shows it (e.g. "of 1,204,000") once fetched.
+  Ad-hoc query results are unaffected — they're deliberately unpaged already.

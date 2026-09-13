@@ -315,6 +315,38 @@ Four rules:
 `LIMIT`/`OFFSET` remains the one interpolation, and it sits after the `WHERE`, so
 the filter's placeholders number from 1 with nothing to collide with.
 
+### The total a page's filter matches: `db.count`
+
+`db.browse` never answers how many rows a table (or a filtered page of one)
+actually has — only `hasMore`, from one spare row past the page. `COUNT(*)` is
+a full scan on some engines and some tables, and asking it with every fetch
+would make opening a huge table slow for a question most browses never ask.
+`db.count` is the same question asked separately, on demand, for the results
+bar's click-to-reveal total.
+
+It shares `buildWhere` with `browse` — same quoting, same bound values, same
+"an empty filter is no filter" rule above — so a count under a filter answers
+about exactly the rows that filter's page does. Unlike `browse`, it takes no
+`sort` (a total has no order to speak of) and no `offset` (there is exactly one
+answer, not a page of them).
+
+**It runs through the same `driver.query` as everything else, so the result
+crosses the bridge exactly like any other cell.** `SELECT COUNT(*)` returns a
+BIGINT-typed column on every engine; the response is one untouched `CellValue`
+— a string on Postgres (its driver returns `int8` as a string unconditionally)
+and on SQLite (`safeIntegers` `toDisplayValue`-flattened, same as every other
+integer there), a number on MySQL for a count small enough to keep one (the
+`supportBigNumbers`/`bigNumberStrings` rule already in *Value handling*). The
+UI never converts it through a JS `Number` to format it, for the same reason
+a BIGINT cell in the grid never is.
+
+**Assembled in `connection.ts`, not returned from `connectionQueryMethods`
+alongside `query`/`browse`.** Its logic (`runCount`, in
+`connectionQueryMethods.ts`) is a function of its own for the same reason: it
+shares nothing stateful with `query`/`browse` beyond `use` and `driver`, both
+already parameters, so folding it into that file's returned object would only
+have pushed that function over this repo's line-count cap for no shared benefit.
+
 ### Ordering a page: `sort`
 
 `db.browse` also takes an optional `SortOrder` — one column and a direction —

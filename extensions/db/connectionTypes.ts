@@ -103,6 +103,13 @@ export interface ConnectionHandle {
         relation: Relation,
         options: { offset: number; filter?: TableFilter; sort?: SortOrder },
     ): Promise<TableRows>;
+    /**
+     * The total rows `filter` matches -- `COUNT(*)`, run only when asked. Not
+     * part of `browse`: an exact total is a full scan on some engines and some
+     * tables, and paying for it on every page would slow down opening a huge
+     * table for a question most browses never ask.
+     */
+    count(database: string, relation: Relation, filter?: TableFilter): Promise<CellValue>;
     /** A relation's `CREATE` statement, for the context menu's "open definition". */
     tableDdl(database: string, relation: Relation, kind: 'table' | 'view'): Promise<string>;
     /** Triggers for a specific table. */

@@ -5,6 +5,7 @@ import { activePart, type ResultsState } from '../../../../store/resultsSlice.ts
 const EMPTY = Object.freeze({
     result: null,
     browse: null,
+    rowCount: null,
     editTarget: null,
     sql: null,
     sort: null,
