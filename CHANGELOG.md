@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.20.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.19.1...v0.20.0) (2026-09-13)
+
+
+### Features
+
+* Export table ([#64](https://github.com/Vincent-Lavallee/squeal-editor/issues/64)) ([017e869](https://github.com/Vincent-Lavallee/squeal-editor/commit/017e869c55c430d5fc933c3f5a8b6dee6f402c5b))
+* install scripts ([#58](https://github.com/Vincent-Lavallee/squeal-editor/issues/58)) ([7652265](https://github.com/Vincent-Lavallee/squeal-editor/commit/7652265acc36abe6e49adb8f61223cc266dc8a4f))
+* Remember column ordering ([#56](https://github.com/Vincent-Lavallee/squeal-editor/issues/56)) ([94141bf](https://github.com/Vincent-Lavallee/squeal-editor/commit/94141bfc26c2b2f95a633cce4648fef922a5353e))
+* tab context menu rework ([#61](https://github.com/Vincent-Lavallee/squeal-editor/issues/61)) ([ff7bd33](https://github.com/Vincent-Lavallee/squeal-editor/commit/ff7bd338e8616a78ae9a1ddd56c15a7b5b4a400d))
+* Table context menu rework ([#60](https://github.com/Vincent-Lavallee/squeal-editor/issues/60)) ([515bf2d](https://github.com/Vincent-Lavallee/squeal-editor/commit/515bf2d3e83450f41750d2e016fe7482dd2b1a9d))
+* table row count ([#63](https://github.com/Vincent-Lavallee/squeal-editor/issues/63)) ([d6ea20b](https://github.com/Vincent-Lavallee/squeal-editor/commit/d6ea20b9fd02720df5417ddc6ed1dd95d936f1ed))
+
+
+### Bug Fixes
+
+* extension reliability ([#62](https://github.com/Vincent-Lavallee/squeal-editor/issues/62)) ([e4da0bf](https://github.com/Vincent-Lavallee/squeal-editor/commit/e4da0bf1ceaaaf11fb673e923e4b570479b9b352))
+* Hardcoded query timeout ([#59](https://github.com/Vincent-Lavallee/squeal-editor/issues/59)) ([70bcba4](https://github.com/Vincent-Lavallee/squeal-editor/commit/70bcba49cb695e98103c01b3031c0f7001dbceb1))
+
 ## [0.19.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.19.0...v0.19.1) (2026-09-08)
 
 
