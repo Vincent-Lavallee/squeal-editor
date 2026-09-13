@@ -1201,7 +1201,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             );
             await Bun.sleep(300);
             await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
-            await Bun.sleep(2000);
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
 
             await app.evaluate(
                 `${gridScroll}.scrollTop = 400; ${gridScroll}.scrollLeft = 300; true;`,
@@ -1223,7 +1223,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // horizontal one is kept: the columns are unchanged, and a sort, which is
             // also a re-run, must not drag the view sideways.
             await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
-            await Bun.sleep(2000);
+            await app.waitFor(`${gridScroll}.scrollTop === 0 ? true : null`);
             expect(await app.evaluate<number>(`${gridScroll}.scrollTop`)).toBe(0);
             expect(await app.evaluate<number>(`${gridScroll}.scrollLeft`)).toBe(300);
 
