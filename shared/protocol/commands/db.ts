@@ -348,4 +348,41 @@ export interface DbCommands {
         req: { connectionId: string; readOnly: boolean };
         res: { ok: true };
     };
+    /**
+     * Stream every row of a table to a file, as CSV or as SQL `INSERT`
+     * statements -- paged from the server the same way `db.browse` is, so a
+     * huge table never has to be materialized here whole.
+     *
+     * The UI names the file (its own native save dialog) and this side writes
+     * it, the same split `db.saved.export` already makes and for the same
+     * "can the webview do this?" reason -- the difference is size rather than
+     * secrecy here, but the answer is the same.
+     *
+     * `exportId` is minted by the **UI**, not here, for `db.exportCancel`'s
+     * reason: a cancel has to be able to name a job before this command's own
+     * reply has arrived. `includeCreateTable` is ignored for `csv`.
+     */
+    'db.export': {
+        req: {
+            connectionId: string;
+            database: string;
+            table: string;
+            schema?: string;
+            exportId: string;
+            path: string;
+            format: 'csv' | 'sql';
+            includeCreateTable: boolean;
+        };
+        res: { rowCount: number; cancelled: boolean };
+    };
+    /**
+     * Ask an export in flight to stop. Resolves as soon as the signal is
+     * raised, not once the loop has actually noticed it -- `db.export`'s own
+     * `cancelled` field, on the reply that command is still waiting to send,
+     * is how the caller learns the stop actually landed.
+     */
+    'db.exportCancel': {
+        req: { exportId: string };
+        res: { ok: true };
+    };
 }

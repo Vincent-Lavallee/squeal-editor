@@ -1,4 +1,5 @@
 import type { FunctionInfo, TableInfo, TriggerInfo } from '../../../../../shared/protocol/index.ts';
+import type { ExportTarget } from '../table-export/exportTarget.ts';
 import SidebarShell from './SidebarShell.tsx';
 import { useSidebarController } from './hooks/useSidebarController.ts';
 
@@ -40,6 +41,17 @@ interface Props {
      * skipped -- nothing should steal focus before the user has asked for it.
      */
     focusFilter?: number;
+    /**
+     * The "Export table" dialog's open/for-which-table state, lifted to
+     * `Shell` so the status bar -- a sibling, not a descendant -- can reopen
+     * it after the user minimizes it mid-export. See `useTableExportDialog`.
+     */
+    exporting: ExportTarget | null;
+    exportDialogVisible: boolean;
+    blockedExportRequest: ExportTarget | null;
+    onOpenExport: (table: TableInfo, database: string) => void;
+    onMinimizeExport: () => void;
+    onCloseExport: () => void;
 }
 
 export default function Sidebar({
@@ -54,6 +66,12 @@ export default function Sidebar({
     collapsed,
     onToggleCollapse,
     focusFilter,
+    exporting,
+    exportDialogVisible,
+    blockedExportRequest,
+    onOpenExport,
+    onMinimizeExport,
+    onCloseExport,
 }: Props) {
     const state = useSidebarController({
         shownDatabase,
@@ -62,6 +80,10 @@ export default function Sidebar({
         onShowTriggerDefinition,
         onShowFunctionDefinition,
         focusFilter,
+        exporting,
+        exportDialogVisible,
+        blockedExportRequest,
+        onOpenExport,
     });
 
     return (
@@ -72,6 +94,8 @@ export default function Sidebar({
             synced={synced}
             onToggleSync={onToggleSync}
             onShowFunctionDefinition={onShowFunctionDefinition}
+            onMinimizeExport={onMinimizeExport}
+            onCloseExport={onCloseExport}
             state={state}
         />
     );

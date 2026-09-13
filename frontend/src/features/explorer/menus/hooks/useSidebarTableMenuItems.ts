@@ -12,6 +12,7 @@ interface Options {
     defaultSchema: string | undefined;
     onShowDefinition: (database: string, table: TableInfo) => void;
     onDrop: (table: TableInfo) => void;
+    onExport: (table: TableInfo, database: string) => void;
 }
 
 /** What a table or view's right-click menu offers. Split out of `Sidebar`
@@ -23,6 +24,7 @@ export function useSidebarTableMenuItems({
     defaultSchema,
     onShowDefinition,
     onDrop,
+    onExport,
 }: Options) {
     // Drop is refused on a read-only connection: read-only is the server refusing
     // writes, and that does not reliably cover DDL, so honouring the intent for a
@@ -41,6 +43,7 @@ export function useSidebarTableMenuItems({
                 label: starred ? 'Unstar' : 'Star',
                 onSelect: () => toggleStar(db, relationOf(table), !starred),
             },
+            { label: 'Export table', onSelect: () => onExport(table, db) },
             {
                 label: `Drop ${table.kind === 'view' ? 'view' : 'table'}`,
                 danger: true,

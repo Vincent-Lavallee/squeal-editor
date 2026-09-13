@@ -13,6 +13,8 @@ interface Props {
     synced: boolean;
     onToggleSync: () => void;
     onShowFunctionDefinition: (database: string, func: FunctionInfo) => void;
+    onMinimizeExport: () => void;
+    onCloseExport: () => void;
     state: ReturnType<typeof useSidebarController>;
 }
 
@@ -28,6 +30,8 @@ export default function SidebarShell({
     synced,
     onToggleSync,
     onShowFunctionDefinition,
+    onMinimizeExport,
+    onCloseExport,
     state: s,
 }: Props) {
     return (
@@ -69,6 +73,11 @@ export default function SidebarShell({
                     s.setDropping(null);
                 }}
                 onCancelDrop={() => s.setDropping(null)}
+                exporting={s.exporting}
+                exportDialogVisible={s.exportDialogVisible}
+                blockedExportRequest={s.blockedExportRequest}
+                onMinimizeExport={onMinimizeExport}
+                onCloseExport={onCloseExport}
             />
         </aside>
     );

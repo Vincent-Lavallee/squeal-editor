@@ -4,7 +4,7 @@
 import type { Database as SqliteDatabase } from 'bun:sqlite';
 
 import type { Driver } from '../driver.ts';
-import { describeOk, runWrites, toDisplayRow } from '../common.ts';
+import { describeOk, renderSqlLiteral, runWrites, toDisplayRow } from '../common.ts';
 import { sqliteCatalog } from './catalog.ts';
 import { sqliteColumnNames, toSqliteParam, withStatement } from './helpers.ts';
 import { sqliteDdl } from './ddl.ts';
@@ -104,5 +104,10 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
     // SQLite binds positionally in order, like mysql2.
     placeholder() {
         return '?';
+    },
+
+    // No backslash escaping here either -- doubling the quote is SQLite's whole rule.
+    sqlLiteral(value) {
+        return renderSqlLiteral(value, (s) => `'${s.replace(/'/g, "''")}'`);
     },
 };

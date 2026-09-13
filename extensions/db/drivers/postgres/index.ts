@@ -2,7 +2,14 @@ import pg from 'pg';
 
 import type { CellValue } from '../../../../shared/protocol/index.ts';
 import type { Driver, QueryOutcome } from '../driver.ts';
-import { describeOk, runWrites, selectExpressionAt, settleOnce, toDisplayRow } from '../common.ts';
+import {
+    describeOk,
+    renderSqlLiteral,
+    runWrites,
+    selectExpressionAt,
+    settleOnce,
+    toDisplayRow,
+} from '../common.ts';
 import { postgresCatalog } from './catalog.ts';
 import { postgresDdl } from './ddl.ts';
 import { postgresLifecycle } from './lifecycle.ts';
@@ -199,5 +206,12 @@ export const postgresDriver: Driver<pg.Client> = {
     // pg numbers its placeholders, so the position is part of the token.
     placeholder(position) {
         return `$${position}`;
+    },
+
+    // `standard_conforming_strings` has been Postgres's default since 9.1, so a
+    // backslash in a string literal is just a backslash -- only the quote needs
+    // doubling, unlike MySQL.
+    sqlLiteral(value) {
+        return renderSqlLiteral(value, (s) => `'${s.replace(/'/g, "''")}'`);
     },
 };

@@ -14,6 +14,7 @@ import { useSaveQueryForTab } from './useSaveQueryForTab.ts';
 import { useShellCommands } from './useShellCommands.ts';
 import { useLazyBrowse } from './useLazyBrowse.ts';
 import { useExternalTabRequests } from './useExternalTabRequests.ts';
+import { useTableExportDialog } from './useTableExportDialog.ts';
 
 interface Args {
     openDiagramRequest: number;
@@ -47,6 +48,7 @@ export function useShell({ openDiagramRequest, openAssistantRequest }: Args) {
     const assistant = useAssistantBridge({ data, layout });
     const save = useSaveQueryForTab(data);
     const shellCommands = useShellCommands({ data, layout, tree, workingTab, stepping, close });
+    const exportDialog = useTableExportDialog();
     useLazyBrowse(data);
     useExternalTabRequests({ openDiagramRequest, openAssistantRequest, data, layout, tree });
 
@@ -65,6 +67,7 @@ export function useShell({ openDiagramRequest, openAssistantRequest }: Args) {
         openSavedQuery,
         ...assistant,
         ...save,
+        ...exportDialog,
         shellCommands,
         primaryShowEditor: data.activeTab?.kind === 'editor',
         secondaryShowEditor: data.secondaryActiveTab?.kind === 'editor',

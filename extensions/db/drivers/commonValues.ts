@@ -72,3 +72,22 @@ export const tlsOptions = (config: ConnectionConfig) =>
     config.iam ? { rejectUnauthorized: true, ca: rdsCaBundle } : TLS_OPTIONS;
 
 export const describeOk = (count: number) => `OK - ${count} row${count === 1 ? '' : 's'} affected`;
+
+/**
+ * The engine-neutral half of `Driver.sqlLiteral`: null, number and boolean
+ * have one spelling everywhere, so only the string branch differs per engine
+ * and it alone takes a callback -- the same `quoteIdent`/`placeholder` shape
+ * `buildWhere` and `runWrites` already use for the parts that do differ.
+ *
+ * `TRUE`/`FALSE` rather than `1`/`0`: a real JS `boolean` only ever reaches
+ * this from a Postgres `bool` column (MySQL and SQLite hand booleans back as
+ * plain numbers), and `TRUE`/`FALSE` is the literal Postgres itself renders
+ * a `bool` as -- see `docs/extension.md` on rendering a value as the engine's
+ * own words rather than reinventing one.
+ */
+export function renderSqlLiteral(value: CellValue, quoteString: (s: string) => string): string {
+    if (value === null) return 'NULL';
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+    if (typeof value === 'number') return String(value);
+    return quoteString(value);
+}

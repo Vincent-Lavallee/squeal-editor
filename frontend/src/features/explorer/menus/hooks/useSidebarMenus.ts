@@ -22,6 +22,12 @@ export type SidebarMenu =
  * The tree's right-click menu and the "drop table" confirmation it opens
  * into -- just the open/closed state. See `useSidebarMenuItems` for what
  * each menu offers. Split out of `Sidebar` purely for length.
+ *
+ * "Export table" is not here: unlike a drop confirmation, its dialog has to
+ * survive being minimized while the export keeps running in the background,
+ * which means its open/for-which-table state has to be visible to the status
+ * bar too -- a sibling of the sidebar, not a descendant. See
+ * `useTableExportDialog`, composed in `useShell` instead.
  */
 export function useSidebarMenus() {
     const [menu, setMenu] = useState<SidebarMenu>(null);

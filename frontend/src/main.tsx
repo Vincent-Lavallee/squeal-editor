@@ -7,11 +7,13 @@ import {
     AWS_SSO_PROMPT_EVENT,
     CONNECT_PROGRESS_EVENT,
     CONNECTION_STATE_EVENT,
+    EXPORT_PROGRESS_EVENT,
     UPDATE_PROGRESS_EVENT,
     type AiDelta,
     type AwsSsoPrompt,
     type ConnectionState,
     type ConnectProgress,
+    type ExportProgress,
     type UpdateProgress,
 } from '../../shared/protocol/index.ts';
 import App from './App.tsx';
@@ -20,6 +22,7 @@ import { deltaReceived, loadAiStatus } from './store/assistantSlice.ts';
 import { promptReceived } from './store/awsSignInSlice.ts';
 import { connectionProgressReceived, connectionStateReceived } from './store/sessionSlice.ts';
 import { loadSettings } from './store/settingsSlice.ts';
+import { progressReceived as tableExportProgressReceived } from './store/tableExportSlice.ts';
 import { progressReceived } from './store/updaterSlice.ts';
 import { initBridge } from './common/bridge/bridge.ts';
 import './styles/residual.css';
@@ -67,6 +70,11 @@ void Neutralino.events.on(AWS_SSO_PROMPT_EVENT, (evt: CustomEvent) => {
 // is only what is on screen in between, the same split update progress draws.
 void Neutralino.events.on(AI_DELTA_EVENT, (evt: CustomEvent) => {
     store.dispatch(deltaReceived(evt.detail as AiDelta));
+});
+
+// A table export's row counter filling in, the same split as update progress.
+void Neutralino.events.on(EXPORT_PROGRESS_EVENT, (evt: CustomEvent) => {
+    store.dispatch(tableExportProgressReceived(evt.detail as ExportProgress));
 });
 
 const root = document.getElementById('root');

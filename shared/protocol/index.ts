@@ -84,6 +84,7 @@ export type {
     ConnectionState,
     ConnectProgress,
     DbResponse,
+    ExportProgress,
 } from './events.ts';
 export {
     AI_DELTA_EVENT,
@@ -91,5 +92,6 @@ export {
     CONNECT_PROGRESS_EVENT,
     CONNECTION_STATE_EVENT,
     DB_RESPONSE_EVENT,
+    EXPORT_PROGRESS_EVENT,
     UPDATE_PROGRESS_EVENT,
 } from './events.ts';

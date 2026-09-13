@@ -2,7 +2,7 @@ import type { Connection as MysqlConnection, FieldPacket } from 'mysql2/promise'
 
 import type { CellValue } from '../../../../shared/protocol/index.ts';
 import type { Driver, QueryOutcome } from '../driver.ts';
-import { describeOk, runWrites, settleOnce, toDisplayRow } from '../common.ts';
+import { describeOk, renderSqlLiteral, runWrites, settleOnce, toDisplayRow } from '../common.ts';
 import { mysqlCatalog } from './catalog.ts';
 import { mysqlDdl } from './ddl.ts';
 import { mysqlLifecycle } from './lifecycle.ts';
@@ -200,5 +200,13 @@ export const mysqlDriver: Driver<MysqlConnection> = {
     // mysql2 binds positionally in order, so every placeholder is the same token.
     placeholder() {
         return '?';
+    },
+
+    // Backslash is MySQL's own escape character in a string literal under the
+    // default sql_mode, so a literal backslash has to be doubled as well as the
+    // quote -- doubling the quote alone (enough for Postgres and SQLite) would
+    // leave a value ending in `\` swallowing the closing quote that follows it.
+    sqlLiteral(value) {
+        return renderSqlLiteral(value, (s) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`);
     },
 };

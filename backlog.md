@@ -87,16 +87,6 @@ Things that are wrong.
 
 Things that do not exist yet.
 
-- **Export a table** — Getting a table out of the app means selecting rows by
-  hand or writing the dump query yourself. Add an export that streams a whole
-  table — all rows, paged from the server so a large one never has to land in the
-  grid first — to a file chosen by a native save dialog, as CSV or as SQL. The
-  SQL form is INSERT statements, with the table's `CREATE TABLE` offered as an
-  optional preamble that reuses the definition work from the context menu. The
-  extension produces the rows, since the UI cannot read a database, and every
-  value is emitted exactly as the server sent it, quoted per engine — never
-  reformatted through a JS `Date` or `Number`.
-
 - **Hide and show grid columns** — There is no way to hide a column in the
   results grid at all today. Add a right-click "Hide column" entry on column
   headers, plus a toolbar affordance listing every column with a checkbox so a
@@ -205,6 +195,20 @@ Things that do not exist yet.
   bridge plus the reverse-RPC into the webview that `docs/decisions.md` already
   rejected as the largest new machinery the feature could have had. Parked until
   one of those is chosen; the API-key path stays the tool-capable one.
+
+- **Open a `.sql` file from outside the app** — A `.sql` file on disk can only
+  reach the editor by pasting its text in; there is no way to double-click one,
+  "Open with" Squeal, or drop it onto the window. Register Squeal as a
+  selectable default app for `.sql` on install, on all three platforms (each
+  its own mechanism — the Windows installer's registry association, macOS's
+  `Info.plist`/`LSHandlerRank`, a Linux `.desktop` MIME association), so
+  double-clicking or "Open with" launches it into a new tab. Drag-and-drop of a
+  `.sql` file onto the window opens it the same way — the same underlying need,
+  asked for together. A huge file opens exactly as any file does today, through
+  Monaco, which has its own large-file mode (past roughly 50MB it drops syntax
+  highlighting and similar niceties rather than choking) — true virtualization
+  or streaming of a huge file's *content* is a real, much bigger investigation
+  Monaco does not offer for free, and is not assumed solved by this item.
 
 ## Tech debts
 

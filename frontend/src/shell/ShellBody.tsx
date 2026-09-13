@@ -31,6 +31,12 @@ export default function ShellBody({ s }: { s: ReturnType<typeof useShell> }) {
                 collapsed={s.sidebarCollapsed}
                 onToggleCollapse={s.toggleSidebar}
                 focusFilter={s.filterFocusRequest}
+                exporting={s.exporting}
+                exportDialogVisible={s.exportDialogVisible}
+                blockedExportRequest={s.blockedExportRequest}
+                onOpenExport={s.openExportDialog}
+                onMinimizeExport={s.minimizeExportDialog}
+                onCloseExport={s.closeExportDialog}
             />
             {!s.sidebarCollapsed && <ResizeHandle orientation="vertical" onDrag={s.dragSidebar} />}
 

@@ -300,4 +300,21 @@ export interface Driver<C> {
      * `buildWhere`) takes it as a callback so the assembly cannot drift per engine.
      */
     placeholder(position: number): string;
+    /**
+     * Render a value as a SQL literal, for "Export table"'s generated `INSERT`
+     * statements -- the one place this app writes a value into SQL text rather
+     * than binding it as a parameter.
+     *
+     * `value` is the already-flattened `CellValue` `query()` hands back, the
+     * same one the grid renders from -- not a second, earlier-stage value this
+     * side would have to fetch specially. That is a deliberate simplification:
+     * a BIGINT or a hex-encoded blob keeps its exact digits (`toDisplayValue`
+     * already made them lossless text) but travels through this as a quoted
+     * string rather than a bare numeric literal. Every engine here accepts a
+     * quoted numeric string into a numeric column, so nothing is lost -- see
+     * `docs/decisions.md`. Per engine because string escaping is: MySQL
+     * doubles a backslash as well as a quote, Postgres and SQLite double only
+     * the quote.
+     */
+    sqlLiteral(value: CellValue): string;
 }

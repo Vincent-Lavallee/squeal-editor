@@ -7801,3 +7801,106 @@ to `~/Library/Logs/DiagnosticReports/` with no configuration needed. Neither
 setup catches an external kill with no fault behind it — a `SIGKILL`-equivalent
 gives the process no moment to be caught in, on either platform, which is
 exactly what the health line above is for instead.
+
+---
+
+## Exporting a table quotes every non-numeric value, rather than telling a typed literal from a string one
+
+"Export a table"'s SQL form needed a way to render a value as a SQL `INSERT`
+literal — something nothing in this codebase did before. The value it has to
+render is `Driver.query`'s already-flattened `CellValue` (`toDisplayRow`'s
+output — the same one the grid renders from), because that is the value
+already flowing through the paging loop this reuses from `db.browse`. The
+question was whether that is *enough*, or whether a correct rendering needs a
+second, earlier-stage value fetched specially — the raw driver row, before
+`toDisplayRow` turns a bigint into a string and a `Buffer` into `0x…` hex.
+
+**Decided: render from the flattened value, and quote every string —
+including a bigint's or a blob's digits — rather than bypass the flattening to
+keep them numeric-looking.** The alternative would have meant a second reading
+of a page's rows that never crosses `toDisplayRow`, or teaching every driver's
+`query()` to hand back both forms — a second row shape for one caller, in a
+codebase whose drivers already agree hard on there being exactly one. What the
+flattening actually costs here is cosmetic: `INSERT INTO t (id) VALUES
+('9007199254740993')` inserts the exact same value as the unquoted form in
+MySQL, Postgres and SQLite alike, because a string literal implicitly (or, on
+strict Postgres, still validly) converts against a numeric column on the way
+in. Nothing is rounded, shifted or truncated — the one thing *Never render a
+value through `Date` or `Number`* actually forbids — because nothing here ever
+reformats the value; `renderSqlLiteral` only branches on the JS type it
+already has (`typeof value === 'number'` for a bare literal, else quoted) and
+never re-derives a number or a date from text.
+
+`Driver.sqlLiteral` therefore takes a `CellValue`, not a raw driver value, and
+needed no new plumbing anywhere upstream of it — `connectionExportMethods.ts`
+calls the same `driver.query` `browse` does. The one place two engines could
+still drift is string escaping, which stays per-driver: MySQL doubles a
+backslash as well as a quote (its strings treat `\` as an escape character
+under the default `sql_mode`); Postgres and SQLite double only the quote.
+
+This is the second `insertStatement`-shaped function in the app, after the
+one "Copy as SQL insert" already had (`resultsSqlStatement.ts`, client-side).
+They stayed two rather than becoming one: the client-side one formats rows
+already sitting in the grid, with no round trip and no reason to page
+anything, while this one exists *because* a table being exported may never
+fit in the grid at all and has to be paged from the server in the extension,
+which is also the only side allowed to author the qualified table name and
+its quoting. A shared function would have had to take a `quoteIdent` from one
+side and hand a value-formatter to the other for no simplification either
+side could actually use.
+
+## The export dialog can be minimized, and "which table" moved to `Shell`
+
+Asked for after the first cut shipped: closing the export dialog mid-run
+should not stop the export, its progress should show in the status bar
+instead, and clicking that should reopen the dialog. The first version's
+`exporting: TableInfo | null` lived in `useSidebarMenus`, scoped under
+`Sidebar` — fine for "drop table," which has no state worth surviving a
+close, wrong for this the moment reopening from the status bar was required:
+the status bar is `Shell`'s other child, not a descendant of the sidebar, and
+cannot reach into it.
+
+**Moved to `useTableExportDialog`, composed in `useShell` rather than added
+to `tableExportSlice`.** "Which table, and is the dialog visible" never
+crosses the bridge — it is a UI routing fact exactly like `namingTab`
+(`SaveQueryDialog`) and `closing` (`CloseTabsConfirm`), both already lifted to
+`Shell`-local state for the identical reason: dialogs opened from one
+subtree, needed by a sibling. Putting it in the slice instead would have
+made "is the dialog open" a fact the extension's own broadcasts could
+plausibly be mistaken for touching, when nothing about visibility is theirs
+to know.
+
+**`ExportTarget` carries both the table and the database it was opened
+against, not just the table.** The first cut read `s.database` (the tree's
+*currently shown* database) when rendering the reopened dialog — correct only
+because nothing yet let the tree navigate away while an export sat minimized.
+Once minimizing was possible, that became a live bug: reopen after browsing
+to a different database and the dialog would name the wrong one. Both facts
+are fixed at the moment "Export table" was clicked, in one small
+`exportTarget.ts` type shared by `useTableExportDialog` and `Sidebar` — a
+composition-root hook is allowed to import a feature's type; the reverse
+would have been the wrong direction, so the type lives under `table-export/`
+and not under `shell/`.
+
+**Minimizing unmounts `ExportTableDialog`, so what it was started with had to
+move into the slice too.** `format`/`includeCreateTable` were originally
+`useExportTableForm`'s own `useState`, seeded fresh on every mount. That was
+correct as long as the dialog never unmounted while running; minimizing
+changed that constraint retroactively, and a reopened dialog was found
+showing "Format: CSV" under a SQL export that had actually been running the
+whole time, because the remounted hook's `useState` had no way to know
+otherwise. `tableExportSlice` now records what `exportTable.pending` was
+actually dispatched with, and `useExportTableForm` seeds its local state from
+that instead of a hardcoded default — the local state still exists, and is
+still what changes live while the picker is open, but it is no longer the
+only copy of the answer.
+
+**A fresh "Export table" clears the slice; the status bar's reopen does
+not.** The same slot that lets a reopened dialog show a finished run's result
+also means a *new* export, chosen for a different table (or the same one
+again) while the last run's result is still sitting there unclosed, would
+otherwise open onto that stale answer — a result and a format that belong to
+a table nothing has been asked to export yet. `openExportDialog` (the
+context-menu path) dispatches `cleared()` before setting up the new target;
+`reopenExportDialog` (the status-bar path) does not, because showing what is
+already there is the entire point of that one.

@@ -23,11 +23,12 @@ not an objection.
 
 | File | Owns |
 |---|---|
-| `main.ts` | transport (WebSocket, heartbeat) and dispatch: assembles `COMMANDS` by spreading each `commands*.ts` file's `Pick<Handlers, ...>` slice. The heartbeat's own tick also writes a `health: rss=… heapUsed=… connections=…` line every five minutes (`logHealthIfDue`) — a process that later disappears with no exception, on any platform, has no other trace of a slow leak leading up to it. `commandTypes.ts` holds the shared `Handlers`/`Send` types. `commandsConnectionCore.ts` is the connection registry and `establish` (`connectionCount()` is what the health line reads); `commandsConnection.ts` is the `db.*` handlers that use it (split further into table-catalog/schema-catalog/query sub-groups internally); `commandsSaved.ts`, `commandsWorkspaces.ts`, `commandsAws.ts`, `commandsWindow.ts`, `commandsMisc.ts` (saved queries, conversations, settings, `app.dataDir`), `commandsUpdater.ts`, `commandsAssistant.ts` are the rest, one file per comment-delimited domain the handlers already had |
-| `connection.ts` | one server connection: opens it, verifies it, and assembles the returned `ConnectionHandle` by spreading method groups from its siblings — `connectionState.ts` (per-database clients, the drop/retry plumbing), `connectionCatalogMethods.ts` (the thin listing/DDL passthroughs), `connectionQueryMethods.ts` (`query` and `browse` — the page SQL), `connectionWriteMethods.ts` (`write`), `connectionLifecycleMethods.ts` (`setReadOnly`, `close`); `connectionTypes.ts` holds the `ConnectionHandle`/`TableRows` shapes all of them share |
+| `main.ts` | transport (WebSocket, heartbeat) and dispatch: assembles `COMMANDS` by spreading each `commands*.ts` file's `Pick<Handlers, ...>` slice. The heartbeat's own tick also writes a `health: rss=… heapUsed=… connections=…` line every five minutes (`logHealthIfDue`) — a process that later disappears with no exception, on any platform, has no other trace of a slow leak leading up to it. `commandTypes.ts` holds the shared `Handlers`/`Send` types. `commandsConnectionCore.ts` is the connection registry and `establish` (`connectionCount()` is what the health line reads); `commandsConnection.ts` is the `db.*` handlers that use it (split further into table-catalog/schema-catalog/query sub-groups internally); `commandsSaved.ts`, `commandsWorkspaces.ts`, `commandsAws.ts`, `commandsWindow.ts`, `commandsMisc.ts` (saved queries, conversations, settings, `app.dataDir`), `commandsUpdater.ts`, `commandsAssistant.ts`, `commandsExport.ts` (`db.export`/`db.exportCancel`, and the `exportId`-keyed `AbortController` map that backs the cancel) are the rest, one file per comment-delimited domain the handlers already had |
+| `connection.ts` | one server connection: opens it, verifies it, and assembles the returned `ConnectionHandle` by spreading method groups from its siblings — `connectionState.ts` (per-database clients, the drop/retry plumbing), `connectionCatalogMethods.ts` (the thin listing/DDL passthroughs), `connectionQueryMethods.ts` (`query` and `browse` — the page SQL), `connectionWriteMethods.ts` (`write`), `connectionExportMethods.ts` (`exportTable` — see *Exporting a table*), `connectionLifecycleMethods.ts` (`setReadOnly`, `close`); `connectionTypes.ts` holds the `ConnectionHandle`/`TableRows` shapes all of them share |
 | `drivers/` | the engine layer: the contract, the shared assemblers, the dispatch, and one file per engine's SQL and value handling |
 | `store.ts` | re-exports the split below and owns `closeStore` (tests only), which resets both halves of the singleton state. `storeCore.ts` is the SQLite handle, the row shapes, and the default-workspace/-environment invariants; `storeCrypto.ts` is the password encryption; `storeConnections.ts` is the saved-connection CRUD (`writeConnection` is the one write of that table, reused by `storeImport.ts`); `storeWorkspaces.ts`, `storeEnvironments.ts`, `storeSettings.ts`, `storeStars.ts`, `storeColumnOrder.ts`, `storeQueries.ts`, `storeSessions.ts`, `storeConversations.ts` are each the one table they name |
 | `transfer.ts` | the connections file: what an export writes, what an import reads, and the validation between |
+| `tableExport.ts` | "Export a table"'s pure text formatting — `csvRow` and `insertStatement` — with no I/O and no engine dispatch of its own; see *Exporting a table* |
 | `migrations/` | the store's schema, one file per change, plus the runner that brings a file up to it |
 | `chrome.ts` (+ `chromeLibs.ts`) | the window frame: its colour, the maximise clamp, and injecting the chrome DLL that reclaims the non-client area — all over `bun:ffi`. Windows-only, best-effort. `chromeLibs.ts` is only the three `dlopen` calls, split out for length |
 | `log.ts` | levelled, timestamped logging to a bounded file on disk |
@@ -668,6 +669,58 @@ guarded up top by a typed-name modal (the read-only-unlock friction) and, for a
 connection held read-only, refused there too — read-only is a session mode that
 does not reliably cover DDL, so the extension does not gate on it and the UI
 does. See `docs/decisions.md`.
+
+## Exporting a table
+
+`db.export` streams every row of a table to a file, as CSV or as SQL `INSERT`
+statements. It exists on this side for `db.browse`'s reason — paging is SQL
+this side authors — and writes the file itself for `db.saved.export`'s reason:
+the UI owns the native save dialog and the path, the extension owns the bytes,
+so a table too large for the grid never has to cross the bridge as data. Only
+a path and a small progress counter do.
+
+**Paging is `browse`'s idiom, looped to exhaustion.** `connectionExportMethods.ts`
+runs `SELECT * FROM <qualified> LIMIT EXPORT_PAGE_SIZE+1 OFFSET <n>` through
+`driver.query` and reads `hasMore` off the spare row, exactly like a browsed
+page — just at `EXPORT_PAGE_SIZE` (2,000, in `connectionTypes.ts`) rather than
+the grid's `PAGE_SIZE`, since nothing here renders a page, only writes one.
+The **`CREATE TABLE` preamble is `db.ddl`'s own `driver.tableDdl` call**,
+invoked before the row loop rather than reconstructed — there is one place
+that renders a table's definition, and this is not a second one.
+
+**Every value is rendered from the already-flattened `CellValue`, not a
+second, earlier-stage value fetched specially.** `Driver.sqlLiteral` — new
+alongside `quoteIdent`/`placeholder` — takes the same value `query()` already
+hands back (the one the grid renders from) and renders it as SQL text: `null`
+→ `NULL`, `number`/`boolean` → bare, `string` → quoted and escaped per engine
+(`renderSqlLiteral` in `commonValues.ts` is the shared null/number/boolean
+dispatch; only the string-escaping callback differs — MySQL doubles a
+backslash as well as a quote, Postgres and SQLite double only the quote). This
+is a deliberate simplification: a BIGINT or a hex-encoded blob keeps its exact
+digits (`toDisplayValue` already made them lossless text) but travels through
+this as a quoted string rather than a typed numeric literal. Every engine here
+accepts a quoted numeric string into a numeric column on insert, so nothing is
+lost — see `docs/decisions.md` for why a raw, pre-flattening value pipeline
+was rejected in favour of this. CSV needs no engine-specific rendering at all;
+`tableExport.ts`'s `csvRow` consumes the same flattened rows directly.
+
+**The file is written incrementally**, via `Bun.file(path).writer()` (a
+`FileSink`), flushed once per page — the "a large table never has to land in
+memory whole" rule applied to the export file the same way it already applies
+to the grid. Nothing else in this codebase writes a file this way yet;
+`transfer.ts` and the updater both write their (much smaller) files in one
+shot.
+
+**Cancellation is the `ai.send`/`ai.cancel` shape**, not a new one:
+`db.export`'s `exportId` is minted by the **UI**, the same reason `ai.send`'s
+`turnId` is — a cancel has to be able to name a job before the command it is
+cancelling has replied. `commandsExport.ts` keeps a module-level
+`Map<string, AbortController>` keyed by it; `db.exportCancel` aborts the
+matching controller and the export loop checks `signal.aborted` once per page,
+closing the file where it stands rather than throwing — the rows already
+written are still a well-formed, if partial, file. Resolving `db.exportCancel`
+does not mean the export has actually stopped; `db.export`'s own reply, still
+pending, is what reports that back via `cancelled`.
 
 ## Triggers and functions
 

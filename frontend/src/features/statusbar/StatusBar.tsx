@@ -1,13 +1,13 @@
-import { useState } from 'react';
 import { engineLabel } from '../../common/db/engines.ts';
+import type { ExportTarget } from '../explorer/table-export/exportTarget.ts';
 import { useSession } from '../../store/sessionSlice.ts';
 import Badge from '../../common/components/Badge.tsx';
 import * as t from '../../common/tokens';
 import AssistantStatus from './AssistantStatus.tsx';
 import DisconnectButton from './DisconnectButton.tsx';
 import LostConnectionBanner from './LostConnectionBanner.tsx';
-import ReadOnlyConfirm from './ReadOnlyConfirm.tsx';
-import ReadOnlyLock from './ReadOnlyLock.tsx';
+import ReadOnlyStatus from './ReadOnlyStatus.tsx';
+import TableExportStatus from './TableExportStatus.tsx';
 import { useQueryElapsed } from './hooks/useQueryElapsed.ts';
 
 const segment: React.CSSProperties = {
@@ -20,7 +20,12 @@ const segment: React.CSSProperties = {
     fontSize: t.TEXT_BADGE,
 };
 
-export default function StatusBar() {
+interface Props {
+    exporting: ExportTarget | null;
+    onReopenExport: () => void;
+}
+
+export default function StatusBar({ exporting, onReopenExport }: Props) {
     const {
         connectionId,
         config,
@@ -31,15 +36,9 @@ export default function StatusBar() {
         setReadOnly,
         disconnect,
     } = useSession();
-    const [confirming, setConfirming] = useState(false);
     const { queryRunning, queryElapsed } = useQueryElapsed();
 
     if (!connectionId || !environment) return null;
-
-    function toggle(): void {
-        if (readOnly) setConfirming(true);
-        else if (connectionId) void setReadOnly(connectionId, true);
-    }
 
     return (
         <footer
@@ -62,24 +61,20 @@ export default function StatusBar() {
             {queryRunning && <span style={segment}>Query running for {queryElapsed}s…</span>}
             {lostReason && <LostConnectionBanner lostReason={lostReason} />}
             <div style={{ flex: 1 }} />
+            {exporting && <TableExportStatus table={exporting.table} onReopen={onReopenExport} />}
             <AssistantStatus />
             {config && (
                 <Badge kind="neutral" style={{ margin: `0 ${t.GAP_XS}px 0 ${t.GAP}px` }}>
                     {engineLabel(config.type)}
                 </Badge>
             )}
-            <ReadOnlyLock readOnly={readOnly} onToggle={toggle} />
-            {confirming && (
-                <ReadOnlyConfirm
-                    environment={environment}
-                    name={name}
-                    onConfirm={() => {
-                        setConfirming(false);
-                        void setReadOnly(connectionId, false);
-                    }}
-                    onCancel={() => setConfirming(false)}
-                />
-            )}
+            <ReadOnlyStatus
+                connectionId={connectionId}
+                readOnly={readOnly}
+                environment={environment}
+                name={name}
+                setReadOnly={setReadOnly}
+            />
         </footer>
     );
 }

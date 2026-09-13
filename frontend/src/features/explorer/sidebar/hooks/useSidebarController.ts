@@ -10,6 +10,7 @@ import { useSidebarExplorerData } from '../../tree/hooks/useSidebarExplorerData.
 import { useSidebarMenuItems } from '../../menus/hooks/useSidebarMenuItems.ts';
 import { useSidebarMenus } from '../../menus/hooks/useSidebarMenus.ts';
 import { useSidebarTableMenuItems } from '../../menus/hooks/useSidebarTableMenuItems.ts';
+import type { ExportTarget } from '../../table-export/exportTarget.ts';
 
 interface Options {
     shownDatabase: string | null;
@@ -23,6 +24,10 @@ interface Options {
     ) => void;
     onShowFunctionDefinition: (database: string, func: FunctionInfo) => void;
     focusFilter?: number;
+    exporting: ExportTarget | null;
+    exportDialogVisible: boolean;
+    blockedExportRequest: ExportTarget | null;
+    onOpenExport: (table: TableInfo, database: string) => void;
 }
 
 /**
@@ -38,6 +43,10 @@ export function useSidebarController(options: Options) {
         onShowDefinition,
         onShowTriggerDefinition,
         onShowFunctionDefinition,
+        exporting,
+        exportDialogVisible,
+        blockedExportRequest,
+        onOpenExport,
     } = options;
 
     const data = useSidebarExplorerData(shownDatabase);
@@ -69,6 +78,7 @@ export function useSidebarController(options: Options) {
         defaultSchema: data.defaultSchema,
         onShowDefinition,
         onDrop: setDropping,
+        onExport: onOpenExport,
     });
     const { functionMenuItems, triggerMenuItems } = useSidebarMenuItems({
         onShowFunctionDefinition,
@@ -88,6 +98,9 @@ export function useSidebarController(options: Options) {
         setMenu,
         dropping,
         setDropping,
+        exporting,
+        exportDialogVisible,
+        blockedExportRequest,
         menuItems,
         functionMenuItems,
         triggerMenuItems,
