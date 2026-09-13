@@ -304,6 +304,9 @@ const pagerBtn = (label: 'Prev' | 'Next') => `
   [...document.querySelectorAll('[data-testid="results-pager"] button')]
     .find(e => e.textContent.trim() === ${JSON.stringify(label)})`;
 
+/** The results bar's click-to-reveal total, before it has been asked for. */
+const revealCountBtn = `document.querySelector('[data-testid="results-row-count-reveal"]')`;
+
 /**
  * How many rows the grid is showing -- what a filter changes. Reports 0 while
  * `GridSkeleton` is up: its placeholder rows share the exact `.grid tbody tr`
@@ -1120,6 +1123,27 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await Bun.sleep(300);
         });
 
+        test('the total is revealed on click and survives paging the same table', async () => {
+            await app.evaluate(clickTable('events'));
+            await app.waitFor(`(${barText}).includes('rows 1–100') ? true : null`);
+
+            // Not asked for yet: the bar offers the button, not a number.
+            expect(await app.evaluate<string>(barText)).not.toContain('150 rows');
+            expect(await app.evaluate<boolean>(`!!${revealCountBtn}`)).toBe(true);
+
+            await app.evaluate(`${revealCountBtn}.click(); true;`);
+            await app.waitFor(`(${barText}).includes('150 rows') ? true : null`);
+
+            // Paging is the same table under the same (absent) filter, so the total
+            // already paid for stays on screen rather than reverting to the button.
+            await app.evaluate(`${pagerBtn('Next')}.click(); true;`);
+            await app.waitFor(`(${barText}).includes('rows 101–150') ? true : null`);
+            expect(await app.evaluate<string>(barText)).toContain('150 rows');
+
+            await app.evaluate(closeTab('events'));
+            await Bun.sleep(300);
+        });
+
         /*
          * One grid node shows whichever tab is in front, so without the offset being
          * written back a tab returns to wherever the *other* tab's rows left the
@@ -1177,7 +1201,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             );
             await Bun.sleep(300);
             await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
-            await Bun.sleep(2000);
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
 
             await app.evaluate(
                 `${gridScroll}.scrollTop = 400; ${gridScroll}.scrollLeft = 300; true;`,
@@ -1199,7 +1223,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // horizontal one is kept: the columns are unchanged, and a sort, which is
             // also a re-run, must not drag the view sideways.
             await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
-            await Bun.sleep(2000);
+            await app.waitFor(`${gridScroll}.scrollTop === 0 ? true : null`);
             expect(await app.evaluate<number>(`${gridScroll}.scrollTop`)).toBe(0);
             expect(await app.evaluate<number>(`${gridScroll}.scrollLeft`)).toBe(300);
 

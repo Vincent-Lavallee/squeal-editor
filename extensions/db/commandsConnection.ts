@@ -145,7 +145,10 @@ function commandsSchemaCatalog(): Pick<
     };
 }
 
-function commandsConnectionQuery(): Pick<Handlers, 'db.query' | 'db.browse' | 'db.write'> {
+function commandsConnectionQuery(): Pick<
+    Handlers,
+    'db.query' | 'db.browse' | 'db.count' | 'db.write'
+> {
     return {
         async 'db.query'({ connectionId, database, sql, sort }) {
             const conn = getConnection(connectionId);
@@ -171,6 +174,15 @@ function commandsConnectionQuery(): Pick<Handlers, 'db.query' | 'db.browse' | 'd
             if (durationMs > SLOW_QUERY_MS)
                 log.warn(`slow browse on ${connectionId} (${database}.${table}): ${durationMs}ms`);
             return { result: { columns, rows, durationMs }, ...page };
+        },
+
+        async 'db.count'({ connectionId, database, table, schema, filter }) {
+            const count = await getConnection(connectionId).count(
+                database,
+                { table, schema },
+                filter,
+            );
+            return { count };
         },
 
         async 'db.write'({ connectionId, database, table, schema, edits, deletes }) {
@@ -199,6 +211,7 @@ export function commandsConnection(
     | 'db.tableKey'
     | 'db.query'
     | 'db.browse'
+    | 'db.count'
     | 'db.ddl'
     | 'db.triggers'
     | 'db.triggerDdl'

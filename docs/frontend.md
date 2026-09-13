@@ -2139,6 +2139,39 @@ set, and holding the old offset lands on page 3 of a one-page result, which read
 as "no matches" rather than as a paging artefact. Reload stays user-initiated
 throughout — editing the draft touches no database, and only *Search* does.
 
+## A browsed table's exact total, on demand
+
+The results bar's row range (`rows 1–50`) says nothing about how many rows the
+table actually has — deliberately: `COUNT(*)` can be a full scan, and asking for
+one on every page would slow down opening a huge table for a question most
+browses never ask. `ResultsRowCount`, in `ResultsBar`'s button row beside
+*Clear filter* and the pager, is the click-to-reveal affordance: a **Load
+count** button (the toolbar `Format` button's own recipe — default variant,
+`BUTTON_H_BAR` — not the row's ghost buttons, since asking the server something
+is a heavier act than clearing or paging) until asked, `… rows` while the ask is
+in flight, and `1,204,000 rows` once it lands.
+
+**Query results never show it.** `ResultsBar` only renders the control when
+`g.browse` is set — an ad-hoc `db.query` result is deliberately unpaged already
+(see *A query's result is capped too*), so there is no narrower total to reveal.
+
+**`rowCount` lives in `ResultsState` beside `browse`, not inside it.** The two
+answer different questions with different lifetimes: paging to the next page
+of the *same* table and filter should not blank a total someone already paid
+for, but a different table or a changed filter makes the old total an answer
+to a question no longer being asked. `resultsSlice.ts`'s `browseTable.fulfilled`
+case is the one place that tells the two apart — `sameCountedPage` (in
+`resultsRowCount.ts`, the store file this feature's slice and thunk are split
+into purely for the parent files' length) keeps `rowCount` across a plain
+`offset` change and drops it back to unrevealed on anything else.
+
+**Formatting the count never goes through a JS `Number`.** `db.count`'s answer
+is a `CellValue` like any other database value — a string on Postgres and
+SQLite, a number on MySQL when it is small enough — and `ResultsRowCount`'s
+`formatCount` groups its digits with commas by regex over the string form,
+never by parsing it. The BIGINT-rounding rule in `docs/extension.md` applies to
+a count exactly as it does to a grid cell.
+
 ## Refreshing what a tab is showing
 
 `Ctrl+R` re-reads whatever the pane being worked in has on screen, and what that

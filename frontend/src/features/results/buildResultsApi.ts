@@ -89,6 +89,12 @@ export function buildResultsApi(a: Args) {
         next: browsing.next,
         prev: browsing.prev,
 
+        // The results bar's click-to-reveal total -- null until asked for, or
+        // whenever `part.browse` moves to a different table/filter it no
+        // longer answers about. See `RowCountState`.
+        rowCount: part.rowCount,
+        revealRowCount: browsing.revealRowCount,
+
         rememberScroll: viewPrefs.rememberScroll,
         recallScroll: viewPrefs.recallScroll,
 

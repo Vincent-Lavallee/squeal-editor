@@ -6,6 +6,7 @@
 
 import type { ConnectionConfig, ServerConfig, SqlDialect, TestPassword } from '../config.ts';
 import type {
+    CellValue,
     ColumnInfo,
     DiagramTable,
     FunctionInfo,
@@ -194,6 +195,27 @@ export interface DbCommands {
             sort?: SortOrder;
         };
         res: TablePage;
+    };
+    /**
+     * The total rows a browsed table's `filter` matches, asked for on demand
+     * rather than with every page.
+     *
+     * `db.browse` never runs this itself: `hasMore` already answers "is there
+     * another page" from one spare row, and an exact total is a full scan on a
+     * huge table -- paying for it on every fetch would slow down opening a
+     * table for a question most browses never ask. It is the same `filter` a
+     * page was fetched with, so the count matches what is on screen; an
+     * unfiltered browse counts the whole table, the same as no `WHERE` at all.
+     */
+    'db.count': {
+        req: {
+            connectionId: string;
+            database: string;
+            table: string;
+            schema?: string;
+            filter?: TableFilter;
+        };
+        res: { count: CellValue };
     };
     /**
      * A relation's `CREATE` statement, for the context menu's "open definition".

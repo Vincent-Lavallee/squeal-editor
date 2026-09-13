@@ -1,6 +1,45 @@
-import { buildWhere, orderByClause, type Driver } from './drivers/index.ts';
+import { buildWhere, orderByClause, type Driver, type Relation } from './drivers/index.ts';
 import type { ConnectionState, UseClient } from './connectionState.ts';
 import { PAGE_SIZE, QUERY_ROW_CAP, type ConnectionHandle } from './connectionTypes.ts';
+import type { CellValue, TableFilter } from '../../shared/protocol/index.ts';
+
+/**
+ * The total rows `filter` matches, for the results bar's click-to-reveal
+ * total -- built the same way `browse`'s `WHERE` is, and deliberately never
+ * called by it: `COUNT(*)` is its own full scan on some engines, and asking
+ * it with every page would make opening a huge table slow for a question
+ * most browses never ask.
+ *
+ * Assembled into `ConnectionHandle.count` by `connection.ts` rather than
+ * returned from `connectionQueryMethods` alongside `query`/`browse`, purely so
+ * that function's own body stays under the 60-line cap with those two beside
+ * it -- `count` has no state of its own to share with them beyond `use` and
+ * `driver`, both of which this already takes as arguments.
+ */
+export async function runCount<C>(
+    use: UseClient<C>,
+    driver: Driver<C>,
+    args: { database: string; relation: Relation; filter: TableFilter | undefined },
+): Promise<CellValue> {
+    const { database, relation, filter } = args;
+    const { clause, params } = buildWhere(
+        filter,
+        (name) => driver.quoteIdent(name),
+        (position) => driver.placeholder(position),
+    );
+    const where = clause ? ` WHERE ${clause}` : '';
+
+    return use(database, async (client) => {
+        const outcome = await driver.query(
+            client,
+            `SELECT COUNT(*) FROM ${driver.qualify(relation)}${where};`,
+            { params },
+        );
+        // A COUNT(*) always answers one row, one column -- never the
+        // affectedRows arm `query()` also has to handle.
+        return 'affectedRows' in outcome ? 0 : (outcome.rows[0]?.[0] ?? 0);
+    });
+}
 
 export function connectionQueryMethods<C>(
     use: UseClient<C>,

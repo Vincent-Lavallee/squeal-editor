@@ -13,6 +13,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import type {
+    CellValue,
     ColumnInfo,
     ConnectionConfig,
     DiagramTable,
@@ -735,6 +736,52 @@ describe.each([
 
     test('reports how long a page took', async () => {
         expect(typeof (await browse('users')).result.durationMs).toBe('number');
+    });
+
+    /* -- The total a browsed table's filter matches, fetched separately from the
+        page on `db.count` -- never folded into `db.browse` itself. `String()`
+        normalises the comparison because engines disagree on the wire type of
+        the same count (Postgres and SQLite answer a string, mysql2 a number
+        when it fits) -- see *Value handling* in docs/extension.md. -- */
+
+    const count = async (table: string, filter?: TableFilter): Promise<CellValue> =>
+        (
+            (await h.ok('db.count', {
+                connectionId,
+                database: fixtureDb,
+                table,
+                filter,
+            })) as { count: CellValue }
+        ).count;
+
+    test('counts every row when unfiltered', async () => {
+        expect(String(await count('events'))).toBe('150');
+    });
+
+    test('counts only what a builder filter matches', async () => {
+        const matched = await count(
+            'events',
+            where([{ column: 'label', operator: '<>', value: 'e1' }]),
+        );
+        expect(String(matched)).toBe('149');
+    });
+
+    test('an empty builder counts the whole table, same as no filter', async () => {
+        expect(String(await count('tags', where([])))).toBe('2');
+    });
+
+    test('a raw clause counts under the user-typed WHERE', async () => {
+        expect(String(await count('tags', { kind: 'raw', where: "label = 'red'" }))).toBe('1');
+    });
+
+    test('a count value is bound, never interpolated', async () => {
+        // Same proof as the browsed-page equivalent: if this were pasted into the
+        // SQL, `OR 1=1` would widen the count back to the whole table.
+        const matched = await count(
+            'users',
+            where([{ column: 'name', operator: '=', value: "' OR 1=1 --" }]),
+        );
+        expect(String(matched)).toBe('0');
     });
 
     /* -- Sorting. Two paths, one contract: a browsed page orders inside the page

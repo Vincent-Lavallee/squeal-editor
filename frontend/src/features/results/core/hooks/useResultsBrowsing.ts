@@ -2,6 +2,7 @@ import type { SortOrder, TableFilter } from '../../../../../../shared/protocol/i
 import type { ResultsState } from '../../../../store/resultsSlice.ts';
 import { useResultsFilterActions } from '../../filter/hooks/useResultsFilterActions.ts';
 import { useResultsPaging } from './useResultsPaging.ts';
+import { useResultsRowCount } from './useResultsRowCount.ts';
 import { useResultsSort } from './useResultsSort.ts';
 
 interface Options {
@@ -42,6 +43,7 @@ export function useResultsBrowsing(options: Options) {
         browse,
     });
     const paging = useResultsPaging({ activeTabId, browse, sort });
+    const rowCount = useResultsRowCount({ activeTabId, browse });
     const toggleSort = useResultsSort({
         activeTabId,
         gridTable,
@@ -51,5 +53,5 @@ export function useResultsBrowsing(options: Options) {
         activeStatement,
     });
 
-    return { ...filterActions, ...paging, toggleSort };
+    return { ...filterActions, ...paging, ...rowCount, toggleSort };
 }
