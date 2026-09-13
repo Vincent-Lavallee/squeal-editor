@@ -2144,14 +2144,16 @@ throughout — editing the draft touches no database, and only *Search* does.
 The results bar's row range (`rows 1–50`) says nothing about how many rows the
 table actually has — deliberately: `COUNT(*)` can be a full scan, and asking for
 one on every page would slow down opening a huge table for a question most
-browses never ask. `ResultsRowCount`, next to the range in `ResultsBarSummary`,
-is the click-to-reveal affordance: a small `total?` button until asked, `of …`
-while the ask is in flight, and `of 1,204,000` once it lands.
+browses never ask. `ResultsRowCount`, in `ResultsBar`'s button row beside
+*Clear filter* and the pager, is the click-to-reveal affordance: a **Load
+count** button (the toolbar `Format` button's own recipe — default variant,
+`BUTTON_H_BAR` — not the row's ghost buttons, since asking the server something
+is a heavier act than clearing or paging) until asked, `of …` while the ask is
+in flight, and `of 1,204,000` once it lands.
 
-**Query results never show it.** `ResultsBarSummary` only renders the control
-inside the `browse` branch — an ad-hoc `db.query` result is deliberately
-unpaged already (see *A query's result is capped too*), so there is no
-narrower total to reveal.
+**Query results never show it.** `ResultsBar` only renders the control when
+`g.browse` is set — an ad-hoc `db.query` result is deliberately unpaged already
+(see *A query's result is capped too*), so there is no narrower total to reveal.
 
 **`rowCount` lives in `ResultsState` beside `browse`, not inside it.** The two
 answer different questions with different lifetimes: paging to the next page

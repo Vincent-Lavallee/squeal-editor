@@ -3,6 +3,7 @@ import * as t from '../../../common/tokens';
 import type { useResultsGridController } from '../grid/hooks/useResultsGridController.ts';
 import ResultsBarSummary from './ResultsBarSummary.tsx';
 import ResultsPager from './ResultsPager.tsx';
+import ResultsRowCount from './ResultsRowCount.tsx';
 
 const barStyle: React.CSSProperties = {
     display: 'flex',
@@ -27,8 +28,6 @@ export default function ResultsBar({ g }: { g: ReturnType<typeof useResultsGridC
                 durationMs={g.result!.durationMs}
                 readOnlyReason={g.readOnlyReason}
                 editBlockedHint={g.editBlockedHint}
-                rowCount={g.rowCount}
-                onRevealRowCount={g.revealRowCount}
             />
 
             <div
@@ -47,6 +46,8 @@ export default function ResultsBar({ g }: { g: ReturnType<typeof useResultsGridC
                         Clear filter
                     </Button>
                 )}
+
+                {g.browse && <ResultsRowCount rowCount={g.rowCount} onReveal={g.revealRowCount} />}
 
                 {g.paged && g.browse && (
                     <ResultsPager browse={g.browse} onPrev={g.prev} onNext={g.next} />

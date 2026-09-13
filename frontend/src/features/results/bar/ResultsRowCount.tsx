@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import Button from '../../../common/components/Button.tsx';
 import * as t from '../../../common/tokens';
 import type { CellValue } from '../../../../../shared/protocol/index.ts';
@@ -7,6 +8,8 @@ interface Props {
     rowCount: RowCountState | null;
     onReveal: () => void;
 }
+
+const countTextStyle: CSSProperties = { fontSize: t.TEXT_BADGE, fontWeight: 500 };
 
 /**
  * Groups a count's digits with commas without ever parsing it into a JS
@@ -24,29 +27,38 @@ function formatCount(value: CellValue): string {
 }
 
 /**
- * The results bar's click-to-reveal total, next to the row range. Its own
- * component rather than inline in `ResultsBarSummary` because it carries a
- * click handler and three render states, where the rest of the bar is plain
- * text.
+ * The results bar's click-to-reveal total, in the button row beside *Clear
+ * filter* and the pager. Its own component rather than inline in `ResultsBar`
+ * because it carries a click handler and three render states, where its
+ * neighbours are each one.
  */
 export default function ResultsRowCount({ rowCount, onReveal }: Props) {
     if (rowCount?.status === 'loaded' && rowCount.value !== null) {
-        return <span data-testid="results-row-count">of {formatCount(rowCount.value)}</span>;
+        return (
+            <span data-testid="results-row-count" style={countTextStyle}>
+                {formatCount(rowCount.value)} rows
+            </span>
+        );
     }
 
     if (rowCount?.status === 'loading') {
-        return <span data-testid="results-row-count-loading">of …</span>;
+        return (
+            <span data-testid="results-row-count-loading" style={countTextStyle}>
+                … rows
+            </span>
+        );
     }
 
+    const isError = rowCount?.status === 'error';
     return (
         <Button
             variant="ghost"
             data-testid="results-row-count-reveal"
-            style={{ height: 18, padding: '0 4px', fontSize: t.TEXT_BADGE, fontWeight: 400 }}
+            style={{ height: t.BUTTON_H_BAR, ...(isError ? { color: t.RED_TEXT } : {}) }}
             onClick={onReveal}
             title="Count every row this table has"
         >
-            {rowCount?.status === 'error' ? 'total? (retry)' : 'total?'}
+            {isError ? 'Load count (retry)' : 'Load count'}
         </Button>
     );
 }
