@@ -1059,3 +1059,11 @@ This is a record, not a plan. Nothing here is waiting on anything.
   always offered, rendering the current selection as a SQL statement even when
   there's no PK to key an INSERT or UPDATE off of. When the selection includes
   a cell, the menu also offers copying that cell's column name.
+
+- **2026-09-11** — **Tab context menu mixes closing with everything else** — The tab right-click
+  menu (Rename, Save, Duplicate, Close, Close others, Close Tabs to the Right,
+  Close All) is one flat list with actions before closes. Closing is what gets
+  used most, so split it into two groups with a plain visual divider (no text
+  subheaders): closing behaviors on top, tab actions below. Within the closing
+  group, order by actual usage — Close others and Close Tabs to the Right ahead
+  of plain Close and Close All.

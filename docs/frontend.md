@@ -458,16 +458,20 @@ imports a sibling. The copy takes the next `Query N` rather than the original's
 name, the same answer the tree gives when a table is opened twice: two tabs, and
 you can tell them apart.
 
-**The menu reads top-down as what the tab is, then what to do with it, then the
-closes**: *Rename*, *Save*, *Duplicate*, then *Close* and the three bulk closes.
-`Close` heads the closing group rather than the whole menu — what once read as
-"this tab cannot be closed" was the item being *absent*, not late, and the two
-items above it are about the tab rather than about getting rid of it. *Save* is
-the strip's route to what Ctrl+S does and is disabled on anything but an editor
-tab, saying so in its title rather than being offered and doing nothing — the
-same rule the bulk closes follow. It arrives as `onSaveTab`, taking an id
-because the menu can be summoned on a tab that is not in front, and wired in
-`Shell` for the reason *Duplicate* is: the text is the editor's, not the tab's.
+**The menu reads top-down as closing first, then the tab actions**, a plain
+`ContextMenu` divider (`MenuDivider`, no text subheader) between the two
+groups: *Close others*, *Close Tabs to the Right*, *Close*, *Close All*, then
+*Rename*, *Save*, *Duplicate*. Closing is what gets used most, so it heads the
+menu rather than trailing it, and within that group the two scoped closes lead
+— they are reached for far more than the plain ones, which is also why
+`Close` does not head the group the way it once headed the whole menu: its
+absence would still read as "this tab cannot be closed" wherever it sits, so
+being present answers that, not being first. *Save* is the strip's route to
+what Ctrl+S does and is disabled on anything but an editor tab, saying so in
+its title rather than being offered and doing nothing — the same rule the bulk
+closes follow. It arrives as `onSaveTab`, taking an id because the menu can be
+summoned on a tab that is not in front, and wired in `Shell` for the reason
+*Duplicate* is: the text is the editor's, not the tab's.
 
 **Renaming double-clicks the label, and the draft while typing never leaves
 `TabStrip`.** The menu's *Rename* enters the same mode — one rename editor,

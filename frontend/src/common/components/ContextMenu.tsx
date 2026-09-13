@@ -23,10 +23,16 @@ export interface MenuItem {
     onSelect: () => void;
 }
 
+export interface MenuDivider {
+    divider: true;
+}
+
+export type MenuEntry = MenuItem | MenuDivider;
+
 interface Props {
     x: number;
     y: number;
-    items: MenuItem[];
+    items: MenuEntry[];
     onClose: () => void;
 }
 
@@ -40,6 +46,12 @@ const menuStyle: React.CSSProperties = {
     border: `1px solid ${t.BORDER_STRONG}`,
     borderRadius: t.RADIUS,
     background: t.BG,
+};
+
+const dividerStyle: React.CSSProperties = {
+    height: 1,
+    margin: '4px 0',
+    background: t.BORDER,
 };
 
 export default function ContextMenu({ x, y, items, onClose }: Props) {
@@ -82,9 +94,13 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
             style={{ ...menuStyle, top: pos.y, left: pos.x }}
             role="menu"
         >
-            {items.map((item) => (
-                <ContextMenuItem key={item.label} item={item} onClose={onClose} />
-            ))}
+            {items.map((item, index) =>
+                'divider' in item ? (
+                    <div key={`divider-${index}`} role="separator" style={dividerStyle} />
+                ) : (
+                    <ContextMenuItem key={item.label} item={item} onClose={onClose} />
+                ),
+            )}
         </div>
     );
 }
