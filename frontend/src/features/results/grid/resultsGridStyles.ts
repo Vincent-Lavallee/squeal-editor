@@ -41,9 +41,24 @@ export const sortMark = (color: string): React.CSSProperties => ({
     height: 14,
     display: 'inline-block',
     verticalAlign: 'text-bottom',
-    marginLeft: t.GAP_XS,
     color,
 });
+
+/**
+ * The sort icon's own click target -- wider than the 14px glyph it wraps, and
+ * the thing `residual.css` lights up on hover so the header can say "sorting
+ * happens here" instead of anywhere along its width.
+ */
+export const sortIconBackdrop: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 22,
+    height: 22,
+    marginLeft: t.GAP_XS,
+    borderRadius: t.RADIUS,
+    cursor: 'pointer',
+};
 
 /**
  * What a click on this header will do, named rather than left to be discovered.

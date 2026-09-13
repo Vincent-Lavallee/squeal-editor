@@ -1042,3 +1042,20 @@ This is a record, not a plan. Nothing here is waiting on anything.
   no way around it. Make it one configurable setting covering both call
   sites, with a default raised well above 60 seconds and a "no timeout"
   option for queries with no natural upper bound.
+
+- **2026-09-10** — **Unify selection and the context menu across the results grid** — Selecting
+  a whole column, or everything in a result set, has no gesture at all today —
+  only the row-number gutter and data cells have a right-click menu, and
+  selecting more than one row means dragging or shift-clicking by hand, which
+  is painful on a large result set. Column headers and the corner cell (between
+  the row-number column and the header row) currently do nothing. Applies to
+  both browsed table grids and ad-hoc query results. Add: clicking the corner
+  cell (plus a keyboard shortcut) selects everything; clicking a column header
+  selects every value in that column; and one standardized context menu that
+  reads whatever is currently selected — a cell, a row, a column, or
+  everything — instead of the fixed, click-target-specific menu there is now.
+  As part of that menu, "Copy as SQL" stops being gated on browse mode or a
+  known primary key (today it only shows up when browsing a table) and is
+  always offered, rendering the current selection as a SQL statement even when
+  there's no PK to key an INSERT or UPDATE off of. When the selection includes
+  a cell, the menu also offers copying that cell's column name.

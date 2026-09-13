@@ -1,6 +1,6 @@
 import * as t from '../../../common/tokens';
 import { DRAG_TYPE } from './columnOrderDrag.ts';
-import { headerCellStyle, sortTitle } from './resultsGridStyles.ts';
+import { headerCellStyle } from './resultsGridStyles.ts';
 import ResultsGridDropMark from './ResultsGridDropMark.tsx';
 import ResultsGridResizeHandle from './ResultsGridResizeHandle.tsx';
 import ResultsGridSortMark from './ResultsGridSortMark.tsx';
@@ -12,7 +12,10 @@ interface Props {
     width: number | undefined;
     resizingColumn: string | null;
     typeLabel: string | undefined;
+    selected: boolean;
     onToggleSort: () => void;
+    onSelectColumn: (e: React.MouseEvent) => void;
+    onOpenMenu: (e: React.MouseEvent) => void;
     onStartResize: (e: React.MouseEvent<HTMLElement>) => void;
     onClearWidth: () => void;
     draggable: boolean;
@@ -23,6 +26,11 @@ interface Props {
     onDragEnd: () => void;
 }
 
+const headerCls = (sortable: boolean, selected: boolean): string | undefined =>
+    [sortable && 'grid__th--sortable', selected && 'grid__th--selected']
+        .filter(Boolean)
+        .join(' ') || undefined;
+
 export default function ResultsGridHeaderCell({
     col,
     sortable,
@@ -30,7 +38,10 @@ export default function ResultsGridHeaderCell({
     width,
     resizingColumn,
     typeLabel,
+    selected,
     onToggleSort,
+    onSelectColumn,
+    onOpenMenu,
     onStartResize,
     onClearWidth,
     draggable,
@@ -45,16 +56,17 @@ export default function ResultsGridHeaderCell({
             data-testid="grid-col"
             data-col-name={col}
             data-sort={sortedBy ?? undefined}
-            className={sortable ? 'grid__th--sortable' : undefined}
+            className={headerCls(sortable, selected)}
             style={headerCellStyle(width, sortable, isDragging)}
-            // The whole header is the target rather than a button inside it: the
-            // name and the type are one label for one column, so a click anywhere
-            // along it means the same thing. Draggable for the same reason the tab
-            // strip's whole tab is: a click without pointer movement still fires
-            // sort, so the two gestures coexist on one element with nothing extra
-            // to wire.
-            onClick={sortable ? onToggleSort : undefined}
-            title={sortable ? sortTitle(col, sortedBy) : undefined}
+            // The whole header selects the column, the same gesture as the row
+            // gutter; sorting lives only on the sort mark's own backdrop now, which
+            // stops the click from also reaching this handler. Draggable for the
+            // same reason the tab strip's whole tab is: a click without pointer
+            // movement still fires select, so the two gestures coexist on one
+            // element with nothing extra to wire.
+            onClick={onSelectColumn}
+            title="Click to select the column"
+            onContextMenu={onOpenMenu}
             draggable={draggable}
             onDragStart={(e) => {
                 onDragStart();
@@ -70,7 +82,12 @@ export default function ResultsGridHeaderCell({
                     {typeLabel}
                 </span>
             )}
-            <ResultsGridSortMark sortable={sortable} sortedBy={sortedBy} />
+            <ResultsGridSortMark
+                col={col}
+                sortable={sortable}
+                sortedBy={sortedBy}
+                onToggleSort={onToggleSort}
+            />
             <ResultsGridResizeHandle
                 col={col}
                 resizingColumn={resizingColumn}

@@ -81,7 +81,14 @@ export function useResults(tab: Tab | null) {
         activeStatement: part.activeStatement,
     });
 
-    const copy = useResultsCopy({ result: part.result, browse: part.browse, tab, dialect });
+    const copy = useResultsCopy({
+        result: part.result,
+        browse: part.browse,
+        editTarget: part.editTarget,
+        pending: identity.pending,
+        tab,
+        dialect,
+    });
     const columns = part.result?.columns ?? [];
     // The columns on screen, as one string. The grid's horizontal offset means
     // something only against them, and a sort leaves them in place while changing

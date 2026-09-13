@@ -5,15 +5,16 @@ import type { Cell, CellRange } from '../resultsGridTypes.ts';
 /**
  * Dragging out a cell range. Split out of `useGridSelection` purely for
  * length; it takes that hook's `cells`/setters rather than owning any state
- * of its own, since a drag clears the row selection and writes the cell one.
+ * of its own, since a drag clears the row/column selection and writes the
+ * cell one.
  */
 export function useCellDrag(args: {
     grid: React.RefObject<HTMLDivElement | null>;
     cells: CellRange | null;
     setCells: (next: CellRange) => void;
-    clearRowSelection: () => void;
+    clearOtherSelections: () => void;
 }) {
-    const { grid, cells, setCells, clearRowSelection } = args;
+    const { grid, cells, setCells, clearOtherSelections } = args;
     // Armed by a press, spent by the first cell the cursor enters. A press that
     // never moves stays a plain click, so selecting one cell has exactly one path.
     const dragFrom = useRef<Cell | null>(null);
@@ -31,6 +32,14 @@ export function useCellDrag(args: {
 
     const armCellDrag = (r: number, c: number, e: React.MouseEvent) => {
         if (e.button !== 0) return;
+        // Without this, the press also arms the browser's own text selection --
+        // invisible while the drag stays inside `user-select: none` cells, but a
+        // fast drag that clears the grid's top edge lands the native selection on
+        // whatever text sits there instead (the results bar above), painting its
+        // highlight across it. Every other custom mousedown-drag in this grid
+        // (`useGridColumnResize.ts`, `useGridColumnReorder.ts`) already does this;
+        // this was the one gesture that did not.
+        e.preventDefault();
         // Focus taken outright rather than left to the click: a cell is a plain
         // `<td>`, so whether pressing one lands focus on the scroller that carries
         // the key handler is the engine's own heuristic to make, and Copy is not
@@ -48,7 +57,7 @@ export function useCellDrag(args: {
         if (e.buttons === 0) dragFrom.current = null;
         const from = dragFrom.current;
         if (!from) return;
-        clearRowSelection();
+        clearOtherSelections();
         setCells({ anchor: from, focus: { row: r, col: c } });
     };
 

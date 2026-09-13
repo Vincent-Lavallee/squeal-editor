@@ -41,6 +41,11 @@ export default function ResultsGridScrollArea({ g, result }: Props) {
                     onDragOverHeader={g.dragOverHeader}
                     onDragLeaveHeader={g.dragLeaveHeader}
                     onDropOnHeader={g.dropOnHeader}
+                    selectedCols={g.selectedCols}
+                    onSelectColumn={g.selectColumn}
+                    onOpenColumnMenu={g.openColumnMenu}
+                    onSelectAll={g.selectAll}
+                    onOpenAllMenu={g.openAllMenu}
                 />
                 <ResultsGridBody
                     rows={result.rows}

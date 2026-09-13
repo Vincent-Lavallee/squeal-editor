@@ -7525,3 +7525,161 @@ never uses. Exporting `TIMEOUT_ERROR_MESSAGE` and matching on it by exact text
 in the one caller that cares keeps the signature untouched at the cost of a
 string comparison that would break silently if the generic message's wording
 ever changed without updating both places.
+
+## Unifying grid selection: a column is a `Set`, but "everything" is not
+
+**Why a column needed new state and "everything" didn't.** The grid already
+had two mutually-exclusive selections — a row `Set<number>` and a cell
+`CellRange` rectangle. Adding "select a column" and "select everything"
+looked at first like it wanted a third and fourth kind, but only the column
+actually does: confirmed with the user up front that shift/ctrl-click should
+extend/toggle *non-contiguous* columns (col 1 and 3, skipping 2), which no
+single rectangle can represent, so `selectedCols` is a genuine `Set<number>`
+with its own anchor, mirroring row selection exactly (`nextSetSelection` in
+`useGridSelection.ts` is now shared by both). "Everything", by contrast, is
+just the full-grid rectangle — `rangeBounds`/`cellMarks` already render and
+copy a rectangle of any size correctly, so `selectAll` sets `cells` to
+`{anchor:{0,0}, focus:{maxRow,maxCol}}` and needed no new type. A column
+selected by *dragging* a full-height rectangle (rather than clicking the
+header) is `cells` too, for the same reason — the shape, not the gesture that
+made it, is what the menu and copy paths care about.
+
+**Bulk edit was deliberately left out.** Confirmed with the user: Set NULL and
+Delete row stay scoped to the exact cell/row a right-click landed on, even
+when a bigger rectangle, a column, or everything is the active selection —
+those are copy-only. The alternative (bulk-apply across the whole selection)
+is a real feature but a materially bigger one — deleting through a column
+selection that happens to span a key column, or setting NULL across a
+rectangle that straddles both key and non-key columns, are the kind of edge
+cases this unification did not set out to solve. If bulk edit is wanted
+later, it is a new, separate decision.
+
+**Right-clicking now preserves the selection it lands inside, instead of
+always collapsing to a row.** Before this, `useGridMenuState.openMenu` always
+converted whatever was clicked into a one-row selection — so right-clicking a
+lone data cell silently showed a *row*-level menu ("Copy row"), discarding the
+cell actually clicked. `openMenu` now checks whether the click is already
+inside the active selection (gutter row in `selected`; column in
+`selectedCols`; cell inside `cells`'s bounds) and leaves it alone if so,
+otherwise replacing it with a fresh selection shaped by the click target — a
+data cell now starts a 1×1 *cell* selection, not a row. The single-cell case
+still gets Set NULL/Delete row for that one cell, so nothing already reachable
+was taken away — only the mislabelling ("Copy row" copying a row nobody
+selected) is gone.
+
+**"Copy as SQL" no longer needs a table, and renders a literal `SELECT` when
+there isn't one.** It used to be gated on `browse !== null` because
+`insertStatement` needs a table name. Confirmed with the user: rather than a
+fabricated placeholder table name, the no-table case (an ad-hoc query result)
+renders `literalSelectStatement` — a self-contained
+`SELECT 'v1' AS "col1", ... UNION ALL SELECT 'v2', ...`, aliased once on the
+first row. It names no table that might not exist, only the values
+themselves, so it is always valid, runnable SQL regardless of where the
+result came from. `canCopyAsSql` is gone from the results API entirely; the
+item is now unconditional in every menu. `insertStatement` itself needed no
+change — both it and the new function already took a `columns`/`rows` pair,
+so a column or cell subset is just a smaller pair, and `resultsInsertStatement.ts`
+was renamed `resultsSqlStatement.ts` to hold both.
+
+**Revised almost immediately: `browse !== null` was too narrow a reading of
+"a table is known".** Trying the above against an ordinary hand-typed
+`SELECT * FROM orders` — no `JOIN`, no `browse` either, since browsing and
+hand-typed queries are mutually exclusive paths — still produced a literal
+`SELECT`, because `browse` only exists for a tree-browsed page. That query
+obviously names a table, and the app already scans for exactly that:
+`editTarget` (`resultsThunks.ts`'s `detectSingleTable`, run for row-identity
+purposes on every hand-typed query) carries `{ table, schema }` whenever a
+query reads from exactly one real table, independent of whether that query
+also happens to be *editable* — the narrower fact `queryEditable` additionally
+requires (the table's key columns, and that the query selected them). Copy as
+SQL needs none of that; only the name. So `sqlForSelection` now checks
+`browse?.table ?? editTarget?.table` rather than `browse !== null`, and the
+literal-`SELECT` fallback is left for what genuinely names no table at all: a
+join, a CTE, a query with no `FROM`, or one naming more than one table.
+
+**Copy now reads staged edits everywhere, not just from a cell-range drag.**
+`copyRows`/`copyAsSql` used to read raw `result.rows`, ignoring any staged
+edit, while the cell-range Ctrl+C already read the *effective* value. Since
+every copy path was being unified through `useResultsCopy.ts` anyway, they now
+all read the same `effective(r, c)` — an accepted side effect of the
+unification, not a separately requested change, but the alternative (keeping
+two copy paths that disagree about whether staged edits are "on screen") would
+have been the same kind of inconsistency `docs/decisions.md` elsewhere warns
+against.
+
+**Row and column selection dropped their background fill for the same
+outline drag/select-all already draw — reversing row selection's original,
+pre-existing look.** Confirmed with the user after seeing both side by side:
+a flat `var(--selected)` fill read as visually inconsistent next to the
+accent outline a dragged rectangle or "select all" draws, so `resultsCellMarks
+.ts` now picks one of three `Selection` implementations (a `CellRange`'s
+bounds, a row `Set`, a column `Set`) and feeds all three through the same
+edge-drawing `cellMarks` — a row/column's edges come from whether its
+*neighbouring* index is also selected, so adjacent selected rows/columns
+merge into one outline instead of a line between every pair. `grid__row
+--selected`/`grid__th--selected` kept their names but lost their CSS rule,
+becoming bare test hooks the same way `grid__cell--selected`/`--editing`
+already were — and, matching a drag or "select all" exactly, neither the
+gutter nor the header carries any mark at all, only the data cells.
+
+**The header/corner context-menu entry points needed their own opener,
+not a reuse of the cell/gutter one.** `openMenu(r, c)` always has a real `r`
+to fall back on if the click lands outside the active selection; a header or
+the corner has no cell at all to fall back to, so `openColumnMenu`/
+`openAllMenu` were added alongside it rather than trying to make `null`/`0`
+placeholders flow through the one function. `openAllMenu` is *not* curried
+the way `openMenu`/`openColumnMenu` are — those close over which row/column
+was clicked, but the corner always means everything, so there is no varying
+argument to close over. (Written curried on the first pass anyway, out of
+habit matching its siblings — caught by the corner's own right-click test
+selecting nothing, since the outer `() =>` was silently never called.)
+
+**A header click stopped sorting, once it also had to select.** The plain
+click already carried two meanings after column selection landed — sort, and
+now select — and there was no way to do one without the other. Rather than
+add a modifier as the escape hatch (which shift/ctrl already meant for
+extending a selection), the sort mark got its own click zone:
+`ResultsGridSortMark` wraps its arrow/hint icon in a backdrop `stopPropagation`
+keeps separate from the header's own `onClick`, which now only ever selects.
+`sortTitle` — the "Sort by X" / "Remove sort" tooltip — moved with it, off the
+header's `title` and onto the backdrop's; the header itself just says "Click
+to select the column" now, matching the row gutter's own wording. The backdrop
+is wider than the 14px glyph it wraps for the same reason the row gutter's
+click target is the whole cell and not just its printed number: a click target
+sized to the thing being clicked, rather than to what it visually needs, is
+the small-touch-target bug waiting to be filed. Its hover highlight
+(`residual.css`'s `.grid__sort-icon:hover`) is new and separate from the
+header's own sortable-hover background — the header's hover still just reveals
+the hidden hint arrow, the same as before.
+
+**Copy labels all say "values" now, and "Copy as SQL" became "Copy as SQL
+insert."** "Copy column"/"Copy row"/"Copy cell" read, on a second look, as
+copying the column/row/cell itself — its name, its definition — rather than
+what actually lands on the clipboard: the data in it. Appending "values"
+disambiguates without inventing new copy behaviour; the one exception is the
+true single-cell case, worded "Copy cell value" (singular) since exactly one
+value is ever on the clipboard there, against "Copy column values"/"Copy row
+values"/"Copy *N* cell values" everywhere else, each of which always copies
+more than one. "Copy as SQL" became "Copy as SQL insert" for the same
+disambiguation reason — it says what statement shape lands on the clipboard —
+even though the literal-`SELECT` fallback (the previous entry, and *"Copy as
+SQL insert" needs no table* in `docs/frontend.md`) means the label is not
+literally true whenever no table can be named. That fallback is the residual
+case a hand-typed join or a no-`FROM` query hits, not the common path, and
+renaming the item away from "insert" for that one case would have made the
+label vaguer for the common path to stay exact about the rare one.
+
+**A stray blue bar over the results bar, traced to the one cell-drag handler
+missing `preventDefault`.** Pre-existing, reported after the above: dragging
+out a cell range would sometimes leave the browser's own text-selection
+highlight painted across the results bar's row-count/duration text, sitting
+just above the grid's sticky header. `user-select: none` on the cells
+(`cellBase` in `resultsGridStyles.ts`) stops a selection from forming *inside*
+them, but does nothing once the drag's pointer clears the grid's top edge and
+lands on text that never opted out — which is exactly what happens dragging
+out the top visible row. `useCellDrag.ts`'s `armCellDrag` was the one
+mousedown-driven drag in the grid that never called `e.preventDefault()`;
+`useGridColumnResize.ts`'s `startResize` and `useGridColumnReorder.ts` both
+already do, immediately after the same `e.button !== 0` guard, which is what
+suppresses the browser's own selection gesture for the rest of that press
+outright rather than fencing off every place it could land.

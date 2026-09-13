@@ -43,18 +43,38 @@ export function useGridInteractionState(
         ...selection,
         ...lookups,
         ...api,
+        columns: api.result?.columns ?? [],
+        rowCount: api.result?.rows.length ?? 0,
+        colCount: api.result?.columns.length ?? 0,
         setEditing: editingState.setEditing,
         setNull: editingState.setNull,
     });
     const elapsed = useElapsedSeconds(api.running, api.startedAt);
 
     // Keyed only on a fresh result landing -- the reset functions are not meant
-    // to re-run this themselves.
+    // to re-run this themselves. Row and cell selection reset on every new
+    // result (a page, a sort, a filter can all give the same row position a
+    // different row), but a column selection is keyed by name/order rather
+    // than position -- see the effect below, and `useGridSelection`'s
+    // `resetRowsAndCells` -- so it is deliberately left out here.
     useEffect(() => {
-        selection.reset();
+        selection.resetRowsAndCells();
         editingState.reset();
         menuState.setMenu(null);
     }, [api.result]);
+
+    // A column selection survives a resort or a repage of the same columns --
+    // clicking a sortable header both selects it and re-browses, and clearing
+    // on every new result (the effect above) would wipe the selection before
+    // it was ever visible. It only needs to reset when the columns themselves
+    // change: a different table, a different query, or a drag reordering them.
+    // The null character never appears in a column name, so it
+    // cannot collide the way a plain comma could -- the same separator
+    // `useResults`' own `columnsKey` already uses for the same reason.
+    const columnsKey = (api.result?.columns ?? []).join(String.fromCharCode(0));
+    useEffect(() => {
+        selection.clearColSelection();
+    }, [columnsKey]);
 
     useGridScrollRestore(grid, api.recallScroll, activeTabId, api.result);
 

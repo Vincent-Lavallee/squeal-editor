@@ -314,10 +314,16 @@ const pagerBtn = (label: 'Prev' | 'Next') => `
 const rowCount = `(document.querySelector('.grid .skeleton') ? 0 : document.querySelectorAll('.grid tbody tr').length)`;
 /** The grid's scrolling box, which is what remembers where a tab was left. */
 const gridScroll = `document.querySelector('[data-testid="grid-scroll"]')`;
-/** Click a column header by name -- the whole header is the sort target. */
+/** Click a column header by name -- selects the column, same as the row gutter. */
 const clickHeader = (name: string) => `
   [...document.querySelectorAll('.grid thead th')]
     .find(e => e.querySelector('[data-testid="grid-col-name"]')?.textContent === ${JSON.stringify(name)})
+    .click(); true;`;
+/** Click a header's own sort mark by column name -- the only thing that sorts now. */
+const sortByHeader = (name: string) => `
+  [...document.querySelectorAll('.grid thead th')]
+    .find(e => e.querySelector('[data-testid="grid-col-name"]')?.textContent === ${JSON.stringify(name)})
+    .querySelector('[data-testid="grid-sort-icon"]')
     .click(); true;`;
 /**
  * Which column the grid says it is sorted by, and which way -- read off the
@@ -1279,7 +1285,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
       })()`;
             expect(await app.evaluate<string | null>(hintFor('name'))).toBe('hidden');
 
-            await app.evaluate(clickHeader('name'));
+            await app.evaluate(sortByHeader('name'));
             await app.waitFor(
                 `(${sortState}) === 'name:asc' && JSON.stringify(${names}) === JSON.stringify(['Ada', 'Grace']) ? true : null`,
             );
@@ -1295,7 +1301,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             ).toBe(true);
 
             // Second click on the same header reverses it rather than adding to it.
-            await app.evaluate(clickHeader('name'));
+            await app.evaluate(sortByHeader('name'));
             await app.waitFor(
                 `(${sortState}) === 'name:desc' && JSON.stringify(${names}) === JSON.stringify(['Grace', 'Ada']) ? true : null`,
             );
@@ -1304,12 +1310,40 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
             // Third click removes the sort outright -- back to the order the server
             // handed back before any of this, not to ascending again.
-            await app.evaluate(clickHeader('name'));
+            await app.evaluate(sortByHeader('name'));
             await app.waitFor(
                 `(${sortState}) === null && JSON.stringify(${names}) === JSON.stringify(${JSON.stringify(natural)}) ? true : null`,
             );
             expect(await app.evaluate<string | null>(sortState)).toBeNull();
             expect(await app.evaluate<string[]>(names)).toEqual(natural);
+
+            await app.evaluate(closeTab('users'));
+            await Bun.sleep(300);
+        });
+
+        test('a header click selects the column without sorting, and the sort icon sorts without selecting', async () => {
+            await app.evaluate(clickTable('users'));
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
+
+            await app.evaluate(clickHeader('name'));
+            await Bun.sleep(150);
+            expect(
+                await app.evaluate<boolean>(
+                    `${header('name')}.classList.contains('grid__th--selected')`,
+                ),
+            ).toBe(true);
+            expect(await app.evaluate<string | null>(sortState)).toBeNull();
+
+            await app.evaluate(sortByHeader('name'));
+            await app.waitFor(`(${sortState}) === 'name:asc' ? true : null`);
+            // The sort click stopped short of the header's own handler, so the
+            // column selection it started with is untouched either way -- sorting
+            // never clears or creates a selection of its own.
+            expect(
+                await app.evaluate<boolean>(
+                    `${header('name')}.classList.contains('grid__th--selected')`,
+                ),
+            ).toBe(true);
 
             await app.evaluate(closeTab('users'));
             await Bun.sleep(300);
@@ -1325,9 +1359,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             // pager test beside this one asserts counts rather than ids.
             const firstId = `${gridCell(0, 0)}.textContent`;
 
-            await app.evaluate(clickHeader('id'));
+            await app.evaluate(sortByHeader('id'));
             await app.waitFor(`(${sortState}) === 'id:asc' ? true : null`);
-            await app.evaluate(clickHeader('id'));
+            await app.evaluate(sortByHeader('id'));
             await app.waitFor(
                 `(${sortState}) === 'id:desc' && (${firstId}) === '150' && (${barText}).includes('rows 1–100') ? true : null`,
             );
@@ -1369,9 +1403,9 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             );
             expect(await app.evaluate<string[]>(names)).toEqual(['Ada', 'Grace']);
 
-            await app.evaluate(clickHeader('name'));
+            await app.evaluate(sortByHeader('name'));
             await app.waitFor(`(${sortState}) === 'name:asc' ? true : null`);
-            await app.evaluate(clickHeader('name'));
+            await app.evaluate(sortByHeader('name'));
             await app.waitFor(
                 `(${sortState}) === 'name:desc' && JSON.stringify(${names}) === JSON.stringify(['Grace', 'Ada']) ? true : null`,
             );
@@ -1885,7 +1919,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
          * come back a syntax error rather than a subtly different grid.
          */
         test("sorting a selection's result re-runs the selection, not the tab", async () => {
-            await app.evaluate(clickHeader('name'));
+            await app.evaluate(sortByHeader('name'));
             await app.waitFor(
                 `(${sortState}) === 'name:asc' && JSON.stringify(${gridHeaders}) === JSON.stringify(['name']) ? true : null`,
             );
@@ -2252,7 +2286,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await Bun.sleep(300);
         });
 
-        test('copies a row as an INSERT statement, reachable from a cell or the row gutter', async () => {
+        test('the row gutter copies a row as an INSERT statement', async () => {
             await app.evaluate(clickTable('tags'));
             await app.waitFor(`(${rowCount}) > 0 ? true : null`);
 
@@ -2261,36 +2295,57 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             const label = await app.evaluate<string>(`${gridCell(0, 0)}.textContent`);
             const weight = await app.evaluate<string>(`${gridCell(0, 1)}.textContent`);
 
-            // The row gutter opens the same menu a data cell does, but with no cell
-            // in context -- "Set NULL" targets a column and leaves itself out.
+            // "Set NULL" targets a column, and the gutter carries no cell to name one.
             await app.evaluate(rightClickGutter(0));
             await Bun.sleep(200);
             expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
-                'Copy row',
-                'Copy as SQL',
+                'Copy row values',
+                'Copy as SQL insert',
                 'Delete row',
             ]);
 
-            await app.evaluate(clickContextItem('Copy as SQL'));
+            await app.evaluate(clickContextItem('Copy as SQL insert'));
             await Bun.sleep(300);
             // Table and column names quoted per dialect, values as literals.
             expect(await app.evaluate<string>(`Neutralino.clipboard.readText()`)).toBe(
                 `INSERT INTO "public"."tags" ("label", "weight") VALUES\n('${label}', '${weight}');`,
             );
 
-            // A data cell's menu carries the same item, alongside the column-specific one.
+            await app.evaluate(closeTab('tags'));
+            await Bun.sleep(300);
+        });
+
+        test('right-clicking a lone cell opens a cell-scoped menu, not the row it sits in', async () => {
+            await app.evaluate(clickTable('tags'));
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
+
+            const label = await app.evaluate<string>(`${gridCell(0, 0)}.textContent`);
+
+            // Nothing pre-selected: the click itself decides the menu's shape, and it
+            // is now cell-scoped rather than being coerced into the row underneath.
             await app.evaluate(
                 `${gridCell(0, 0)}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); true;`,
             );
             await Bun.sleep(200);
             expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
-                'Copy row',
-                'Copy as SQL',
+                'Copy cell value',
+                'Copy as SQL insert',
+                'Copy column name',
                 'Set NULL',
                 'Delete row',
             ]);
-            await app.evaluate(pressEscape);
-            await Bun.sleep(150);
+
+            await app.evaluate(clickContextItem('Copy cell value'));
+            await Bun.sleep(300);
+            expect(await app.evaluate<string>(`Neutralino.clipboard.readText()`)).toBe(label);
+
+            await app.evaluate(
+                `${gridCell(0, 0)}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); true;`,
+            );
+            await Bun.sleep(200);
+            await app.evaluate(clickContextItem('Copy column name'));
+            await Bun.sleep(300);
+            expect(await app.evaluate<string>(`Neutralino.clipboard.readText()`)).toBe('label');
 
             await app.evaluate(closeTab('tags'));
             await Bun.sleep(300);
@@ -2337,16 +2392,23 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
                 ),
             ).toBe(false);
 
-            // Selecting a row in turn clears the cell selection -- each clears the other.
+            // Selecting a row in turn clears the cell selection -- each clears the
+            // other -- and now renders the same way a cell/rectangle selection does:
+            // every cell in the row picks up the same outline class, not a fill.
             await app.evaluate(
                 `document.querySelectorAll('.grid tbody tr')[0].querySelector('.gutter').click(); true;`,
             );
             await Bun.sleep(150);
             expect(
                 await app.evaluate<number>(
+                    `document.querySelectorAll('.grid__row--selected').length`,
+                ),
+            ).toBe(1);
+            expect(
+                await app.evaluate<number>(
                     `document.querySelectorAll('.grid__cell--selected').length`,
                 ),
-            ).toBe(0);
+            ).toBe(2);
 
             await app.evaluate(closeTab('tags'));
             await Bun.sleep(300);
@@ -2383,7 +2445,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
                 `document.querySelector('[data-testid="grid-scroll"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true })); true;`,
             );
             await Bun.sleep(300);
-            // Cells on tabs, rows on newlines -- the shape "Copy row" already produces.
+            // Cells on tabs, rows on newlines -- the shape "Copy row values" already produces.
             expect(await app.evaluate<string>(`Neutralino.clipboard.readText()`)).toBe(
                 shown.map((row) => row.join('\t')).join('\n'),
             );
@@ -2460,6 +2522,254 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
             await app.evaluate(closeTab('users'));
             await Bun.sleep(300);
+        });
+
+        test('clicking a column header selects the whole column, copied as tab-separated text', async () => {
+            await app.evaluate(clickTable('tags'));
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
+
+            await app.evaluate(clickHeader('label'));
+            await Bun.sleep(150);
+            expect(
+                await app.evaluate<boolean>(
+                    `${header('label')}.classList.contains('grid__th--selected')`,
+                ),
+            ).toBe(true);
+            expect(
+                await app.evaluate<number>(
+                    `document.querySelectorAll('.grid tbody td.grid__cell--selected').length`,
+                ),
+            ).toBe(2);
+
+            const labels = `[...document.querySelectorAll('.grid tbody tr')].map(tr => tr.querySelectorAll('td:not(.gutter)')[0].textContent)`;
+            const shown = await app.evaluate<string[]>(labels);
+            await app.evaluate(
+                `document.querySelector('[data-testid="grid-scroll"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true })); true;`,
+            );
+            await Bun.sleep(300);
+            expect(await app.evaluate<string>(`Neutralino.clipboard.readText()`)).toBe(
+                shown.join('\n'),
+            );
+
+            // Selecting a row in turn clears the column selection -- each clears the
+            // other -- and picks up the same outline class the column just had.
+            await app.evaluate(
+                `document.querySelectorAll('.grid tbody tr')[0].querySelector('.gutter').click(); true;`,
+            );
+            await Bun.sleep(150);
+            expect(
+                await app.evaluate<number>(
+                    `document.querySelectorAll('.grid__th--selected').length`,
+                ),
+            ).toBe(0);
+            expect(
+                await app.evaluate<number>(
+                    `document.querySelectorAll('.grid__cell--selected').length`,
+                ),
+            ).toBe(2);
+
+            await app.evaluate(closeTab('tags'));
+            await Bun.sleep(300);
+        });
+
+        test('ctrl-click extends a column selection to a second, non-adjacent column', async () => {
+            await app.evaluate(clickTable('users'));
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
+
+            await app.evaluate(clickHeader('id'));
+            await Bun.sleep(150);
+            await app.evaluate(
+                `${header('email')}.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true })); true;`,
+            );
+            await Bun.sleep(150);
+            expect(
+                await app.evaluate<number>(
+                    `document.querySelectorAll('.grid thead th.grid__th--selected').length`,
+                ),
+            ).toBe(2);
+            // 2 rows x the 2 selected (non-adjacent) columns.
+            expect(
+                await app.evaluate<number>(
+                    `document.querySelectorAll('.grid tbody td.grid__cell--selected').length`,
+                ),
+            ).toBe(4);
+
+            await app.evaluate(closeTab('users'));
+            await Bun.sleep(300);
+        });
+
+        test('a column selection opens a copy-only menu that offers Copy as SQL insert', async () => {
+            await app.evaluate(clickTable('tags'));
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
+
+            await app.evaluate(clickHeader('label'));
+            await Bun.sleep(150);
+            // Right-clicking a cell already inside the column selection keeps it,
+            // rather than collapsing it to just that cell.
+            await app.evaluate(
+                `${gridCell(0, 0)}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); true;`,
+            );
+            await Bun.sleep(200);
+            expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
+                'Copy column values',
+                'Copy as SQL insert',
+                'Copy column name',
+            ]);
+            await app.evaluate(pressEscape);
+            await Bun.sleep(150);
+
+            await app.evaluate(closeTab('tags'));
+            await Bun.sleep(300);
+        });
+
+        test('the corner cell and Ctrl+A both select everything', async () => {
+            await app.evaluate(clickTable('tags'));
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
+
+            // `tags` is two rows of two columns, so "everything" is all four cells.
+            await app.evaluate(`document.querySelector('.grid thead th.gutter').click(); true;`);
+            await Bun.sleep(150);
+            expect(
+                await app.evaluate<number>(
+                    `document.querySelectorAll('.grid__cell--selected').length`,
+                ),
+            ).toBe(4);
+
+            // A row selection first, to prove Ctrl+A overrides it rather than adding to it.
+            await app.evaluate(
+                `document.querySelectorAll('.grid tbody tr')[0].querySelector('.gutter').click(); true;`,
+            );
+            await Bun.sleep(150);
+            await app.evaluate(
+                `document.querySelector('[data-testid="grid-scroll"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true })); true;`,
+            );
+            await Bun.sleep(150);
+            expect(
+                await app.evaluate<number>(
+                    `document.querySelectorAll('.grid__cell--selected').length`,
+                ),
+            ).toBe(4);
+            expect(
+                await app.evaluate<number>(
+                    `document.querySelectorAll('.grid__row--selected').length`,
+                ),
+            ).toBe(0);
+
+            // Right-clicking any cell keeps "everything" selected rather than collapsing it.
+            await app.evaluate(
+                `${gridCell(1, 1)}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); true;`,
+            );
+            await Bun.sleep(200);
+            // `tags` is two rows of two columns, so the label spells out 2 x 2 rather
+            // than the vaguer "everything" this used to say.
+            expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
+                'Copy 2 × 2 cell values',
+                'Copy as SQL insert',
+                'Copy column name',
+            ]);
+            await app.evaluate(pressEscape);
+            await Bun.sleep(150);
+
+            await app.evaluate(closeTab('tags'));
+            await Bun.sleep(300);
+        });
+
+        test('right-clicking a header opens the column menu directly, without a prior click', async () => {
+            await app.evaluate(clickTable('tags'));
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
+
+            await app.evaluate(
+                `${header('label')}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); true;`,
+            );
+            await Bun.sleep(200);
+            expect(
+                await app.evaluate<boolean>(
+                    `${header('label')}.classList.contains('grid__th--selected')`,
+                ),
+            ).toBe(true);
+            expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
+                'Copy column values',
+                'Copy as SQL insert',
+                'Copy column name',
+            ]);
+            await app.evaluate(pressEscape);
+            await Bun.sleep(150);
+
+            await app.evaluate(closeTab('tags'));
+            await Bun.sleep(300);
+        });
+
+        test('right-clicking the corner cell opens the everything menu directly', async () => {
+            await app.evaluate(clickTable('tags'));
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
+
+            await app.evaluate(
+                `document.querySelector('.grid thead th.gutter').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); true;`,
+            );
+            await Bun.sleep(200);
+            expect(
+                await app.evaluate<number>(
+                    `document.querySelectorAll('.grid__cell--selected').length`,
+                ),
+            ).toBe(4);
+            expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
+                'Copy 2 × 2 cell values',
+                'Copy as SQL insert',
+            ]);
+            await app.evaluate(pressEscape);
+            await Bun.sleep(150);
+
+            await app.evaluate(closeTab('tags'));
+            await Bun.sleep(300);
+        });
+
+        test('Copy as SQL on an ad-hoc query result renders a table-less literal SELECT', async () => {
+            // No `browse` here at all -- a hand-typed query -- which is exactly the
+            // case "Copy as SQL insert" used to refuse. `insertStatement` has no table
+            // to name, so it falls back to a self-contained SELECT/UNION ALL instead.
+            await app.evaluate(setEditorText(`SELECT 1 AS n, 'x' AS s`));
+            await Bun.sleep(400);
+            await app.evaluate(
+                `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`,
+            );
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
+
+            await app.evaluate(rightClickGutter(0));
+            await Bun.sleep(200);
+            // The point here is not whether this particular query is editable -- only
+            // that "Copy as SQL insert" is offered at all now, with no browse behind it.
+            expect(await app.evaluate<string[]>(menuItemLabels)).toContain('Copy as SQL insert');
+
+            await app.evaluate(clickContextItem('Copy as SQL insert'));
+            await Bun.sleep(300);
+            expect(await app.evaluate<string>(`Neutralino.clipboard.readText()`)).toBe(
+                `SELECT '1' AS "n", 'x' AS "s";`,
+            );
+        });
+
+        test('Copy as SQL on a hand-typed single-table query still names the table', async () => {
+            // Unlike the literal computation above, this reads from exactly one real
+            // table with no JOIN -- `editTarget` names it independently of whether the
+            // query is also *editable*, so this gets an INSERT, not the literal fallback.
+            await app.evaluate(setEditorText('SELECT id, name FROM users ORDER BY id'));
+            await Bun.sleep(400);
+            await app.evaluate(
+                `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); true;`,
+            );
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
+
+            const id = await app.evaluate<string>(`${gridCell(0, 0)}.textContent`);
+            const name = await app.evaluate<string>(`${gridCell(0, 1)}.textContent`);
+
+            await app.evaluate(rightClickGutter(0));
+            await Bun.sleep(200);
+            await app.evaluate(clickContextItem('Copy as SQL insert'));
+            await Bun.sleep(300);
+            // No schema: the query never qualified the table, so `editTarget` has none
+            // to carry -- unlike a browsed page, which always writes the tab's own.
+            expect(await app.evaluate<string>(`Neutralino.clipboard.readText()`)).toBe(
+                `INSERT INTO "users" ("id", "name") VALUES\n('${id}', '${name}');`,
+            );
         });
 
         /*
