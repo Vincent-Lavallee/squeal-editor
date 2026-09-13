@@ -42,6 +42,13 @@ declare namespace Neutralino {
         function exit(code?: number): Promise<void>;
         /** Forceful fallback for when exit()'s native shutdown path hangs. */
         function killProcess(): Promise<void>;
+        /**
+         * Neutralino's own restart: re-launches the app with its original launch
+         * arguments in the background, then exits this process. Used rather than a
+         * hand-rolled spawn because it already knows the app's own command line --
+         * this process does not.
+         */
+        function restartProcess(options?: { args?: string }): Promise<void>;
     }
 
     namespace debug {

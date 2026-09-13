@@ -1,7 +1,7 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 import type { UpdateProgress, UpdateStatus } from '../../../shared/protocol/index.ts';
-import { call } from '../common/bridge/bridge.ts';
+import { call, markIntentionalExit } from '../common/bridge/bridge.ts';
 import { createAppThunk, errorMessage } from './thunk.ts';
 
 /**
@@ -89,6 +89,7 @@ export const applyUpdate = createAppThunk('updater/apply', async (_: void, { rej
         // Only reached once the extension has confirmed the swap is running, so
         // stepping aside here is stepping aside for something that exists. It
         // relaunches us on the far side.
+        markIntentionalExit();
         await Neutralino.app.exit();
     } catch (err) {
         return rejectWithValue(errorMessage(err));

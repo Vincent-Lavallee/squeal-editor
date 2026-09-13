@@ -12,6 +12,11 @@ import type { Send } from './commandTypes.ts';
 
 const connections = new Map<string, ConnectionHandle>();
 
+/** For the periodic health line in `main.ts` -- how many the registry is holding right now. */
+export function connectionCount(): number {
+    return connections.size;
+}
+
 export function getConnection(connectionId: string): ConnectionHandle {
     const conn = connections.get(connectionId);
     if (!conn) throw new Error('Not connected - connect to a server first.');
