@@ -15,7 +15,7 @@ import WebSocket from 'ws';
 
 import { DB_RESPONSE_EVENT, type CommandName } from '../../shared/protocol/index.ts';
 import { commandsConnection } from './commandsConnection.ts';
-import { closeAllConnections } from './commandsConnectionCore.ts';
+import { closeAllConnections, connectionCount } from './commandsConnectionCore.ts';
 import { commandsAssistant } from './commandsAssistant.ts';
 import { commandsAws } from './commandsAws.ts';
 import { commandsMisc } from './commandsMisc.ts';
@@ -34,10 +34,32 @@ import { log } from './log.ts';
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const HEARTBEAT_TIMEOUT_MS = 30_000;
 
+// This process has been found dead with nothing in the log to say why -- no
+// exception, no signal this side could catch, just silence -- on both Windows
+// and macOS, which rules out anything platform-specific. Whatever ends it that
+// way leaves no trace *at* the moment it happens, on any platform, because
+// nothing this side could write would survive it. A trend leading up to that
+// moment is still worth having, so this is logged on the heartbeat's own tick
+// rather than a second timer -- if it is a slow leak, `rss` climbing over
+// several of these lines is the evidence no crash report could ever give.
+const HEALTH_LOG_INTERVAL_MS = 5 * 60_000;
+
 let ws: WebSocket | null = null;
 let accessToken = '';
 let lastSeenAlive = Date.now();
+let lastHealthLog = Date.now();
 let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+function logHealthIfDue(): void {
+    const now = Date.now();
+    if (now - lastHealthLog < HEALTH_LOG_INTERVAL_MS) return;
+    lastHealthLog = now;
+    const mem = process.memoryUsage();
+    const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)}MB`;
+    log.info(
+        `health: rss=${mb(mem.rss)} heapUsed=${mb(mem.heapUsed)} connections=${connectionCount()}`,
+    );
+}
 
 /** Init payload Neutralino writes to our stdin on startup. */
 interface ExtensionInit {
@@ -134,6 +156,7 @@ async function shutdown(code = 0): Promise<never> {
 function startHeartbeat(): void {
     lastSeenAlive = Date.now();
     heartbeat = setInterval(() => {
+        logHealthIfDue();
         if (Date.now() - lastSeenAlive > HEARTBEAT_TIMEOUT_MS) {
             log.warn('app stopped responding; shutting down');
             void shutdown(0);

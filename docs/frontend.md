@@ -3258,6 +3258,21 @@ increase this timeout value in the settings menu."* Matching on the literal
 string is the trade-off that keeps this out of `call`'s own signature, which
 every other caller would otherwise have to grow a parameter to ignore.
 
+### The bridge watches for the extension dying, not just a call timing out
+
+A per-call timeout only covers a call already in flight; it says nothing
+about whether the extension is still there for the *next* one. `bridge.ts`
+also polls `Neutralino.extensions.getStats()` every ten seconds — the
+extension's own heartbeat interval, asked from the other side — once the
+extension has connected for the first time, and calls
+`Neutralino.app.restartProcess()` the moment it is no longer in
+`stats.connected`. See *The UI watches for the extension dying, and restarts
+itself* in `docs/decisions.md` for why this exists, why it restarts the whole
+app rather than just the extension, and why it is silent rather than a
+dialog. `markIntentionalExit()` is the one thing a caller that is about to
+make the extension disappear on purpose — today, only the updater's
+`applyUpdate` — must call first, so the watchdog does not race it.
+
 ### The caches in `explorerSlice` are all keyed by connection first
 
 `databases` is keyed by connection. `tables` is keyed **connection → database**.

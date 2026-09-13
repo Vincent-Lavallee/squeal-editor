@@ -22,6 +22,17 @@ const EXT_ID = 'js.squeal.db';
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 /**
+ * How often to check the extension is still there once it has connected once.
+ * Mirrors the extension's own heartbeat cadence (`HEARTBEAT_INTERVAL_MS` in
+ * `main.ts`) rather than inventing a different rhythm for the same question
+ * asked from the other side.
+ */
+const EXTENSION_WATCHDOG_INTERVAL_MS = 10_000;
+
+/** Same deadline `useWindowChrome`'s `close()` gives `app.exit()` before forcing it. */
+const RESTART_FORCE_KILL_MS = 2_000;
+
+/**
  * What every timed-out call rejects with, generically. Exported so a caller
  * that asked for a specific `timeoutMs` -- `runQuery`/`browseTable`, naming a
  * setting the user can raise -- can tell "this is the timeout" apart from any
@@ -39,6 +50,18 @@ interface Pending {
 let nextReqId = 1;
 const pending = new Map<number, Pending>();
 let extensionReady: Promise<void> | null = null;
+let intentionalExit = false;
+
+/**
+ * Call before this process asks itself to exit on purpose -- the window
+ * closing, or the updater handing off to a relaunch it already controls --
+ * so `watchExtension` below does not read the extension going away as a
+ * surprise and restart the app a second time on top of an exit already in
+ * flight.
+ */
+export function markIntentionalExit(): void {
+    intentionalExit = true;
+}
 
 function onResponse(evt: CustomEvent): void {
     const detail = evt.detail as DbResponse | undefined;
@@ -75,14 +98,76 @@ async function waitForExtension(): Promise<void> {
     });
 }
 
+/**
+ * The extension can exit for reasons entirely outside its control -- the one
+ * seen in practice is a socket dropped across sleep/resume overnight -- and
+ * every bridge call's own timeout only covers a call already in flight when
+ * that happens. Nothing else ever asks "is it still there", so a session left
+ * open past the drop would otherwise sit forever with no way back. This is
+ * that ask, on the same cadence the extension itself pings the app.
+ */
+async function watchExtension(): Promise<void> {
+    if (intentionalExit) return;
+    const stats = await Neutralino.extensions.getStats().catch(() => null);
+    if (!stats || intentionalExit || stats.connected.includes(EXT_ID)) return;
+
+    markIntentionalExit();
+    void Neutralino.debug
+        .log('extension disconnected unexpectedly; restarting the app', 'WARNING')
+        .catch(() => undefined);
+
+    try {
+        await Neutralino.app.restartProcess();
+    } catch (err) {
+        // The replacement never got spawned -- `restartProcess` awaits that
+        // before it fires its own exit, so a rejection here means this process
+        // is still the only one running. Forcing it closed would leave nothing
+        // behind, which is worse than a session that outlives this bad attempt.
+        void Neutralino.debug
+            .log(
+                `restartProcess() failed, leaving the app running: ${err instanceof Error ? err.message : String(err)}`,
+                'ERROR',
+            )
+            .catch(() => undefined);
+        return;
+    }
+
+    // The replacement is already up by this point. `restartProcess` fires its
+    // own `app.exit()` without waiting on it, and that native shutdown path is
+    // known to go unanswered on some machines -- see `useWindowChrome`'s
+    // `close()`, which hit exactly this on a machine where the install
+    // directory was read-only. Left alone, that would leave this window
+    // running forever alongside the one it just spawned. If exit succeeds,
+    // this process is gone before the timer below ever gets to fire; if it
+    // does not, the timer is what forces it closed.
+    setTimeout(() => {
+        void Neutralino.debug
+            .log(
+                'app.exit() during restart did not complete within 2s; forcing killProcess()',
+                'ERROR',
+            )
+            .catch(() => undefined);
+        void Neutralino.app.killProcess();
+    }, RESTART_FORCE_KILL_MS);
+}
+
 export function initBridge(): void {
     Neutralino.init();
     void Neutralino.events.on(DB_RESPONSE_EVENT, onResponse);
-    void Neutralino.events.on('windowClose', () => void Neutralino.app.exit());
+    void Neutralino.events.on('windowClose', () => {
+        markIntentionalExit();
+        void Neutralino.app.exit();
+    });
 
     // Kicked off once at startup; every call awaits this before dispatching, so
     // queries fired before the extension is up simply wait rather than vanish.
+    // The watchdog only starts once that first connection has actually
+    // happened -- a startup failure is a different problem, already surfaced
+    // by this same promise rejecting.
     extensionReady = waitForExtension();
+    void extensionReady.then(() => {
+        setInterval(() => void watchExtension(), EXTENSION_WATCHDOG_INTERVAL_MS);
+    });
 }
 
 export async function call<K extends CommandName>(

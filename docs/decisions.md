@@ -7683,3 +7683,121 @@ mousedown-driven drag in the grid that never called `e.preventDefault()`;
 already do, immediately after the same `e.button !== 0` guard, which is what
 suppresses the browser's own selection gesture for the rest of that press
 outright rather than fencing off every place it could land.
+
+---
+
+## The UI watches for the extension dying, and restarts itself
+
+**Why.** The extension can exit for reasons entirely outside its control —
+found in practice from a `squeal-ext.log` that ended mid-session with a plain
+`app closed the connection; shutting down` and nothing after it: no
+exception, no `EPIPE`, no heartbeat timeout, just silence, hours before the
+app was next touched. No update had run (`update.log` untouched) and no
+antivirus had quarantined anything, so the leading theory is the socket
+itself getting reset across a sleep/resume cycle overnight — a shape neither
+side is at fault for and neither can prevent. Every bridge call already times
+out on its own (`DEFAULT_TIMEOUT_MS`, or the caller's own), but a timeout only
+answers *that one call*; nothing was ever watching for "is the extension still
+there" between calls, so a session left open past the drop sat forever with a
+perfectly idle, perfectly unusable window: 0% CPU everywhere, no
+`squeal-db-ext.exe` in the process list, and no code path that would ever
+notice.
+
+**Fix.** `bridge.ts` polls `Neutralino.extensions.getStats()` every
+`EXTENSION_WATCHDOG_INTERVAL_MS` (10s, the extension's own
+`HEARTBEAT_INTERVAL_MS` — the same question asked from the other side, on the
+same cadence) once the extension has connected for the first time. Finding it
+missing calls `Neutralino.app.restartProcess()`, Neutralino's own built-in
+restart — re-launch with the original arguments, then exit — rather than a
+hand-rolled respawn.
+
+**Why not respawn the extension alone.** Neutralino's extension handshake
+needs a `connectToken` it generates and hands the child only via that child's
+own stdin at spawn time (`ExtensionInit` in `main.ts`); the frontend never
+sees it and has no API to mint one. A `squeal-db-ext.exe` started any other
+way — `Neutralino.os.spawnProcess`, say — would have no valid token and
+Neutralino's server would refuse it. Restarting the whole app is not a
+fallback chosen for convenience; it is the only door Neutralino leaves open
+from this side.
+
+**Why this is silent by design.** A user who left the app open overnight and
+comes back to find it simply working again is the entire point — the
+alternative is a dialog demanding a decision about something that already
+has exactly one sane answer. Session state is not at risk: tabs, their editor
+text and grid filters are saved continuously (`sessionSyncListener.ts`,
+debounced ~600ms, plus an immediate save on disconnect), so a restart loses
+at most a few hundred milliseconds of typing, never a query result someone
+was reading. The one visible cost is that a restart always lands on the
+connections list — `db.saved.connect` restores a connection's tabs, but
+nothing auto-connects on launch — so the user reconnects once by hand.
+
+**The guard against restarting on a *deliberate* exit.** Both the window
+closing and the updater's own relaunch make the extension disappear on
+purpose — the updater's `applyUpdate` calls `Neutralino.app.exit()` itself
+once `update.apply` confirms the swap script is running, and that exit takes
+the extension down with it the same way an unplanned one does, from the
+watchdog's point of view. `markIntentionalExit()` is set at both of those
+call sites, checked before the watchdog acts, and is one-way for the
+remaining life of the process — once real, an exit already in flight needs no
+second one racing it.
+
+**The guard against ending up with two windows.** `restartProcess()` spawns
+the replacement and *fires* its own `app.exit()` without waiting on it, so its
+returned promise resolving proves the new instance exists but proves nothing
+about whether this one actually closed. That native shutdown path is already
+known to go unanswered on some machines — `useWindowChrome`'s `close()` hit
+it for real, on a machine where the install directory was read-only — which
+here would mean the old window lingering forever alongside the one it just
+spawned, not merely a restart repeated. So a `setTimeout` armed right after
+`restartProcess()` resolves forces `killProcess()` after the same 2s
+`close()` allows: if exit succeeds first, this process is gone before the
+timer can fire, and if it does not, the timer is what closes it. The
+distinction that matters is *when* this fires relative to the spawn —
+`restartProcess()` rejecting instead of hanging means the replacement was
+never spawned at all, and that path returns without arming the timer, because
+forcing this instance closed there would leave nothing running rather than
+one window too many.
+
+**It logs, because nothing else can once the extension is gone.** The
+extension's own `log.ts` writes `squeal-ext.log`, which is unreachable by
+definition in the one failure this exists to catch — so the watchdog and its
+force-kill fallback both call `Neutralino.debug.log`, the same sink
+`useWindowChrome`'s `close()` already uses for its own hung-exit case, landing
+in `neutralinojs.log` instead.
+
+---
+
+## The extension logs its own memory and connection count periodically
+
+**Why.** The disappearance the watchdog above recovers from has been seen on
+both Windows and macOS, which rules out anything platform-specific — no
+`chrome.ts` involvement (Windows-only, inert on macOS), no single driver, no
+antivirus, no update in flight. Whatever ends the process this way leaves
+nothing in `squeal-ext.log` at the moment it happens, on either platform,
+because whatever it is stops the process from running its own code before it
+can write one more line — that is as true of an OS-level kill (an idle
+background helper reaped by the platform's own power management, macOS's
+jetsam or Windows' equivalent) as it is of the native fault that would
+produce a Windows crash dump or a macOS one in
+`~/Library/Logs/DiagnosticReports/`. No amount of catching harder fixes a
+process that gets no chance to run.
+
+**What is reachable instead is the trend leading up to it.** `main.ts`'s own
+heartbeat tick already runs every ten seconds regardless; `logHealthIfDue`
+piggybacks on it rather than starting a second timer, and every five minutes
+writes `rss`, `heapUsed` and `connectionCount()` (`commandsConnectionCore.ts`)
+to the same log. A leak reads as `rss` climbing across several of these lines
+before the log goes silent; a sudden, unrelated kill reads as flat numbers
+right up to the same silence. Both are informative, and neither requires
+catching the moment itself — the evidence is in what came before it, which is
+the only part of this any log was ever going to be able to keep.
+
+**Windows also gets a crash dump, macOS does not need the same setup.** A
+`LocalDumps` registry key for `squeal-db-ext.exe` was added out of band (not
+in this repo — a per-machine setting) so a genuine native fault writes a
+`.dmp` instead of nothing. macOS already does this unprompted for a process
+that actually faults (SIGSEGV/SIGBUS/SIGILL/SIGABRT): Crash Reporter writes
+to `~/Library/Logs/DiagnosticReports/` with no configuration needed. Neither
+setup catches an external kill with no fault behind it — a `SIGKILL`-equivalent
+gives the process no moment to be caught in, on either platform, which is
+exactly what the health line above is for instead.
