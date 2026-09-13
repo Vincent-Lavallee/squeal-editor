@@ -3492,18 +3492,18 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await Bun.sleep(200);
 
             // Asserted as one list for the same reason the tree's menu is: the menu
-            // being the whole surface is the point. What the tab *is* comes first,
-            // then what to do with it, then the closes — `Close` heading that group
-            // rather than the menu, since its absence, not its position, is what read
-            // as the tab having no way to be closed at all.
+            // being the whole surface is the point. Closing is what gets used most,
+            // so it heads the menu (a divider, not asserted here since it carries no
+            // label, separates it from the tab actions below), ordered by actual
+            // usage: the two scoped closes ahead of plain Close and Close All.
             expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
+                'Close others',
+                'Close Tabs to the Right',
+                'Close',
+                'Close All',
                 'Rename',
                 'Save',
                 'Duplicate',
-                'Close',
-                'Close others',
-                'Close Tabs to the Right',
-                'Close All',
             ]);
 
             // One tab open: there is nothing to close except it, and nothing to its
@@ -3914,13 +3914,13 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(rightClickTab(first!));
             await Bun.sleep(300);
             expect(await app.evaluate<string[]>(menuItemLabels)).toEqual([
+                'Close others',
+                'Close Tabs to the Right',
+                'Close',
+                'Close All',
                 'Rename',
                 'Save',
                 'Duplicate',
-                'Close',
-                'Close others',
-                'Close Tabs to the Right',
-                'Close All',
             ]);
 
             await app.evaluate(clickContextItem('Close'));

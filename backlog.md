@@ -19,14 +19,6 @@ Things that already work, but not well enough.
   preview tab (the next single-click replaces it) and double-click pin it into
   its own permanent tab, the way VSCode's explorer does.
 
-- **Tab context menu mixes closing with everything else** — The tab right-click
-  menu (Rename, Save, Duplicate, Close, Close others, Close Tabs to the Right,
-  Close All) is one flat list with actions before closes. Closing is what gets
-  used most, so split it into two groups with a plain visual divider (no text
-  subheaders): closing behaviors on top, tab actions below. Within the closing
-  group, order by actual usage — Close others and Close Tabs to the Right ahead
-  of plain Close and Close All.
-
 - **Chrome text is highlightable like a web page** — Dragging anywhere in the
   UI — resizing a panel, dragging a tab, a stray shift-click — can select text
   the way it would on a web page, which reads as weird and un-native for a
