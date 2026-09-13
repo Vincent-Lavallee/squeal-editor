@@ -2148,8 +2148,8 @@ browses never ask. `ResultsRowCount`, in `ResultsBar`'s button row beside
 *Clear filter* and the pager, is the click-to-reveal affordance: a **Load
 count** button (the toolbar `Format` button's own recipe — default variant,
 `BUTTON_H_BAR` — not the row's ghost buttons, since asking the server something
-is a heavier act than clearing or paging) until asked, `of …` while the ask is
-in flight, and `of 1,204,000` once it lands.
+is a heavier act than clearing or paging) until asked, `… rows` while the ask is
+in flight, and `1,204,000 rows` once it lands.
 
 **Query results never show it.** `ResultsBar` only renders the control when
 `g.browse` is set — an ad-hoc `db.query` result is deliberately unpaged already

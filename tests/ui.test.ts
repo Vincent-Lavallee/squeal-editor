@@ -1128,17 +1128,17 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.waitFor(`(${barText}).includes('rows 1–100') ? true : null`);
 
             // Not asked for yet: the bar offers the button, not a number.
-            expect(await app.evaluate<string>(barText)).not.toContain('of 150');
+            expect(await app.evaluate<string>(barText)).not.toContain('150 rows');
             expect(await app.evaluate<boolean>(`!!${revealCountBtn}`)).toBe(true);
 
             await app.evaluate(`${revealCountBtn}.click(); true;`);
-            await app.waitFor(`(${barText}).includes('of 150') ? true : null`);
+            await app.waitFor(`(${barText}).includes('150 rows') ? true : null`);
 
             // Paging is the same table under the same (absent) filter, so the total
             // already paid for stays on screen rather than reverting to the button.
             await app.evaluate(`${pagerBtn('Next')}.click(); true;`);
             await app.waitFor(`(${barText}).includes('rows 101–150') ? true : null`);
-            expect(await app.evaluate<string>(barText)).toContain('of 150');
+            expect(await app.evaluate<string>(barText)).toContain('150 rows');
 
             await app.evaluate(closeTab('events'));
             await Bun.sleep(300);
