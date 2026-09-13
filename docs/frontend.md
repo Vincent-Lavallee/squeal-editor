@@ -135,6 +135,14 @@ src/features/
     drop-table/         DropTableConfirm -- not on the feature's public surface;
                         only sidebar/SidebarOverlays reaches it
       hooks/            useDropSubmit
+    table-export/       ExportTableDialog, ExportFormatField, ExportTotalLine,
+                        ExportProgressStatus, ExportProgressBar,
+                        ExportConflictNotice, exportTarget.ts (the
+                        `ExportTarget` type) -- same reach rule as
+                        drop-table/, only SidebarOverlays opens it; whether it
+                        is open at all is `shell/hooks/useTableExportDialog`'s,
+                        not this subfeature's own, so the status bar can reopen it
+      hooks/            useExportTableForm
     catalog/            (no components of its own; see hooks/)
       hooks/            useCatalogFetch/Ddl/Stars/Refresh, useRelationCache,
                         useShownListing, useSettledSearch -- the bridge-fetching
@@ -172,7 +180,9 @@ src/features/
                         connections/assistant each have one
     hooks/              useDiagram, useDiagramCanvas, useDiagramLayout,
                         useDiagramZoomPan, useNodeDrag
-  statusbar/            StatusBar + ReadOnlyConfirm: the bottom bar and its lock
+  statusbar/            StatusBar, ReadOnlyStatus + ReadOnlyConfirm (its lock),
+                        AssistantStatus, TableExportStatus -- the bottom bar
+                        and its segments
     hooks/              useQueryElapsed
   updater/              UpdateBanner: the found-update strip
     hooks/              useUpdater
@@ -252,6 +262,10 @@ that lives apart from its values is two sources for one fact.
 | the version a *Test* reached, and why one failed | `connectionTest` slice | crossed |
 | what the last connections export wrote or import merged, as counts | `transfer` slice | crossed |
 | whether an export was ticked to include passwords | `ExportConnectionsDialog` local state | never left |
+| a table export's `exportId`, `rowsWritten`, its result or error, its row `total` (a separate `db.count`), and the `format`/`includeCreateTable` it was started with | `tableExport` slice | crossed |
+| which table's export dialog is open, and whether it is minimized | `useTableExportDialog` (`shell/hooks/`) local state | never left, but lifted to `Shell` so the status bar can reopen it |
+| the table "Export table" was last clicked for while a different one was already exporting | `useTableExportDialog`'s `blockedExportRequest` | never left |
+| the export dialog's chosen format and CREATE TABLE checkbox, before a run exists to read them back from the slice | `useExportTableForm` local state | never left |
 | which AWS profile was signed in, why one failed, the CLI's `prompt`, and what each AWS profile can currently do | `awsSignIn` slice | crossed |
 | workspaces | `workspaces` slice | crossed |
 | environments (the picklist, not any connection's own) | `environments` slice | crossed |
@@ -2577,6 +2591,82 @@ its own `NSMenu` in `scripts/macos-window-chrome.m`, which mirrors `Titlebar.tsx
 items exactly and dispatches a `squeal:menu` event that `TitlebarMacos` switches
 on. An item added to one and not the other compiles, tests green on Windows, and
 is simply missing on the platform that cannot show it.
+
+## Exporting a table
+
+The tree's "Export table" (`ExportTableDialog`, in `explorer/table-export/`)
+is the same shape as *Carrying the connections to another machine* above, for
+the same reason: the UI names a file and never holds one, because a table can
+be larger than the webview should ever hold as data. `db.export` is a long
+call — `Infinity` is passed as its timeout, the same escape hatch
+`downloadUpdate` uses, since a large table can run for minutes and the
+default 60s bridge timeout exists for calls that are supposed to be quick.
+
+**Row progress arrives on a broadcast, not the reply.** `EXPORT_PROGRESS_EVENT`
+carries `{ exportId, rowsWritten }`, the same split `update.progress` draws
+against `update.download` — `main.tsx` subscribes once and dispatches into
+`tableExportSlice`, which the dialog and the status bar both read.
+
+**Cancel is a second command, not an aborted `call()`.** Aborting the
+frontend's own `call()` (the way `cancelConnect` does for `db.connect`) would
+only stop the UI *waiting* — the extension would keep paging and writing
+regardless. `db.exportCancel` instead asks the extension itself to stop, the
+`ai.cancel` shape exactly: `exportId` is minted by the UI (`nanoid()`, the same
+call `assistantTurnLoop` makes for a `turnId`) *before* `db.export` is sent, so
+a cancel can name a job the export's own reply has not arrived for yet. The
+export's reply is still what reports whether the stop actually landed
+(`cancelled`) — `db.exportCancel` resolving only means the signal was raised.
+
+**The dialog can be minimized while an export runs, and the status bar takes
+over.** Dismissing the dialog means two different things depending on
+`busy`: while an export is running, it *minimizes* (`useExportTableForm`'s
+`dismiss`) — the thunk it started keeps running regardless of whether
+anything is mounted to watch it, since a Redux thunk is not tied to a
+component's lifecycle. `TableExportStatus` (`features/statusbar/`) then shows
+the same `rowsWritten`/percent the dialog would have, and clicking it calls
+`reopenExportDialog`. Not busy, dismissing is a real close: it drops the
+slice's result via `clear()` so a later export does not open onto a stale
+answer.
+
+**Which table this is for is lifted to `Shell`, not owned by the sidebar.**
+`useTableExportDialog` (`shell/hooks/`) holds `exporting: ExportTarget | null`
+(the table *and* the database it was opened from, fixed at that moment so a
+reopened dialog cannot follow the tree to wherever it has since navigated)
+and `exportDialogVisible`. It has to live here rather than in `Sidebar`'s own
+`useSidebarMenus` (where "drop table" confirmation still lives) because the
+status bar that reopens it is `Shell`'s other child, not a descendant of the
+sidebar — the same "lift to the common ancestor" answer `namingTab`/`closing`
+already use for `SaveQueryDialog`/`CloseTabsConfirm`. Only one export runs at
+a time (`tableExportSlice` has one slot), so a second "Export table" while
+one is already busy reopens *that* dialog rather than starting a second one —
+`blockedExportRequest` remembers the table that was actually clicked so
+`ExportTableDialog` can say so (`ExportConflictNotice`) instead of silently
+substituting another table's dialog for the one asked for. It is cleared
+whenever the dialog stops showing a live mismatch: minimizing, closing, and
+reopening from the status bar all reset it, since none of those are a new
+"Export table" click.
+
+**A row total is fetched before the export starts, for context and for the
+progress bar's denominator.** `openExportDialog` dispatches `fetchExportTotal`
+— `db.count` with no filter, the same command the results bar's
+click-to-reveal total already calls — the moment "Export table" is chosen,
+before the user has even picked a format. `tableExportSlice.total` is shown
+verbatim, like every other database value; `exportPercent`
+(`store/tableExportProgress.ts`) is the one place it is read through a JS
+`Number`, and only to size `ExportProgressBar`'s fill width — a cosmetic
+ratio, not the fact displayed beside it.
+
+**The format and the CREATE TABLE checkbox live in the slice too, not only in
+the dialog's local state.** They still start as `useExportTableForm`'s own
+`useState` — nothing crosses the bridge until *Choose a file…* is clicked —
+but `tableExportSlice` also records what an export was actually started with,
+because minimizing unmounts `ExportTableDialog` entirely and a reopened
+dialog has to show what is really running rather than a fresh component's
+defaults. `useExportTableForm` seeds its local state from the slice
+(`tableExport.format ?? 'csv'`) rather than a hardcoded default, and
+`ExportFormatField` swaps the picker for a plain "Format: SQL, with CREATE
+TABLE" summary once `started` (busy, or a result/error already sitting from
+this run) — there is nothing left to change by then.
 
 ## Keyboard shortcuts
 

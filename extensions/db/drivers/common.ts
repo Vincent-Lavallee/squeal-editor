@@ -4,6 +4,7 @@ export {
     toDisplayRow,
     tlsOptions,
     describeOk,
+    renderSqlLiteral,
 } from './commonValues.ts';
 export {
     type KeyPart,

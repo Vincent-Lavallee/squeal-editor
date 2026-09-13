@@ -12,6 +12,7 @@ import { savedReducer } from './savedSlice.ts';
 import { sessionReducer } from './sessionSlice.ts';
 import { sessionSyncMiddleware } from './sessionSyncListener.ts';
 import { settingsReducer } from './settingsSlice.ts';
+import { tableExportReducer } from './tableExportSlice.ts';
 import { tabsReducer } from './tabsSlice.ts';
 import { transferReducer } from './transferSlice.ts';
 import { updaterReducer } from './updaterSlice.ts';
@@ -53,6 +54,7 @@ export const store = configureStore({
         saved: savedReducer,
         savedQueries: savedQueriesReducer,
         transfer: transferReducer,
+        tableExport: tableExportReducer,
         connectionTest: connectionTestReducer,
         awsSignIn: awsSignInReducer,
         explorer: explorerReducer,

@@ -1,6 +1,7 @@
 import type { ConnectionConfig } from '../../shared/protocol/index.ts';
 import { withDriver, type Driver } from './drivers/index.ts';
 import { connectionCatalogMethods } from './connectionCatalogMethods.ts';
+import { connectionExportMethods } from './connectionExportMethods.ts';
 import { connectionLifecycleMethods } from './connectionLifecycleMethods.ts';
 import { connectionQueryMethods, runCount } from './connectionQueryMethods.ts';
 import { useClient, type ConnectionState } from './connectionState.ts';
@@ -72,6 +73,7 @@ function build<C>(
         count: (database, relation, filter) =>
             runCount(use, driver, { database, relation, filter }),
         ...connectionWriteMethods(use, driver),
+        ...connectionExportMethods(use, driver),
         ...connectionLifecycleMethods(state, driver),
     };
 }

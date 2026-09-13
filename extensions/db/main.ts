@@ -18,6 +18,7 @@ import { commandsConnection } from './commandsConnection.ts';
 import { closeAllConnections, connectionCount } from './commandsConnectionCore.ts';
 import { commandsAssistant } from './commandsAssistant.ts';
 import { commandsAws } from './commandsAws.ts';
+import { commandsExport } from './commandsExport.ts';
 import { commandsMisc } from './commandsMisc.ts';
 import { commandsSaved } from './commandsSaved.ts';
 import { commandsUpdater } from './commandsUpdater.ts';
@@ -82,6 +83,7 @@ const COMMANDS: Handlers = {
     ...commandsMisc(),
     ...commandsUpdater(send),
     ...commandsAssistant(send),
+    ...commandsExport(send),
 };
 
 /* ------------------------------------------------------------------ *

@@ -1074,3 +1074,13 @@ This is a record, not a plan. Nothing here is waiting on anything.
   on a huge table. Added a click-to-reveal affordance next to the row range that
   runs the count on demand and shows it (e.g. "of 1,204,000") once fetched.
   Ad-hoc query results are unaffected — they're deliberately unpaged already.
+
+- **2026-09-13** — **Export a table** — Getting a table out of the app means selecting rows by
+  hand or writing the dump query yourself. Add an export that streams a whole
+  table — all rows, paged from the server so a large one never has to land in the
+  grid first — to a file chosen by a native save dialog, as CSV or as SQL. The
+  SQL form is INSERT statements, with the table's `CREATE TABLE` offered as an
+  optional preamble that reuses the definition work from the context menu. The
+  extension produces the rows, since the UI cannot read a database, and every
+  value is emitted exactly as the server sent it, quoted per engine — never
+  reformatted through a JS `Date` or `Number`.

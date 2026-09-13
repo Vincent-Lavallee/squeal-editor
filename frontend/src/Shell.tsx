@@ -56,7 +56,7 @@ function ShellLayout({ onAddConnection, openDiagramRequest, openAssistantRequest
         >
             <ConnectionRail onAdd={onAddConnection} />
             <ShellBody s={s} />
-            <StatusBar />
+            <StatusBar exporting={s.exporting} onReopenExport={s.reopenExportDialog} />
             <ShellDialogs s={s} />
         </div>
     );

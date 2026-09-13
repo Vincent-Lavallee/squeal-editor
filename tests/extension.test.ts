@@ -11,6 +11,9 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type {
     CellValue,
@@ -27,6 +30,8 @@ import type {
 } from '../shared/protocol/index.ts';
 import { FIXTURE_DB, MYSQL, PG, SQLITE, SQLITE_FILE } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
+
+const EXPORT_DIR = mkdtempSync(join(tmpdir(), 'squeal-export-'));
 
 let h: Harness;
 
@@ -1004,6 +1009,101 @@ describe.each([
         // Qualified in the output too, so the statement it prints is one that runs
         // wherever search_path happens to point.
         expect(ddl).toContain('reporting');
+    });
+
+    describe('exporting a table', () => {
+        const exportPath = (name: string) => join(EXPORT_DIR, `${label}-${name}`);
+        const exportTable = async (args: {
+            table: string;
+            exportId: string;
+            path: string;
+            format: 'csv' | 'sql';
+            includeCreateTable: boolean;
+        }): Promise<{ rowCount: number; cancelled: boolean }> =>
+            (await h.ok('db.export', { connectionId, database: fixtureDb, ...args })) as {
+                rowCount: number;
+                cancelled: boolean;
+            };
+
+        test('csv: every row, NULL as an empty cell', async () => {
+            const path = exportPath('users.csv');
+            const res = await exportTable({
+                table: 'users',
+                exportId: `csv-${label}`,
+                path,
+                format: 'csv',
+                includeCreateTable: false,
+            });
+
+            expect(res).toEqual({ rowCount: 2, cancelled: false });
+
+            const lines = (await Bun.file(path).text()).trim().split('\n');
+            expect(lines).toHaveLength(3); // header + Ada + Grace
+            expect(lines[0]).toContain('name');
+            // Grace's NULL email is an empty cell -- never the literal text "null".
+            const grace = lines.find((l) => l.includes('Grace'));
+            expect(grace).toBeDefined();
+            expect(grace).not.toMatch(/null/i);
+        });
+
+        test('sql: one INSERT per row, values quoted per engine', async () => {
+            const path = exportPath('users.sql');
+            const res = await exportTable({
+                table: 'users',
+                exportId: `sql-${label}`,
+                path,
+                format: 'sql',
+                includeCreateTable: false,
+            });
+
+            expect(res).toEqual({ rowCount: 2, cancelled: false });
+
+            const inserts = (await Bun.file(path).text()).trim().split('\n');
+            expect(inserts).toHaveLength(2);
+            for (const line of inserts) expect(line.trim()).toMatch(/^INSERT INTO .+;$/);
+            expect(inserts.join('\n')).toContain('Ada');
+            // Grace's NULL email is the bare keyword, never a quoted string.
+            expect(inserts.join('\n')).toMatch(/,\s*NULL\s*,/);
+        });
+
+        test('sql: an optional CREATE TABLE preamble, reusing db.ddl', async () => {
+            const path = exportPath('users-with-ddl.sql');
+            await exportTable({
+                table: 'users',
+                exportId: `sql-ddl-${label}`,
+                path,
+                format: 'sql',
+                includeCreateTable: true,
+            });
+
+            const text = await Bun.file(path).text();
+            const ddlAt = text.search(/create table/i);
+            const insertAt = text.indexOf('INSERT INTO');
+            expect(ddlAt).toBeGreaterThanOrEqual(0);
+            expect(insertAt).toBeGreaterThan(ddlAt);
+        });
+
+        test('a cancel raced against an export never breaks the reply', async () => {
+            // Whether the cancel actually lands before this small table's own last
+            // page is a genuine race -- a synchronous SQLite read, in particular,
+            // can finish before the cancel message is even read off the socket.
+            // Both outcomes are correct; what this pins is that racing the two
+            // never throws and the reply is always `db.export`'s own shape.
+            const path = exportPath('cancel.csv');
+            const exportId = `cancel-${label}`;
+            const done = exportTable({
+                table: 'events',
+                exportId,
+                path,
+                format: 'csv',
+                includeCreateTable: false,
+            });
+            await h.ok('db.exportCancel', { exportId });
+            const res = await done;
+
+            expect(typeof res.rowCount).toBe('number');
+            expect(typeof res.cancelled).toBe('boolean');
+        });
     });
 
     const listFunctions = async (): Promise<FunctionInfo[]> =>

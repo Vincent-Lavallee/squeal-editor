@@ -78,3 +78,16 @@ export type AiDelta = {
     text: string;
 };
 export const AI_DELTA_EVENT = 'ai.delta';
+
+/**
+ * How far a `db.export` has gotten, while it is still running.
+ *
+ * The reply carries the final `rowCount`; this is only the counter filling in
+ * between, the same split `update.progress` draws against `update.download`.
+ * `exportId` is the same one the UI minted for `db.export`/`db.exportCancel`.
+ */
+export type ExportProgress = {
+    exportId: string;
+    rowsWritten: number;
+};
+export const EXPORT_PROGRESS_EVENT = 'export.progress';

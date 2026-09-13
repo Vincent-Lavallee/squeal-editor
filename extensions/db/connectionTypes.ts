@@ -31,6 +31,14 @@ export const PAGE_SIZE = 100;
  */
 export const QUERY_ROW_CAP = 10_000;
 
+/**
+ * Rows per page while exporting a whole table to a file. Larger than
+ * `PAGE_SIZE`: nothing here renders a page, it only writes one, so there is
+ * no reason to pay the round-trip cost of a grid-sized page on a table that
+ * might be millions of rows.
+ */
+export const EXPORT_PAGE_SIZE = 2_000;
+
 /** What an already-open connection can do without being asked -- see `ConnectionState`. */
 export type ConnectionLifecycle = (state: 'lost' | 'restored', reason?: string) => void;
 
@@ -145,5 +153,23 @@ export interface ConnectionHandle {
      * undone the moment the user switched to a database not yet opened.
      */
     setReadOnly(value: boolean): Promise<void>;
+    /**
+     * Stream every row of a table to `path`, paged the way `browse` is but
+     * looped to exhaustion rather than one page at a time. `onProgress` fires
+     * once per page written; `signal` is checked between pages, and an abort
+     * closes the file where it stands rather than throwing -- the rows already
+     * written are still a well-formed, if partial, file.
+     */
+    exportTable(
+        database: string,
+        relation: Relation,
+        options: {
+            format: 'csv' | 'sql';
+            path: string;
+            includeCreateTable: boolean;
+            signal: AbortSignal;
+            onProgress: (rowsWritten: number) => void;
+        },
+    ): Promise<{ rowCount: number; cancelled: boolean }>;
     close(): Promise<void>;
 }

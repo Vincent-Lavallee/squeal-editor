@@ -3317,8 +3317,8 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
         /*
          * Right-clicking a table used to do nothing; now it is the surface the
-         * per-table actions hang off. The four are asserted as one list because the
-         * menu being the whole surface is the point -- a stray fifth entry, or a
+         * per-table actions hang off. The five are asserted as one list because the
+         * menu being the whole surface is the point -- a stray sixth entry, or a
          * missing one, is the regression. We are on `shop` with `users` in the tree
          * from the test above.
          */
@@ -3329,6 +3329,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
                 'Copy name',
                 'Open definition',
                 'Star',
+                'Export table',
                 'Drop table',
             ]);
             // Dismisses on Escape, like every floating thing here.
