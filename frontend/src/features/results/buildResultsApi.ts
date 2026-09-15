@@ -27,6 +27,28 @@ interface Args {
     viewPrefs: ReturnType<typeof useResultsViewPrefs>;
 }
 
+/**
+ * The column-width/order/visibility prefs, grouped into one spread -- pulled
+ * out of `buildResultsApi` purely so its own function stays under the line
+ * cap; the fields themselves are still part of that one flat public surface.
+ */
+function columnPrefsFields(viewPrefs: ReturnType<typeof useResultsViewPrefs>) {
+    return {
+        columnWidths: viewPrefs.columnWidths,
+        setColumnWidth: viewPrefs.setColumnWidth,
+        clearColumnWidth: viewPrefs.clearColumnWidth,
+        moveColumn: viewPrefs.moveColumn,
+        // Every column this tab has, hidden or not -- the toolbar's column
+        // list, and what `ResultsTable`'s no-columns check reads instead of
+        // `result.columns`, so hiding every column never looks like the
+        // query itself returned none.
+        allColumns: viewPrefs.allColumns,
+        hiddenColumns: viewPrefs.hiddenColumns,
+        setColumnHidden: viewPrefs.setColumnHidden,
+        hideColumns: viewPrefs.hideColumns,
+    };
+}
+
 /** Assembles `useResults`' public return shape out of its composed hooks' pieces. Split out purely for length. */
 export function buildResultsApi(a: Args) {
     const { part, identity, runActions, staging, filterState, browsing, copy, viewPrefs } = a;
@@ -98,10 +120,7 @@ export function buildResultsApi(a: Args) {
         rememberScroll: viewPrefs.rememberScroll,
         recallScroll: viewPrefs.recallScroll,
 
-        columnWidths: viewPrefs.columnWidths,
-        setColumnWidth: viewPrefs.setColumnWidth,
-        clearColumnWidth: viewPrefs.clearColumnWidth,
-        moveColumn: viewPrefs.moveColumn,
+        ...columnPrefsFields(viewPrefs),
 
         // The sort surface. `sort` is what the result on screen was fetched with,
         // which is what the header draws its arrow from; `canSort` is which headers

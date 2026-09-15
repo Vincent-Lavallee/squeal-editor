@@ -95,13 +95,6 @@ Things that do not exist yet.
   it gained per-table persistence: hidden columns reappear once the tab is
   closed or the app restarts, with nothing written to the settings store.
 
-- **French and English UI** — Every string is English, written where it is used,
-  so there is no seam to translate at. Add one, with French beside it and the
-  language picked from settings. The rule that has to survive it: chrome is
-  translated, data never is. Locale-aware date and number formatting is the
-  headline feature of every i18n library and the one thing this app has promised
-  not to do — a shifted date and a rounded BIGINT are far worse than an
-  untranslated column header.
 
 - **Recent connections** — Show the last 3 connections you actually connected to at the bottom of the connections screen, most recent first. Clicking one connects immediately with the saved credentials.
 

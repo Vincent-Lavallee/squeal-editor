@@ -71,7 +71,10 @@ export default function ResultsTable({
             />
         );
     if (!g.result) return <ResultsNoRowsYet tabBars={tabBars} />;
-    if (g.result.columns.length === 0)
+    // `allColumns`, not `result.columns`: hiding every column must still show
+    // the grid (and the toolbar's way back), not read as a query with no
+    // columns at all.
+    if (g.allColumns.length === 0)
         return <ResultsQueryFinished tabBars={tabBars} message={g.result.message} />;
 
     return (

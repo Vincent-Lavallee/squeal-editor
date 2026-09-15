@@ -1,13 +1,21 @@
 import { useCallback } from 'react';
 import { useResultsView } from '../../ResultsContext.tsx';
+import { useColumnVisibilityPrefs } from '../../grid/hooks/useColumnVisibilityPrefs.ts';
+import { useColumnWidthPrefs } from '../../grid/hooks/useColumnWidthPrefs.ts';
 import type { TableIdentity } from '../../grid/hooks/useColumnOrderState.ts';
 
 interface Options {
     activeTabId: string | null;
     rowsKey: string;
     columnsKey: string;
-    /** The columns on screen right now, in display order -- what a drop reorders against. */
-    columns: string[];
+    /**
+     * Every one of this tab's columns, in display order, hidden or not -- what
+     * a drop reorders against (so a hidden column keeps its remembered slot)
+     * and what the column-visibility list offers.
+     */
+    allColumns: string[];
+    /** The columns actually on screen right now -- what a "Hide column" menu index counts into. */
+    visibleColumns: string[];
     /** What a table-browse tab's reorder is persisted under; null keeps it session-only. */
     tableIdentity: TableIdentity | null;
 }
@@ -21,7 +29,8 @@ export function useResultsViewPrefs({
     activeTabId,
     rowsKey,
     columnsKey,
-    columns,
+    allColumns,
+    visibleColumns,
     tableIdentity,
 }: Options) {
     const view = useResultsView();
@@ -43,38 +52,32 @@ export function useResultsViewPrefs({
         [activeTabId, rowsKey, columnsKey, view],
     );
 
-    // How wide the user dragged each column, by name. Not keyed on `rowsKey` like
-    // the two above: a width belongs to the column, not to the rows under it, so
-    // paging and re-running keep it.
-    const columnWidths = activeTabId ? view.columnWidthsFor(activeTabId) : {};
-    const setColumnWidth = useCallback(
-        (column: string, width: number) => {
-            if (activeTabId) view.setColumnWidth(activeTabId, column, width);
-        },
-        [activeTabId, view],
-    );
-    const clearColumnWidth = useCallback(
-        (column: string) => {
-            if (activeTabId) view.clearColumnWidth(activeTabId, column);
-        },
-        [activeTabId, view],
-    );
+    const { columnWidths, setColumnWidth, clearColumnWidth } = useColumnWidthPrefs(activeTabId);
 
     // Drop `dragged` in front of `before` (or at the end, `before === null`) in
     // this tab's column order -- reordering the header is what calls this.
+    // Reorders against `allColumns`, not `visibleColumns`: a header can only
+    // ever drag another *visible* column, but resolving the move against the
+    // full list keeps whatever is currently hidden in its own remembered slot
+    // instead of losing it to the end the next time it is shown.
     const moveColumn = useCallback(
         (dragged: string, before: string | null) => {
             if (activeTabId) {
                 view.moveColumn({
                     tabId: activeTabId,
-                    displayedColumns: columns,
+                    displayedColumns: allColumns,
                     dragged,
                     before,
                     identity: tableIdentity,
                 });
             }
         },
-        [activeTabId, columns, tableIdentity, view],
+        [activeTabId, allColumns, tableIdentity, view],
+    );
+
+    const { hiddenColumns, setColumnHidden, hideColumns } = useColumnVisibilityPrefs(
+        activeTabId,
+        visibleColumns,
     );
 
     return {
@@ -84,5 +87,9 @@ export function useResultsViewPrefs({
         setColumnWidth,
         clearColumnWidth,
         moveColumn,
+        allColumns,
+        hiddenColumns,
+        setColumnHidden,
+        hideColumns,
     };
 }

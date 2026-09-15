@@ -7,6 +7,10 @@ import {
     useColumnOrderState,
 } from './grid/hooks/useColumnOrderState.ts';
 import { type ColumnWidths, useColumnWidthsState } from './grid/hooks/useColumnWidthsState.ts';
+import {
+    type HiddenColumns,
+    useColumnVisibilityState,
+} from './grid/hooks/useColumnVisibilityState.ts';
 import { type FilterDraft, useFilterDraftState } from './filter/hooks/useFilterDraftState.ts';
 import {
     type GridOffset,
@@ -20,7 +24,15 @@ import {
     useStagingState,
 } from './editing/hooks/useStagingState.ts';
 
-export type { ColumnOrder, ColumnWidths, FilterDraft, GridScroll, Pending, TableIdentity };
+export type {
+    ColumnOrder,
+    ColumnWidths,
+    FilterDraft,
+    GridScroll,
+    HiddenColumns,
+    Pending,
+    TableIdentity,
+};
 export { EMPTY_PENDING };
 
 export interface ResultsView {
@@ -45,6 +57,8 @@ export interface ResultsView {
     setColumnWidth: (tabId: string, column: string, width: number) => void;
     /** Give a column back to the browser's sizing -- the double-click on a handle. */
     clearColumnWidth: (tabId: string, column: string) => void;
+    hiddenColumnsFor: (tabId: string) => HiddenColumns;
+    setColumnHidden: (tabId: string, column: string, hidden: boolean) => void;
     columnOrderFor: (tabId: string) => ColumnOrder;
     moveColumn: (args: {
         tabId: string;
@@ -64,6 +78,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
     const filter = useFilterDraftState();
     const scroll = useGridScrollState();
     const widths = useColumnWidthsState();
+    const visibility = useColumnVisibilityState();
     const order = useColumnOrderState();
     const tabs = useAppSelector((s) => s.tabs.tabs);
 
@@ -78,8 +93,17 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
         filter.prune(live);
         scroll.prune(live);
         widths.prune(live);
+        visibility.prune(live);
         order.prune(live);
-    }, [tabs, staging.prune, filter.prune, scroll.prune, widths.prune, order.prune]);
+    }, [
+        tabs,
+        staging.prune,
+        filter.prune,
+        scroll.prune,
+        widths.prune,
+        visibility.prune,
+        order.prune,
+    ]);
 
     const value = useMemo(
         () => ({
@@ -100,13 +124,15 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
             columnWidthsFor: widths.columnWidthsFor,
             setColumnWidth: widths.setColumnWidth,
             clearColumnWidth: widths.clearColumnWidth,
+            hiddenColumnsFor: visibility.hiddenColumnsFor,
+            setColumnHidden: visibility.setColumnHidden,
             columnOrderFor: order.columnOrderFor,
             moveColumn: order.moveColumn,
             loadColumnOrder: (tabId: string, identity: TableIdentity | null) => {
                 if (identity) order.loadOrder(tabId, identity);
             },
         }),
-        [staging, filter, scroll, widths, order],
+        [staging, filter, scroll, widths, visibility, order],
     );
 
     return <ResultsViewContext.Provider value={value}>{children}</ResultsViewContext.Provider>;
