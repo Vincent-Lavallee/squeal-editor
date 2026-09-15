@@ -23,6 +23,7 @@ interface Options {
     isKeyCol: (c: number) => boolean;
     setNull: (row: number, col: number) => void;
     toggleDelete: (row: number) => void;
+    hideColumns: (colIndices: number[]) => void;
 }
 
 const inRange = (range: CellRange, r: number, c: number): boolean => {
@@ -126,6 +127,10 @@ function columnMenuItems(m: Menu, o: Options): MenuItem[] {
         },
         { label: 'Copy as SQL insert', onSelect: () => o.copyAsSql(allRows, cols) },
         ...copyColumnNameItem(m, o.columns),
+        {
+            label: cols.length > 1 ? `Hide ${cols.length} columns` : 'Hide column',
+            onSelect: () => o.hideColumns(cols),
+        },
     ];
 }
 

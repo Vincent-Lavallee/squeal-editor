@@ -1,8 +1,10 @@
 import type { CSSProperties } from 'react';
 import Button from '../../../common/components/Button.tsx';
+import { RowCountIcon } from '../../../common/icons/icons.ts';
 import * as t from '../../../common/tokens';
 import type { CellValue } from '../../../../../shared/protocol/index.ts';
 import type { RowCountState } from '../../../store/resultsRowCount.ts';
+import { iconSvg } from '../grid/resultsGridStyles.ts';
 
 interface Props {
     rowCount: RowCountState | null;
@@ -35,7 +37,16 @@ function formatCount(value: CellValue): string {
 export default function ResultsRowCount({ rowCount, onReveal }: Props) {
     if (rowCount?.status === 'loaded' && rowCount.value !== null) {
         return (
-            <span data-testid="results-row-count" style={countTextStyle}>
+            <span
+                data-testid="results-row-count"
+                style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: t.GAP_XS,
+                    ...countTextStyle,
+                }}
+            >
+                <RowCountIcon style={iconSvg} aria-hidden="true" />
                 {formatCount(rowCount.value)} rows
             </span>
         );
@@ -43,8 +54,16 @@ export default function ResultsRowCount({ rowCount, onReveal }: Props) {
 
     if (rowCount?.status === 'loading') {
         return (
-            <span data-testid="results-row-count-loading" style={countTextStyle}>
-                … rows
+            <span
+                data-testid="results-row-count-loading"
+                style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: t.GAP_XS,
+                    ...countTextStyle,
+                }}
+            >
+                <RowCountIcon style={iconSvg} aria-hidden="true" />… rows
             </span>
         );
     }
@@ -54,10 +73,15 @@ export default function ResultsRowCount({ rowCount, onReveal }: Props) {
         <Button
             variant="ghost"
             data-testid="results-row-count-reveal"
-            style={{ height: t.BUTTON_H_BAR, ...(isError ? { color: t.RED_TEXT } : {}) }}
+            style={{
+                height: t.BUTTON_H_BAR,
+                padding: '0 8px',
+                ...(isError ? { color: t.RED_TEXT } : {}),
+            }}
             onClick={onReveal}
             title="Count every row this table has"
         >
+            <RowCountIcon style={iconSvg} aria-hidden="true" />
             {isError ? 'Load count (retry)' : 'Load count'}
         </Button>
     );

@@ -20,6 +20,8 @@ interface Options {
     page: string | null;
     keyColumns: string[] | null;
     result: ResultsState['result'];
+    /** The un-hidden result, for the WHERE key -- see `resultsSaveEditsLogic.ts`. */
+    fullResult: ResultsState['result'];
     dirtyCount: number;
     editedRows: number[];
     deletedRows: number[];
@@ -69,16 +71,17 @@ function refetchAfterSave(args: {
 export function useSaveEdits(options: Options) {
     const dispatch = useAppDispatch();
     const view: ResultsView = useResultsView();
-    const { activeTabId, editTable, editSchema, page, keyColumns, result } = options;
+    const { activeTabId, editTable, editSchema, page, keyColumns, result, fullResult } = options;
     const { dirtyCount, editedRows, deletedRows, pending, browse, ranSql, sort, activeStatement } =
         options;
 
     return useCallback(async () => {
-        if (!activeTabId || !editTable || !page || !keyColumns || !result) return;
+        if (!activeTabId || !editTable || !page || !keyColumns || !result || !fullResult) return;
         if (dirtyCount === 0) return;
 
         const { edits, deletes } = buildSaveEditsArgs({
-            result,
+            visibleResult: result,
+            fullResult,
             keyColumns,
             editedRows,
             deletedRows,
@@ -108,6 +111,7 @@ export function useSaveEdits(options: Options) {
         page,
         keyColumns,
         result,
+        fullResult,
         dirtyCount,
         editedRows,
         deletedRows,

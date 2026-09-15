@@ -2,6 +2,7 @@ import Button from '../../../common/components/Button.tsx';
 import * as t from '../../../common/tokens';
 import type { useResultsGridController } from '../grid/hooks/useResultsGridController.ts';
 import ResultsBarSummary from './ResultsBarSummary.tsx';
+import ResultsColumnsButton from './ResultsColumnsButton.tsx';
 import ResultsPager from './ResultsPager.tsx';
 import ResultsRowCount from './ResultsRowCount.tsx';
 
@@ -20,19 +21,17 @@ const barStyle: React.CSSProperties = {
 export default function ResultsBar({ g }: { g: ReturnType<typeof useResultsGridController> }) {
     return (
         <div data-testid="results-bar" style={barStyle}>
-            <ResultsBarSummary
-                gridDatabase={g.gridDatabase}
-                browse={g.browse}
-                count={g.count}
-                firstRow={g.firstRow}
-                durationMs={g.result!.durationMs}
-                readOnlyReason={g.readOnlyReason}
-                editBlockedHint={g.editBlockedHint}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS }}>
+                <ResultsColumnsButton
+                    allColumns={g.allColumns}
+                    hiddenColumns={g.hiddenColumns}
+                    onToggleColumn={(column) =>
+                        g.setColumnHidden(column, !g.hiddenColumns.has(column))
+                    }
+                />
 
-            <div
-                style={{ display: 'flex', alignItems: 'center', gap: t.GAP_XS, marginLeft: 'auto' }}
-            >
+                {g.browse && <ResultsRowCount rowCount={g.rowCount} onReveal={g.revealRowCount} />}
+
                 {/* Clear lives here rather than in the filter bar because it is a fact
               about the result on screen, and because it is the one filter control
               that is not needed to recover from a filter the server refused. */}
@@ -46,8 +45,20 @@ export default function ResultsBar({ g }: { g: ReturnType<typeof useResultsGridC
                         Clear filter
                     </Button>
                 )}
+            </div>
 
-                {g.browse && <ResultsRowCount rowCount={g.rowCount} onReveal={g.revealRowCount} />}
+            <div
+                style={{ display: 'flex', alignItems: 'center', gap: t.GAP_SM, marginLeft: 'auto' }}
+            >
+                <ResultsBarSummary
+                    gridDatabase={g.gridDatabase}
+                    browse={g.browse}
+                    count={g.count}
+                    firstRow={g.firstRow}
+                    durationMs={g.result!.durationMs}
+                    readOnlyReason={g.readOnlyReason}
+                    editBlockedHint={g.editBlockedHint}
+                />
 
                 {g.paged && g.browse && (
                     <ResultsPager browse={g.browse} onPrev={g.prev} onNext={g.next} />
