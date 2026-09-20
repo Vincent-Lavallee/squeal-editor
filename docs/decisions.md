@@ -7926,3 +7926,33 @@ toggle recipe already spends on the sidebar's tree/tab sync button, reused
 here for "some columns are hidden" rather than invented fresh. The exact count
 still exists, in the tooltip. The row-count button needed no equivalent: its
 only other state (`isError`) already had a colour (`--red-text`) from before.
+
+## A `<Tooltip>` primitive, adopted for the two buttons that just lost their label
+
+**Going icon-only moved a button's label out of the DOM and into `title`,
+which is slow.** The browser's own hover delay is roughly 1.5s, tolerable for
+a button that also carries a visible word but not for one whose *only* label
+is now behind a hover — and `title` cannot be styled to match the rest of the
+chrome regardless. `components/Tooltip.tsx` replaces it on exactly the two
+buttons that prompted it (`ResultsColumnsButton`, `ResultsRowCount`'s reveal
+button): 300ms to show, the floating rule (`--bg`, 1px `--border-strong`, no
+shadow) instead of the OS's own tooltip chrome.
+
+**The other ~78 `title=` call sites are deliberately untouched.** Migrating
+all of them was the larger option on the table and was turned down for now —
+a native `title` is a strictly worse tooltip, not a broken one, so there is no
+correctness reason to touch a call site nothing else is changing. Move a
+button to `<Tooltip>` when it is next touched for its own reason, the same
+"add the component, then let it grow into that" rule the icon rail's own
+history states.
+
+**It positions itself off the trigger's measured rect, `position: fixed`,
+the same call `useSelectPopupPosition` makes and for the same reason** — a
+fixed element escapes an ancestor's `overflow: auto`; a child of the trigger
+would not. It does not reuse that hook outright: a tooltip's lifecycle is
+hover/focus in, mouse-leave/blur out, with no outside-click dismissal to
+speak of, so the shared piece is only the positioning math, split into its
+own `useTooltipPosition` so `Tooltip.tsx` itself stays under the function
+line cap. `disabled` exists for one reason — suppressing the tooltip while
+the trigger's own popup is already open, so the two never show at once — and
+is not a general escape hatch beyond that.
