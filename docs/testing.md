@@ -9,8 +9,15 @@ Every bug found in this project so far was **invisible to a mock**:
 - the extension surviving the app and holding 8 database connections open
 
 A fake driver would have happily returned whatever it was told to. So the suites
-run against real MySQL and Postgres in Docker, a real SQLite file on disk, and
-the UI suite drives the real app. They are slower and worth it.
+run against real MySQL, Postgres and SQL Server in Docker, a real SQLite file
+on disk, and the UI suite drives the real app. They are slower and worth it.
+
+SQL Server earned that the same way: the contract suite found a live bug the
+desk-reasoning that wrote the driver missed — `sys.objects.type`/`sys
+.key_constraints.type` arriving wire-padded to `char(2)` (`'P '`, not `'P'`),
+which JS string equality does not forgive the way T-SQL's own comparison
+rules do — the moment it ran against a real container. See *SQL Server,
+reached through a pool of one* in `docs/extension.md`.
 
 SQLite earned that the moment it was written: three of its bugs — a bare
 `notnull` being a SQLite *operator* rather than a column, `columnTypes` throwing
@@ -24,7 +31,7 @@ mutated its own fixture (making it pass once and fail on re-run), one matched
 ## Setup
 
 ```bash
-bun run test:db:up     # throwaway MySQL + Postgres on 53306 / 55432, and the SQLite file
+bun run test:db:up     # throwaway MySQL + Postgres + SQL Server on 53306 / 55432 / 51433, and the SQLite file
 bun test               # extension suite (~10s); UI suite skips
 bun run test:ui        # builds, then drives the real app (Windows-only, ~4min)
 bun run test:db:down   # remove them
@@ -40,12 +47,17 @@ instrumentation reaches.
 
 **CI seeds the same way without Docker.** `.github/workflows/ci.yml` runs
 `test:db:up` with `SQUEAL_TEST_DB_NATIVE=1`, which points `tests/fixtures/db.ts`
-at MySQL/Postgres already provisioned as native services on the runner
-(`ikalnytskyi/action-setup-postgres`, `shogo82148/actions-setup-mysql`) instead
-of starting Docker containers — see "CI provisions test databases without
-Docker" in `docs/decisions.md` for why Docker isn't an option on the Windows
-runner `test-ui` needs. Locally, `bun run test:db:up` is still Docker; nothing
-here changes for a dev machine.
+at MySQL/Postgres/SQL Server already provisioned as native services on the
+runner (`ikalnytskyi/action-setup-postgres`, `shogo82148/actions-setup-mysql`,
+`potatoqualitee/mssqlsuite`) instead of starting Docker containers — see "CI
+provisions test databases without Docker" in `docs/decisions.md` for why
+Docker isn't an option on the Windows runner `test-ui` needs. Locally,
+`bun run test:db:up` is still Docker; nothing here changes for a dev machine.
+SQL Server's port is the one place native and local disagree: the
+`mssqlsuite` action has no documented port override the other two actions
+have, so native mode is left on the real default (1433) rather than the
+non-colliding 51433 every other engine, and SQL Server itself locally, uses —
+see the comment on `MSSQL` in `tests/fixtures/config.ts`.
 
 **The SQLite fixture is a file, not a container**, seeded by the same `test:db:up`
 so one command still puts every engine in place. It is
@@ -53,7 +65,7 @@ so one command still puts every engine in place. It is
 rebuilt from nothing on each `up` the way the containers get a `DROP DATABASE`.
 Docker is therefore not required for the SQLite half of the suite, but there is
 no script that runs only that half, deliberately: the point of the contract block
-is that all three engines answer it together.
+is that all four engines answer it together.
 
 **`test:ui` builds the frontend itself, and that is the point of it.** `neu run`
 serves whatever is sitting in `resources/` and does not build, so a frontend
@@ -121,19 +133,29 @@ started. It is the same stray-process family, one step upstream — and
 therefore begins with `tests/helpers/reap.ts`, which is `reapStaleApp(true)`:
 the same kill, forced, without waiting to be told something is on the port.
 
-The containers are named `squeal-pg` / `squeal-mysql` and use non-default ports
-so they cannot collide with anything real you are running. `test:db:up` is
-re-runnable; it drops and reseeds.
+The containers are named `squeal-pg` / `squeal-mysql` / `squeal-mssql` and use
+non-default ports so they cannot collide with anything real you are running.
+`test:db:up` is re-runnable; it drops and reseeds. SQL Server's seed script is
+a multi-batch `sqlcmd` script (`GO` separators wherever a statement has to be
+the first in its batch — `CREATE VIEW`/`TRIGGER`/`FUNCTION`/`PROCEDURE`, and
+the `CREATE DATABASE`/`USE` pair at the top), run through `mssql-tools18`'s
+`sqlcmd`, not through the extension's own driver — the seed has to work before
+there is anything to test it with.
 
 ## The fixture
 
 `tests/fixtures/db.ts` seeds exactly the values that have caused bugs: a BIGINT
-past 2^53, a timezone-less DATETIME, NULLs, a BLOB, JSON, a view, (Postgres) a
-table outside the `public` schema, and a mixed-case column name
-(`users."eventType"`) — the filter bar once rendered that unquoted, which
-Postgres folds to lowercase and then cannot find, and the completion popup later
-inserted it unquoted for the same reason. **Add to it when you find a new sharp
-edge** — that is what it is for.
+past 2^53, a timezone-less DATETIME, NULLs, a BLOB, JSON, a view, a table
+outside the default schema (Postgres' `public`, SQL Server's `dbo`), and a
+mixed-case column name (`users."eventType"`) — the filter bar once rendered
+that unquoted, which Postgres folds to lowercase and then cannot find, and the
+completion popup later inserted it unquoted for the same reason. **Add to it
+when you find a new sharp edge** — that is what it is for. SQL Server's own
+seed carries no `DECIMAL`/`MONEY`/`DATETIMEOFFSET` column, deliberately: both
+are disclosed, unfixed gaps in how tedious hands values back (see
+`docs/decisions.md`), and a fixture that avoided exercising them would read
+as evidence the gap was closed rather than as what it actually is — an engine
+this project chose not to pretend about.
 
 `events` is the exception that proves the rule: 150 rows, seeded for *shape*
 rather than for a value. The size is chosen, not round — more than one 100-row
@@ -152,12 +174,14 @@ deliberately *not* named after the ones they point at — `region_code` → `cod
 so a driver pairing the two sides by name rather than by key position fails here
 instead of passing by coincidence.
 
-The SQLite seed carries one shape the other two do not have to: `users.id` is
+The SQLite seed carries one shape the others do not have to: `users.id` is
 `INTEGER PRIMARY KEY` **deliberately**, because that is the rowid alias whose
 `notnull` the catalog reports as `0`. Declared any other way the fixture would
 pass while the ordinary case stayed broken — it is the table that proves the
 driver's primary-key override does something. Its BIGINT sits on `users.big`
-like MySQL's, since there is no second schema to hold a `reporting.daily_stats`.
+like MySQL's, since there is no second schema to hold a `reporting.daily_stats`
+— the same reason SQL Server's, which does have one, holds its BIGINT on
+`reporting.daily_stats.hits` instead, matching Postgres.
 
 Keep it re-runnable. A test that mutates the fixture must reset what it touched
 (see the `UPDATE … SET email=NULL` in the `beforeAll`), or it passes once and
@@ -170,7 +194,7 @@ Neutralino: it hosts the WebSocket, spawns the extension exactly as the app does
 and dispatches events at it. So the transport under test is the real one — stdin
 init, the `app.broadcast` envelope, `reqId` correlation.
 
-All three engines run the **same** `describe.each` block. The UI cannot tell
+All four engines run the **same** `describe.each` block. The UI cannot tell
 engines apart, so anything asymmetric is a bug. A new engine should be able to
 join that block unchanged.
 
@@ -183,11 +207,30 @@ every engine but Postgres, which is the only one with a second schema to hold
 to `/read[\s-]?only/i`, because SQLite says `readonly` as one word. Nothing about
 the contract itself moved — which is the outcome the block exists to force.
 
+SQL Server joining it cost the same kind of line, plus two genuine driver bugs
+the block actually caught (see *SQL Server, reached through a pool of one* in
+`docs/extension.md`) rather than a contract change: the boolean
+`expectSchemaQualified` became `defaultSchema: string | undefined`, since the
+two schema-having engines disagree on what the default is called (`public` vs
+`dbo`), and the Postgres-only function-overload test moved onto its own
+`supportsOverloads` flag rather than riding along on "has schemas," which the
+two facts only happened to coincide on for Postgres. `reporting.daily_stats`
+and the dotted-name table beside it were added to the SQL Server fixture to
+match, rather than skipping the tests that needed them.
+
 ### The dropped-connection block, and why it kills real backends
 
-*dropped by the server* is a second `describe.each` over the two **server**
-engines only — SQLite is absent rather than skipped, because a file has no server
-to hang up on it and there is no behaviour there to answer for.
+*dropped by the server* is a second `describe.each` over MySQL and Postgres
+only — SQLite is absent rather than skipped, because a file has no server to
+hang up on it and there is no behaviour there to answer for. SQL Server is
+absent for a different reason, established against a real container rather
+than assumed: `KILL <spid>` there does not reproduce the failure this block
+tests for at all — no `'error'` reaches the pool or the raw connection
+underneath it, idle or mid-query, and the connection is transparently usable
+again immediately after. `ConnectionPool`'s pooling recovers on its own before
+this app's code ever sees a failure, which is a real, different answer to the
+same question — see *SQL Server, reached through a pool of one* in
+`docs/extension.md`.
 
 It works by asking a connection for its own backend id (`pg_backend_pid()`,
 `CONNECTION_ID()`) and then killing it from a *second* connection, so the victim
@@ -210,7 +253,7 @@ gone — the behaviour it replaced took the bridge's whole 60s timeout.
 
 ### The one-engine blocks, and why they are not the asymmetry rule broken
 
-*mysql compound statements* runs against MySQL alone, and the other two engines
+*mysql compound statements* runs against MySQL alone, and the other engines
 are **absent rather than skipped** — the same shape as the dropped-connection
 block above. The rule is that anything in the *contract* must be symmetric,
 because the UI cannot tell engines apart. A `DELIMITER` block is not in the
@@ -218,6 +261,16 @@ contract: it exists because MySQL has no in-language way to quote a routine body
 where Postgres has dollar-quoting and SQLite has no routines at all. There is no
 question here for the other two to answer, so a skip would be claiming there was
 one and that it was being ducked.
+
+*mssql compound statements* is its own block beside it rather than a shared
+one, for the identical reason: SQL Server carries a routine body's semicolons
+through a bare `BEGIN … END` (which SQLite also uses, but has no routines to
+put one in), not `DELIMITER`, so it is a different question with a different
+answer, not a fourth case squeezed into MySQL's. It adds one thing MySQL's
+block does not need to prove: a `CASE … END` sitting inside the `BEGIN … END`
+body, which is the one construct `splitStatements`' nesting count exists to
+survive without closing the block early — see `tests/statements.test.ts`'s own
+`BEGIN … END` block for the client-side half of that same proof.
 
 ## `tests/statements.test.ts` — the first suite with no server in it
 

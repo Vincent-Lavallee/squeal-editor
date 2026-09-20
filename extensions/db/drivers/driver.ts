@@ -204,6 +204,40 @@ export interface Driver<C> {
         options?: { params?: CellValue[]; rowCap?: number; onCapExceeded?: () => void },
     ): Promise<QueryOutcome>;
     /**
+     * The `ORDER BY` (already built by `orderByClause`, empty when nobody asked
+     * for one) plus the page fragment, spelled the way this engine pages: `LIMIT
+     * n OFFSET m` for MySQL/Postgres/SQLite, `OFFSET m ROWS FETCH NEXT n ROWS
+     * ONLY` for SQL Server. A driver method rather than an inline string in
+     * `connectionQueryMethods.ts`/`connectionExportMethods.ts` because paging is
+     * not spelled the same on every engine -- see *Browsing a table* in
+     * `docs/extension.md`.
+     *
+     * T-SQL's `OFFSET…FETCH` **requires** an `ORDER BY` to precede it, where the
+     * "no `ORDER BY` unless one was asked for" rule is load-bearing for the other
+     * three -- so an engine that needs one synthesizes a no-op order rather than
+     * imposing a real one nobody asked for.
+     */
+    pagingClause(orderClause: string, limit: number, offset: number): string;
+    /**
+     * The text `connectionQueryMethods.ts` places inside `SELECT * FROM (…)
+     * squeal_sorted ORDER BY …` when overriding a query's order -- identity on
+     * every engine except one.
+     *
+     * T-SQL refuses an `ORDER BY` inside a derived table outright ("The ORDER BY
+     * clause is invalid in views, inline functions, derived tables, subqueries,
+     * and common table expressions") *unless* that statement also carries its
+     * own `TOP`, `OFFSET` or `FOR XML` -- a rule the other three engines simply
+     * do not have, which is why the wrap works for them unmodified. So when the
+     * statement being wrapped carries its own trailing `ORDER BY`, SQL Server's
+     * implementation appends `OFFSET 0 ROWS`, the standard no-op that satisfies
+     * the requirement without changing what the statement returns. Detected by
+     * a plain, unanchored `ORDER BY` scan rather than a real parse -- the same
+     * complexity this file already accepts for stripping a trailing semicolon
+     * before this same wrap, and a false negative here costs nothing worse than
+     * the error this method exists to prevent.
+     */
+    innerSortWrap(sql: string): string;
+    /**
      * Put this client's session into read-only mode, or back to read-write, so the
      * *server* refuses writes rather than the app trying to parse them out of the
      * SQL. It is a driver method because the statement is per-engine, the same

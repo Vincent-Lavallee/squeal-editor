@@ -1,11 +1,14 @@
 import type { SqlDialect } from '../../../../shared/protocol/index.ts';
 import {
+    beginOpensTransaction,
     DELIMITER_DIRECTIVE,
     dollarTagAt,
     isBlank,
     isEscapeStringOpener,
+    keywordAt,
     LEXIS,
     pastBlockComment,
+    pastBracketQuoted,
     pastDollarQuoted,
     pastLine,
     pastQuoted,
@@ -71,6 +74,69 @@ function tryDelimiterDirective(
 }
 
 /**
+ * The index past a quoted string, a quoted identifier, or a bracketed one, if
+ * `i` opens one -- `null` otherwise. One function for all four opening
+ * characters so the main loop's dispatch is a single call rather than one
+ * branch per quote form.
+ */
+function skipQuotedText(sql: string, i: number, ch: string, lexis: Lexis): number | null {
+    if (ch === "'" || ch === '"' || ch === '`') {
+        // A backtick is an identifier everywhere it is legal and never takes a
+        // backslash escape; the other two do on an engine that reads one at all,
+        // and on Postgres only inside an `E''` string.
+        const escapes =
+            ch !== '`' &&
+            (lexis.backslashEscapes || (lexis.escapeStrings && isEscapeStringOpener(sql, i)));
+        return pastQuoted(sql, i, ch, escapes);
+    }
+    if (lexis.bracketIdentifiers && ch === '[') return pastBracketQuoted(sql, i);
+    return null;
+}
+
+/**
+ * `[start, end)`, trimmed of the whitespace at each edge, as the `StatementSpan`
+ * it describes -- or `null` when nothing significant sits inside it at all.
+ * Trimmed by walking the ends in rather than by `trim()`, because the offsets
+ * have to describe the text that comes back: a `text` that had been trimmed
+ * away from its own `start` would point at whitespace.
+ */
+function trimmedSpan(
+    sql: string,
+    start: number,
+    end: number,
+    significant: boolean,
+): StatementSpan | null {
+    if (!significant) return null;
+    let from = start;
+    let to = end;
+    while (from < to && isBlank(sql[from])) from += 1;
+    while (to > from && isBlank(sql[to - 1])) to -= 1;
+    return { text: sql.slice(from, to), start: from, end: to };
+}
+
+/**
+ * `BEGIN`/`CASE` (opens a block) or `END` (closes one) at `i`, or `null` when
+ * there is none there -- how many characters it consumed and which way the
+ * nesting count moved. `CASE` pushes purely to keep the count balanced: it has
+ * no matching `BEGIN`, and an unrelated `CASE … END` inside a real block would
+ * otherwise close that block early. A bare `BEGIN` immediately followed by
+ * `TRANSACTION`/`TRAN`/`WORK` opens no block at all -- it is closed by
+ * `COMMIT`/`ROLLBACK`, never `END` -- so it is read as ordinary text instead.
+ */
+function tryBlockKeyword(
+    sql: string,
+    i: number,
+    lexis: Lexis,
+): { length: number; delta: 1 | -1 } | null {
+    if (!lexis.blockBodies) return null;
+    if (keywordAt(sql, i, 'begin') && !beginOpensTransaction(sql, i + 5))
+        return { length: 5, delta: 1 };
+    if (keywordAt(sql, i, 'case')) return { length: 4, delta: 1 };
+    if (keywordAt(sql, i, 'end')) return { length: 3, delta: -1 };
+    return null;
+}
+
+/**
  * Cuts a tab's text into the statements it actually holds, on the semicolons
  * that really end one, and says where each one sits.
  *
@@ -106,6 +172,17 @@ function tryDelimiterDirective(
  * `CREATE TRIGGER … BEGIN …; …; END` body reads as several statements and its
  * first fragment fails to parse; with it the whole body arrives as the one
  * statement the server always thought it was.
+ *
+ * **SQL Server and SQLite carry the same body a different way: a bare `BEGIN …
+ * END`, not a directive.** Neither engine has an out-of-band way to say "this
+ * routine body is one statement" the way `DELIMITER` and dollar-quoting are, so
+ * this is the only place left to read the nesting itself -- `blockDepth`
+ * counts `BEGIN`/`CASE` opens against `END` closes and only treats a
+ * terminator as real at depth zero. `CASE` has no matching `BEGIN` and is
+ * tracked anyway purely to keep the count balanced, since an unrelated `CASE …
+ * END` inside a real block would otherwise close it early; `BEGIN
+ * TRANSACTION`/`TRAN`/`WORK` opens no block at all, closed by
+ * `COMMIT`/`ROLLBACK` rather than `END`, and is excluded for the same reason.
  */
 export function statementSpans(sql: string, dialect: SqlDialect): StatementSpan[] {
     const lexis = LEXIS[dialect];
@@ -117,18 +194,16 @@ export function statementSpans(sql: string, dialect: SqlDialect): StatementSpan[
     // it, and it is per call: a run never inherits the delimiter a previous one
     // was left on, the same as opening a fresh `mysql` session.
     let terminator = ';';
+    // How many `BEGIN`/`CASE` blocks are open -- a terminator inside one belongs
+    // to the block, not to the statement holding it, the same role `DELIMITER`
+    // plays for MySQL and dollar-quoting plays for Postgres. Always 0 exactly
+    // when a statement is taken, by construction: that is the one condition
+    // under which a terminator is treated as real.
+    let blockDepth = 0;
 
     const take = (end: number): void => {
-        if (significant) {
-            // Trimmed by walking the ends in rather than by `trim()`, because the
-            // offsets have to describe the text that comes back: a `text` that had
-            // been trimmed away from its own `start` would point at whitespace.
-            let from = start;
-            let to = end;
-            while (from < to && isBlank(sql[from])) from += 1;
-            while (to > from && isBlank(sql[to - 1])) to -= 1;
-            statements.push({ text: sql.slice(from, to), start: from, end: to });
-        }
+        const span = trimmedSpan(sql, start, end, significant);
+        if (span) statements.push(span);
         significant = false;
     };
 
@@ -141,15 +216,18 @@ export function statementSpans(sql: string, dialect: SqlDialect): StatementSpan[
             continue;
         }
 
-        if (ch === "'" || ch === '"' || ch === '`') {
+        const afterQuoted = skipQuotedText(sql, i, ch, lexis);
+        if (afterQuoted !== null) {
             significant = true;
-            // A backtick is an identifier everywhere it is legal and never takes a
-            // backslash escape; the other two do on an engine that reads one at all,
-            // and on Postgres only inside an `E''` string.
-            const escapes =
-                ch !== '`' &&
-                (lexis.backslashEscapes || (lexis.escapeStrings && isEscapeStringOpener(sql, i)));
-            i = pastQuoted(sql, i, ch, escapes);
+            i = afterQuoted;
+            continue;
+        }
+
+        const blockKeyword = tryBlockKeyword(sql, i, lexis);
+        if (blockKeyword) {
+            significant = true;
+            blockDepth = Math.max(0, blockDepth + blockKeyword.delta);
+            i += blockKeyword.length;
             continue;
         }
 
@@ -170,7 +248,7 @@ export function statementSpans(sql: string, dialect: SqlDialect): StatementSpan[
             continue;
         }
 
-        if (sql.startsWith(terminator, i)) {
+        if (blockDepth === 0 && sql.startsWith(terminator, i)) {
             take(i);
             i += terminator.length;
             start = i;

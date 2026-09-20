@@ -51,6 +51,14 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
         });
     },
 
+    pagingClause(orderClause, limit, offset) {
+        return `${orderClause} LIMIT ${limit} OFFSET ${offset}`;
+    },
+
+    innerSortWrap(sql) {
+        return sql;
+    },
+
     async setReadOnly(client, readOnly) {
         // `query_only` makes the *engine* refuse every change for the life of the
         // connection, DDL included -- which is stronger than either server engine's

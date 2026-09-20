@@ -153,6 +153,14 @@ export const postgresDriver: Driver<pg.Client> = {
               });
     },
 
+    pagingClause(orderClause, limit, offset) {
+        return `${orderClause} LIMIT ${limit} OFFSET ${offset}`;
+    },
+
+    innerSortWrap(sql) {
+        return sql;
+    },
+
     async setReadOnly(client, readOnly) {
         // Sets default_transaction_read_only for the session, so subsequent
         // statements run in a read-only transaction and writes fail with SQLSTATE

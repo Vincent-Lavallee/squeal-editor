@@ -32,12 +32,14 @@
  */
 import type { EngineType } from '../../../shared/protocol/index.ts';
 import type { Driver } from './driver.ts';
+import { mssqlDriver } from './mssql/index.ts';
 import { mysqlDriver } from './mysql/index.ts';
 import { postgresDriver } from './postgres/index.ts';
 import { sqliteDriver } from './sqlite/index.ts';
 
 export type { Driver, QueryOutcome, Relation, TableMeta, TableSearch } from './driver.ts';
 export { buildWhere, orderByClause, type WhereClause } from './common.ts';
+export { mssqlDriver } from './mssql/index.ts';
 export { mysqlDriver } from './mysql/index.ts';
 export { postgresDriver } from './postgres/index.ts';
 export { sqliteDriver } from './sqlite/index.ts';
@@ -55,6 +57,8 @@ export function withDriver<R>(type: EngineType, use: <C>(driver: Driver<C>) => R
             return use(postgresDriver);
         case 'sqlite':
             return use(sqliteDriver);
+        case 'mssql':
+            return use(mssqlDriver);
         default:
             // Unreachable per the type, but `type` arrives from user-supplied JSON.
             throw new Error(`Unsupported database type: ${String(type)}`);

@@ -1092,3 +1092,18 @@ This is a record, not a plan. Nothing here is waiting on anything.
   extension produces the rows, since the UI cannot read a database, and every
   value is emitted exactly as the server sent it, quoted per engine — never
   reformatted through a JS `Date` or `Number`.
+
+- **2026-09-20** — **Hide and show grid columns** — There is no way to hide a column in the
+  results grid at all today. Add a right-click "Hide column" entry on column
+  headers, plus a toolbar affordance listing every column with a checkbox so a
+  hidden one (which has no header left to right-click) can be brought back.
+  Deliberately session-only, the same way column order was in-memory before
+  it gained per-table persistence: hidden columns reappear once the tab is
+  closed or the app restarts, with nothing written to the settings store.
+
+- **2026-09-20** — **Add SQL Server driver support** — There is no SQL Server engine at all today
+  (only SQLite, MySQL, and Postgres), so a SQL Server database cannot be
+  connected to. Add it at full parity with the existing engines: connect,
+  browse and edit the grid, table/trigger/function DDL, and the relationship
+  diagram — the whole surface `Driver` already declares, not a connect-only
+  first pass.
