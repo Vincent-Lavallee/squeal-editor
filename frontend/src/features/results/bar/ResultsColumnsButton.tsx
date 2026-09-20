@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Button from '../../../common/components/Button.tsx';
 import { useSelectPopupPosition } from '../../../common/components/hooks/useSelectPopupPosition.ts';
+import Tooltip from '../../../common/components/Tooltip.tsx';
 import { ViewIcon } from '../../../common/icons/icons.ts';
 import * as t from '../../../common/tokens';
 import type { HiddenColumns } from '../ResultsContext.tsx';
@@ -37,17 +38,31 @@ export default function ResultsColumnsButton({ allColumns, hiddenColumns, onTogg
     return (
         <>
             <div ref={trigger} style={{ display: 'inline-flex' }}>
-                <Button
-                    variant="ghost"
-                    data-testid="grid-columns-button"
-                    style={{ height: t.BUTTON_H_BAR, padding: '0 8px' }}
-                    onClick={() => setOpen((o) => !o)}
-                    title="Show or hide columns"
+                <Tooltip
+                    disabled={open}
+                    label={
+                        hiddenColumns.size > 0
+                            ? `Show or hide columns (${hiddenColumns.size} hidden)`
+                            : 'Show or hide columns'
+                    }
                 >
-                    <ViewIcon style={iconSvg} aria-hidden="true" />
-                    Columns
-                    {hiddenColumns.size > 0 && ` (${hiddenColumns.size} hidden)`}
-                </Button>
+                    <Button
+                        variant="ghost"
+                        data-testid="grid-columns-button"
+                        style={{
+                            justifyContent: 'center',
+                            flex: 'none',
+                            width: t.BUTTON_H_BAR,
+                            height: t.BUTTON_H_BAR,
+                            padding: 0,
+                            ...(hiddenColumns.size > 0 ? { color: t.ACCENT } : {}),
+                        }}
+                        onClick={() => setOpen((o) => !o)}
+                        aria-label="Show or hide columns"
+                    >
+                        <ViewIcon style={iconSvg} aria-hidden="true" />
+                    </Button>
+                </Tooltip>
             </div>
             {open && (
                 <ColumnVisibilityList

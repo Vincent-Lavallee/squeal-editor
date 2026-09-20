@@ -7904,3 +7904,25 @@ a table nothing has been asked to export yet. `openExportDialog` (the
 context-menu path) dispatches `cleared()` before setting up the new target;
 `reopenExportDialog` (the status-bar path) does not, because showing what is
 already there is the entire point of that one.
+
+## The results bar's Columns and row-count buttons went icon-only
+
+**Icon + label was flagged as too wide on a small 1080p screen, and the label
+was the reason.** `ResultsColumnsButton` and `ResultsRowCount`'s reveal button
+each held an icon, a word, and 8px of padding either side; shrinking the text
+was the first instinct, but `--text-badge` (12px) is already the floor for
+this context — `--text-micro` exists but is documented as the connection
+rail's alone, never body copy — so there was no smaller size left to reach
+for without breaking that rule. Dropping the label instead of shrinking it
+removes the width problem outright, and both buttons now match
+`SidebarTablesRefreshButton`'s icon-only shape exactly: 24px square, no
+padding, the label moved into `title`/`aria-label`.
+
+**The hidden-columns count moved from inline text into the icon's own
+colour.** `Columns` used to append `(N hidden)` to its label; icon-only has no
+label to append to, so the button takes `--accent` instead when
+`hiddenColumns.size > 0` — the same "this one" language the pressed icon
+toggle recipe already spends on the sidebar's tree/tab sync button, reused
+here for "some columns are hidden" rather than invented fresh. The exact count
+still exists, in the tooltip. The row-count button needed no equivalent: its
+only other state (`isError`) already had a colour (`--red-text`) from before.
