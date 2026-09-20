@@ -3734,6 +3734,11 @@ technique flagged in threat-intel writeups about MOTW-bypass droppers, not a
 guess), but nobody has run this script against a real, MOTW-eligible download
 of this specific installer end to end.
 
+**Reversed:** `scripts/install-windows.ps1` is removed, making the gap above
+moot. The README now recommends the plain `.exe` for Windows, SmartScreen
+block and all, matching macOS's manual-download fallback path instead of
+dodging it.
+
 ## The Linux release ships nothing, for now — CI still builds it
 
 The zip was the only thing CI ever produced for Linux, and it was a bare `neu

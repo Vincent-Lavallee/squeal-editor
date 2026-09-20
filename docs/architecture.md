@@ -319,9 +319,7 @@ version it compares against is injected into the frontend at build time
 (`__APP_VERSION__`), because the compiled extension carries no config to read one
 from.
 
-`scripts/install-windows.ps1` is the recommended way to install on Windows:
-`irm … | iex` fetches the latest release's installer with
-`Invoke-WebRequest` and launches it. Nothing in that chain sets the
-`Zone.Identifier` alternate data stream (Mark-of-the-Web) a browser download
-does, so the unsigned installer never trips SmartScreen's first-run block —
-see `docs/decisions.md`.
+The recommended way to install on Windows is downloading the `.exe` from the
+Releases page directly; it carries Mark-of-the-Web and trips SmartScreen's
+first-run block, worked around with More info → Run anyway — see
+`docs/decisions.md`.
