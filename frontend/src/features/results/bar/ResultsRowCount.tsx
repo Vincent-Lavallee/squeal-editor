@@ -73,7 +73,9 @@ export default function ResultsRowCount({ rowCount, onReveal }: Props) {
     return (
         <Tooltip
             label={
-                isError ? 'Count every row this table has (retry)' : 'Count every row this table has'
+                isError
+                    ? 'Count every row this table has (retry)'
+                    : 'Count every row this table has'
             }
         >
             <Button
