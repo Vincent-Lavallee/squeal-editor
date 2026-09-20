@@ -31,6 +31,7 @@ import {
     RiLockLine,
     RiLockUnlockLine,
     RiNodeTree,
+    RiNumbersLine,
     RiRefreshLine,
     RiRocketLine,
     RiLogoutBoxRLine,
@@ -67,6 +68,9 @@ export const TableIcon = RiTableLine;
 export const ViewIcon = RiEyeLine;
 export const TriggerIcon = RiBroadcastLine;
 export const FunctionIcon = RiFunctions;
+
+/** The results bar's *Load count* control -- counting every row a table has. */
+export const RowCountIcon = RiNumbersLine;
 
 /** A schema heading in the tree: the group a run of relations sits under. */
 export const SchemaIcon = RiFolder3Line;

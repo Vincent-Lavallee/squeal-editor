@@ -7909,3 +7909,55 @@ a table nothing has been asked to export yet. `openExportDialog` (the
 context-menu path) dispatches `cleared()` before setting up the new target;
 `reopenExportDialog` (the status-bar path) does not, because showing what is
 already there is the entire point of that one.
+
+## The results bar's Columns and row-count buttons went icon-only
+
+**Icon + label was flagged as too wide on a small 1080p screen, and the label
+was the reason.** `ResultsColumnsButton` and `ResultsRowCount`'s reveal button
+each held an icon, a word, and 8px of padding either side; shrinking the text
+was the first instinct, but `--text-badge` (12px) is already the floor for
+this context — `--text-micro` exists but is documented as the connection
+rail's alone, never body copy — so there was no smaller size left to reach
+for without breaking that rule. Dropping the label instead of shrinking it
+removes the width problem outright, and both buttons now match
+`SidebarTablesRefreshButton`'s icon-only shape exactly: 24px square, no
+padding, the label moved into `title`/`aria-label`.
+
+**The hidden-columns count moved from inline text into the icon's own
+colour.** `Columns` used to append `(N hidden)` to its label; icon-only has no
+label to append to, so the button takes `--accent` instead when
+`hiddenColumns.size > 0` — the same "this one" language the pressed icon
+toggle recipe already spends on the sidebar's tree/tab sync button, reused
+here for "some columns are hidden" rather than invented fresh. The exact count
+still exists, in the tooltip. The row-count button needed no equivalent: its
+only other state (`isError`) already had a colour (`--red-text`) from before.
+
+## A `<Tooltip>` primitive, adopted for the two buttons that just lost their label
+
+**Going icon-only moved a button's label out of the DOM and into `title`,
+which is slow.** The browser's own hover delay is roughly 1.5s, tolerable for
+a button that also carries a visible word but not for one whose *only* label
+is now behind a hover — and `title` cannot be styled to match the rest of the
+chrome regardless. `components/Tooltip.tsx` replaces it on exactly the two
+buttons that prompted it (`ResultsColumnsButton`, `ResultsRowCount`'s reveal
+button): 300ms to show, the floating rule (`--bg`, 1px `--border-strong`, no
+shadow) instead of the OS's own tooltip chrome.
+
+**The other ~78 `title=` call sites are deliberately untouched.** Migrating
+all of them was the larger option on the table and was turned down for now —
+a native `title` is a strictly worse tooltip, not a broken one, so there is no
+correctness reason to touch a call site nothing else is changing. Move a
+button to `<Tooltip>` when it is next touched for its own reason, the same
+"add the component, then let it grow into that" rule the icon rail's own
+history states.
+
+**It positions itself off the trigger's measured rect, `position: fixed`,
+the same call `useSelectPopupPosition` makes and for the same reason** — a
+fixed element escapes an ancestor's `overflow: auto`; a child of the trigger
+would not. It does not reuse that hook outright: a tooltip's lifecycle is
+hover/focus in, mouse-leave/blur out, with no outside-click dismissal to
+speak of, so the shared piece is only the positioning math, split into its
+own `useTooltipPosition` so `Tooltip.tsx` itself stays under the function
+line cap. `disabled` exists for one reason — suppressing the tooltip while
+the trigger's own popup is already open, so the two never show at once — and
+is not a general escape hatch beyond that.

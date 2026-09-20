@@ -2622,7 +2622,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await Bun.sleep(300);
         });
 
-        test('a column selection opens a copy-only menu that offers Copy as SQL insert', async () => {
+        test('a column selection opens a menu offering Copy as SQL insert and Hide column', async () => {
             await app.evaluate(clickTable('tags'));
             await app.waitFor(`(${rowCount}) > 0 ? true : null`);
 
@@ -2638,6 +2638,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
                 'Copy column values',
                 'Copy as SQL insert',
                 'Copy column name',
+                'Hide column',
             ]);
             await app.evaluate(pressEscape);
             await Bun.sleep(150);
@@ -2715,9 +2716,114 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
                 'Copy column values',
                 'Copy as SQL insert',
                 'Copy column name',
+                'Hide column',
             ]);
             await app.evaluate(pressEscape);
             await Bun.sleep(150);
+
+            await app.evaluate(closeTab('tags'));
+            await Bun.sleep(300);
+        });
+
+        test('hiding a column removes it from the grid, and the toolbar brings it back', async () => {
+            await app.evaluate(clickTable('users'));
+            await app.waitFor(`(${rowCount}) === 2 ? true : null`);
+
+            const headers = `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`;
+            const natural = ['id', 'name', 'email', 'created_at', 'meta', 'avatar', 'eventType'];
+            expect(await app.evaluate<string[]>(headers)).toEqual(natural);
+
+            await app.evaluate(clickHeader('email'));
+            await Bun.sleep(150);
+            await app.evaluate(
+                `${header('email')}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); true;`,
+            );
+            await Bun.sleep(200);
+            await app.evaluate(clickContextItem('Hide column'));
+            await app.waitFor(
+                `JSON.stringify(${headers}) === JSON.stringify(${JSON.stringify(natural.filter((c) => c !== 'email'))}) ? true : null`,
+            );
+            // No header left to right-click for it any more -- the toolbar is the way back.
+            expect(await app.evaluate<boolean>(`${header('email')} === undefined`)).toBe(true);
+
+            const columnsBtn = `document.querySelector('[data-testid="grid-columns-button"]')`;
+            await app.evaluate(`${columnsBtn}.click(); true;`);
+            await Bun.sleep(150);
+            const popup = `document.querySelector('[data-testid="grid-columns-popup"]')`;
+            const checkboxFor = (name: string) => `
+              [...${popup}.querySelectorAll('label')]
+                .find(e => e.textContent === ${JSON.stringify(name)})
+                .querySelector('input')`;
+            // Every column is listed, hidden or not -- and only the hidden one reads unchecked.
+            expect(
+                await app.evaluate<string[]>(
+                    `[...${popup}.querySelectorAll('label')].map(e => e.textContent)`,
+                ),
+            ).toEqual(natural);
+            expect(await app.evaluate<boolean>(`${checkboxFor('email')}.checked`)).toBe(false);
+            expect(await app.evaluate<boolean>(`${checkboxFor('name')}.checked`)).toBe(true);
+
+            await app.evaluate(`${checkboxFor('email')}.click(); true;`);
+            await app.waitFor(
+                `JSON.stringify(${headers}) === JSON.stringify(${JSON.stringify(natural)}) ? true : null`,
+            );
+            expect(await app.evaluate<string[]>(headers)).toEqual(natural);
+            // The checkbox list stays open across a toggle, unlike the right-click menu.
+            expect(await app.evaluate<boolean>(`!!${popup}`)).toBe(true);
+
+            await app.evaluate(
+                `document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); true;`,
+            );
+            await Bun.sleep(150);
+            expect(await app.evaluate<boolean>(`!${popup}`)).toBe(true);
+
+            await app.evaluate(closeTab('users'));
+            await Bun.sleep(300);
+        });
+
+        test('hiding every column still shows the grid and the toolbar to undo it', async () => {
+            await app.evaluate(clickTable('tags'));
+            await app.waitFor(`(${rowCount}) > 0 ? true : null`);
+
+            await app.evaluate(clickHeader('label'));
+            await Bun.sleep(150);
+            await app.evaluate(
+                `${header('weight')}.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true })); true;`,
+            );
+            await Bun.sleep(150);
+            await app.evaluate(
+                `${header('label')}.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })); true;`,
+            );
+            await Bun.sleep(200);
+            expect(await app.evaluate<string[]>(menuItemLabels)).toContain('Hide 2 columns');
+            await app.evaluate(clickContextItem('Hide 2 columns'));
+            await app.waitFor(
+                `document.querySelectorAll('[data-testid="grid-col-name"]').length === 0 ? true : null`,
+            );
+
+            // Not the "query finished with no columns" state -- the toolbar (and its
+            // way back to a hidden column) is still on screen.
+            expect(
+                await app.evaluate<boolean>(
+                    `!!document.querySelector('[data-testid="results-bar"]')`,
+                ),
+            ).toBe(true);
+            expect(
+                await app.evaluate<boolean>(
+                    `!!document.querySelector('[data-testid="grid-columns-button"]')`,
+                ),
+            ).toBe(true);
+
+            const columnsBtn = `document.querySelector('[data-testid="grid-columns-button"]')`;
+            await app.evaluate(`${columnsBtn}.click(); true;`);
+            await Bun.sleep(150);
+            const popup = `document.querySelector('[data-testid="grid-columns-popup"]')`;
+            await app.evaluate(
+                `[...${popup}.querySelectorAll('input')].forEach(i => i.click()); true;`,
+            );
+            await app.waitFor(
+                `document.querySelectorAll('[data-testid="grid-col-name"]').length === 2 ? true : null`,
+            );
 
             await app.evaluate(closeTab('tags'));
             await Bun.sleep(300);

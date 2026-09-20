@@ -1,10 +1,10 @@
 import type { Tab } from '../../../store/tabsSlice.ts';
 import { buildResultsApi } from '../buildResultsApi.ts';
 import { useResultsBrowsing } from '../core/hooks/useResultsBrowsing.ts';
+import { useResultsColumnPrefs } from '../core/hooks/useResultsColumnPrefs.ts';
 import { useResultsCopy } from '../core/hooks/useResultsCopy.ts';
 import { useResultsCore } from '../core/hooks/useResultsCore.ts';
 import { useResultsFilterDraft } from '../filter/hooks/useResultsFilterDraft.ts';
-import { useResultsViewPrefs } from '../core/hooks/useResultsViewPrefs.ts';
 import { useSaveEdits } from '../editing/hooks/useSaveEdits.ts';
 
 /**
@@ -56,7 +56,8 @@ function makeCanSort(resultColumns: string[]) {
  */
 export function useResults(tab: Tab | null) {
     const core = useResultsCore(tab);
-    const { view, dialect, activeTabId, gridTable, part, identity, runActions, staging } = core;
+    const { view, dialect, activeTabId, gridTable } = core;
+    const { part, fullResult, identity, runActions, staging } = core;
 
     const appliedFilter = part.browse?.filter ?? null;
     const filterState = useResultsFilterDraft(activeTabId, appliedFilter);
@@ -75,6 +76,7 @@ export function useResults(tab: Tab | null) {
         ...identity,
         activeTabId,
         result: part.result,
+        fullResult,
         browse: part.browse,
         ranSql: part.sql,
         sort: part.sort,
@@ -89,21 +91,14 @@ export function useResults(tab: Tab | null) {
         tab,
         dialect,
     });
-    const columns = part.result?.columns ?? [];
-    // The columns on screen, as one string. The grid's horizontal offset means
-    // something only against them, and a sort leaves them in place while changing
-    // the rows -- so it is keyed apart from `rowsKey`. `\u0000` never appears in
-    // a column name, so it cannot collide the way a comma could.
-    const columnsKey = (part.result?.columns ?? []).join('\u0000');
-    const viewPrefs = useResultsViewPrefs({
+    const { columns, viewPrefs } = useResultsColumnPrefs({
         activeTabId,
         rowsKey: identity.rowsKey,
-        columnsKey,
-        columns,
+        result: part.result,
+        fullResult,
         tableIdentity: core.tableIdentity,
     });
-
-    const canSort = makeCanSort(part.result?.columns ?? []);
+    const canSort = makeCanSort(columns);
 
     return buildResultsApi({
         activeTabId,
