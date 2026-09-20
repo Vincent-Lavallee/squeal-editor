@@ -6,6 +6,13 @@ import Callout from '../../../common/components/Callout.tsx';
 import Mono from '../../../common/components/Mono.tsx';
 import * as t from '../../../common/tokens';
 
+const codeStyle: CSSProperties = { color: t.TEXT };
+const urlStyle: CSSProperties = {
+    color: t.TEXT_FAINT,
+    fontSize: t.TEXT_BADGE,
+    wordBreak: 'break-all',
+};
+
 /**
  * What the running sign-in is waiting on, and how the last one ended.
  *
@@ -51,17 +58,14 @@ export default function AwsSignInStatus({ style }: { style?: CSSProperties }) {
                         </Button>
                         {prompt.code && (
                             <span style={{ color: t.TEXT_MUTED, fontSize: t.TEXT_BADGE }}>
-                                code <Mono style={{ color: t.TEXT }}>{prompt.code}</Mono>
+                                code{' '}
+                                <Mono data style={codeStyle}>
+                                    {prompt.code}
+                                </Mono>
                             </span>
                         )}
                     </div>
-                    <Mono
-                        style={{
-                            color: t.TEXT_FAINT,
-                            fontSize: t.TEXT_BADGE,
-                            wordBreak: 'break-all',
-                        }}
-                    >
+                    <Mono data style={urlStyle}>
                         {prompt.url}
                     </Mono>
                 </div>

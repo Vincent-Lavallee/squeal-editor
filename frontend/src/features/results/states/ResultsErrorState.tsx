@@ -23,7 +23,7 @@ const boxStyle: React.CSSProperties = {
     background: t.RED_BG,
     color: t.RED_TEXT,
     fontSize: t.TEXT_BODY,
-    fontFamily: t.MONO,
+    fontFamily: t.MONO_DATA,
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
     textAlign: 'left',

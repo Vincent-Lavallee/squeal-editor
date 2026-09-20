@@ -66,6 +66,14 @@ the date they were finished.
   they keep today's session-only behavior; this covers table-browse tabs
   only.
 
+- **2026-09-20** — **Fonts fall back to whatever the OS has installed, not
+  what's designed** — The app names a chrome font and a monospace font (used
+  throughout: the SQL editor, the results grid, diagrams, the assistant) but
+  never ships them as files, so each OS silently substitutes its own default
+  sans-serif and monospace instead — nothing is actually standardized. Bundle
+  both fonts locally so they render identically on Windows, macOS, and Linux,
+  independent of what happens to be installed on the machine.
+
 This is a record, not a plan. Nothing here is waiting on anything.
 
 ---

@@ -30,7 +30,7 @@ const argsStyle: React.CSSProperties = {
     border: `1px solid ${t.BORDER}`,
     borderRadius: t.RADIUS,
     color: t.TEXT_MUTED,
-    fontFamily: t.MONO,
+    fontFamily: t.MONO_DATA,
     fontSize: t.TEXT_BADGE,
 };
 

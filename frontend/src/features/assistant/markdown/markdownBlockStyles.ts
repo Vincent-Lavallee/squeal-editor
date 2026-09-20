@@ -7,7 +7,7 @@ export const codeBlock: React.CSSProperties = {
     border: `1px solid ${t.BORDER}`,
     borderRadius: t.RADIUS,
     color: t.TEXT,
-    fontFamily: t.MONO,
+    fontFamily: t.MONO_DATA,
     fontSize: t.TEXT_BADGE,
 };
 

@@ -16,7 +16,7 @@ export default function DropTableMessage({ noun, tableName }: { noun: string; ta
                 }}
             >
                 This runs <Mono>DROP {noun.toUpperCase()}</Mono> and cannot be undone. Type{' '}
-                <Mono>{tableName}</Mono> to confirm.
+                <Mono data>{tableName}</Mono> to confirm.
             </p>
         </>
     );

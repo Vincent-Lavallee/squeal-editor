@@ -38,7 +38,7 @@ export default function Snippet({
                     margin: 0,
                     overflow: 'auto',
                     color: tone === 'error' ? t.RED_TEXT : t.TEXT_MUTED,
-                    fontFamily: t.MONO,
+                    fontFamily: t.MONO_DATA,
                     fontSize: t.TEXT_BADGE,
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',

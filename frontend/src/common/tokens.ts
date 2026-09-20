@@ -158,8 +158,11 @@ export const RADIUS = 6; /* buttons, inputs */
 export const RADIUS_LG = 8; /* cards, panels */
 
 /* ---- Type ---- */
-export const FONT = 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif';
-export const MONO = 'ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace';
+export const FONT = "'Inter Variable', system-ui, sans-serif";
+export const MONO = "'JetBrains Mono Variable', ui-monospace, monospace";
+/** For server/user content only (cell values, SQL, JSON, identifiers, error text) --
+ *  never for chrome mono (keycaps, zoom %, tool-call labels). See docs/decisions.md. */
+export const MONO_DATA = "'IBM Plex Mono', ui-monospace, monospace";
 
 export const TEXT_PAGE = 24; /* page titles, stat numbers — bold */
 export const TEXT_TITLE = 15; /* card titles — semibold */

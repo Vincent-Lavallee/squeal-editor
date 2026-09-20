@@ -48,7 +48,7 @@ export default function SavedConnectionServerLine({
             style={{
                 overflow: 'hidden',
                 color: t.TEXT_MUTED,
-                fontFamily: t.MONO,
+                fontFamily: t.MONO_DATA,
                 fontSize: t.TEXT_BADGE,
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',

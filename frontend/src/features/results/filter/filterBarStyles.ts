@@ -29,7 +29,7 @@ export const CONTROL_H = 22;
 export const controlStyle: React.CSSProperties = { height: CONTROL_H, fontSize: t.TEXT_BADGE };
 export const valueStyle: React.CSSProperties = {
     ...controlStyle,
-    fontFamily: t.MONO,
+    fontFamily: t.MONO_DATA,
     padding: '0 6px',
 };
 export const leadStyle: React.CSSProperties = {

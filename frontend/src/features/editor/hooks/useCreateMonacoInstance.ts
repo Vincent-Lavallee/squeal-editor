@@ -37,7 +37,7 @@ function editorOptions(): monaco.editor.IStandaloneEditorConstructionOptions {
         // Sizes and fonts come from the tokens, same as the colours: Monaco takes
         // no CSS, so they are read rather than written down a second time.
         padding: { top: px('--gap'), bottom: px('--gap') },
-        fontFamily: token('--mono'),
+        fontFamily: token('--mono-data'),
         fontSize: px('--text-body'),
         lineHeight: Math.round(px('--text-body') * 1.6),
         tabSize: 2,

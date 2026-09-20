@@ -19,6 +19,18 @@ Things that already work, but not well enough.
   preview tab (the next single-click replaces it) and double-click pin it into
   its own permanent tab, the way VSCode's explorer does.
 
+- **The JSON cell drawer doesn't format on open** — The drawer already has a
+  manual Format button (Monaco's `formatDocument`, wired in `JsonCellDrawer`),
+  but a cell holding minified or raw JSON shows it exactly as stored until the
+  user clicks it themselves. Run it automatically when the drawer opens, so
+  the common case of "read this JSON" doesn't need a click first.
+
+- **The JSON cell drawer can't be resized** — It renders through the shared
+  `<Drawer>` component at a fixed 520px width, so a large JSON document is
+  stuck scrolling sideways and vertically in a box that never grows. Let it
+  be widened (dragging the leading edge) to actually use the room a bigger
+  document needs.
+
 - **Chrome text is highlightable like a web page** — Dragging anywhere in the
   UI — resizing a panel, dragging a tab, a stray shift-click — can select text
   the way it would on a web page, which reads as weird and un-native for a
@@ -58,11 +70,26 @@ Things that are wrong.
   confirmed, and whether it reproduces every launch or only sometimes isn't
   pinned down yet either.
 
+- **Cancelling the assistant right after sending can silently do nothing** —
+  Clicking Cancel while still on the "Thinking…" state (before any answer text
+  has streamed in) sometimes lets the full answer arrive anyway, as if nothing
+  had been cancelled, with the thinking indicator spinning the whole time. The
+  turn's abort handle is only registered once the credential lookup finishes,
+  a beat after the cancel button becomes clickable, so a cancel landing in
+  that gap finds nothing yet to abort.
+
 - **A manually-typed SQLite path fails in some cases** — Typing a database file
   path by hand rather than using Browse misbehaves, with spaces in the path the
   suspected trigger; the exact symptom is not yet pinned down and needs
   reproducing before the fix.
 
+
+- **Selecting all in the results grid scrolls it to the last row** — Clicking
+  the grid's corner cell selects every cell, but that selection puts focus on
+  the very last row/column, and the grid always scrolls whatever row is
+  focused into view — including this synthetic jump, not just the keyboard
+  and click moves that logic was written for, where the target is already on
+  screen. The grid should stay put; only the selection needs to change.
 
 - **Closing the old process during an update is sometimes very slow** — When
   applying an update, shutting down the current process before relaunching is
@@ -70,18 +97,18 @@ Things that are wrong.
   extension process rather than the app itself, but unconfirmed, and the
   trigger for the slow case isn't known yet either.
 
+- **The assistant tab's database drifts from the split pane** — There is no way
+  to point the assistant at a specific database, and there shouldn't need to
+  be: it should always answer for whatever database the split pane is showing.
+  Instead, once the assistant tab itself becomes the active tab, it falls back
+  to the connection's default database rather than the editor tab you were
+  just looking at, so the assistant can reason about — and tell the model
+  it's targeting — the wrong database.
+
 - **The error card's actions sit on top of the error text** — The "Diagnose with
   AI" and copy buttons are absolutely positioned in the error card's top corner,
   so they float over the message's first line instead of beside it. Put them in
   the card's normal flow next to the text, where they cannot cover it.
-
-- **Fonts fall back to whatever the OS has installed, not what's designed** —
-  The app names a chrome font and a monospace font (used throughout: the SQL
-  editor, the results grid, diagrams, the assistant) but never ships them as
-  files, so each OS silently substitutes its own default sans-serif and
-  monospace instead — nothing is actually standardized. Bundle both fonts
-  locally so they render identically on Windows, macOS, and Linux, independent
-  of what happens to be installed on the machine.
 
 ## Features
 
@@ -119,6 +146,15 @@ Things that do not exist yet.
   lives there); this is the first preference in it that is not a theme or a
   language.
 
+- **Opening a tab from the assistant tab buries the conversation** — Tab
+  placement has no special case for the assistant tab today: opening a new
+  tab (from the tree, a "+", or the assistant's own `openTab` tool call) while
+  an assistant tab is the active tab in its pane lands the new tab in that
+  same pane, switching it away and taking the conversation out of view. It
+  should go to the other pane instead — splitting the editor first if there
+  is no split yet — so the conversation stays visible alongside whatever was
+  just opened.
+
 - **Command palette** — Every action is reachable exactly one way: a menu, a
   button, or a keybinding you already have to know. Put the common ones behind a
   palette — run, format, switch connection or database, toggle read-only,
@@ -139,6 +175,13 @@ Things that do not exist yet.
   .desktop file and the app icon, so Linux users get the same download-and-run
   experience as the other platforms. AppImage only for now; deb and other
   formats can follow once the format is proven to work.
+
+- **Copyable values in the assistant's tool-call detail** — The "Sent"/"Received"
+  blocks under an expanded assistant tool call (e.g. a query result carrying row
+  ids) render as plain preformatted text — there's no way to copy a single value
+  like an id out of the JSON without dragging a manual selection across it. Give
+  each value its own inline copy affordance the way a JSON viewer would, rather
+  than leaving it to manual text selection.
 
 - **Auto-fit a result column's width to its content** — Column resize is
   drag-only; there is no quick way to size a column to fit what's actually in

@@ -41,7 +41,7 @@ export function inline(text: string, keyPrefix: string): React.ReactNode[] {
                         padding: '1px 4px',
                         borderRadius: t.RADIUS,
                         background: t.HOVER,
-                        fontFamily: t.MONO,
+                        fontFamily: t.MONO_DATA,
                         fontSize: '0.92em',
                     }}
                 >

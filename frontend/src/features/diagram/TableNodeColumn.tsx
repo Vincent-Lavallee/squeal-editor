@@ -29,7 +29,7 @@ export default function TableNodeColumn({
                     flex: '1 1 auto',
                     minWidth: 0,
                     overflow: 'hidden',
-                    fontFamily: t.MONO,
+                    fontFamily: t.MONO_DATA,
                     fontSize: t.TEXT_BADGE,
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
