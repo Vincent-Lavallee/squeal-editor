@@ -16,14 +16,8 @@ SQL by hand and run it.
 
 ## Install
 
-**Windows** (recommended):
-
-```powershell
-irm https://raw.githubusercontent.com/Vincent-Lavallee/squeal-editor/dev/scripts/install-windows.ps1 | iex
-```
-
-Or download `squeal-editor-*.exe` from the [Releases page][releases] — see
-[SmartScreen on Windows](#smartscreen-on-windows).
+**Windows** (recommended): download `squeal-editor-*.exe` from the
+[Releases page][releases] — see [SmartScreen on Windows](#smartscreen-on-windows).
 
 **macOS** (recommended):
 
