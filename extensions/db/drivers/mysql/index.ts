@@ -146,6 +146,14 @@ export const mysqlDriver: Driver<MysqlConnection> = {
               });
     },
 
+    pagingClause(orderClause, limit, offset) {
+        return `${orderClause} LIMIT ${limit} OFFSET ${offset}`;
+    },
+
+    innerSortWrap(sql) {
+        return sql;
+    },
+
     async setReadOnly(client, readOnly) {
         // Sets the default access mode for this session's transactions. In autocommit
         // each statement is its own transaction, so a write is then refused with

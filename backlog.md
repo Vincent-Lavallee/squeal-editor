@@ -114,15 +114,6 @@ Things that are wrong.
 
 Things that do not exist yet.
 
-- **Hide and show grid columns** — There is no way to hide a column in the
-  results grid at all today. Add a right-click "Hide column" entry on column
-  headers, plus a toolbar affordance listing every column with a checkbox so a
-  hidden one (which has no header left to right-click) can be brought back.
-  Deliberately session-only, the same way column order was in-memory before
-  it gained per-table persistence: hidden columns reappear once the tab is
-  closed or the app restarts, with nothing written to the settings store.
-
-
 - **Recent connections** — Show the last 3 connections you actually connected to at the bottom of the connections screen, most recent first. Clicking one connects immediately with the saved credentials.
 
 - **Create a SQLite database** — Connecting to an existing `.db` file works, but
@@ -201,13 +192,6 @@ Things that do not exist yet.
   workspace's credential. On upgrade, today's single key/provider/model and the
   existing conversation list become the seeded Default workspace's, so nothing
   appears to move for a user who never made a second workspace.
-
-- **Add SQL Server driver support** — There is no SQL Server engine at all today
-  (only SQLite, MySQL, and Postgres), so a SQL Server database cannot be
-  connected to. Add it at full parity with the existing engines: connect,
-  browse and edit the grid, table/trigger/function DDL, and the relationship
-  diagram — the whole surface `Driver` already declares, not a connect-only
-  first pass.
 
 - **Add MariaDB as its own engine choice** — MariaDB already connects today,
   silently, through the MySQL driver, since it speaks the same wire protocol

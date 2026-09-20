@@ -54,7 +54,12 @@ const NOT_OURS = 'That file is not a Squeal connections file.';
  * row holding an engine nothing can drive would otherwise save perfectly well
  * and fail much later, at connect, saying nothing about where it came from.
  */
-const KNOWN_ENGINES: Record<EngineType, true> = { mysql: true, postgres: true, sqlite: true };
+const KNOWN_ENGINES: Record<EngineType, true> = {
+    mysql: true,
+    postgres: true,
+    sqlite: true,
+    mssql: true,
+};
 
 interface ExportedConnection {
     id: string;

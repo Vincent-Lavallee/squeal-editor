@@ -22,7 +22,7 @@ async function fetchPage<C>(
     args: PageArgs<C>,
 ): Promise<{ columns: string[]; rows: CellValue[][]; hasMore: boolean }> {
     const { use, driver, database, qualified, offset } = args;
-    const sql = `SELECT * FROM ${qualified} LIMIT ${EXPORT_PAGE_SIZE + 1} OFFSET ${offset};`;
+    const sql = `SELECT * FROM ${qualified}${driver.pagingClause('', EXPORT_PAGE_SIZE + 1, offset)};`;
     const outcome = await use(database, (client) => driver.query(client, sql));
     // A plain `SELECT *` always answers the grid arm; the affectedRows arm
     // exists for DML this call never issues.

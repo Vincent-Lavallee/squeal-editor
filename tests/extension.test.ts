@@ -28,7 +28,7 @@ import type {
     TableInfo,
     TablePage,
 } from '../shared/protocol/index.ts';
-import { FIXTURE_DB, MYSQL, PG, SQLITE, SQLITE_FILE } from './fixtures/config.ts';
+import { FIXTURE_DB, MSSQL, MYSQL, PG, SQLITE, SQLITE_FILE } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 
 const EXPORT_DIR = mkdtempSync(join(tmpdir(), 'squeal-export-'));
@@ -97,12 +97,45 @@ describe('transport', () => {
  * the file, so the path is its name -- which is also what `listDatabases`
  * reports back for it. Everything downstream just passes it along, which is the
  * point: no test below knows which kind it was handed.
+ *
+ * `defaultSchema` carries the actual name rather than a bare "has schemas"
+ * boolean, because the two schema-having engines disagree on what it is
+ * (`public` vs `dbo`) and several assertions below have to say which one they
+ * expect. `supportsOverloads` is its own flag rather than folded into it:
+ * Postgres is the only engine here with both a schema layer *and* function
+ * overloading, and the two facts happening to coincide on one engine is not a
+ * reason to test them as one.
  */
 describe.each([
-    ['postgres', PG, FIXTURE_DB, true],
-    ['mysql', MYSQL, FIXTURE_DB, false],
-    ['sqlite', SQLITE, SQLITE_FILE, false],
-] as const)('%s', (label, config, fixtureDb, expectSchemaQualified) => {
+    {
+        label: 'postgres',
+        config: PG,
+        fixtureDb: FIXTURE_DB,
+        defaultSchema: 'public',
+        supportsOverloads: true,
+    },
+    {
+        label: 'mysql',
+        config: MYSQL,
+        fixtureDb: FIXTURE_DB,
+        defaultSchema: undefined,
+        supportsOverloads: false,
+    },
+    {
+        label: 'sqlite',
+        config: SQLITE,
+        fixtureDb: SQLITE_FILE,
+        defaultSchema: undefined,
+        supportsOverloads: false,
+    },
+    {
+        label: 'mssql',
+        config: MSSQL,
+        fixtureDb: FIXTURE_DB,
+        defaultSchema: 'dbo',
+        supportsOverloads: false,
+    },
+] as const)('$label', ({ label, config, fixtureDb, defaultSchema, supportsOverloads }) => {
     let connectionId: string;
 
     beforeAll(async () => {
@@ -178,11 +211,11 @@ describe.each([
     test('a relation names its schema, or has none to name', async () => {
         const tables = await listTables();
 
-        if (expectSchemaQualified) {
-            // The schema is a field on every relation, `public` included -- the tree
+        if (defaultSchema !== undefined) {
+            // The schema is a field on every relation, the default included -- the tree
             // groups by it, and a group needs an answer for each row and not only for
             // the ones outside the default schema. The name is the relation's own.
-            expect(tables.find((t) => t.name === 'users')?.schema).toBe('public');
+            expect(tables.find((t) => t.name === 'users')?.schema).toBe(defaultSchema);
             expect(tables.find((t) => t.name === 'daily_stats')?.schema).toBe('reporting');
             // The name is never the qualified string: that was the prefix this replaced.
             expect(names(tables)).not.toContain('reporting.daily_stats');
@@ -309,7 +342,7 @@ describe.each([
         const fk = columns.find((c) => c.name === 'user_id')?.foreignKey;
         expect(fk?.table).toBe('users');
         expect(fk?.column).toBe('id');
-        expect(fk?.schema).toBe(expectSchemaQualified ? 'public' : undefined);
+        expect(fk?.schema).toBe(defaultSchema);
 
         expect(columns.find((c) => c.name === 'id')?.foreignKey).toBeUndefined();
         expect(columns.find((c) => c.name === 'label')?.foreignKey).toBeUndefined();
@@ -329,7 +362,7 @@ describe.each([
         expect(await columnsOf('no_such_table')).toEqual([]);
     });
 
-    test.if(expectSchemaQualified)('columns resolve from the schema field', async () => {
+    test.if(defaultSchema !== undefined)('columns resolve from the schema field', async () => {
         // Both halves arrive as `db.tables` reported them. Read the schema wrong and
         // the lookup silently answers for `public.daily_stats`, which does not exist.
         expect((await columnsOf('daily_stats', 'reporting')).map((c) => c.name)).toEqual([
@@ -338,7 +371,7 @@ describe.each([
         ]);
     });
 
-    test.if(expectSchemaQualified)(
+    test.if(defaultSchema !== undefined)(
         'columns resolve from a qualified name with no schema field',
         async () => {
             // The completion's path: a name scanned out of SQL being typed, with no
@@ -351,7 +384,7 @@ describe.each([
         },
     );
 
-    test.if(expectSchemaQualified)(
+    test.if(defaultSchema !== undefined)(
         'a relation whose own name holds a dot is addressed by its field',
         async () => {
             // The case that has no correct split: `reporting.daily.stats` could be read
@@ -419,7 +452,7 @@ describe.each([
         expect(link?.columns).toEqual(['user_id']);
         expect(link?.refTable).toBe('users');
         expect(link?.refColumns).toEqual(['id']);
-        expect(link?.refSchema).toBe(expectSchemaQualified ? 'public' : undefined);
+        expect(link?.refSchema).toBe(defaultSchema);
         // A constraint has a name of its own, which is what keeps two constraints
         // between the same pair of tables from collapsing into one line.
         expect(link?.name).toBeTruthy();
@@ -461,12 +494,15 @@ describe.each([
         expect(diagramTable(tables, 'tags')?.foreignKeys).toEqual([]);
     });
 
-    test.if(expectSchemaQualified)('a diagram table names the schema it lives in', async () => {
-        const tables = await relationships();
-        expect(diagramTable(tables, 'users')?.schema).toBe('public');
-        // The whole database, not one schema: a table outside `public` is a node too.
-        expect(diagramTable(tables, 'daily_stats')?.schema).toBe('reporting');
-    });
+    test.if(defaultSchema !== undefined)(
+        'a diagram table names the schema it lives in',
+        async () => {
+            const tables = await relationships();
+            expect(diagramTable(tables, 'users')?.schema).toBe(defaultSchema);
+            // The whole database, not one schema: a table outside the default is a node too.
+            expect(diagramTable(tables, 'daily_stats')?.schema).toBe('reporting');
+        },
+    );
 
     test('browsing a table reads it, quoted for the engine', async () => {
         // The UI names a table and never SQL, so this is also the only proof that
@@ -478,7 +514,7 @@ describe.each([
         expect(page.offset).toBe(0);
     });
 
-    test.if(expectSchemaQualified)(
+    test.if(defaultSchema !== undefined)(
         'browsing a relation in another schema quotes each part',
         async () => {
             // Quoted as one string, `"reporting.daily_stats"` names a table with a dot
@@ -1000,16 +1036,19 @@ describe.each([
         expect(ddl).toContain('name');
     });
 
-    test.if(expectSchemaQualified)('renders DDL for a relation in another schema', async () => {
-        // Both halves arrive as db.tables reported them; read the schema wrong and
-        // regclass resolves public.daily_stats, which does not exist.
-        const ddl = await ddlOf('daily_stats', 'table', 'reporting');
-        expect(ddl).toMatch(/create table/i);
-        expect(ddl).toContain('hits');
-        // Qualified in the output too, so the statement it prints is one that runs
-        // wherever search_path happens to point.
-        expect(ddl).toContain('reporting');
-    });
+    test.if(defaultSchema !== undefined)(
+        'renders DDL for a relation in another schema',
+        async () => {
+            // Both halves arrive as db.tables reported them; read the schema wrong and
+            // regclass resolves public.daily_stats, which does not exist.
+            const ddl = await ddlOf('daily_stats', 'table', 'reporting');
+            expect(ddl).toMatch(/create table/i);
+            expect(ddl).toContain('hits');
+            // Qualified in the output too, so the statement it prints is one that runs
+            // wherever search_path happens to point.
+            expect(ddl).toContain('reporting');
+        },
+    );
 
     describe('exporting a table', () => {
         const exportPath = (name: string) => join(EXPORT_DIR, `${label}-${name}`);
@@ -1150,7 +1189,7 @@ describe.each([
         },
     );
 
-    test.if(expectSchemaQualified)(
+    test.if(supportsOverloads)(
         'tells two overloads of one name apart, and opens the one asked for',
         async () => {
             // `square` is defined over int and over text. Name, schema and kind are
@@ -1169,7 +1208,7 @@ describe.each([
         },
     );
 
-    test.if(expectSchemaQualified)(
+    test.if(defaultSchema !== undefined)(
         'drops a relation in another schema, and only that one',
         async () => {
             // The pair that a wrong split confuses: dropping one must leave the other.
@@ -1308,7 +1347,12 @@ describe.each([
             const sql =
                 label === 'postgres'
                     ? 'SELECT n FROM generate_series(1, 10001) AS n'
-                    : 'WITH RECURSIVE seq AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM seq WHERE n < 10001) SELECT n FROM seq';
+                    : label === 'mssql'
+                      ? // No RECURSIVE keyword in T-SQL, and the default recursion limit
+                        // (100) is well under the cap -- MAXRECURSION 0 is "unbounded",
+                        // an option rather than a session setting on this engine.
+                        'WITH seq AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM seq WHERE n < 10001) SELECT n FROM seq OPTION (MAXRECURSION 0)'
+                      : 'WITH RECURSIVE seq AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM seq WHERE n < 10001) SELECT n FROM seq';
             const res = await query(sql);
             expect(res.truncated).toBe(true);
             expect(res.rows).toHaveLength(10_000);
@@ -1517,26 +1561,31 @@ describe.each([
             if (!bad.ok) expect(bad.error).toMatch(/no primary or unique key/i);
         });
 
-        test('a write is refused on a read-only connection, and the connection survives', async () => {
-            await query('DROP TABLE IF EXISTS zz_edit_ro');
-            await query('CREATE TABLE zz_edit_ro (id int primary key, name text)');
-            await query("INSERT INTO zz_edit_ro (id, name) VALUES (1, 'a')");
+        test.if(label !== 'mssql')(
+            'a write is refused on a read-only connection, and the connection survives',
+            async () => {
+                await query('DROP TABLE IF EXISTS zz_edit_ro');
+                await query('CREATE TABLE zz_edit_ro (id int primary key, name text)');
+                await query("INSERT INTO zz_edit_ro (id, name) VALUES (1, 'a')");
 
-            await h.ok('db.readonly', { connectionId, readOnly: true });
-            const bad = await h.dispatch('db.write', {
-                connectionId,
-                database: fixtureDb,
-                table: 'zz_edit_ro',
-                edits: [{ key: { id: 1 }, set: { name: 'X' } }],
-                deletes: [],
-            });
-            expect(bad.ok).toBe(false);
-            await h.ok('db.readonly', { connectionId, readOnly: false });
+                await h.ok('db.readonly', { connectionId, readOnly: true });
+                const bad = await h.dispatch('db.write', {
+                    connectionId,
+                    database: fixtureDb,
+                    table: 'zz_edit_ro',
+                    edits: [{ key: { id: 1 }, set: { name: 'X' } }],
+                    deletes: [],
+                });
+                expect(bad.ok).toBe(false);
+                await h.ok('db.readonly', { connectionId, readOnly: false });
 
-            // Untouched, and the connection is still usable.
-            expect((await query('SELECT name FROM zz_edit_ro WHERE id = 1')).rows[0]![0]).toBe('a');
-            await query('DROP TABLE IF EXISTS zz_edit_ro');
-        });
+                // Untouched, and the connection is still usable.
+                expect((await query('SELECT name FROM zz_edit_ro WHERE id = 1')).rows[0]![0]).toBe(
+                    'a',
+                );
+                await query('DROP TABLE IF EXISTS zz_edit_ro');
+            },
+        );
     });
 
     /*
@@ -1545,72 +1594,104 @@ describe.each([
      * WHERE that matches nothing keeps the fixture untouched: the refusal happens
      * when the statement is a write, before any row is considered, so 0 matched
      * rows is enough to show it and enough to leave the seed as it was.
+     *
+     * SQL Server has no session-level "refuse writes" primitive the other two
+     * engines' own `SET SESSION TRANSACTION READ ONLY` gives -- `mssqlDriver
+     * .setReadOnly` is a documented no-op (`docs/decisions.md`), so it is absent
+     * from this block rather than sharing its assertions: it would be asserting a
+     * server refusal that engine cannot make. Its own test below documents the
+     * disclosed gap instead of leaving it unaddressed.
      */
     describe('read-only', () => {
         // Touches no rows either way: refused as a write under read-only, a 0-row
         // success under read-write.
         const noopWrite = 'UPDATE users SET name = name WHERE 1 = 0';
 
-        test('the server refuses writes when read-only, and takes them again when off', async () => {
-            await h.ok('db.readonly', { connectionId, readOnly: true });
+        test.if(label !== 'mssql')(
+            'the server refuses writes when read-only, and takes them again when off',
+            async () => {
+                await h.ok('db.readonly', { connectionId, readOnly: true });
 
-            const refused = await h.dispatch('db.query', {
-                connectionId,
-                database: fixtureDb,
-                sql: noopWrite,
-            });
-            expect(refused.ok).toBe(false);
-            if (!refused.ok) expect(refused.error).toMatch(/read[\s-]?only/i);
+                const refused = await h.dispatch('db.query', {
+                    connectionId,
+                    database: fixtureDb,
+                    sql: noopWrite,
+                });
+                expect(refused.ok).toBe(false);
+                if (!refused.ok) expect(refused.error).toMatch(/read[\s-]?only/i);
 
-            // Reads still work while locked -- read-only is not "no queries".
-            const read = (await h.ok('db.query', {
-                connectionId,
-                database: fixtureDb,
-                sql: 'SELECT 1 AS ok',
-            })) as QueryResult;
-            expect(Number(read.rows[0]![0])).toBe(1);
+                // Reads still work while locked -- read-only is not "no queries".
+                const read = (await h.ok('db.query', {
+                    connectionId,
+                    database: fixtureDb,
+                    sql: 'SELECT 1 AS ok',
+                })) as QueryResult;
+                expect(Number(read.rows[0]![0])).toBe(1);
 
-            await h.ok('db.readonly', { connectionId, readOnly: false });
-            expect(
-                (
-                    await h.dispatch('db.query', {
-                        connectionId,
-                        database: fixtureDb,
-                        sql: noopWrite,
-                    })
-                ).ok,
-            ).toBe(true);
-        });
+                await h.ok('db.readonly', { connectionId, readOnly: false });
+                expect(
+                    (
+                        await h.dispatch('db.query', {
+                            connectionId,
+                            database: fixtureDb,
+                            sql: noopWrite,
+                        })
+                    ).ok,
+                ).toBe(true);
+            },
+        );
 
-        test('opening read-only refuses a write on a database opened afterwards', async () => {
-            // A fresh connection asked to be read-only up front. Its default client is
-            // the server's default database, so querying `shop` opens a *new* client
-            // after the connection is already read-only -- which is the case that
-            // breaks if the mode only reached the clients open at toggle time.
-            const { connectionId: roId } = (await h.ok('db.connect', {
-                config,
-                readOnly: true,
-            })) as {
-                connectionId: string;
-            };
+        test.if(label !== 'mssql')(
+            'opening read-only refuses a write on a database opened afterwards',
+            async () => {
+                // A fresh connection asked to be read-only up front. Its default client is
+                // the server's default database, so querying `shop` opens a *new* client
+                // after the connection is already read-only -- which is the case that
+                // breaks if the mode only reached the clients open at toggle time.
+                const { connectionId: roId } = (await h.ok('db.connect', {
+                    config,
+                    readOnly: true,
+                })) as {
+                    connectionId: string;
+                };
 
-            const refused = await h.dispatch('db.query', {
-                connectionId: roId,
-                database: fixtureDb,
-                sql: noopWrite,
-            });
-            expect(refused.ok).toBe(false);
-            if (!refused.ok) expect(refused.error).toMatch(/read[\s-]?only/i);
+                const refused = await h.dispatch('db.query', {
+                    connectionId: roId,
+                    database: fixtureDb,
+                    sql: noopWrite,
+                });
+                expect(refused.ok).toBe(false);
+                if (!refused.ok) expect(refused.error).toMatch(/read[\s-]?only/i);
 
-            const read = (await h.ok('db.query', {
-                connectionId: roId,
-                database: fixtureDb,
-                sql: 'SELECT 1 AS ok',
-            })) as QueryResult;
-            expect(Number(read.rows[0]![0])).toBe(1);
+                const read = (await h.ok('db.query', {
+                    connectionId: roId,
+                    database: fixtureDb,
+                    sql: 'SELECT 1 AS ok',
+                })) as QueryResult;
+                expect(Number(read.rows[0]![0])).toBe(1);
 
-            await h.ok('db.disconnect', { connectionId: roId });
-        });
+                await h.ok('db.disconnect', { connectionId: roId });
+            },
+        );
+
+        test.if(label === 'mssql')(
+            'db.readonly is a UI-only guard on this engine -- the server still accepts the write',
+            async () => {
+                // The disclosed asymmetry itself, pinned so it cannot regress silently
+                // into looking fixed (which would mean the other assertions above
+                // started applying) or into looking worse (a crash, rather than the
+                // plain success this engine's lack of a session-level read-only mode
+                // actually produces). See `docs/decisions.md`.
+                await h.ok('db.readonly', { connectionId, readOnly: true });
+                const wrote = await h.dispatch('db.query', {
+                    connectionId,
+                    database: fixtureDb,
+                    sql: noopWrite,
+                });
+                expect(wrote.ok).toBe(true);
+                await h.ok('db.readonly', { connectionId, readOnly: false });
+            },
+        );
     });
 });
 
@@ -1690,6 +1771,69 @@ describe('mysql compound statements', () => {
 });
 
 /*
+ * The far half of the frontend's `BEGIN … END` handling for this engine --
+ * the same shape the MySQL block above is, for the same reason: a client-side
+ * splitter proving it emits the whole body intact is not proof the *server*
+ * reads that body as one statement, and a `CASE … END` sitting inside it is
+ * exactly the case the splitter's own nesting count exists to survive.
+ *
+ * SQL Server has no `multipleStatements: false` to hold onto (see
+ * `runBufferedQuery`'s own comment in `drivers/mssql/index.ts`), so unlike
+ * MySQL's block this one does not also assert that stacking is refused --
+ * T-SQL runs a stacked batch perfectly well, and the split's job is keeping
+ * `db.query` down to one statement in the first place, not leaning on the
+ * server to reject more.
+ */
+describe('mssql compound statements', () => {
+    let connectionId: string;
+    const routine = 'split_probe';
+
+    beforeAll(async () => {
+        connectionId = ((await h.ok('db.connect', { config: MSSQL })) as { connectionId: string })
+            .connectionId;
+    });
+
+    afterAll(async () => {
+        await h.dispatch('db.query', {
+            connectionId,
+            database: FIXTURE_DB,
+            sql: `DROP FUNCTION IF EXISTS ${routine}`,
+        });
+        await h.dispatch('db.disconnect', { connectionId });
+    });
+
+    test('a BEGIN … END body with a CASE … END inside it is one statement to the server', async () => {
+        await h.ok('db.query', {
+            connectionId,
+            database: FIXTURE_DB,
+            sql: `DROP FUNCTION IF EXISTS ${routine}`,
+        });
+
+        // Exactly what `splitStatements` yields: the body intact, its internal
+        // semicolons and the CASE's own bare `END` never mistaken for the
+        // function's closing one.
+        const body = [
+            `CREATE FUNCTION ${routine} (@x INT) RETURNS INT AS`,
+            'BEGIN',
+            '  DECLARE @doubled INT;',
+            '  SET @doubled = @x * 2;',
+            '  RETURN CASE WHEN @doubled > 0 THEN @doubled ELSE 0 END;',
+            'END',
+        ].join('\n');
+        expect(
+            (await h.dispatch('db.query', { connectionId, database: FIXTURE_DB, sql: body })).ok,
+        ).toBe(true);
+
+        const res = (await h.ok('db.query', {
+            connectionId,
+            database: FIXTURE_DB,
+            sql: `SELECT dbo.${routine}(21)`,
+        })) as QueryResult;
+        expect(String(res.rows[0]![0])).toBe('42');
+    });
+});
+
+/*
  * A connection the *server* ends, which is the one failure this app cannot
  * prevent and has to survive: an idle timeout, a failover, an administrator's
  * KILL. It is the everyday shape of an RDS IAM connection, which sits idle
@@ -1699,10 +1843,19 @@ describe('mysql compound statements', () => {
  * SQLite is absent on purpose rather than skipped: a file has no server to hang
  * up on it, so there is no behaviour here for it to answer for.
  *
- * The kill is issued from a *second* connection, so the first one is idle when
- * it dies. That is the case that used to take the whole extension down with it
- * -- both libraries emit `error` on a connection with nothing in flight, and an
- * `error` with no listener is how Node spells `throw`.
+ * SQL Server is absent for the opposite reason, established against a real
+ * container rather than assumed: `KILL <spid>` against an idle victim, and even
+ * against one with a query in flight, does not reproduce the failure this block
+ * exists to test. No `'error'` reaches the pool or the raw tedious connection
+ * either way, and the connection is transparently usable again immediately
+ * after -- tarn's pooling underneath `ConnectionPool` recovers on its own before
+ * the next query ever reaches this app's code, in a way mysql2's and pg's bare
+ * single connections have no equivalent machinery for. `onClientLost` and
+ * `isConnectionLost` stay implemented regardless -- they are what stands
+ * between an unlistened `'error'` and the whole extension going down if some
+ * *other* failure ever does reach this driver's connection the way it reaches
+ * the other two -- this block asserting the *recovery* story is simply not a
+ * question this engine, as pooled here, has the same answer to.
  */
 describe.each([
     [

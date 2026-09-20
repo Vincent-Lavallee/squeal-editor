@@ -77,6 +77,13 @@ jobs:
                   root-password: secret
                   my-cnf: |
                       port=53306
+            # No documented port override, unlike the two actions above -- SQL
+            # Server is left on its real default (1433) here; see the comment on
+            # `MSSQL` in tests/fixtures/config.ts.
+            - uses: potatoqualitee/mssqlsuite@v1.11
+              with:
+                  install: sqlengine, sqlclient
+                  sa-password: Squeal_Test_Pw!1
             - run: bun run test:db:up
             # assistant.test.ts and saved.test.ts exercise the real OS keychain
             # (docs/decisions.md: "Saved connections..."), which on Linux is
@@ -160,6 +167,10 @@ jobs:
                   root-password: secret
                   my-cnf: |
                       port=53306
+            - uses: potatoqualitee/mssqlsuite@v1.11
+              with:
+                  install: sqlengine, sqlclient
+                  sa-password: Squeal_Test_Pw!1
             - run: bun run test:db:up
             - run: bun run test:ui
             # The app's own stdout/stderr are discarded (tests/helpers/app.ts), so

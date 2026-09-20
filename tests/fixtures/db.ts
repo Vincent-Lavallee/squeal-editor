@@ -1,5 +1,5 @@
 /**
- * Throwaway MySQL + Postgres for the test suite.
+ * Throwaway MySQL + Postgres + SQL Server for the test suite.
  *
  *   bun run test:db:up     start and seed
  *   bun run test:db:down   remove
@@ -27,17 +27,21 @@
  * driver pairing the two sides by name rather than by key position fails here
  * instead of passing by coincidence.
  *
- * `reporting."daily.stats"` has a dot in its *own* name, beside a
- * `reporting.daily_stats` that does not. It is the case that cannot be addressed
- * by splitting a display string -- `reporting.daily.stats` has no correct split
- * -- so it is the proof that the schema travels as a field rather than as a
- * prefix, and the two together are the pair a wrong split confuses.
+ * `reporting."daily.stats"` (`reporting.[daily.stats]` on SQL Server) has a dot
+ * in its *own* name, beside a `reporting.daily_stats` that does not. It is the
+ * case that cannot be addressed by splitting a display string --
+ * `reporting.daily.stats` has no correct split -- so it is the proof that the
+ * schema travels as a field rather than as a prefix, and the two together are
+ * the pair a wrong split confuses. Both schema-having engines carry it, and
+ * `daily_stats.hits` is where each one's own BIGINT past 2^53 lives too.
  *
  * `square` is defined **twice** on Postgres, over `int` and over `text`. It is
  * the overload pair: two functions alike in name, schema and kind, which is the
  * case that has no answer unless a row carries the catalog's own id -- and the
  * one that had the tree drawing duplicate React keys and opening whichever
- * definition the catalog happened to return first.
+ * definition the catalog happened to return first. SQL Server has no overload
+ * to speak of -- a routine name is already unique within its schema there, the
+ * same as MySQL -- so its `square` is defined once.
  *
  * `users."eventType"` is deliberately mixed-case: it is what exposed the filter
  * bar quoting an identifier as `eventType` instead of `"eventType"`, which
@@ -51,6 +55,8 @@ import { Database } from 'bun:sqlite';
 import { rmSync } from 'node:fs';
 
 import {
+    MSSQL,
+    MSSQL_CONTAINER,
     MYSQL,
     MYSQL_CONTAINER,
     NATIVE_TEST_DB as NATIVE,
@@ -196,6 +202,123 @@ DELIMITER ;
 `;
 
 /**
+ * The same shapes again, in T-SQL -- run through `sqlcmd`, which is why `GO`
+ * (its own client-side batch separator, never sent to the server) breaks this
+ * into batches wherever a statement has to be the first thing in one:
+ * `CREATE VIEW`/`TRIGGER`/`FUNCTION`/`PROCEDURE` and the `CREATE DATABASE`/
+ * `USE` pair at the top. No `DECIMAL`/`NUMERIC`/`MONEY` column: tedious
+ * returns those through a lossy floating-point division rather than as exact
+ * text the way it does `BIGINT`, a disclosed gap (`docs/decisions.md`) this
+ * fixture does not paper over by avoiding the assertion that would catch it.
+ * No `DATETIMEOFFSET` either -- tedious reads the wire's offset bytes and
+ * never applies them, so the true zone cannot be recovered here regardless of
+ * what the fixture stores.
+ *
+ * SQL Server triggers are statement-level, not row-level: `inserted`/`deleted`
+ * are pseudo-tables holding every row the statement touched, not a single
+ * `NEW`/`OLD`, which is why `events_audit` reads it back with a `SELECT`
+ * rather than referencing one row directly. There is no `BEFORE` trigger on
+ * this engine either -- `users_audit` uses `INSTEAD OF DELETE`, which has to
+ * perform the delete itself, since it replaces the statement rather than
+ * running ahead of it.
+ */
+const MSSQL_SEED = `
+IF DB_ID('shop') IS NOT NULL
+BEGIN
+  ALTER DATABASE shop SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+  DROP DATABASE shop;
+END;
+CREATE DATABASE shop;
+GO
+USE shop;
+GO
+CREATE TABLE users (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  name NVARCHAR(50),
+  email NVARCHAR(50),
+  created_at DATETIME2 DEFAULT SYSDATETIME(),
+  meta NVARCHAR(MAX),
+  avatar VARBINARY(MAX),
+  big BIGINT,
+  eventType NVARCHAR(50)
+);
+INSERT INTO users (name, email, meta, avatar, big, eventType) VALUES
+  ('Ada', 'ada@x.io', '{"role":"admin"}', 0x0102FF, 9007199254740993, 'page_view'),
+  ('Grace', NULL, NULL, NULL, NULL, NULL);
+GO
+CREATE VIEW active_users AS SELECT id, name FROM users;
+GO
+CREATE SCHEMA reporting;
+GO
+CREATE TABLE reporting.daily_stats (day DATE, hits BIGINT);
+INSERT INTO reporting.daily_stats VALUES ('2026-01-05', 9007199254740993);
+CREATE TABLE reporting.[daily.stats] (day DATE, hits BIGINT);
+INSERT INTO reporting.[daily.stats] VALUES ('2026-01-06', 1);
+GO
+CREATE TABLE events (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  label NVARCHAR(20),
+  user_id INT REFERENCES users(id)
+);
+GO
+;WITH series AS (
+  SELECT 1 AS n
+  UNION ALL
+  SELECT n + 1 FROM series WHERE n < 150
+)
+INSERT INTO events (label)
+SELECT 'e' + CAST(n AS VARCHAR(10)) FROM series
+OPTION (MAXRECURSION 150);
+UPDATE events SET user_id = (SELECT id FROM users WHERE name = 'Ada') WHERE label = 'e1';
+GO
+CREATE TABLE regions (
+  country NVARCHAR(2),
+  code NVARCHAR(10),
+  name NVARCHAR(50),
+  PRIMARY KEY (country, code)
+);
+INSERT INTO regions VALUES ('fr', 'idf', 'Ile-de-France');
+CREATE TABLE cities (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  country NVARCHAR(2),
+  region_code NVARCHAR(10),
+  name NVARCHAR(50),
+  FOREIGN KEY (country, region_code) REFERENCES regions (country, code)
+);
+INSERT INTO cities (country, region_code, name) VALUES ('fr', 'idf', 'Paris');
+CREATE TABLE tags (label NVARCHAR(50) NOT NULL UNIQUE, weight INT);
+INSERT INTO tags (label, weight) VALUES ('red', 1), ('blue', 2);
+CREATE TABLE logs (msg NVARCHAR(100));
+INSERT INTO logs (msg) VALUES ('one'), ('two');
+GO
+CREATE TRIGGER events_audit ON events AFTER INSERT AS
+BEGIN
+  SET NOCOUNT ON;
+  INSERT INTO logs (msg) SELECT 'event: ' + label FROM inserted;
+END;
+GO
+CREATE TRIGGER users_audit ON users INSTEAD OF DELETE AS
+BEGIN
+  SET NOCOUNT ON;
+  INSERT INTO logs (msg) SELECT 'deleted user: ' + name FROM deleted;
+  DELETE FROM users WHERE id IN (SELECT id FROM deleted);
+END;
+GO
+CREATE FUNCTION square (@x INT) RETURNS INT AS
+BEGIN
+  RETURN @x * @x;
+END;
+GO
+CREATE PROCEDURE count_rows @tablename NVARCHAR(128) AS
+BEGIN
+  SET NOCOUNT ON;
+  DECLARE @sql NVARCHAR(MAX) = N'SELECT COUNT(*) FROM ' + QUOTENAME(@tablename);
+  EXEC sp_executesql @sql;
+END;
+GO
+`;
+
+/**
  * The same shapes as the other two, in SQLite's spelling.
  *
  * `big` sits on `users` the way MySQL's does, because SQLite has no second
@@ -307,12 +430,42 @@ async function mysqlExec(sql: string) {
         : $`docker exec ${MYSQL_CONTAINER} mysql -uroot -psecret -e ${sql}`.quiet().nothrow();
 }
 
+// `sqlcmd` itself is what `GO` needs -- it is the client that reads that word
+// as a batch separator, the same role the `mysql`/`psql` CLIs play for
+// `DELIMITER`/dollar-quoting. Native mode expects it already on the runner's
+// PATH (`potatoqualitee/mssqlsuite`'s `sqlclient` install puts it there);
+// inside the container it is `mssql-tools18`'s full path, the tools package
+// current SQL Server images ship, and `-C` trusts the image's self-signed
+// certificate rather than asking for one the test box was never given.
+async function mssqlReady() {
+    return NATIVE
+        ? $`sqlcmd -S 127.0.0.1,${MSSQL.port} -U sa -P ${MSSQL.password} -C -Q "SELECT 1"`
+              .quiet()
+              .nothrow()
+        : $`docker exec ${MSSQL_CONTAINER} /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P ${MSSQL.password} -C -Q "SELECT 1"`
+              .quiet()
+              .nothrow();
+}
+
+async function mssqlExec(sql: string) {
+    return NATIVE
+        ? $`sqlcmd -S 127.0.0.1,${MSSQL.port} -U sa -P ${MSSQL.password} -C -Q ${sql}`
+              .quiet()
+              .nothrow()
+        : $`docker exec ${MSSQL_CONTAINER} /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P ${MSSQL.password} -C -Q ${sql}`
+              .quiet()
+              .nothrow();
+}
+
 export async function up(): Promise<void> {
     if (!NATIVE) {
         await $`docker run -d --name ${PG_CONTAINER} -e POSTGRES_PASSWORD=secret -p 55432:5432 postgres:16-alpine`
             .quiet()
             .nothrow();
         await $`docker run -d --name ${MYSQL_CONTAINER} -e MYSQL_ROOT_PASSWORD=secret -p 53306:3306 mysql:8`
+            .quiet()
+            .nothrow();
+        await $`docker run -d --name ${MSSQL_CONTAINER} -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=${MSSQL.password} -p 51433:1433 mcr.microsoft.com/mssql/server:2022-latest`
             .quiet()
             .nothrow();
     }
@@ -322,6 +475,10 @@ export async function up(): Promise<void> {
         const r = await mysqlPing();
         return r.exitCode === 0 && r.stdout.toString().includes('alive');
     });
+    // SQL Server takes noticeably longer than the other two to start accepting
+    // connections on first boot, which is what the shared 60-try/2s budget is
+    // sized to cover -- `waitFor` throws by name if it does not.
+    await waitFor('mssql', async () => (await mssqlReady()).exitCode === 0);
 
     // Seeding is idempotent-ish: drop first so `up` twice is harmless.
     await pgExec('DROP DATABASE IF EXISTS shop');
@@ -331,6 +488,9 @@ export async function up(): Promise<void> {
     await mysqlExec('DROP DATABASE IF EXISTS shop');
     await mysqlExec(MYSQL_SEED);
 
+    // MSSQL_SEED drops and recreates `shop` itself -- see its own comment.
+    await mssqlExec(MSSQL_SEED);
+
     // No container to wait for: a file engine is ready the moment it is written.
     seedSqlite();
 
@@ -338,7 +498,10 @@ export async function up(): Promise<void> {
 }
 
 export async function down(): Promise<void> {
-    if (!NATIVE) await $`docker rm -f ${PG_CONTAINER} ${MYSQL_CONTAINER}`.quiet().nothrow();
+    if (!NATIVE)
+        await $`docker rm -f ${PG_CONTAINER} ${MYSQL_CONTAINER} ${MSSQL_CONTAINER}`
+            .quiet()
+            .nothrow();
     rmSync(SQLITE_FILE, { force: true });
     console.log('test databases removed');
 }

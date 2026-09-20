@@ -8073,3 +8073,98 @@ own `useTooltipPosition` so `Tooltip.tsx` itself stays under the function
 line cap. `disabled` exists for one reason — suppressing the tooltip while
 the trigger's own popup is already open, so the two never show at once — and
 is not a general escape hatch beyond that.
+
+## SQL Server: `mssql` over `msnodesqlv8`, and over driving `tedious` directly
+
+**The package has to survive `bun build --compile` with no build step, which
+rules out the native option outright.** `msnodesqlv8` — the other client
+`mssql` can be told to drive — wraps a native ODBC binding, and this
+extension ships as a single compiled binary with its source deleted beside
+it; a native addon has no place in that shape, and asking a user to have an
+ODBC driver installed at all is a dependency none of the other three engines
+need. `mssql` (the `tediousjs` package) is a pure-JS TDS implementation, the
+same shape mysql2 and pg already are.
+
+**`mssql` over driving `tedious` directly, even though the raw client would
+give lower-level socket access this driver ended up wanting anyway.**
+`tedious`'s own `Request`/`Connection` classes have no row-mapping, no typed
+error classes, and critically no `valueHandler`-shaped hook for correcting a
+value by SQL type after the fact — reimplementing that layer to get direct
+socket access would have cost more than the layer is worth. The socket access
+was recovered anyway, through `beforeConnect` (see the driver README-shaped
+entry in `docs/extension.md`, *SQL Server, reached through a pool of one*) —
+a documented config hook, not a reason to drop the wrapper.
+
+## SQL Server's DECIMAL/NUMERIC/MONEY precision is a disclosed gap, not a fix pending
+
+**Tedious returns these through a lossy floating-point division, and there is
+no config flag or public hook that hides it the way there is for the date
+types.** Read directly from tedious's own `value-parser.js`: `BIGINT` is
+returned as a string (`value.toString()`), but `NUMERIC`/`DECIMAL` compute
+`value * sign / Math.pow(10, scale)` and hand back a plain JS `number` —
+this project's own forbidden pattern, applied by the library itself before
+any of this app's code runs. `MONEY`/`SMALLMONEY` take the identical shape,
+divided by a fixed `10000`.
+
+**Confirmed as a real gap next to the other two engines, not assumed.** Both
+mysql2 and `pg` already return `DECIMAL`/`NUMERIC` as exact strings by
+default — this project never had to solve this problem for them, which is
+why nothing before now needed to say so out loud. SQL Server is the one
+engine here where it is unsolved.
+
+**Why it ships anyway.** A real fix would mean patching `tedious` itself —
+forking and maintaining a dependency this project does not otherwise need to
+touch, a much larger and separate decision nobody has asked for. The rows the
+grid deals in are the values `db.browse`/`db.query` hand back, and neither
+call site may rewrite the user's SQL to work around a library's internal
+parsing (`db.query`'s one licensed rewrite is the sort wrap, and it changes
+order, never values) — so there is no seam inside this app's own architecture
+to fix it from either. *Rejected: hiding the type from the fixture and
+pretending it is fine.* The fixture (`tests/fixtures/db.ts`) carries no
+`DECIMAL`/`MONEY`/`DATETIMEOFFSET` column for SQL Server for the identical
+reason — a test that cannot exercise the gap is not evidence the gap is
+closed, and inventing one that quietly avoided the failing case would be
+worse than carrying none.
+
+**What is and is not actually at risk.** Most everyday values still display
+correctly — JS's shortest-round-trip number-to-string formatting hides small
+binary error for ordinary prices and quantities, the same reason `12345 /
+100` prints as `123.45` and not a long decimal. What is genuinely at risk is
+the same shape the historical BIGINT bug was: a value whose magnitude or
+scale exceeds what a float64 can hold exactly. Disclosed here, in
+`docs/extension.md`, and at the value-handling section's own "never through
+Number" rule, rather than left for someone to rediscover by noticing a wrong
+digit.
+
+## SQL Server's read-only toggle is a UI-only guard, not a server refusal
+
+**There is no session-level "refuse writes" on this engine the way `SET
+SESSION TRANSACTION READ ONLY` gives the other two**, and this was checked
+rather than assumed solvable: `ApplicationIntent=ReadOnly` (the one
+per-connection variant that exists) only does anything against an Always On
+readable secondary, infrastructure a plain standalone server — which is what
+this app, and its Docker-container test fixture, actually connects to — does
+not have. *Rejected, for the identical reason `docs/decisions.md`'s
+"Read-only is the server's refusal" entry already rejects it on the other two
+engines: inspecting the statement client-side.* A read-only mode enforced by
+parsing the user's SQL is one a rewritten statement walks straight through,
+and this project's standing rule is that a guarantee like that is not one at
+all — see `Driver.setReadOnly`'s doc comment. Between "claim a guarantee this
+engine cannot back up" and "state plainly that it does not have one," this
+took the second.
+
+**What the toggle still does.** The grid's edit/save controls disable and the
+lock icon shows, identically to the other three engines — the UI-level guard
+is real and unaffected. What does not hold is the specific claim `db.readonly`
+makes elsewhere: that a hand-typed `UPDATE` in the editor is refused by the
+server. On SQL Server it is not. `docs/extension.md`'s *Read-only sessions*
+section and *SQL Server, reached through a pool of one* both say so, and
+`tests/extension.test.ts`'s `read-only` block carves this engine out of the
+assertions that would otherwise claim the refusal, with its own test pinning
+the disclosed behaviour so it cannot regress silently in either direction.
+
+**"Production defaults to read-only" still applies.** The policy lives in the
+UI regardless of what any one engine's toggle can enforce — narrowing it to
+"every engine except this one" would be a second, engine-aware copy of a
+policy that is supposed to have one answer. The toggle being weaker on this
+engine is a property of the guard, not a reason to stop offering it.

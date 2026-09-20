@@ -77,7 +77,7 @@ export function connectionQueryMethods<C>(
             // result is a syntax error on every engine. Stripped only when wrapping:
             // an unsorted statement is passed through untouched, semicolon included.
             const statement = order
-                ? `SELECT * FROM (${sql.trim().replace(/;+\s*$/, '')}) squeal_sorted${order}`
+                ? `SELECT * FROM (${driver.innerSortWrap(sql.trim().replace(/;+\s*$/, ''))}) squeal_sorted${order}`
                 : sql;
 
             const key = database ?? null;
@@ -111,10 +111,10 @@ export function connectionQueryMethods<C>(
          * Quoting rules are per-engine, so the SQL is written here -- where the
          * driver is known -- rather than guessed at in the renderer. The relation is
          * named by `driver.qualify`, the one place a schema stops being a separate
-         * fact and becomes the engine's own spelling of a table's name.
-         * `LIMIT/OFFSET`
-         * is not per-engine between these two; an engine that spells paging its own
-         * way (SQL Server's OFFSET/FETCH) makes this a driver method.
+         * fact and becomes the engine's own spelling of a table's name. The page
+         * fragment itself is `driver.pagingClause` -- an engine that spells paging
+         * its own way (SQL Server's OFFSET/FETCH) is a driver method, not an `if`
+         * here.
          *
          * No ORDER BY unless one was *asked for*: the tree browses what the server
          * hands back, and a table with no meaningful order has no correct one to
@@ -167,7 +167,7 @@ export function connectionQueryMethods<C>(
             return use(database, async (client) => {
                 const outcome = await driver.query(
                     client,
-                    `SELECT * FROM ${driver.qualify(relation)}${where}${order} LIMIT ${PAGE_SIZE + 1} OFFSET ${from};`,
+                    `SELECT * FROM ${driver.qualify(relation)}${where}${driver.pagingClause(order, PAGE_SIZE + 1, from)};`,
                     { params },
                 );
                 const keyColumns = await driver.rowKey(client, database, relation);

@@ -234,6 +234,111 @@ describe('splitting a tab into statements', () => {
     });
 
     /*
+     * SQL Server and SQLite's own way of carrying semicolons through a routine
+     * body -- a bare `BEGIN … END`, not a directive or a dollar-quote. Both
+     * share the `sql` dialect, so this is exercised there rather than under a
+     * name that would suggest it is one engine's alone.
+     */
+    describe('BEGIN … END', () => {
+        test('a trigger body is one statement, internal semicolons and all', () => {
+            const body = [
+                'CREATE TRIGGER t ON events AFTER INSERT AS',
+                'BEGIN',
+                '  UPDATE events SET n = n + 1;',
+                "  INSERT INTO logs (msg) VALUES ('x');",
+                'END',
+            ].join('\n');
+            expect(splitStatements(`${body};\nSELECT 1`, 'sql')).toEqual([body, 'SELECT 1']);
+        });
+
+        test('a CASE … END inside a block does not close the block early', () => {
+            // CASE has no BEGIN of its own; it is tracked purely to keep the nesting
+            // balanced, since its bare END would otherwise read as the block's.
+            const body = [
+                'CREATE TRIGGER t ON events AFTER INSERT AS',
+                'BEGIN',
+                "  UPDATE events SET status = CASE WHEN n > 0 THEN 'a' ELSE 'b' END;",
+                '  DELETE FROM events WHERE n < 0;',
+                'END',
+            ].join('\n');
+            expect(splitStatements(`${body};\nSELECT 1`, 'sql')).toEqual([body, 'SELECT 1']);
+        });
+
+        test('a bare CASE … END outside any block still closes on its own END', () => {
+            expect(splitStatements("SELECT CASE WHEN 1 > 0 THEN 'a' END; SELECT 2", 'sql')).toEqual(
+                ["SELECT CASE WHEN 1 > 0 THEN 'a' END", 'SELECT 2'],
+            );
+        });
+
+        test('BEGIN TRANSACTION opens no block -- it is closed by COMMIT, never END', () => {
+            const body = [
+                'CREATE PROCEDURE p AS',
+                'BEGIN',
+                '  BEGIN TRANSACTION;',
+                '  UPDATE events SET n = n + 1;',
+                '  COMMIT TRANSACTION;',
+                'END',
+            ].join('\n');
+            expect(splitStatements(`${body};\nSELECT 1`, 'sql')).toEqual([body, 'SELECT 1']);
+        });
+
+        test('BEGIN TRY … END TRY / BEGIN CATCH … END CATCH balance the same way', () => {
+            const body = [
+                'CREATE PROCEDURE p AS',
+                'BEGIN',
+                '  BEGIN TRY',
+                '    UPDATE events SET n = n + 1;',
+                '  END TRY',
+                '  BEGIN CATCH',
+                "    INSERT INTO logs (msg) VALUES ('failed');",
+                '  END CATCH;',
+                'END',
+            ].join('\n');
+            expect(splitStatements(`${body};\nSELECT 1`, 'sql')).toEqual([body, 'SELECT 1']);
+        });
+
+        test('it is scoped to the sql dialect, so a bare word elsewhere is ordinary text', () => {
+            // Postgres speaks dollar-quoting for a body, not a bare BEGIN … END, so
+            // each semicolon here ends its own statement rather than nesting.
+            expect(splitStatements('BEGIN;\nSELECT 1;\nEND;', 'pgsql')).toEqual([
+                'BEGIN',
+                'SELECT 1',
+                'END',
+            ]);
+        });
+    });
+
+    /*
+     * SQL Server's `[name]`, which SQLite also accepts -- the `sql` dialect's
+     * own quoted identifier, doubling `]` the way every other quote form here
+     * doubles its own close character.
+     */
+    describe('bracket identifiers', () => {
+        test('a semicolon inside one does not end a statement', () => {
+            expect(splitStatements('SELECT [a;b] FROM t', 'sql')).toEqual(['SELECT [a;b] FROM t']);
+        });
+
+        test('a doubled ] is a literal ] inside the name, not the close', () => {
+            expect(splitStatements('SELECT [a]]b] FROM t; SELECT 2', 'sql')).toEqual([
+                'SELECT [a]]b] FROM t',
+                'SELECT 2',
+            ]);
+        });
+
+        test('a bracketed keyword is not read as one', () => {
+            expect(splitStatements('SELECT [end] FROM t WHERE [begin] = 1', 'sql')).toEqual([
+                'SELECT [end] FROM t WHERE [begin] = 1',
+            ]);
+        });
+
+        test('it is scoped to the sql dialect, so brackets elsewhere are just brackets', () => {
+            expect(splitStatements('SELECT arr[1] FROM t', 'pgsql')).toEqual([
+                'SELECT arr[1] FROM t',
+            ]);
+        });
+    });
+
+    /*
      * Unterminated text is the state a query being typed is in most of the time.
      * The rule is that it fails toward *fewer* statements: the tail stays inside
      * whatever was left open, so the worst case is one statement the server

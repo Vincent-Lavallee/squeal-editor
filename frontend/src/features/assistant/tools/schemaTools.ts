@@ -58,7 +58,7 @@ export const SCHEMA_TOOLS: Tool[] = [
                     table: { type: 'string' },
                     schema: {
                         type: 'string',
-                        description: 'Postgres schema. Omit for MySQL and SQLite.',
+                        description: 'Postgres or SQL Server schema. Omit for MySQL and SQLite.',
                     },
                 },
                 required: ['table'],

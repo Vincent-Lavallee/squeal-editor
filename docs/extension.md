@@ -45,7 +45,7 @@ about the transport, and `store.ts` and `chrome.ts` know nothing about either.
 |---|---|
 | `driver.ts` | the contract: `Driver<C>`, `Relation`, `TableMeta`, `QueryOutcome` |
 | `common.ts` | a re-export barrel over `commonValues.ts` (`toDisplayValue`, the TLS options), `commonCatalog.ts` (`pickRowKey`, `pickForeignKeys`, `assembleDiagram`), `commonWrites.ts` (`runWrites`), `commonQuery.ts` (`buildWhere`, `orderByClause`, `selectExpressionAt`) — split for length, never for meaning; every engine still imports `common.ts` itself |
-| `mysql/`, `postgres/`, `sqlite/` | one folder per engine, each an `index.ts` assembling the `Driver<C>` by spreading a handful of `Pick<Driver<C>, ...> & ThisType<Driver<C>>` objects from sibling `lifecycle.ts` / `catalog.ts` / `ddl.ts` (/ `relationships.ts` where `listRelationships` alone needs the room) files into one object literal — see *Splitting an engine file* below |
+| `mysql/`, `postgres/`, `sqlite/`, `mssql/` | one folder per engine, each an `index.ts` assembling the `Driver<C>` by spreading a handful of `Pick<Driver<C>, ...> & ThisType<Driver<C>>` objects from sibling `lifecycle.ts` / `catalog.ts` / `ddl.ts` (/ `relationships.ts` where `listRelationships` alone needs the room) files into one object literal — see *Splitting an engine file* below. `mssql/` follows Postgres's shape (it is the other schema-having engine): `relation.ts` (schema split, defaulting to `dbo`), `systemSchemas.ts`, `types.ts` (`renderColumnType`, the one place this driver reassembles a type string — see *Listing a table's columns*), and `tableDdlParts.ts` split out from `ddl.ts` for length, the same reason `postgres/relationships.ts` is its own file |
 | `index.ts` | the barrel: `withDriver`, and the contract re-exported |
 
 `common.ts` and its siblings (`commonValues.ts`, `commonCatalog.ts`,
@@ -180,6 +180,156 @@ anything else holding the file can open its own handle without it.
 already in the process for another reason entirely (`store.ts`), which is a
 coincidence and not a coupling: they share no connection, no file and no code.
 
+### SQL Server, reached through a pool of one
+
+`mssql` (the `tediousjs` package) over raw `tedious` directly: the latter would
+give lower-level socket access, but `mssql`'s `Request`/row-mapping/error
+classes and its `valueHandler` hook (below) are worth the layer, and
+`msnodesqlv8` — the other option this package can drive — needs native ODBC
+bindings, incompatible with a `bun build --compile` binary shipped with no
+build step. See `docs/decisions.md`.
+
+**The "client" is a `ConnectionPool` pinned to exactly one physical
+connection** (`pool: { min: 1, max: 1 }`), not the pool mssql's name suggests.
+Every other engine here keeps one client per database with no pooling of its
+own underneath; letting `ConnectionPool` pool several physical connections
+per client would leave `destroyClient`/`onClientLost` unable to say which
+socket they mean. `min` equal to `max` is what keeps tarn's own idle reaping
+from ever mattering: it only evicts a resource *above* `min`, and there is
+never one.
+
+**Tedious offers no `dateStrings`/identity-type-parser equivalent** — every
+`DATE`/`TIME`/`DATETIME`/`DATETIME2`/`SMALLDATETIME` value is parsed into a JS
+`Date` before this driver ever sees it, `toDisplayValue`'s usual `Date`
+escape hatch. What rescues it is `sql.valueHandler`, a mutable `Map` the
+package exports specifically so a caller can post-process a value by SQL
+type — `mssql/lifecycle.ts` registers a handler per date/time type at module
+load, the same timing Postgres's `pgTypes.setTypeParser` calls already use.
+It is safe *because* tedious parses with `useUTC: true` (never turned off
+here): every wire component — year, month, … millisecond — goes through
+`Date.UTC(...)` with no real timezone applied, so reading it back through the
+matching **UTC** getters is lossless. Reading through local getters, or
+through the generic `toDisplayValue` `.toISOString()` fallback, is not —
+`.toISOString()` would also glue a fabricated `1970-01-01` onto a bare `TIME`
+value, which is why each type gets its own formatter rather than one shared
+one. Millisecond precision only: a `TIME`/`DATETIME2` at scale 4–7 carries a
+sub-millisecond remainder (tedious's own `nanosecondsDelta`) this driver
+drops — a disclosed, minor limit, not the Date/Number class of bug.
+
+**`DATETIMEOFFSET`'s real offset is unrecoverable at this layer.** Tedious's
+own parser reads the wire's offset bytes and never applies them
+(`value-parser.js`'s `readDateTimeOffset`) — confirmed by reading the source,
+not inferred from a failing test. What comes back is the UTC-equivalent
+instant, folded into the same formatter as the other datetime types, and
+nothing here claims a zone it can no longer prove. The fixture avoids the
+type for this reason.
+
+**`DECIMAL`/`NUMERIC`/`MONEY`/`SMALLMONEY` are not safe**, unlike `BIGINT`
+(tedious already returns that one as a string, verified by reading
+`bigint.js`). Tedious's numeric reader computes `value * sign /
+Math.pow(10, scale)` in floating point and hands back a JS `number` — the
+Date/Number rule's forbidden pattern, and a real gap next to MySQL and
+Postgres, both of which return these types as exact strings by default.
+There is no config flag or public hook that fixes this the way `valueHandler`
+fixes the date types: the precision is already gone by the time any value
+reaches application code. Disclosed rather than hidden — see
+`docs/decisions.md` — and the fixture carries no `DECIMAL`/`MONEY` column for
+the same reason it carries no `DATETIMEOFFSET`.
+
+**`[brackets]`, not `` ` `` or `"`.** `quoteIdent` doubles an embedded `]`,
+the same shape MySQL's backtick-doubling takes. `qualify` always writes
+`[schema].[table]`, `dbo` included — Postgres's `qualify`-always reasoning
+applies unchanged: an unqualified name resolves through the connection's
+default schema, a session setting this app never sets.
+
+**`placeholder` is named, not positional** — tedious binds by name
+(`request.input('p1', value)`), so `placeholder(position)` returns
+`` `@p${position}` `` and the mssql driver's own `query`/`applyWrites` walk a
+params array calling `request.input()` once per position with the `@`
+stripped back off. The shared assemblers (`buildWhere`, `runWrites`) never
+notice: `placeholder` is already an opaque per-position string to them.
+
+**Paging needs its own driver method.** T-SQL's `OFFSET … ROWS FETCH NEXT …
+ROWS ONLY` **requires** a preceding `ORDER BY`, where "no `ORDER BY` unless
+one was asked for" is load-bearing for the other three — see *Browsing a
+table*'s `Driver.pagingClause`. `` `ORDER BY (SELECT NULL)` `` is the no-op
+order used when nobody asked for a real one.
+
+**Overriding a query's own `ORDER BY` needs a second driver method for the
+identical reason.** `SELECT * FROM (<sql>) squeal_sorted ORDER BY …` — the
+wrap *every* engine shares, described under *Sorting a query* — fails on SQL
+Server whenever `<sql>` carries its own trailing `ORDER BY`: T-SQL refuses an
+`ORDER BY` inside a derived table outright unless that statement also
+carries `TOP`, `OFFSET` or `FOR XML`. `Driver.innerSortWrap` is where an
+engine answers this; SQL Server's implementation appends `OFFSET 0 ROWS`
+when a plain, unanchored scan finds a trailing `ORDER BY` — the same
+complexity this file already accepts for stripping a trailing semicolon
+before the identical wrap, not a real parse.
+
+**`sys.columns`/`sys.key_constraints`/`sys.objects`' `type` columns are
+`char(2)`, wire-padded to their declared width.** `'P '` (with a trailing
+space) is what a procedure's `sys.objects.type` actually arrives as, not
+`'P'` — T-SQL's own comparison rules ignore the padding, which is why a
+`WHERE type = 'P'` still matches, but JS string equality does not, so every
+comparison against one of these columns trims first. Found by running the
+contract tests against a real container and watching "lists functions and
+procedures" fail — exactly the class of bug this project's whole testing
+philosophy exists to catch, and it did.
+
+**A view's columns come from `sys.objects`, not `sys.tables`.** The obvious
+join misses every view outright (`sys.tables` is base tables only), which
+silently answered `[]` for `db.columns` on a view — caught the same way, by
+the "a view has columns like a table does" contract test actually running
+against a server rather than being asserted true from the desk.
+
+**No overload, unlike Postgres.** A routine name is already unique within
+its schema on this engine, the same fact MySQL's driver already relies on —
+`FunctionInfo.id`/`args` stay unset, and `functionDdl` resolves by
+`OBJECT_ID(schema.name)` alone.
+
+**Every module keeps its own submitted text.** `sys.sql_modules.definition`
+is the original `CREATE VIEW`/`TRIGGER`/`FUNCTION`/`PROCEDURE` statement
+verbatim — the `SHOW CREATE` shape MySQL already has, not the
+reassembled-from-parts shape a table's own DDL needs (there is no
+`sys.sql_modules` row for a table). Triggers are statement-level here, not
+row-level: `inserted`/`deleted` are pseudo-tables holding every row a
+statement touched, never a single `NEW`/`OLD`. There is no `BEFORE` trigger
+either — only `AFTER` and `INSTEAD OF`, the latter replacing the statement
+rather than running ahead of it, so it has to perform the write itself.
+
+**Read-only is a UI-only guard on this engine, not a server refusal.** SQL
+Server has no session-level "refuse writes" the other two get from `SET
+SESSION TRANSACTION READ ONLY` — `ApplicationIntent=ReadOnly` only means
+anything against an Always On readable secondary, infrastructure this app
+cannot assume exists. `setReadOnly` is therefore a documented no-op: the
+grid's edit/save controls stay disabled and the lock icon still shows, but a
+hand-typed `UPDATE` in the editor is not refused server-side the way it is
+on MySQL and Postgres. A deliberate, disclosed weakening rather than an
+oversight — see `docs/decisions.md` — and `tests/extension.test.ts`'s
+`read-only` block carves this engine out of the assertions that would
+otherwise claim a refusal it cannot make, with its own test pinning the
+disclosed behaviour instead.
+
+**An idle connection killed by an administrator does not reproduce the
+failure `docs/decisions.md`'s "When the server hangs up" describes for the
+other two engines — verified against a real container, not assumed.**
+`KILL <spid>` against an idle victim, and even against one with a query in
+flight, produces no `'error'` on the pool or on the raw tedious connection
+underneath it (reached via the `beforeConnect` config hook — a documented
+extension point, not a cast into internals — since `ConnectionPool`'s own
+`_poolCreate` swallows an `ESOCKET` error into a private flag rather than
+re-emitting it, which is the one thing this driver cannot rely on from the
+package alone). The connection is transparently usable again immediately
+after, tarn's pooling recovering underneath `ConnectionPool` before the next
+query ever reaches this app's code — resilience mysql2's and pg's bare
+single connections have no equivalent machinery for. `onClientLost` and
+`isConnectionLost` are both still implemented, because the *reason* they
+exist — an unlistened `'error'` taking the whole extension down — is a real
+risk independent of whether this one scenario reaches it; `tests/
+extension.test.ts`'s "dropped by the server" block, which asserts the
+recovery *story* rather than the safety net, is where this engine is absent
+rather than joining unchanged.
+
 ### Why `Driver<C>` is generic
 
 mysql2 and pg have unrelated client types. Rather than degrade the registry to
@@ -242,6 +392,15 @@ stronger guarantee arrived at for free, not a promise the feature makes — the
 sentence above is still what `db.readonly` means, because a file anything else
 can open has no session to lock in the first place.
 
+**SQL Server is the other odd one out, and in the opposite direction: its
+`setReadOnly` refuses nothing at all.** There is no session-level primitive to
+reach for — `ApplicationIntent=ReadOnly` only means anything against an Always
+On readable secondary — so the toggle is a UI-only guard there: the grid's
+edit/save controls disable and the lock icon shows, exactly as everywhere
+else, but a hand-typed `UPDATE` in the editor is not refused server-side. A
+deliberate, disclosed weakening rather than an oversight; see
+`docs/decisions.md` and *SQL Server, reached through a pool of one*.
+
 ## Browsing a table
 
 `db.browse` takes a table and an offset and returns one page. It exists because
@@ -275,10 +434,15 @@ Four rules, each load-bearing:
   `null` when nothing identifies a row — a view, or a keyless table — which is what
   makes the grid read-only. See *Writing back edited rows*.
 
-`LIMIT/OFFSET` is spelled the same by both engines today, so the SQL is built in
-`connection.ts` beside the client it runs on. An engine that pages its own way
-(SQL Server's `OFFSET/FETCH`) makes this a `Driver` method — that is the seam to
-use, not an `if` here.
+The page fragment itself is `Driver.pagingClause(orderClause, limit, offset)`
+— `` `${orderClause} LIMIT ${limit} OFFSET ${offset}` `` for MySQL, Postgres
+and SQLite, all of which spell it the same; SQL Server's `OFFSET … ROWS FETCH
+NEXT … ROWS ONLY` is a driver method rather than an `if` here because T-SQL
+also **requires** the `ORDER BY` that clause follows, which the other three
+never do — see *SQL Server, reached through a pool of one* for the
+`ORDER BY (SELECT NULL)` no-op that satisfies the requirement without
+imposing a real order nobody asked for. `connectionExportMethods.ts`'s own
+paging (*Exporting a table*) goes through the same method.
 
 ### Narrowing a page: `filter`
 
@@ -397,9 +561,18 @@ Three things about it are load-bearing:
 - **The alias is not optional.** MySQL and Postgres both refuse an unaliased
   derived table.
 
-The wrap is written in `connection.ts` beside the page SQL rather than in a
-driver, for the `LIMIT/OFFSET` reason: all three engines spell it identically. An
-engine that does not makes it a `Driver` method, not an `if` here.
+The wrap itself is written in `connection.ts` beside the page SQL, for the
+`pagingClause` reason: the outer `SELECT * FROM (…) squeal_sorted ORDER BY …`
+is spelled identically by all four engines. What goes *inside* the
+parenthesis is `Driver.innerSortWrap(sql)`, identity everywhere except SQL
+Server: T-SQL refuses an `ORDER BY` inside a derived table outright unless
+that statement also carries a `TOP`, `OFFSET` or `FOR XML`, so a statement
+that already ends in its own `ORDER BY` — exactly the case this wrap exists
+to override — needs `OFFSET 0 ROWS` appended before it can sit inside the
+parenthesis at all. Detected with a plain, unanchored `ORDER BY` scan rather
+than a real parse, the same complexity this file already accepts for
+stripping the trailing semicolon two bullets up — a missed detection costs
+the pre-existing SQL Server error, not silently wrong data.
 
 ## Capping a query's result
 
@@ -477,7 +650,7 @@ both, cached once per table.
 
 It is a driver method rather than a `db.query` the UI wrote, for the same reason
 `db.browse` is: the catalog query is per-engine, and only this side may write
-SQL. The two engines answer it differently and both are deliberate:
+SQL. Each engine answers it differently and all are deliberate:
 
 - **MySQL reads `information_schema.COLUMNS`, taking `COLUMN_TYPE`** — not
   `DATA_TYPE`, which drops the length and the sign (`varchar` where the column is
@@ -492,6 +665,15 @@ SQL. The two engines answer it differently and both are deliberate:
   The primary key comes off a `LEFT JOIN` to `pg_index` on `indisprimary` —
   `a.attnum = ANY(i.indkey)`, so a column matched by the one primary index is
   flagged and the absence of a match `COALESCE`s to false.
+- **SQL Server has no single function playing `format_type`'s role**, so
+  `mssql/types.ts::renderColumnType` is the one place this driver reassembles a
+  type string from parts rather than asking the engine for its own words —
+  `sys.columns` joined to `sys.types`, with length/precision/scale suffixed per
+  type family (`nvarchar`/`nchar` halve `max_length`, since it is a byte count
+  over UTF-16). The primary key comes off `sys.key_constraints` (`type = 'PK'`,
+  wire-padded to `char(2)` and trimmed before comparing — see *SQL Server,
+  reached through a pool of one*) joined through `sys.index_columns`, and a
+  view's columns come from `sys.objects`, not `sys.tables`, which is table-only.
 
 Three rules, and the last is the one that will bite:
 
@@ -846,34 +1028,51 @@ lose data silently, and this has bitten twice:
   `safeIntegers(true)` per statement for bun:sqlite. `bigNumberStrings` stays
   `false` for mysql2, so ordinary ids remain numbers and only values that would
   lose precision become strings — SQLite has no equivalent switch, so every
-  integer comes back a bigint there.
+  integer comes back a bigint there. Tedious already returns SQL Server's
+  `BIGINT` as a string with no config needed (verified by reading its own
+  `bigint.js`), which is the one type this rule holds for free on that engine.
 
 The rule: **show what the server sent.** An editor that quietly rewrites values
-is worse than useless.
+is worse than useless. **SQL Server's `DECIMAL`/`NUMERIC`/`MONEY`/`SMALLMONEY`
+are the one disclosed exception to it**, not a fix pending: tedious computes
+these via a floating-point division before this driver ever sees the value,
+with no config flag or public hook that recovers the lost precision the way
+`valueHandler` recovers the date types (below, and *SQL Server, reached
+through a pool of one*) — see `docs/decisions.md`.
 
 `toDisplayValue` handles the rest — cells are JSON'd across the bridge, so
 `bigint` (which `JSON.stringify` throws on), `Buffer` (→ `0x…`), `Date` and
 objects (→ text) are flattened. Anything a driver can return must survive
-`JSON.stringify`; there is a test for exactly that.
+`JSON.stringify`; there is a test for exactly that. SQL Server's date/time
+values never reach this generic `Date` branch at all — `mssql/lifecycle.ts`'s
+`valueHandler` registrations turn them into the correct string before
+`toDisplayValue` is ever asked, per-type rather than through one shared
+fallback (a bare `TIME` cannot go through `.toISOString()`, which would glue
+a fabricated date onto it).
 
 ### Other rules worth keeping
 
 - **Rows as arrays, always** (`rowsAsArray` / `rowMode: 'array'`; `values()` for
-  bun:sqlite). Object rows collapse duplicate column names, so
-  `SELECT 1 AS x, 2 AS x` would lose a column. Column names come from the field
-  metadata instead — except on SQLite, whose *name* list collapses even when the
-  rows do not; see *An engine that is a file, not a server*.
+  bun:sqlite; `arrayRowMode: true` for mssql). Object rows collapse duplicate
+  column names, so `SELECT 1 AS x, 2 AS x` would lose a column. Column names
+  come from the field metadata instead — except on SQLite, whose *name* list
+  collapses even when the rows do not; see *An engine that is a file, not a
+  server*.
 - **No stacked statements** (`multipleStatements: false`), and this side is not
   what changed when the editor learned to run several. `db.query` takes one
   statement and always has; the UI splits its tab into statements and issues a
   `db.query` per statement, in order, stopping at the first failure — so every
   one is its own round trip on its own terms, with no transaction wrapped around
-  the batch. Turning this flag on would put the two engines back into
-  disagreement it exists to prevent: Postgres answers a stacked run with the
-  *last* statement's result and drops the rest, which is exactly the answer the
-  split was written to stop losing. See `docs/frontend.md`.
+  the batch. Turning this flag on would put MySQL back into the disagreement it
+  exists to prevent: Postgres (and SQL Server, which has no equivalent flag to
+  turn off in the first place) both answer a stacked run with the *last*
+  statement's result and drop the rest, which is exactly the answer the split
+  was written to stop losing — `mssql`'s `runBufferedQuery` picks
+  `recordsets[recordsets.length - 1]` for the identical reason the Postgres
+  driver takes `raw[raw.length - 1]`. See `docs/frontend.md`.
 - **System catalogs are hidden** from the tree (`information_schema`, `mysql`,
-  `performance_schema`, `sys`, `pg_catalog`).
+  `performance_schema`, `sys`, `pg_catalog`; `sys`, `INFORMATION_SCHEMA` and the
+  fixed database-role schemas for SQL Server).
 - **A relation carries its schema as a field**, and `Driver.qualify` is what
   turns the two into an identifier — see *A relation is a name and a schema*.
 - **A failed statement must not kill the connection.** Tested.
@@ -885,6 +1084,13 @@ failover, an administrator's `KILL`, a load balancer reaping a quiet socket. It
 is the everyday shape of an RDS IAM connection, which sits idle between queries
 behind exactly such a balancer. The extension cannot prevent it; what it must do
 is survive it, say so, and come back.
+
+Everything below is MySQL's and Postgres's story. SQL Server's is different
+enough, verified against a real container rather than assumed, that it gets
+its own telling under *SQL Server, reached through a pool of one* — the short
+version is that `ConnectionPool`'s pooling underneath recovers from the same
+`KILL` on its own, silently, before this app's code ever sees a failure, which
+is a real answer to the same question and not a gap.
 
 **The listener is the load-bearing part, and it looks like a nicety.** Both
 server libraries are EventEmitters that `emit('error')` when the socket dies with

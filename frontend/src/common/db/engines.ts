@@ -18,6 +18,7 @@ export interface Engine {
 export const ENGINES: Engine[] = [
     { value: 'postgres', label: 'PostgreSQL', defaultPort: 5432, defaultUser: 'postgres' },
     { value: 'mysql', label: 'MySQL', defaultPort: 3306, defaultUser: 'root' },
+    { value: 'mssql', label: 'SQL Server', defaultPort: 1433, defaultUser: 'sa' },
     // No port and no user: the address is a file path, which the form collects
     // into `config.database` -- see `ServerConfig`.
     { value: 'sqlite', label: 'SQLite', defaultPort: 0, defaultUser: '' },
