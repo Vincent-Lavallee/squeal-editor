@@ -29,7 +29,7 @@ export default function TableNodeHeader({
                 data-testid="diagram-node-name"
                 style={{
                     overflow: 'hidden',
-                    fontFamily: t.MONO,
+                    fontFamily: t.MONO_DATA,
                     fontSize: t.TEXT_BADGE,
                     fontWeight: 500,
                     textOverflow: 'ellipsis',

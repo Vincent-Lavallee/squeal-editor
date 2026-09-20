@@ -17,10 +17,12 @@ const barStyle: React.CSSProperties = {
     color: t.TEXT_MUTED,
 };
 
+// Matches the real grid's font (resultsGridStyles.ts) so column widths do not
+// shift when the skeleton swaps for actual rows.
 const tableStyle: React.CSSProperties = {
     borderCollapse: 'separate',
     borderSpacing: 0,
-    fontFamily: t.MONO,
+    fontFamily: t.MONO_DATA,
     fontSize: t.TEXT_BODY,
     whiteSpace: 'nowrap',
 };

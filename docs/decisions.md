@@ -506,6 +506,118 @@ icon-set one.
 
 ---
 
+## The chrome and mono fonts are bundled files, not OS substitutes
+
+`--font` and `--mono` named a typeface (`Inter`, a `ui-monospace`/`Cascadia
+Code`/`JetBrains Mono` stack) without ever shipping one, so every OS silently
+picked its own default sans-serif and monospace instead — nothing was actually
+standardized, and the two-string constant was decorative. Fixed by bundling
+`.woff2` files under `frontend/public/fonts/`, declared as `@font-face` rules
+at the top of `residual.css`.
+
+**Vendored, not an npm dependency.** The first pass reached for `@fontsource`
+packages — boring and mainstream over hand-rolled `@font-face` rules and
+committed binaries, the same call Remix Icon was above — and that is still
+where the files come from, but the package itself did not stay a dependency:
+the committed files under `public/fonts/` are the artifact, copied out of
+`@fontsource`'s `files/` folders once, the same way `icon.png` is a committed,
+generated artifact rather than something regenerated on every build (see
+*The icon is a committed PNG*, below). This keeps the font next to the rest of
+`public/` where a reader already looks for a static asset, and it means the
+files Vite ships are exactly the files reviewed in the diff that added them —
+no dependency version to bump and re-verify later. Regenerating them, if a
+family or a weight ever changes, means installing the fontsource package
+temporarily, copying its `files/` output and per-weight aggregate CSS (see
+below), and removing the dependency again; there is no script for this today
+because it has only ever run once.
+
+**`src: url()` in `residual.css` reads `../fonts/…`, not `./fonts/…`, and the
+difference is load-bearing.** `residual.css` lives in `frontend/src/styles/`
+and the font files land in `frontend/public/fonts/`, so a path relative to
+_this file's own location_ would need to climb out of `src/` first — but that
+is not actually what decides the right prefix. Vite bundles every imported CSS
+file, this one included, into one output stylesheet at `resources/assets/`,
+and a `url()` inside `@font-face` resolves relative to *that output file's*
+location, not the source file's, not the page's. `public/` copies straight to
+`resources/` (one level above `resources/assets/`), so `../fonts/…` is what
+lands on `resources/fonts/…` from there — `./fonts/…` instead resolves to the
+nonexistent `resources/assets/fonts/…` and every face 404s. This shipped once:
+`bun run build` succeeded, `fetch('./fonts/…')` from the page console returned
+200 (fetch resolves against the *page's* URL, a different base entirely), and
+the connect screen even looked right, because Segoe UI and Inter are close
+enough at that size and weight to hide a fallback in a screenshot. The tell
+was `document.fonts.check()` answering `false` and the one face actually
+touched on screen sitting at `status: 'error'` rather than `'unloaded'` — a
+`fetch` from the page proves the *file* is served, never that the *stylesheet
+referencing it* resolves to the same place.
+
+**Per-script subsets, not one file per family.** Each family is split into the
+same unicode-range subsets `@fontsource` ships it in (latin, latin-ext,
+cyrillic, cyrillic-ext, greek, greek-ext, vietnamese, wherever the upstream
+family has them) rather than a single "latin" file, because the data these
+fonts render is not this app's to constrain: a cell value, a table name, an
+error string are whatever the connected database holds, in whatever script its
+owner used. A `unicode-range`-scoped `@font-face` is what lets the browser skip
+a bundled face entirely for a codepoint it does not cover and fall through to
+the stack's own `system-ui`/`ui-monospace` — collapsing to one "latin" file per
+family would have silently turned any Cyrillic, Greek, or Vietnamese value into
+tofu, the opposite of the `Date`/`Number` rule's "show what the server sent."
+The per-subset split is also what keeps this cheap at runtime: a browser only
+pulls the subset a render actually touches, so bundling seven subsets does not
+mean seven downloads — verified against the built app, the connect screen
+(Latin-only chrome) loads only each family's `latin`/`latin-ext` subset, on
+demand, the same lazy behaviour a CDN-hosted Google Fonts `@font-face` block
+relies on, minus the network round-trip.
+
+**Still not fetched.** This does not reopen `docs/decisions.md`'s *Rejected:
+`@monaco-editor/react`* call — the files are committed and Vite bundles them
+into `resources/` at build time like every other asset, so nothing here
+touches the network at runtime. "Not fetched" was always about not blocking on
+a CDN, never about the font being absent from disk.
+
+**Named `Inter Variable` / `JetBrains Mono Variable` / `IBM Plex Mono`, matching
+the vendored `@font-face`, never the plain `Inter` / `JetBrains Mono` an
+OS-installed copy would answer to** — using the plain name risks silently
+picking up a different installed version instead of the bundled one. Each
+stack keeps a short generic fallback (`system-ui`, `ui-monospace`) for the
+instant before the bundled font is ready, not a named platform font — naming
+one is exactly the per-OS substitution this replaced.
+
+**A second mono font marks data apart from chrome.** `--mono` alone covered
+both a keycap and a cell value, so the two read as one kind of thing even
+though only one of them is content this app did not author. Split into
+`--mono` (chrome: keycaps, zoom %, a tool's own name, a literal command quoted
+in a dialog) and `--mono-data` (server/user content: cell values, SQL and JSON
+text, table/column names, connection host/port, error text, the assistant's
+model output, and both Monaco instances — the SQL editor and the JSON cell
+drawer) — see `docs/design-system.md`, *Type*, for the full rule and every call
+site. **JetBrains Mono stayed the chrome face** (least disruptive — it was
+already the previous single choice) and **IBM Plex Mono was picked for data**
+on the same "boring and mainstream" grounds as JetBrains Mono itself, chosen
+specifically for being visually close without being the same face: a reader
+should not need to consciously compare two strings side by side to tell a
+value from a label, but the two should not clash either, since a query result
+grid full of one font butting against a chrome toolbar in a visibly different
+one would read as an inconsistency rather than a signal.
+
+**Rejected: JetBrains Mono NL for data.** JetBrains ships a "no ligatures"
+build of the same face for exactly this kind of split, which would have made
+the two nearly pixel-identical except for ligatures. Rejected for being too
+close: the whole point is a reader can tell which is which without checking
+computed styles, and two builds of one typeface do not clear that bar the way
+a genuinely different typeface does.
+
+**IBM Plex Mono is vendored at 400/500/600 plus 400-italic, not the variable
+axis JetBrains Mono gets.** Plex Mono ships no variable build, so weights are
+separate static files; 400/500/600 are the three this app actually spends on
+data mono (grid headers and diagram node titles use 500/600), and the italic
+is for Monaco's SQL comment styling (`monaco.ts`'s `comment` token rule) —
+comments are the one place data mono renders in italic, and a synthesized
+oblique in place of the drawn italic is the kind of small mismatch this system
+otherwise verifies against the live widget rather than assumes.
+
+---
+
 ## Browsing a table is its own command, not a query the UI wrote
 
 **Why.** Opening a table used to mean the extension handing the UI a `previewSql`

@@ -31,7 +31,7 @@ export default function MacosTitlebarTitle({
                 }}
             >
                 {connected ? (
-                    <span style={{ fontFamily: t.MONO }}>{serverLabel}</span>
+                    <span style={{ fontFamily: t.MONO_DATA }}>{serverLabel}</span>
                 ) : (
                     'Squeal Editor'
                 )}

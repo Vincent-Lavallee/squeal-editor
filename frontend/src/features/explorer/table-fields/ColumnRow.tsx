@@ -37,7 +37,7 @@ export default function ColumnRow({ column, pad }: { column: ColumnInfo; pad: nu
                     whiteSpace: 'nowrap',
                     fontSize: t.TEXT_BADGE,
                     color: t.TEXT,
-                    fontFamily: t.MONO,
+                    fontFamily: t.MONO_DATA,
                 }}
             >
                 {column.name}

@@ -204,7 +204,7 @@ it, and nothing else in the app has that excuse.
 | a wait that is not instant | `<ThinkingOrb state="shaping" size={20} theme="dark">` from the `thinking-orbs` package, beside the phase text of the thing that is actually waiting: `Connecting…` / `Authenticating with AWS…` in `SavedConnectionList` while picking a saved connection, `Running for {elapsed}s…` in the results bar (`ResultsTable`) while a query runs, and `Thinking…` in the assistant thread (`Thread`) while a turn is in flight. The assistant only shows it in the gap that is genuinely silent — after the turn starts and before the first streamed token — because streaming text is its own evidence of life and a mark beside it would be the app saying the same thing twice. Deliberately **not** on a button (`connect-submit`, `run-btn`) — the button already names the state in its own label, and a second busy mark on the control just pressed is noise next to a status line that has none. `theme="auto"`: the package resolves light-vs-dark by walking up from the element for an ancestor `data-theme` (falling back to `prefers-color-scheme`), and `useThemeAttribute` stamps exactly that attribute on `<html>` — see *Theme*, above — so `"auto"` reads this app's own setting rather than a signal that does not describe it. `state="shaping"` is its dotted-outline circle -> triangle -> square cycle; the other five states are unrelated animations (orbits, globe, rubik, wave, ribbon) this app has no use for. A hand-rolled `clip-path` version, then a hand-rolled `<canvas>` version modelled on this same package's technique, both lived here first — see `decisions.md`. |
 | card / panel | Inline: `background: BG, border: 1px solid BORDER_STRONG, borderRadius: RADIUS_LG, padding: GAP_XL`. Never a shadow. |
 | section label | `<Field label="…">` from `components/Field.tsx`, or use the `Label` export directly. 11px, uppercase, letter-spaced, `TEXT_MUTED`. |
-| identifier / value | `<Mono>` from `components/Mono.tsx`, or inline `fontFamily: MONO`. SQL, column names and cell values are monospace. |
+| identifier / value | `<Mono data>` from `components/Mono.tsx`, or inline `fontFamily: MONO_DATA`. SQL, column names and cell values are monospace, in the data face — see *Type*, below, for why it is a second font rather than `MONO`. |
 | note | `<Note kind="muted">` / `<Note kind="ok">` / `<Note kind="error">` from `components/Note.tsx`. |
 | callout | `<Callout>` from `components/Callout.tsx`. Red border + red background + red text, which is the default because it is nearly always an error. `tone="success"` is the green counterpart (green border + `GREEN_BG` + green text), used by the connect form's *Test* result and by what an export wrote or an import merged. The tinted background is the one thing the "one background" rule is not about: it says which *kind* this is, not that the box is raised. |
 | query error | Inline in `ResultsTable`, `data-testid="note-error"`. The callout's shape for the one error that fills a pane: the server's text in `MONO`, `pre-wrap`, inside a 1px `--red` box on `RED_BG`. Its controls sit in **one flex row** in the top-right corner — *Diagnose with AI* (`AssistantIcon`, `data-testid="diagnose-error"`, drawn only when an API key is stored) then *Copy error* — rather than each being absolutely positioned, so a second one cannot land on top of the first. They keep `RED_TEXT` and no background: this is chrome inside a semantic surface, and an accent button here would be a second thing shouting in a box that is already loud. |
@@ -383,10 +383,35 @@ Two radius families, and they are not interchangeable:
 | `--text-label` 11px | uppercase letter-spaced muted labels |
 | `--text-micro` 10px | the connection rail only — a compact chrome bar below the general floor; never body copy |
 
-`--font` is Inter with a system fallback. It is **not** loaded from the network —
-the app is offline-capable and a desktop app that blocks on a font CDN is a bug.
-On Windows it falls back to Segoe UI, which is close enough that the reference
-still reads correctly.
+Three bundled families, never an OS-installed one: `--font` (Inter Variable),
+`--mono` (JetBrains Mono Variable), `--mono-data` (IBM Plex Mono). All three
+are committed `.woff2` files under `frontend/public/fonts/`, declared once as
+`@font-face` rules at the top of `residual.css` — vendored rather than an npm
+import, so the files sit in the repo where the rest of `public/` does and
+Vite ships them as static assets with no build-time indirection. **None of
+them is fetched from the network** — the app is offline-capable and a desktop
+app that blocks on a font CDN is a bug — and each face is split into the same
+per-script subsets (latin, latin-ext, cyrillic, cyrillic-ext, greek, greek-ext,
+vietnamese, wherever the upstream family has them) so a codepoint outside the
+bundle falls through to the stack's own `system-ui`/`ui-monospace` fallback
+instead of rendering tofu. This is what makes the app render identically on
+Windows, macOS, and Linux regardless of what happens to be installed on the
+machine — see `docs/decisions.md`.
+
+**`--mono` is chrome; `--mono-data` is content.** The split is what the two
+fonts are *for*, not a stylistic pick: `--mono` marks monospace chrome the app
+itself authored (a keycap, a zoom percentage, a tool's own name, a literal
+command in a dialog's prose), and `--mono-data` marks server/user content
+rendered verbatim (cell values, SQL and JSON text, table/column names,
+connection host/port, error text, the assistant's model output) — the same
+"show what the server sent" instinct behind the `Date`/`Number` rule, spent on
+type instead. `<Mono>` (`components/Mono.tsx`) takes a `data` boolean for
+exactly this choice; every other call site names `t.MONO` or `t.MONO_DATA`
+directly. Get the two mixed up and the signal is gone: a keycap in the data
+font or a cell value in the chrome font both look identical to today's reader,
+but not to next week's, when a second data font is picked and the wrong call
+sites move with it. See `docs/decisions.md` for the full split and why the two
+faces are JetBrains Mono and IBM Plex Mono specifically.
 
 ## The app icon
 

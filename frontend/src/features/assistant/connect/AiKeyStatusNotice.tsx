@@ -19,7 +19,7 @@ export default function AiKeyStatusNotice({ status }: { status: AiStatus }) {
                 <div
                     style={{
                         marginTop: t.GAP_SM,
-                        fontFamily: t.MONO,
+                        fontFamily: t.MONO_DATA,
                         wordBreak: 'break-word',
                     }}
                 >

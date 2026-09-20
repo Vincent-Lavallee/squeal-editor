@@ -8,7 +8,7 @@ const variants: Record<NoteKind, CSSProperties> = {
     ok: { color: t.GREEN },
     error: {
         color: t.RED_TEXT,
-        fontFamily: t.MONO,
+        fontFamily: t.MONO_DATA,
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
     },

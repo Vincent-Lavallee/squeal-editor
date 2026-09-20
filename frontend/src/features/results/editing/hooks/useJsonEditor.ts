@@ -29,7 +29,7 @@ export function useJsonEditor(host: React.RefObject<HTMLDivElement | null>, init
             automaticLayout: true,
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
-            fontFamily: token('--mono'),
+            fontFamily: token('--mono-data'),
             fontSize: px('--text-body'),
             lineHeight: Math.round(px('--text-body') * 1.6),
             tabSize: 2,

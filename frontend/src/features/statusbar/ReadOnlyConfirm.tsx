@@ -39,8 +39,8 @@ export default function ReadOnlyConfirm({ environment, name, onConfirm, onCancel
                         lineHeight: 1.5,
                     }}
                 >
-                    It will stop refusing writes. Type <Mono>{environment}</Mono> to confirm you
-                    mean to write to a <Mono>{environment}</Mono> database.
+                    It will stop refusing writes. Type <Mono data>{environment}</Mono> to confirm
+                    you mean to write to a <Mono data>{environment}</Mono> database.
                 </p>
 
                 <Field label="" htmlFor="confirm-env">

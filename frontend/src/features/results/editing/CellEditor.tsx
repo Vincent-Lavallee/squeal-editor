@@ -22,7 +22,7 @@ const inputStyle: React.CSSProperties = {
     outline: 'none',
     background: 'transparent',
     color: t.TEXT,
-    fontFamily: t.MONO,
+    fontFamily: t.MONO_DATA,
     fontSize: t.TEXT_BODY,
     caretColor: t.ACCENT,
 };

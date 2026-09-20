@@ -140,7 +140,7 @@ export const columnSize = (width: number | undefined): React.CSSProperties =>
 export const gridTableStyle: React.CSSProperties = {
     borderCollapse: 'separate',
     borderSpacing: 0,
-    fontFamily: t.MONO,
+    fontFamily: t.MONO_DATA,
     fontSize: t.TEXT_BODY,
     whiteSpace: 'nowrap',
 };
