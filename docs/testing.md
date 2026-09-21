@@ -54,6 +54,19 @@ twice over — once plain, once with `distribution: mariadb` — and
 provisions test databases without Docker" in `docs/decisions.md` for why
 Docker isn't an option on the Windows runner `test-ui` needs. Locally,
 `bun run test:db:up` is still Docker; nothing here changes for a dev machine.
+
+**Running `shogo82148/actions-setup-mysql` twice in one job means two client
+installs sharing one `PATH`, and native mode's bare `mysqladmin`/`mysql`
+commands resolve to whichever one ran *last*.** Found against a real CI run,
+not assumed: MariaDB's client, once it wins that resolution, rejects MySQL's
+self-signed cert (`--skip-ssl` on every native probe/exec in
+`tests/fixtures/db.ts` is why) and cannot load MySQL 8's default
+`caching_sha2_password` auth plugin at all (`default-authentication-plugin=
+mysql_native_password` on the MySQL step's own `my-cnf` is why — a plugin
+every client here already understands natively, nothing to load). Both are
+CI-only; Docker mode never has this collision, since each engine's `docker
+exec` reaches into its own container's own client.
+
 SQL Server's port is the one place native and local disagree: the
 `mssqlsuite` action has no documented port override the other two actions
 have, so native mode is left on the real default (1433) rather than the
