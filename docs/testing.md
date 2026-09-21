@@ -31,7 +31,7 @@ mutated its own fixture (making it pass once and fail on re-run), one matched
 ## Setup
 
 ```bash
-bun run test:db:up     # throwaway MySQL + Postgres + SQL Server on 53306 / 55432 / 51433, and the SQLite file
+bun run test:db:up     # throwaway MySQL + MariaDB + Postgres + SQL Server on 53306 / 53316 / 55432 / 51433, and the SQLite file
 bun test               # extension suite (~10s); UI suite skips
 bun run test:ui        # builds, then drives the real app (Windows-only, ~4min)
 bun run test:db:down   # remove them
@@ -47,8 +47,9 @@ instrumentation reaches.
 
 **CI seeds the same way without Docker.** `.github/workflows/ci.yml` runs
 `test:db:up` with `SQUEAL_TEST_DB_NATIVE=1`, which points `tests/fixtures/db.ts`
-at MySQL/Postgres/SQL Server already provisioned as native services on the
-runner (`ikalnytskyi/action-setup-postgres`, `shogo82148/actions-setup-mysql`,
+at MySQL/MariaDB/Postgres/SQL Server already provisioned as native services on
+the runner (`ikalnytskyi/action-setup-postgres`, `shogo82148/actions-setup-mysql`
+twice over — once plain, once with `distribution: mariadb` — and
 `potatoqualitee/mssqlsuite`) instead of starting Docker containers — see "CI
 provisions test databases without Docker" in `docs/decisions.md` for why
 Docker isn't an option on the Windows runner `test-ui` needs. Locally,
@@ -133,9 +134,12 @@ started. It is the same stray-process family, one step upstream — and
 therefore begins with `tests/helpers/reap.ts`, which is `reapStaleApp(true)`:
 the same kill, forced, without waiting to be told something is on the port.
 
-The containers are named `squeal-pg` / `squeal-mysql` / `squeal-mssql` and use
-non-default ports so they cannot collide with anything real you are running.
-`test:db:up` is re-runnable; it drops and reseeds. SQL Server's seed script is
+The containers are named `squeal-pg` / `squeal-mysql` / `squeal-mariadb` /
+`squeal-mssql` and use non-default ports so they cannot collide with anything
+real you are running. `test:db:up` is re-runnable; it drops and reseeds. MariaDB
+reuses MySQL's own seed text verbatim, deliberately — it exists to prove
+`mysqlDriver` (`docs/extension.md`) speaks to a real MariaDB server the same way
+it speaks to MySQL, not to hold a fixture of its own. SQL Server's seed script is
 a multi-batch `sqlcmd` script (`GO` separators wherever a statement has to be
 the first in its batch — `CREATE VIEW`/`TRIGGER`/`FUNCTION`/`PROCEDURE`, and
 the `CREATE DATABASE`/`USE` pair at the top), run through `mssql-tools18`'s
@@ -194,9 +198,20 @@ Neutralino: it hosts the WebSocket, spawns the extension exactly as the app does
 and dispatches events at it. So the transport under test is the real one — stdin
 init, the `app.broadcast` envelope, `reqId` correlation.
 
-All four engines run the **same** `describe.each` block. The UI cannot tell
+All five engines run the **same** `describe.each` block. The UI cannot tell
 engines apart, so anything asymmetric is a bug. A new engine should be able to
 join that block unchanged.
+
+MariaDB joining it found a real gap the moment it ran against a real
+container, not a driver bug: the row-cap test raises MySQL's recursion-depth
+session variable before a deliberately oversized recursive CTE, and MariaDB
+has no such variable at all (`Unknown system variable
+'cte_max_recursion_depth'`) — it carries the identical default limit (1000)
+under its own name, `max_recursive_iterations`. See *MariaDB, without a
+driver of its own* in `docs/extension.md` for the full story; the shape worth
+noting here is that this is exactly what "the contract, not the wire
+protocol" buys — a driver shared bit-for-bit with MySQL still needed a real
+MariaDB server to prove a session default wasn't silently assumed.
 
 SQLite joining it is what that claim was worth: it cost three lines of the block,
 and **all three were the block over-assuming**, not the engine misbehaving. The
@@ -253,14 +268,20 @@ gone — the behaviour it replaced took the bridge's whole 60s timeout.
 
 ### The one-engine blocks, and why they are not the asymmetry rule broken
 
-*mysql compound statements* runs against MySQL alone, and the other engines
-are **absent rather than skipped** — the same shape as the dropped-connection
-block above. The rule is that anything in the *contract* must be symmetric,
-because the UI cannot tell engines apart. A `DELIMITER` block is not in the
-contract: it exists because MySQL has no in-language way to quote a routine body,
-where Postgres has dollar-quoting and SQLite has no routines at all. There is no
-question here for the other two to answer, so a skip would be claiming there was
-one and that it was being ducked.
+*mysql compound statements* runs as a `describe.each` over MySQL **and**
+MariaDB, and Postgres and SQLite are **absent rather than skipped** — the same
+shape as the dropped-connection block above. The rule is that anything in the
+*contract* must be symmetric, because the UI cannot tell engines apart. A
+`DELIMITER` block is not in the contract: it exists because MySQL (and
+MariaDB) has no in-language way to quote a routine body, where Postgres has
+dollar-quoting and SQLite has no routines at all. There is no question here
+for those two to answer, so a skip would be claiming there was one and that it
+was being ducked. MariaDB joins MySQL here rather than being absent the way
+Postgres and SQLite are, and deliberately: sharing `mysqlDriver` is a claim
+about the wire protocol, not about the server's parser or its
+`multipleStatements: false` refusal, and the row-cap test right above this
+block already found the two servers disagreeing about a session default —
+reason enough not to assume they agree about this one without asking.
 
 *mssql compound statements* is its own block beside it rather than a shared
 one, for the identical reason: SQL Server carries a routine body's semicolons

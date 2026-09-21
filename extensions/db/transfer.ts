@@ -56,6 +56,7 @@ const NOT_OURS = 'That file is not a Squeal connections file.';
  */
 const KNOWN_ENGINES: Record<EngineType, true> = {
     mysql: true,
+    mariadb: true,
     postgres: true,
     sqlite: true,
     mssql: true,

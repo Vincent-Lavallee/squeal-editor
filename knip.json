@@ -1,6 +1,15 @@
 {
     "$schema": "https://unpkg.com/knip@6/schema.json",
-    "ignoreBinaries": ["pkill", "psql", "pg_isready", "mysql", "mysqladmin", "sqlcmd"],
+    "ignoreBinaries": [
+        "pkill",
+        "psql",
+        "pg_isready",
+        "mysql",
+        "mysqladmin",
+        "mariadb",
+        "mariadb-admin",
+        "sqlcmd"
+    ],
     "rules": {
         "exports": "off",
         "types": "off",

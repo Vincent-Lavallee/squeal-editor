@@ -1,8 +1,14 @@
 /**
- * Throwaway MySQL + Postgres + SQL Server for the test suite.
+ * Throwaway MySQL + MariaDB + Postgres + SQL Server for the test suite.
  *
  *   bun run test:db:up     start and seed
  *   bun run test:db:down   remove
+ *
+ * MariaDB gets its own real server rather than a config pointed at the MySQL
+ * container, and its own entry in `tests/extension.test.ts`'s `describe.each`
+ * -- reusing `mysqlDriver` (`docs/extension.md`) is a claim about the wire
+ * protocol, and the only way to hold this project's own "verify against a
+ * real database" rule to that claim is to actually run one.
  *
  * The seed deliberately contains the values that have caused real bugs: a BIGINT
  * past 2^53, a timezone-less DATETIME, NULLs, a BLOB, JSON, a view, and (on
@@ -55,6 +61,8 @@ import { Database } from 'bun:sqlite';
 import { rmSync } from 'node:fs';
 
 import {
+    MARIADB,
+    MARIADB_CONTAINER,
     MSSQL,
     MSSQL_CONTAINER,
     MYSQL,
@@ -430,6 +438,23 @@ async function mysqlExec(sql: string) {
         : $`docker exec ${MYSQL_CONTAINER} mysql -uroot -psecret -e ${sql}`.quiet().nothrow();
 }
 
+// `mariadb`/`mariadb-admin`, not `mysql`/`mysqladmin` -- the newer names, which
+// both the official image and the packages `shogo82148/actions-setup-mysql`
+// installs for `distribution: mariadb` ship as the primary client, unlike the
+// `mysql` compatibility symlink whose survival across a version this fixture
+// does not control is not something to depend on.
+async function mariadbPing() {
+    return NATIVE
+        ? $`mariadb-admin ping -h 127.0.0.1 -P ${MARIADB.port} -uroot -psecret`.quiet().nothrow()
+        : $`docker exec ${MARIADB_CONTAINER} mariadb-admin ping -uroot -psecret`.quiet().nothrow();
+}
+
+async function mariadbExec(sql: string) {
+    return NATIVE
+        ? $`mariadb -h 127.0.0.1 -P ${MARIADB.port} -uroot -psecret -e ${sql}`.quiet().nothrow()
+        : $`docker exec ${MARIADB_CONTAINER} mariadb -uroot -psecret -e ${sql}`.quiet().nothrow();
+}
+
 // `sqlcmd` itself is what `GO` needs -- it is the client that reads that word
 // as a batch separator, the same role the `mysql`/`psql` CLIs play for
 // `DELIMITER`/dollar-quoting. Native mode expects it already on the runner's
@@ -465,6 +490,9 @@ export async function up(): Promise<void> {
         await $`docker run -d --name ${MYSQL_CONTAINER} -e MYSQL_ROOT_PASSWORD=secret -p 53306:3306 mysql:8`
             .quiet()
             .nothrow();
+        await $`docker run -d --name ${MARIADB_CONTAINER} -e MARIADB_ROOT_PASSWORD=secret -p 53316:3306 mariadb:11`
+            .quiet()
+            .nothrow();
         await $`docker run -d --name ${MSSQL_CONTAINER} -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=${MSSQL.password} -p 51433:1433 mcr.microsoft.com/mssql/server:2022-latest`
             .quiet()
             .nothrow();
@@ -473,6 +501,10 @@ export async function up(): Promise<void> {
     await waitFor('postgres', async () => (await pgReady()).exitCode === 0);
     await waitFor('mysql', async () => {
         const r = await mysqlPing();
+        return r.exitCode === 0 && r.stdout.toString().includes('alive');
+    });
+    await waitFor('mariadb', async () => {
+        const r = await mariadbPing();
         return r.exitCode === 0 && r.stdout.toString().includes('alive');
     });
     // SQL Server takes noticeably longer than the other two to start accepting
@@ -488,6 +520,11 @@ export async function up(): Promise<void> {
     await mysqlExec('DROP DATABASE IF EXISTS shop');
     await mysqlExec(MYSQL_SEED);
 
+    // Same seed text as MySQL, on purpose: MariaDB is here to prove mysql2 talks
+    // to a real MariaDB server the same way, not to hold a fixture of its own.
+    await mariadbExec('DROP DATABASE IF EXISTS shop');
+    await mariadbExec(MYSQL_SEED);
+
     // MSSQL_SEED drops and recreates `shop` itself -- see its own comment.
     await mssqlExec(MSSQL_SEED);
 
@@ -499,7 +536,7 @@ export async function up(): Promise<void> {
 
 export async function down(): Promise<void> {
     if (!NATIVE)
-        await $`docker rm -f ${PG_CONTAINER} ${MYSQL_CONTAINER} ${MSSQL_CONTAINER}`
+        await $`docker rm -f ${PG_CONTAINER} ${MYSQL_CONTAINER} ${MARIADB_CONTAINER} ${MSSQL_CONTAINER}`
             .quiet()
             .nothrow();
     rmSync(SQLITE_FILE, { force: true });

@@ -20,6 +20,13 @@
  * engine runs the *same* contract tests, which is what keeps them
  * interchangeable. Nothing in the UI or the transport changes.
  *
+ * Step 2 is skippable for an engine that is wire- and SQL-compatible with one
+ * already here -- MariaDB's `case` falls through to `mysqlDriver` rather than
+ * getting its own folder, because there is no daylight between them for
+ * mysql2 to paper over. Reach for a real folder the moment that stops being
+ * true for some catalog query or type; two engines sharing a driver only
+ * stays correct while they are actually the same engine underneath.
+ *
  * **Import this barrel, never a file beside it**, the same rule
  * `shared/protocol/` follows: it is what lets a helper move between `common.ts`
  * and an engine without touching a caller. The one exception is the engine files
@@ -51,7 +58,10 @@ export { sqliteDriver } from './sqlite/index.ts';
  */
 export function withDriver<R>(type: EngineType, use: <C>(driver: Driver<C>) => R): R {
     switch (type) {
+        // MariaDB is not a new driver -- it is mysql2 speaking to a different
+        // server binary over the same wire protocol. See docs/extension.md.
         case 'mysql':
+        case 'mariadb':
             return use(mysqlDriver);
         case 'postgres':
             return use(postgresDriver);

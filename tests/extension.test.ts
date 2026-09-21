@@ -1,5 +1,6 @@
 /**
- * Exercises the extension against real MySQL, Postgres and SQLite.
+ * Exercises the extension against real MySQL, MariaDB, Postgres, SQL Server and
+ * SQLite.
  *
  *   bun run test:db:up   (once)
  *   bun test tests/extension.test.ts
@@ -7,7 +8,7 @@
  * These are not unit tests on purpose: every bug found so far -- BIGINT rounding,
  * timezone-shifted dates, orphaned processes -- was invisible to a mock and only
  * showed up against a real server. SQLite is a real database here too, just one
- * that is a file rather than a container: `test:db:up` seeds all three.
+ * that is a file rather than a container: `test:db:up` seeds all five.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -28,7 +29,7 @@ import type {
     TableInfo,
     TablePage,
 } from '../shared/protocol/index.ts';
-import { FIXTURE_DB, MSSQL, MYSQL, PG, SQLITE, SQLITE_FILE } from './fixtures/config.ts';
+import { FIXTURE_DB, MARIADB, MSSQL, MYSQL, PG, SQLITE, SQLITE_FILE } from './fixtures/config.ts';
 import { startHarness, type Harness } from './helpers/harness.ts';
 
 const EXPORT_DIR = mkdtempSync(join(tmpdir(), 'squeal-export-'));
@@ -117,6 +118,13 @@ describe.each([
     {
         label: 'mysql',
         config: MYSQL,
+        fixtureDb: FIXTURE_DB,
+        defaultSchema: undefined,
+        supportsOverloads: false,
+    },
+    {
+        label: 'mariadb',
+        config: MARIADB,
         fixtureDb: FIXTURE_DB,
         defaultSchema: undefined,
         supportsOverloads: false,
@@ -1343,6 +1351,13 @@ describe.each([
                 // session setting, not a privilege, and it persists for the capped
                 // query issued right after on the same connection.
                 await query('SET SESSION cte_max_recursion_depth = 20000');
+            } else if (label === 'mariadb') {
+                // Same limit, same default (1000), a different variable -- MariaDB
+                // never adopted MySQL's name and has no `cte_max_recursion_depth` at
+                // all (`Unknown system variable`, caught by running this test against
+                // a real MariaDB container). `max_recursive_iterations` is its own
+                // spelling of the identical setting.
+                await query('SET SESSION max_recursive_iterations = 20000');
             }
             const sql =
                 label === 'postgres'
@@ -1702,19 +1717,27 @@ describe.each([
  * `splitStatements` (in the frontend, with its own suite) consumes the directive
  * and hands the routine body over whole, semicolons and all. That is only worth
  * anything if the *server* agrees the body is one statement -- which is the
- * claim no unit test can make, because it is a claim about mysqld's parser and
- * about a client running `multipleStatements: false`. If it did not hold, the
- * split would look right and every routine anyone wrote would still fail.
+ * claim no unit test can make, because it is a claim about the server's parser
+ * and about a client running `multipleStatements: false`. If it did not hold,
+ * the split would look right and every routine anyone wrote would still fail.
  *
- * MySQL alone, and not skipped elsewhere but absent: Postgres dollar-quotes a
- * body and SQLite has no routines, so neither has the question.
+ * MySQL and MariaDB, and not skipped elsewhere but absent: Postgres
+ * dollar-quotes a body and SQLite has no routines, so neither has the
+ * question. MariaDB shares `mysqlDriver` (`docs/extension.md`), but sharing a
+ * driver is not the same claim as sharing a parser -- the row-cap test right
+ * above this one found a real divergence between the two servers on a
+ * different session default, which is exactly why this block runs against
+ * both rather than assuming a shared client library implies a shared answer.
  */
-describe('mysql compound statements', () => {
+describe.each([
+    ['mysql', MYSQL],
+    ['mariadb', MARIADB],
+] as const)('%s compound statements', (label, config) => {
     let connectionId: string;
     const routine = 'split_probe';
 
     beforeAll(async () => {
-        connectionId = ((await h.ok('db.connect', { config: MYSQL })) as { connectionId: string })
+        connectionId = ((await h.ok('db.connect', { config })) as { connectionId: string })
             .connectionId;
     });
 

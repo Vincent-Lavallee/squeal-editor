@@ -8168,3 +8168,54 @@ UI regardless of what any one engine's toggle can enforce — narrowing it to
 "every engine except this one" would be a second, engine-aware copy of a
 policy that is supposed to have one answer. The toggle being weaker on this
 engine is a property of the guard, not a reason to stop offering it.
+
+## MariaDB reuses `mysqlDriver` wholesale, rather than getting its own folder
+
+**MariaDB is a distinct, selectable `EngineType`, but not a distinct driver.**
+`withDriver`'s `mariadb` case falls straight through to the same `mysqlDriver`
+object `mysql` resolves to — no `drivers/mariadb/` folder, no second copy of
+the catalog queries or the quoting. *Rejected: writing a real driver folder
+that duplicated `mysql/`'s files line for line.* Every engine folder here
+exists to hold what is actually different about that engine's SQL; MariaDB
+speaks to mysql2 over the identical wire protocol, so a second folder would
+have held nothing but a copy-paste of the first, and the two would have had to
+change in lockstep forever — exactly the drift `docs/extension.md`'s "never an
+edit into somebody else's engine" rule exists to prevent, aimed at a folder
+with nothing of its own to say.
+
+**This is a narrow exception, not a precedent for "engines that are similar
+enough."** It holds only because there is, today, no catalog query, no type
+rendering and no quoting rule in this codebase that MySQL and MariaDB answer
+differently — an empirical claim, not an assumption: the full contract suite
+(`tests/extension.test.ts`) runs unchanged against a real MariaDB container,
+same as every other engine. The day one such difference turns up, MariaDB
+gets a real folder like everyone else; `docs/extension.md`'s *MariaDB, without
+a driver of its own* names this explicitly so a future reader does not read
+the shared object as "MariaDB support is a stub."
+
+**A shared driver is not a shared server, and the row-cap contract test found
+the gap the first time it ran.** MySQL's default recursion depth
+(`cte_max_recursion_depth`, 1000) is raised before that test's oversized
+recursive CTE; MariaDB has no variable by that name at all and answers
+`Unknown system variable` — its own default cap is the identical 1000, spelled
+`max_recursive_iterations` instead. Nothing about *connecting* differs; this
+is purely a session default two otherwise wire-identical servers happen to
+name differently, and it would have been invisible to anything short of
+running the actual contract suite against a real MariaDB binary — see
+`docs/testing.md`. The same reasoning is why *mysql compound statements*
+became a `describe.each` over both engines rather than staying MySQL-only:
+sharing a driver is a claim about SQL and quoting, not about the server's own
+parser accepting a `BEGIN … END` body or refusing two statements stacked on
+one connection, and the row-cap gap was reason enough to check rather than
+assume.
+
+**No icon.** The backlog item that asked for this named "own label, own
+icon," but no engine in this app has an icon today — MySQL, Postgres, SQLite
+and SQL Server are all distinguished by label text alone (a `Badge`, a
+`Select` option), and `docs/design-system.md`'s icon rules (size fixed,
+colour always inherited from `currentColor`) have no room for a multicolour
+brand mark. *Rejected: introducing a first icon, for one engine, ahead of
+whether the other four would ever get one.* MariaDB got the same treatment
+every other engine already has — a label — rather than a new visual pattern
+built to fit a backlog sentence written before anyone checked what the app
+actually does today.

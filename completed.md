@@ -1107,3 +1107,11 @@ This is a record, not a plan. Nothing here is waiting on anything.
   browse and edit the grid, table/trigger/function DDL, and the relationship
   diagram — the whole surface `Driver` already declares, not a connect-only
   first pass.
+
+- **2026-09-20** — **Add MariaDB as its own engine choice** — MariaDB already connects today,
+  silently, through the MySQL driver, since it speaks the same wire protocol
+  — but it has no identity of its own anywhere: the connect form and
+  connection list only ever offer MySQL. Make MariaDB a distinct, selectable
+  engine (own label, own icon) reusing the MySQL driver underneath, and give
+  the test setup a real MariaDB container alongside MySQL and Postgres rather
+  than assuming mysql2 behaves identically against both servers.
