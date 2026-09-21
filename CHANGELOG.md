@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.21.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.20.0...v0.21.0) (2026-09-21)
+
+
+### Features
+
+* Added maria db support ([#70](https://github.com/Vincent-Lavallee/squeal-editor/issues/70)) ([d56e565](https://github.com/Vincent-Lavallee/squeal-editor/commit/d56e5655b3d27b15545ae5387f6d221657c0e543))
+* Added mssql support ([#69](https://github.com/Vincent-Lavallee/squeal-editor/issues/69)) ([38605d7](https://github.com/Vincent-Lavallee/squeal-editor/commit/38605d7633142c90e5cd99da3d480ef2a8dc603d))
+* Hide columns ([#65](https://github.com/Vincent-Lavallee/squeal-editor/issues/65)) ([cb96015](https://github.com/Vincent-Lavallee/squeal-editor/commit/cb96015c531945a53f5e093905836318f948fd2b))
+* Standardized fonts ([#68](https://github.com/Vincent-Lavallee/squeal-editor/issues/68)) ([b7fc726](https://github.com/Vincent-Lavallee/squeal-editor/commit/b7fc726887fc3ec1df4a4e9a4a23db90c1244918))
+
 ## [0.20.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.19.1...v0.20.0) (2026-09-13)
 
 
