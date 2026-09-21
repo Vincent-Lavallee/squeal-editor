@@ -431,9 +431,21 @@ async function pgReady() {
         : $`docker exec ${PG_CONTAINER} pg_isready -U postgres`.quiet().nothrow();
 }
 
+// `--skip-ssl` in native mode only, and load-bearing: two
+// `shogo82148/actions-setup-mysql` invocations in one job (MySQL, then
+// MariaDB) each prepend their own bin dir to PATH, so the bare `mysqladmin`
+// this runs actually resolves to whichever ran *last* -- MariaDB's, once
+// MariaDB is provisioned after MySQL -- and that client's TLS defaults reject
+// MySQL's self-signed cert with `self-signed certificate in certificate
+// chain`, found by running this exact job in CI rather than assumed. Neither
+// throwaway server needs a verified channel, so disabling TLS client-side
+// sidesteps the cross-vendor cert mismatch entirely rather than chasing which
+// binary PATH resolves to.
 async function mysqlPing() {
     return NATIVE
-        ? $`mysqladmin ping -h 127.0.0.1 -P ${MYSQL.port} -uroot -psecret`.quiet().nothrow()
+        ? $`mysqladmin ping -h 127.0.0.1 -P ${MYSQL.port} -uroot -psecret --skip-ssl`
+              .quiet()
+              .nothrow()
         : $`docker exec ${MYSQL_CONTAINER} mysqladmin ping -uroot -psecret`.quiet().nothrow();
 }
 
@@ -450,7 +462,9 @@ async function pgExec(sql: string, database = 'postgres') {
 
 async function mysqlExec(sql: string) {
     return NATIVE
-        ? $`mysql -h 127.0.0.1 -P ${MYSQL.port} -uroot -psecret -e ${sql}`.quiet().nothrow()
+        ? $`mysql -h 127.0.0.1 -P ${MYSQL.port} -uroot -psecret --skip-ssl -e ${sql}`
+              .quiet()
+              .nothrow()
         : $`docker exec ${MYSQL_CONTAINER} mysql -uroot -psecret -e ${sql}`.quiet().nothrow();
 }
 
@@ -458,16 +472,24 @@ async function mysqlExec(sql: string) {
 // both the official image and the packages `shogo82148/actions-setup-mysql`
 // installs for `distribution: mariadb` ship as the primary client, unlike the
 // `mysql` compatibility symlink whose survival across a version this fixture
-// does not control is not something to depend on.
+// does not control is not something to depend on. `--skip-ssl` in native mode
+// for `mysqlPing`'s own reason, applied symmetrically: whichever server's
+// setup step runs first has *its* bin dir shadowed on PATH once the second
+// one prepends its own, so this pair is just as exposed to resolving the
+// other vendor's client and hitting the identical cert mismatch in reverse.
 async function mariadbPing() {
     return NATIVE
-        ? $`mariadb-admin ping -h 127.0.0.1 -P ${MARIADB.port} -uroot -psecret`.quiet().nothrow()
+        ? $`mariadb-admin ping -h 127.0.0.1 -P ${MARIADB.port} -uroot -psecret --skip-ssl`
+              .quiet()
+              .nothrow()
         : $`docker exec ${MARIADB_CONTAINER} mariadb-admin ping -uroot -psecret`.quiet().nothrow();
 }
 
 async function mariadbExec(sql: string) {
     return NATIVE
-        ? $`mariadb -h 127.0.0.1 -P ${MARIADB.port} -uroot -psecret -e ${sql}`.quiet().nothrow()
+        ? $`mariadb -h 127.0.0.1 -P ${MARIADB.port} -uroot -psecret --skip-ssl -e ${sql}`
+              .quiet()
+              .nothrow()
         : $`docker exec ${MARIADB_CONTAINER} mariadb -uroot -psecret -e ${sql}`.quiet().nothrow();
 }
 
