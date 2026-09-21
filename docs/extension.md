@@ -45,7 +45,7 @@ about the transport, and `store.ts` and `chrome.ts` know nothing about either.
 |---|---|
 | `driver.ts` | the contract: `Driver<C>`, `Relation`, `TableMeta`, `QueryOutcome` |
 | `common.ts` | a re-export barrel over `commonValues.ts` (`toDisplayValue`, the TLS options), `commonCatalog.ts` (`pickRowKey`, `pickForeignKeys`, `assembleDiagram`), `commonWrites.ts` (`runWrites`), `commonQuery.ts` (`buildWhere`, `orderByClause`, `selectExpressionAt`) — split for length, never for meaning; every engine still imports `common.ts` itself |
-| `mysql/`, `postgres/`, `sqlite/`, `mssql/` | one folder per engine, each an `index.ts` assembling the `Driver<C>` by spreading a handful of `Pick<Driver<C>, ...> & ThisType<Driver<C>>` objects from sibling `lifecycle.ts` / `catalog.ts` / `ddl.ts` (/ `relationships.ts` where `listRelationships` alone needs the room) files into one object literal — see *Splitting an engine file* below. `mssql/` follows Postgres's shape (it is the other schema-having engine): `relation.ts` (schema split, defaulting to `dbo`), `systemSchemas.ts`, `types.ts` (`renderColumnType`, the one place this driver reassembles a type string — see *Listing a table's columns*), and `tableDdlParts.ts` split out from `ddl.ts` for length, the same reason `postgres/relationships.ts` is its own file |
+| `mysql/`, `postgres/`, `sqlite/`, `mssql/` | one folder per engine, each an `index.ts` assembling the `Driver<C>` by spreading a handful of `Pick<Driver<C>, ...> & ThisType<Driver<C>>` objects from sibling `lifecycle.ts` / `catalog.ts` / `ddl.ts` (/ `relationships.ts` where `listRelationships` alone needs the room) files into one object literal — see *Splitting an engine file* below. `mssql/` follows Postgres's shape (it is the other schema-having engine): `relation.ts` (schema split, defaulting to `dbo`), `systemSchemas.ts`, `types.ts` (`renderColumnType`, the one place this driver reassembles a type string — see *Listing a table's columns*), and `tableDdlParts.ts` split out from `ddl.ts` for length, the same reason `postgres/relationships.ts` is its own file. No `mariadb/` — that `EngineType` is `mysql/`'s `Driver`, reused wholesale; see *MariaDB, without a driver of its own* below |
 | `index.ts` | the barrel: `withDriver`, and the contract re-exported |
 
 `common.ts` and its siblings (`commonValues.ts`, `commonCatalog.ts`,
@@ -113,6 +113,11 @@ exactly as it was.
    for `migrations/index.ts`'s reason: the extension ships compiled with its
    source deleted beside it, so only a statically imported file is in there.
 4. Add the option to `ENGINES` in `frontend/src/common/db/engines.ts`.
+5. Add it to `KNOWN_ENGINES` in `extensions/db/transfer.ts`. A `Record<EngineType,
+   true>` rather than an array, on purpose: step 1 alone stops this file
+   compiling until the new engine is named here too, so an imported connections
+   file claiming an engine nothing can drive fails at import rather than saving
+   quietly and failing much later, at connect.
 
 Then add it to the `describe.each` in `tests/extension.test.ts` — every engine
 runs the *same* contract tests, which is what keeps them interchangeable. The UI
@@ -122,6 +127,43 @@ The point of the shape is that steps 2–3 are a *new file* and a line, never an
 edit into somebody else's engine. If a change asks you to widen `common.ts`
 instead, that is the signal to check whether the contract is missing a method —
 see *Browsing a table* on `LIMIT/OFFSET`, which is the standing example.
+
+### MariaDB, without a driver of its own
+
+MariaDB skips step 2 entirely. Its `case` in `withDriver` falls straight through
+to `mysqlDriver` — same catalog queries, same quoting, same value handling —
+because mysql2 speaks to it over the identical wire protocol and there is no
+catalog question in this codebase the two servers answer differently. It still
+gets its own `EngineType`, its own `ENGINES` entry and its own real container in
+`tests/extension.test.ts`'s `describe.each` rather than riding along on MySQL's
+connection, because "the wire protocol is identical" is a claim about the
+driver, not about every session default the two ship — see below.
+
+**This is the one exception to "steps 2–3 are a new file," and it stays an
+exception.** The day a MariaDB-specific catalog quirk turns up, it gets a real
+`drivers/mariadb/` folder like every other engine; sharing the object is only
+correct for as long as the two are actually the same engine underneath, and
+widening `mysqlDriver` with a MariaDB-only branch would be the "edit into
+somebody else's engine" step 2–3 exists to prevent, aimed at the one engine here
+that has no folder of its own to take the edit instead.
+
+**Session defaults are not the wire protocol, and this project's own "verify
+against a real database" rule caught the gap immediately.** MariaDB's fixture
+reuses MySQL's seed text verbatim (same SQL, different server), but the row-cap
+contract test — a recursive CTE past 10,000 rows — failed the moment it ran
+against a real MariaDB container: MySQL's default recursion depth is raised
+with `SET SESSION cte_max_recursion_depth = 20000` before the query, and
+MariaDB has no such variable at all (`Unknown system variable`). Its own
+default recursion cap is the same 1000, under a different name entirely —
+`max_recursive_iterations` — which is why the test's `label === 'mariadb'`
+branch sets that one instead. Nothing about connecting hints at this; it only
+surfaces the moment a session-level default happens to matter to a query, which
+is exactly the class of thing a shared driver cannot paper over and a mock
+would never have caught. It is also why *mysql compound statements*
+(`docs/testing.md`) runs against MariaDB too rather than treating "shares a
+driver" as "shares a parser": that block's whole claim is about the server's
+own read of a `BEGIN … END` body and its `multipleStatements: false` refusal,
+neither of which the driver's SQL is what answers.
 
 ### An engine that is a file, not a server
 

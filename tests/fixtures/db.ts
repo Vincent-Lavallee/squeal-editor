@@ -1,8 +1,14 @@
 /**
- * Throwaway MySQL + Postgres + SQL Server for the test suite.
+ * Throwaway MySQL + MariaDB + Postgres + SQL Server for the test suite.
  *
  *   bun run test:db:up     start and seed
  *   bun run test:db:down   remove
+ *
+ * MariaDB gets its own real server rather than a config pointed at the MySQL
+ * container, and its own entry in `tests/extension.test.ts`'s `describe.each`
+ * -- reusing `mysqlDriver` (`docs/extension.md`) is a claim about the wire
+ * protocol, and the only way to hold this project's own "verify against a
+ * real database" rule to that claim is to actually run one.
  *
  * The seed deliberately contains the values that have caused real bugs: a BIGINT
  * past 2^53, a timezone-less DATETIME, NULLs, a BLOB, JSON, a view, and (on
@@ -55,6 +61,8 @@ import { Database } from 'bun:sqlite';
 import { rmSync } from 'node:fs';
 
 import {
+    MARIADB,
+    MARIADB_CONTAINER,
     MSSQL,
     MSSQL_CONTAINER,
     MYSQL,
@@ -393,12 +401,28 @@ function seedSqlite(): void {
     }
 }
 
-async function waitFor(label: string, probe: () => Promise<boolean>, tries = 60): Promise<void> {
+/**
+ * `detail` carries the last attempt's own words -- a silent `nothrow()` probe
+ * that only ever answers true/false turns every timeout into "never became
+ * ready" with nothing about why, which is exactly the class of CI failure this
+ * cannot be root-caused from outside without rerunning it. Naming the winning
+ * attempt is not the point; naming the *last losing* one is.
+ */
+async function waitFor(
+    label: string,
+    probe: () => Promise<{ ok: boolean; detail?: string }>,
+    tries = 60,
+): Promise<void> {
+    let lastDetail = '';
     for (let i = 0; i < tries; i++) {
-        if (await probe().catch(() => false)) return;
+        const { ok, detail } = await probe().catch((err) => ({ ok: false, detail: String(err) }));
+        if (ok) return;
+        if (detail) lastDetail = detail;
         await Bun.sleep(2000);
     }
-    throw new Error(`${label} never became ready`);
+    throw new Error(
+        lastDetail ? `${label} never became ready: ${lastDetail}` : `${label} never became ready`,
+    );
 }
 
 async function pgReady() {
@@ -407,9 +431,21 @@ async function pgReady() {
         : $`docker exec ${PG_CONTAINER} pg_isready -U postgres`.quiet().nothrow();
 }
 
+// `--skip-ssl` in native mode only, and load-bearing: two
+// `shogo82148/actions-setup-mysql` invocations in one job (MySQL, then
+// MariaDB) each prepend their own bin dir to PATH, so the bare `mysqladmin`
+// this runs actually resolves to whichever ran *last* -- MariaDB's, once
+// MariaDB is provisioned after MySQL -- and that client's TLS defaults reject
+// MySQL's self-signed cert with `self-signed certificate in certificate
+// chain`, found by running this exact job in CI rather than assumed. Neither
+// throwaway server needs a verified channel, so disabling TLS client-side
+// sidesteps the cross-vendor cert mismatch entirely rather than chasing which
+// binary PATH resolves to.
 async function mysqlPing() {
     return NATIVE
-        ? $`mysqladmin ping -h 127.0.0.1 -P ${MYSQL.port} -uroot -psecret`.quiet().nothrow()
+        ? $`mysqladmin ping -h 127.0.0.1 -P ${MYSQL.port} -uroot -psecret --skip-ssl`
+              .quiet()
+              .nothrow()
         : $`docker exec ${MYSQL_CONTAINER} mysqladmin ping -uroot -psecret`.quiet().nothrow();
 }
 
@@ -426,8 +462,35 @@ async function pgExec(sql: string, database = 'postgres') {
 
 async function mysqlExec(sql: string) {
     return NATIVE
-        ? $`mysql -h 127.0.0.1 -P ${MYSQL.port} -uroot -psecret -e ${sql}`.quiet().nothrow()
+        ? $`mysql -h 127.0.0.1 -P ${MYSQL.port} -uroot -psecret --skip-ssl -e ${sql}`
+              .quiet()
+              .nothrow()
         : $`docker exec ${MYSQL_CONTAINER} mysql -uroot -psecret -e ${sql}`.quiet().nothrow();
+}
+
+// `mariadb`/`mariadb-admin`, not `mysql`/`mysqladmin` -- the newer names, which
+// both the official image and the packages `shogo82148/actions-setup-mysql`
+// installs for `distribution: mariadb` ship as the primary client, unlike the
+// `mysql` compatibility symlink whose survival across a version this fixture
+// does not control is not something to depend on. `--skip-ssl` in native mode
+// for `mysqlPing`'s own reason, applied symmetrically: whichever server's
+// setup step runs first has *its* bin dir shadowed on PATH once the second
+// one prepends its own, so this pair is just as exposed to resolving the
+// other vendor's client and hitting the identical cert mismatch in reverse.
+async function mariadbPing() {
+    return NATIVE
+        ? $`mariadb-admin ping -h 127.0.0.1 -P ${MARIADB.port} -uroot -psecret --skip-ssl`
+              .quiet()
+              .nothrow()
+        : $`docker exec ${MARIADB_CONTAINER} mariadb-admin ping -uroot -psecret`.quiet().nothrow();
+}
+
+async function mariadbExec(sql: string) {
+    return NATIVE
+        ? $`mariadb -h 127.0.0.1 -P ${MARIADB.port} -uroot -psecret --skip-ssl -e ${sql}`
+              .quiet()
+              .nothrow()
+        : $`docker exec ${MARIADB_CONTAINER} mariadb -uroot -psecret -e ${sql}`.quiet().nothrow();
 }
 
 // `sqlcmd` itself is what `GO` needs -- it is the client that reads that word
@@ -465,20 +528,39 @@ export async function up(): Promise<void> {
         await $`docker run -d --name ${MYSQL_CONTAINER} -e MYSQL_ROOT_PASSWORD=secret -p 53306:3306 mysql:8`
             .quiet()
             .nothrow();
+        await $`docker run -d --name ${MARIADB_CONTAINER} -e MARIADB_ROOT_PASSWORD=secret -p 53316:3306 mariadb:11`
+            .quiet()
+            .nothrow();
         await $`docker run -d --name ${MSSQL_CONTAINER} -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=${MSSQL.password} -p 51433:1433 mcr.microsoft.com/mssql/server:2022-latest`
             .quiet()
             .nothrow();
     }
 
-    await waitFor('postgres', async () => (await pgReady()).exitCode === 0);
+    await waitFor('postgres', async () => {
+        const r = await pgReady();
+        return { ok: r.exitCode === 0, detail: r.stderr.toString().trim() };
+    });
     await waitFor('mysql', async () => {
         const r = await mysqlPing();
-        return r.exitCode === 0 && r.stdout.toString().includes('alive');
+        return {
+            ok: r.exitCode === 0 && r.stdout.toString().includes('alive'),
+            detail: (r.stderr.toString() || r.stdout.toString()).trim(),
+        };
+    });
+    await waitFor('mariadb', async () => {
+        const r = await mariadbPing();
+        return {
+            ok: r.exitCode === 0 && r.stdout.toString().includes('alive'),
+            detail: (r.stderr.toString() || r.stdout.toString()).trim(),
+        };
     });
     // SQL Server takes noticeably longer than the other two to start accepting
     // connections on first boot, which is what the shared 60-try/2s budget is
     // sized to cover -- `waitFor` throws by name if it does not.
-    await waitFor('mssql', async () => (await mssqlReady()).exitCode === 0);
+    await waitFor('mssql', async () => {
+        const r = await mssqlReady();
+        return { ok: r.exitCode === 0, detail: r.stderr.toString().trim() };
+    });
 
     // Seeding is idempotent-ish: drop first so `up` twice is harmless.
     await pgExec('DROP DATABASE IF EXISTS shop');
@@ -487,6 +569,11 @@ export async function up(): Promise<void> {
 
     await mysqlExec('DROP DATABASE IF EXISTS shop');
     await mysqlExec(MYSQL_SEED);
+
+    // Same seed text as MySQL, on purpose: MariaDB is here to prove mysql2 talks
+    // to a real MariaDB server the same way, not to hold a fixture of its own.
+    await mariadbExec('DROP DATABASE IF EXISTS shop');
+    await mariadbExec(MYSQL_SEED);
 
     // MSSQL_SEED drops and recreates `shop` itself -- see its own comment.
     await mssqlExec(MSSQL_SEED);
@@ -499,7 +586,7 @@ export async function up(): Promise<void> {
 
 export async function down(): Promise<void> {
     if (!NATIVE)
-        await $`docker rm -f ${PG_CONTAINER} ${MYSQL_CONTAINER} ${MSSQL_CONTAINER}`
+        await $`docker rm -f ${PG_CONTAINER} ${MYSQL_CONTAINER} ${MARIADB_CONTAINER} ${MSSQL_CONTAINER}`
             .quiet()
             .nothrow();
     rmSync(SQLITE_FILE, { force: true });

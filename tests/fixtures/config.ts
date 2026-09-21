@@ -33,6 +33,17 @@ export const MYSQL: ConnectionConfig = {
     password: 'secret',
 };
 
+// A separate server, not a second config pointed at MYSQL's port: the point of
+// having it at all is a real MariaDB binary answering the same driver, so a
+// shared container would test nothing `mysql` doesn't already.
+export const MARIADB: ConnectionConfig = {
+    type: 'mariadb',
+    host: '127.0.0.1',
+    port: 53316,
+    user: 'root',
+    password: 'secret',
+};
+
 // SQL Server's `sa` account enforces a complexity policy the other two
 // engines' throwaway passwords don't have to meet -- three of uppercase,
 // lowercase, digit and symbol, and long enough that a real one won't
@@ -74,6 +85,7 @@ export const SQLITE: ConnectionConfig = {
 
 export const PG_CONTAINER = 'squeal-pg';
 export const MYSQL_CONTAINER = 'squeal-mysql';
+export const MARIADB_CONTAINER = 'squeal-mariadb';
 export const MSSQL_CONTAINER = 'squeal-mssql';
 
 /** The database the two server engines get seeded with. */

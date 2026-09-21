@@ -193,14 +193,6 @@ Things that do not exist yet.
   existing conversation list become the seeded Default workspace's, so nothing
   appears to move for a user who never made a second workspace.
 
-- **Add MariaDB as its own engine choice** — MariaDB already connects today,
-  silently, through the MySQL driver, since it speaks the same wire protocol
-  — but it has no identity of its own anywhere: the connect form and
-  connection list only ever offer MySQL. Make MariaDB a distinct, selectable
-  engine (own label, own icon) reusing the MySQL driver underneath, and give
-  the test setup a real MariaDB container alongside MySQL and Postgres rather
-  than assuming mysql2 behaves identically against both servers.
-
 - **Use the installed Claude CLI instead of an API key** — The Claude provider
   asks for a pasted API key even when the developer's own signed-in `claude` CLI
   is already on the machine, so the assistant costs a key that was never needed.

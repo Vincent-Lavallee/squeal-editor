@@ -75,11 +75,31 @@ jobs:
               with:
                   mysql-version: '8.0'
                   root-password: secret
+                  # caching_sha2_password (8.0's default) needs a client-side plugin
+                  # DLL that the MariaDB distribution installed below does not carry --
+                  # mysql_native_password needs no such loading and every client here
+                  # understands it, found the hard way when the MariaDB step's own
+                  # bin dir won PATH and mysqladmin.exe failed to load
+                  # caching_sha2_password.dll. See tests/fixtures/db.ts's `--skip-ssl`
+                  # comment for the sibling half of this: the two servers' clients
+                  # colliding on PATH is the actual root cause both patch around.
                   my-cnf: |
                       port=53306
-            # No documented port override, unlike the two actions above -- SQL
-            # Server is left on its real default (1433) here; see the comment on
-            # `MSSQL` in tests/fixtures/config.ts.
+                      default-authentication-plugin=mysql_native_password
+            # Same action, a second server: `distribution` is what switches it from
+            # installing MySQL to installing MariaDB -- see tests/fixtures/db.ts for
+            # why this is a real second server rather than a second config aimed at
+            # the one above.
+            - uses: shogo82148/actions-setup-mysql@v1
+              with:
+                  distribution: mariadb
+                  mysql-version: '11.4'
+                  root-password: secret
+                  my-cnf: |
+                      port=53316
+            # No documented port override, unlike the actions above -- SQL Server is
+            # left on its real default (1433) here; see the comment on `MSSQL` in
+            # tests/fixtures/config.ts.
             - uses: potatoqualitee/mssqlsuite@v1.11
               with:
                   install: sqlengine, sqlclient
@@ -165,8 +185,24 @@ jobs:
               with:
                   mysql-version: '8.0'
                   root-password: secret
+                  # caching_sha2_password (8.0's default) needs a client-side plugin
+                  # DLL that the MariaDB distribution installed below does not carry --
+                  # mysql_native_password needs no such loading and every client here
+                  # understands it, found the hard way when the MariaDB step's own
+                  # bin dir won PATH and mysqladmin.exe failed to load
+                  # caching_sha2_password.dll. See tests/fixtures/db.ts's `--skip-ssl`
+                  # comment for the sibling half of this: the two servers' clients
+                  # colliding on PATH is the actual root cause both patch around.
                   my-cnf: |
                       port=53306
+                      default-authentication-plugin=mysql_native_password
+            - uses: shogo82148/actions-setup-mysql@v1
+              with:
+                  distribution: mariadb
+                  mysql-version: '11.4'
+                  root-password: secret
+                  my-cnf: |
+                      port=53316
             - uses: potatoqualitee/mssqlsuite@v1.11
               with:
                   install: sqlengine, sqlclient

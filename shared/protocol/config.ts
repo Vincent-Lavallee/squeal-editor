@@ -6,7 +6,7 @@
  * connection is filed under.
  */
 
-export type EngineType = 'mysql' | 'postgres' | 'sqlite' | 'mssql';
+export type EngineType = 'mysql' | 'mariadb' | 'postgres' | 'sqlite' | 'mssql';
 
 /**
  * Whether this engine is a file on disk rather than a server on a network.
