@@ -401,12 +401,28 @@ function seedSqlite(): void {
     }
 }
 
-async function waitFor(label: string, probe: () => Promise<boolean>, tries = 60): Promise<void> {
+/**
+ * `detail` carries the last attempt's own words -- a silent `nothrow()` probe
+ * that only ever answers true/false turns every timeout into "never became
+ * ready" with nothing about why, which is exactly the class of CI failure this
+ * cannot be root-caused from outside without rerunning it. Naming the winning
+ * attempt is not the point; naming the *last losing* one is.
+ */
+async function waitFor(
+    label: string,
+    probe: () => Promise<{ ok: boolean; detail?: string }>,
+    tries = 60,
+): Promise<void> {
+    let lastDetail = '';
     for (let i = 0; i < tries; i++) {
-        if (await probe().catch(() => false)) return;
+        const { ok, detail } = await probe().catch((err) => ({ ok: false, detail: String(err) }));
+        if (ok) return;
+        if (detail) lastDetail = detail;
         await Bun.sleep(2000);
     }
-    throw new Error(`${label} never became ready`);
+    throw new Error(
+        lastDetail ? `${label} never became ready: ${lastDetail}` : `${label} never became ready`,
+    );
 }
 
 async function pgReady() {
@@ -498,19 +514,31 @@ export async function up(): Promise<void> {
             .nothrow();
     }
 
-    await waitFor('postgres', async () => (await pgReady()).exitCode === 0);
+    await waitFor('postgres', async () => {
+        const r = await pgReady();
+        return { ok: r.exitCode === 0, detail: r.stderr.toString().trim() };
+    });
     await waitFor('mysql', async () => {
         const r = await mysqlPing();
-        return r.exitCode === 0 && r.stdout.toString().includes('alive');
+        return {
+            ok: r.exitCode === 0 && r.stdout.toString().includes('alive'),
+            detail: (r.stderr.toString() || r.stdout.toString()).trim(),
+        };
     });
     await waitFor('mariadb', async () => {
         const r = await mariadbPing();
-        return r.exitCode === 0 && r.stdout.toString().includes('alive');
+        return {
+            ok: r.exitCode === 0 && r.stdout.toString().includes('alive'),
+            detail: (r.stderr.toString() || r.stdout.toString()).trim(),
+        };
     });
     // SQL Server takes noticeably longer than the other two to start accepting
     // connections on first boot, which is what the shared 60-try/2s budget is
     // sized to cover -- `waitFor` throws by name if it does not.
-    await waitFor('mssql', async () => (await mssqlReady()).exitCode === 0);
+    await waitFor('mssql', async () => {
+        const r = await mssqlReady();
+        return { ok: r.exitCode === 0, detail: r.stderr.toString().trim() };
+    });
 
     // Seeding is idempotent-ish: drop first so `up` twice is harmless.
     await pgExec('DROP DATABASE IF EXISTS shop');
