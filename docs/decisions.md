@@ -1390,8 +1390,8 @@ of the repo entirely, which is the whole point of splitting the pair.
 **Why Windows and macOS, and not Linux.** The swap needs something that
 outlives the app, and each platform gets a different answer: Windows leans on the
 Inno installer it already ships, macOS on the .dmg it already ships plus a script
-that mounts and swaps it. Linux ships no installable artifact at all yet, so
-`update.check` reports `supported: false` there and the banner never appears —
+that mounts and swaps it. Linux's AppImage is not signed or applied by anything
+yet, so `update.check` reports `supported: false` there and the banner never appears —
 the same shape as `window.matchFrame`'s `applied: false`, a capability quietly
 absent rather than an error. A platform gets an updater when it gets a verified
 build to update.
@@ -8219,3 +8219,48 @@ whether the other four would ever get one.* MariaDB got the same treatment
 every other engine already has — a label — rather than a new visual pattern
 built to fit a backlog sentence written before anyone checked what the app
 actually does today.
+
+---
+
+## Linux ships an AppImage that leaves WebKitGTK to the host
+
+Linux used to build in CI and upload nothing: the raw `neu build` output has no
+launcher entry and no icon, which made a first run worse than no download. It now
+ships one arm64 (aarch64) AppImage (`scripts/package-linux.sh`) from the same
+release matrix leg that already built it, now on GitHub's `ubuntu-24.04-arm`
+runner. *Rejected: x86_64 first* — the compiled extension is the runner's own
+architecture, so each architecture is its own matrix leg and its own artifact;
+arm64 is the one the author can launch and check, so it is the one that ships.
+x86_64 would be a second leg plus its own `appimagetool` checksum.
+
+**WebKitGTK is not bundled.** Neutralino loads `libwebkit2gtk-4.0` or `-4.1` at
+runtime; carrying a browser engine inside the AppImage is the fragile, enormous
+route, and every desktop distro packages it. A machine without it gets
+Neutralino's own "please install libwebkit2gtk" message. *Rejected: bundling
+it.*
+
+**`AppRun` changes directory before it execs.** The extension is resolved as
+`${NL_PATH}/extensions/db/squeal-db-ext` and `NL_PATH` follows the working
+directory, so launching from a menu — whose cwd is whatever the desktop chose —
+would otherwise leave the app up with a dead extension. Same cause as the macOS
+launcher shim.
+
+**The packaging script copies the three files it needs instead of `dist/`.** `neu
+build` writes a binary for every platform into it, and `extensions/db` only holds
+the compiled binary after the release workflow has slimmed it.
+
+**`appimagetool` is pinned to a version and a SHA-256**, not the `continuous`
+download, so a release build cannot change under a tag and a swapped download
+fails the build. It runs with `--appimage-extract-and-run` because the runner has
+no FUSE.
+
+**No update path on Linux yet.** `update.check` still reports `supported: false`
+there: the updater needs a signed artifact and an apply step, and the AppImage is
+neither. Distribution is the GitHub release (and, outside this repo, an AUR
+package) until that exists.
+
+**Verified by launching, on arm64.** The AppImage this script builds was
+launched on an aarch64 machine and started its extension from the right path.
+The release leg itself (`ubuntu-24.04-arm`, free only for public repositories)
+has not run yet. Connecting to a database, the borderless titlebar and
+libsecret passwords are still unchecked on Linux.

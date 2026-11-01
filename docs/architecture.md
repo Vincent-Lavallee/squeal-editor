@@ -241,12 +241,19 @@ Releases are automated in `.github/workflows/release.yml`, two jobs:
   false`) it compiles the extension for that OS, slims and packages. Windows
   builds an Inno Setup installer (`installer/squeal-editor.iss`) and attaches
   that as its only download — no portable zip beside it, see
-  `docs/decisions.md`. macOS attaches a `.dmg` instead of a zip. Linux builds
-  and packages the same as the other two, for verification, but ships nothing
-  to the release — a raw zip with no desktop integration was worse than no
-  download at all; see `docs/decisions.md` and the Linux AppImage backlog item.
-  Windows is verified to launch and connect; mac/Linux still ship unverified —
-  they have never been launched — a known, accepted state, not a claim they work.
+  `docs/decisions.md`. macOS attaches a `.dmg` instead of a zip. Linux attaches
+  an arm64 (aarch64) AppImage built by `scripts/package-linux.sh`.
+  Windows is verified to launch and connect; the Linux AppImage was launched
+  from an arm64 build of the same script, and macOS has never been launched —
+  a known, accepted state, not a claim they work.
+
+`scripts/package-linux.sh` lays `neu build`'s Linux binary, `resources.neu` and
+the compiled extension under `usr/lib/squeal-editor` in an AppDir, adds a
+`.desktop` file and the icon, and runs a pinned, checksum-verified
+`appimagetool`. `AppRun` `cd`s into that folder before `exec`ing the binary,
+because `NL_PATH` follows the working directory and the extension is resolved
+from it. WebKitGTK is not bundled: Neutralino loads `libwebkit2gtk-4.0` or `-4.1`
+from the host, so it is a dependency of the machine, not of the file.
 
 `scripts/package-macos.sh` builds the macOS `.app`, because `neu build
 --macos-bundle` does not: it only renames the bare executable to `….app`, with no
