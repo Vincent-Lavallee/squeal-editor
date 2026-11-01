@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.23.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.22.0...v0.23.0) (2026-11-01)
+
+
+### Features
+
+* Added row add ([e541f80](https://github.com/Vincent-Lavallee/squeal-editor/commit/e541f80577db0154eb8777b00f907818de531201))
+
+
+### Bug Fixes
+
+* Keep Insert row out of multi-cell menus and update the menu tests ([61c3026](https://github.com/Vincent-Lavallee/squeal-editor/commit/61c30267e953b82310512109aa9b5562d9be2724))
+
 ## [0.22.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.21.0...v0.22.0) (2026-11-01)
 
 
