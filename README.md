@@ -79,3 +79,7 @@ This is a one-time step; every launch after that works normally.
   tree.
 - Click a table to preview its rows, or write and run SQL by hand with
   autocomplete for keywords, tables, and columns.
+
+## License
+
+[MIT](LICENSE)
