@@ -2,6 +2,7 @@ import type { QueryResult } from '../../../../../shared/protocol/index.ts';
 import type { useResultsGridController } from './hooks/useResultsGridController.ts';
 import { gridTableStyle } from './resultsGridStyles.ts';
 import ResultsGridBody from './ResultsGridBody.tsx';
+import ResultsGridDraftRows from './ResultsGridDraftRows.tsx';
 import ResultsGridHeader from './ResultsGridHeader.tsx';
 
 interface Props {
@@ -47,6 +48,7 @@ export default function ResultsGridScrollArea({ g, result }: Props) {
                     onSelectAll={g.selectAll}
                     onOpenAllMenu={g.openAllMenu}
                 />
+                <ResultsGridDraftRows g={g} columns={result.columns} />
                 <ResultsGridBody
                     rows={result.rows}
                     columns={result.columns}

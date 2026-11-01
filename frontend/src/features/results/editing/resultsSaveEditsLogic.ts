@@ -3,6 +3,7 @@ import type {
     QueryResult,
     RowDelete,
     RowEdit,
+    RowInsert,
 } from '../../../../../shared/protocol/index.ts';
 import type { Pending } from '../ResultsContext.tsx';
 
@@ -24,7 +25,7 @@ export function buildSaveEditsArgs(args: {
     editedRows: number[];
     deletedRows: number[];
     pending: Pending;
-}): { edits: RowEdit[]; deletes: RowDelete[] } {
+}): { edits: RowEdit[]; deletes: RowDelete[]; inserts: RowInsert[] } {
     const { visibleResult, fullResult, keyColumns, editedRows, deletedRows, pending } = args;
     const keyIndex = keyColumns.map((name) => fullResult.columns.indexOf(name));
     const keyOf = (r: number): Record<string, CellValue> => {
@@ -42,5 +43,7 @@ export function buildSaveEditsArgs(args: {
     });
     const deletes: RowDelete[] = deletedRows.map((r) => ({ key: keyOf(r) }));
 
-    return { edits, deletes };
+    const inserts: RowInsert[] = pending.inserts.map((values) => ({ values }));
+
+    return { edits, deletes, inserts };
 }

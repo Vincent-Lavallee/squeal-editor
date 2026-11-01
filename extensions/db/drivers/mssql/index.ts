@@ -184,7 +184,7 @@ export const mssqlDriver: Driver<ConnectionPool> = {
         // app inspecting SQL to decide what it may run).
     },
 
-    async applyWrites(client, { relation, keyColumns, edits, deletes }) {
+    async applyWrites(client, { relation, keyColumns, edits, deletes, inserts }) {
         // One transaction for the whole batch, the same shape as the other three
         // -- `sql.Transaction` wraps the pool's one physical connection, and every
         // request in the batch is bound to it rather than to the pool directly.
@@ -196,6 +196,8 @@ export const mssqlDriver: Driver<ConnectionPool> = {
                 keyColumns,
                 edits,
                 deletes,
+                inserts,
+                allDefaultsRow: 'DEFAULT VALUES',
                 quoteIdent: (name) => this.quoteIdent(name),
                 placeholder: (position) => this.placeholder(position),
                 exec: async (sqlText, params) => {

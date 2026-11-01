@@ -32,6 +32,19 @@ export default function ResultsBar({ g }: { g: ReturnType<typeof useResultsGridC
 
                 {g.browse && <ResultsRowCount rowCount={g.rowCount} onReveal={g.revealRowCount} />}
 
+                {g.browse && (
+                    <Button
+                        variant="ghost"
+                        data-testid="insert-row"
+                        style={{ height: 24, padding: '0 8px' }}
+                        onClick={g.addInsert}
+                        disabled={!g.insertable}
+                        title={g.insertable ? 'Add a new row' : (g.readOnlyReason ?? undefined)}
+                    >
+                        + Row
+                    </Button>
+                )}
+
                 {/* Clear lives here rather than in the filter bar because it is a fact
               about the result on screen, and because it is the one filter control
               that is not needed to recover from a filter the server refused. */}

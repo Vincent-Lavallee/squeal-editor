@@ -627,6 +627,18 @@ input::placeholder {
 .grid__cell--dirty {
     color: var(--accent);
 }
+/* A new row waiting for Save is green, the same tint-for-kind a deleted row
+   makes in red, so it reads as "will be added". `--green-bg` and `--green` are
+   defined for both themes, so nothing here is theme-specific. */
+.grid tbody tr.grid__row--draft td,
+.grid tbody tr.grid__row--draft .gutter {
+    background: var(--green-bg);
+    border-bottom-color: var(--green);
+}
+.grid tbody tr.grid__row--draft .gutter,
+.grid tbody tr.grid__row--draft .grid__cell--dirty {
+    color: var(--green);
+}
 /* A sortable header is a click target, so it says so on hover -- the same
    `--hover` a row already uses, since it is the same gesture at the top of the
    same column. A header that cannot be sorted (a blank or duplicated name) is

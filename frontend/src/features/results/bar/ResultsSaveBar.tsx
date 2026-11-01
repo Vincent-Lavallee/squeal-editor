@@ -17,6 +17,7 @@ interface Props {
     dirtyCount: number;
     saving: boolean;
     saveError: string | null;
+    saveNotice: string | null;
     onDiscard: () => void;
     onSave: () => void;
 }
@@ -25,13 +26,17 @@ export default function ResultsSaveBar({
     dirtyCount,
     saving,
     saveError,
+    saveNotice,
     onDiscard,
     onSave,
 }: Props) {
     return (
         <div data-testid="results-savebar" style={barStyle}>
             <span style={saveError ? { color: t.RED_TEXT } : undefined}>
-                {saveError ?? `${dirtyCount} unsaved change${dirtyCount === 1 ? '' : 's'}`}
+                {saveError ??
+                    (dirtyCount > 0
+                        ? `${dirtyCount} unsaved change${dirtyCount === 1 ? '' : 's'}`
+                        : saveNotice)}
             </span>
             <div
                 data-testid="results-save-actions"
@@ -43,7 +48,7 @@ export default function ResultsSaveBar({
                     onClick={onDiscard}
                     disabled={saving}
                 >
-                    Discard
+                    {dirtyCount === 0 && !saveError ? 'Dismiss' : 'Discard'}
                 </Button>
                 <Button
                     variant="primary"

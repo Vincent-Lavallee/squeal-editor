@@ -63,6 +63,12 @@ function refetchAfterSave(args: {
     }
 }
 
+function insertedNotice(count: number): string | null {
+    if (count === 0) return null;
+    const rows = count === 1 ? '1 row' : `${count} rows`;
+    return `${rows} inserted -- the page is re-read, so a new row may sit on another page or be filtered out of view.`;
+}
+
 /**
  * Persist the staged edits and deletes, then bring the grid back in line with
  * what actually landed. Split out of `useResults` purely for length, and
@@ -76,13 +82,13 @@ export function useSaveEdits(options: Options) {
         options;
 
     return useCallback(async () => {
-        if (!activeTabId || !editTable || !page || !keyColumns || !result || !fullResult) return;
+        if (!activeTabId || !editTable || !page || !result || !fullResult) return;
         if (dirtyCount === 0) return;
 
-        const { edits, deletes } = buildSaveEditsArgs({
+        const { edits, deletes, inserts } = buildSaveEditsArgs({
             visibleResult: result,
             fullResult,
-            keyColumns,
+            keyColumns: keyColumns ?? [],
             editedRows,
             deletedRows,
             pending,
@@ -91,12 +97,20 @@ export function useSaveEdits(options: Options) {
         view.setSaving(activeTabId, true);
         view.setSaveError(activeTabId, null);
         const action = await dispatch(
-            saveEdits({ tabId: activeTabId, table: editTable, schema: editSchema, edits, deletes }),
+            saveEdits({
+                tabId: activeTabId,
+                table: editTable,
+                schema: editSchema,
+                edits,
+                deletes,
+                inserts,
+            }),
         );
         view.setSaving(activeTabId, false);
 
         if (saveEdits.fulfilled.match(action)) {
             view.discard(activeTabId);
+            view.setSaveNotice(activeTabId, insertedNotice(inserts.length));
             refetchAfterSave({ dispatch, activeTabId, browse, ranSql, sort, activeStatement });
         } else {
             // Beside the save bar, not in `error`: a failed save must leave the grid and

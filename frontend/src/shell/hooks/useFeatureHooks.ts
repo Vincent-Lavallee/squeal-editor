@@ -33,12 +33,16 @@ export function useFeatureHooks({ activeTab, secondaryActiveTab, dialect }: Para
         tabRunning: primaryRunning,
         browseIn: browseInPrimary,
         refresh: refreshPrimary,
+        save: saveEditsPrimary,
+        addInsert: addInsertPrimary,
     } = useResults(activeTab);
     const {
         run: runSecondary,
         tabRunning: secondaryRunning,
         browseIn: browseInSecondary,
         refresh: refreshSecondary,
+        save: saveEditsSecondary,
+        addInsert: addInsertSecondary,
     } = useResults(secondaryActiveTab);
     const { fetchDdl, fetchTriggerDdl, fetchFunctionDdl, defaultSchema, databases } = useExplorer();
     // `peekSql` alone: every seed now rides `tabOpened`, so the composition root
@@ -62,10 +66,14 @@ export function useFeatureHooks({ activeTab, secondaryActiveTab, dialect }: Para
         primaryRunning,
         browseInPrimary,
         refreshPrimary,
+        saveEditsPrimary,
+        addInsertPrimary,
         runSecondary,
         secondaryRunning,
         browseInSecondary,
         refreshSecondary,
+        saveEditsSecondary,
+        addInsertSecondary,
         fetchDdl,
         fetchTriggerDdl,
         fetchFunctionDdl,

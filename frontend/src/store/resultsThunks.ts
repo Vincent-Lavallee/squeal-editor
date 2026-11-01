@@ -1,4 +1,10 @@
-import type { RowDelete, RowEdit, SortOrder, TableFilter } from '../../../shared/protocol/index.ts';
+import type {
+    RowDelete,
+    RowEdit,
+    RowInsert,
+    SortOrder,
+    TableFilter,
+} from '../../../shared/protocol/index.ts';
 import { call, TIMEOUT_ERROR_MESSAGE } from '../common/bridge/bridge.ts';
 import { detectSingleTable } from '../common/db/detectSingleTable.ts';
 import { splitStatements } from '../common/db/splitStatements.ts';
@@ -334,6 +340,7 @@ export const saveEdits = createAppThunk(
             schema?: string;
             edits: RowEdit[];
             deletes: RowDelete[];
+            inserts: RowInsert[];
         },
         { getState, rejectWithValue },
     ) => {
@@ -354,11 +361,15 @@ export const saveEdits = createAppThunk(
                 schema: arg.schema ?? tab.schema,
                 edits: arg.edits,
                 deletes: arg.deletes,
+                inserts: arg.inserts,
             });
             return { affectedRows: res.affectedRows };
         } catch (err) {
             return rejectWithValue(errorMessage(err));
         }
     },
-    { condition: (arg) => arg.edits.length > 0 || arg.deletes.length > 0 },
+    {
+        condition: (arg) =>
+            arg.edits.length > 0 || arg.deletes.length > 0 || arg.inserts.length > 0,
+    },
 );

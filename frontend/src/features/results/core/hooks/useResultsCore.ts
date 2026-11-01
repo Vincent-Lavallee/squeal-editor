@@ -83,6 +83,7 @@ export function useResultsCore(tab: Tab | null) {
         activeTabId,
         page: identity.page,
         editable: identity.editable,
+        insertable: identity.insertable,
     });
 
     return {

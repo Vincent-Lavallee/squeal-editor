@@ -49,6 +49,21 @@ function columnPrefsFields(viewPrefs: ReturnType<typeof useResultsViewPrefs>) {
     };
 }
 
+/** The new-row surface, grouped into one spread purely so `buildResultsApi` stays under the line cap. */
+function insertFields(
+    identity: ReturnType<typeof useResultsRowIdentity>,
+    staging: ReturnType<typeof useResultsStagingActions>,
+) {
+    return {
+        insertable: identity.insertable,
+        inserts: identity.pending.inserts,
+        addInsert: staging.addInsert,
+        setInsertCell: staging.setInsertCell,
+        clearInsertCell: staging.clearInsertCell,
+        removeInsert: staging.removeInsert,
+    };
+}
+
 /** Assembles `useResults`' public return shape out of its composed hooks' pieces. Split out purely for length. */
 export function buildResultsApi(a: Args) {
     const { part, identity, runActions, staging, filterState, browsing, copy, viewPrefs } = a;
@@ -96,6 +111,7 @@ export function buildResultsApi(a: Args) {
         // third time here rather than guessed at.
         dialect: a.dialect,
         pending: identity.pending,
+        ...insertFields(identity, staging),
         setCell: staging.setCell,
         clearCell: staging.clearCell,
         toggleDelete: staging.toggleDelete,
@@ -108,6 +124,7 @@ export function buildResultsApi(a: Args) {
         dirtyCount: identity.dirtyCount,
         saving: (a.activeTabId && a.view.saving[a.activeTabId]) || false,
         saveError: (a.activeTabId && a.view.saveError[a.activeTabId]) || null,
+        saveNotice: (a.activeTabId && a.view.saveNotice[a.activeTabId]) || null,
         next: browsing.next,
         prev: browsing.prev,
 

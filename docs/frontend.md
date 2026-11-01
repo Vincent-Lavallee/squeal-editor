@@ -903,11 +903,16 @@ Two smaller things, and each was found by looking:
   would scroll away with them — so `Shell` puts the two in one flex row and the
   strip takes `flex: 1`.
 - **Save is bound twice, like Run, and the window half prevents Ctrl+S on *every*
-  tab kind — and whatever Save is currently bound to.** A grid tab has nothing to
-  save, but letting the key through there hands the webview its own "save this
-  page" dialog over the app, and that dialog belongs to the key rather than to
-  this shortcut. Monaco's own binding covers the case where the editor has focus,
-  which is most of them.
+  tab kind — and whatever Save is currently bound to.** Letting the key through
+  on a grid tab hands the webview its own "save this page" dialog over the app,
+  and that dialog belongs to the key rather than to this shortcut. Monaco's own
+  binding covers the case where the editor has focus, which is most of them.
+- **On a grid tab the same chord saves the staged edits and deletes**, through
+  the shell's `saveQuery` command (`useShellCommands`), which refuses on any
+  other kind of tab so an editor tab is never saved twice. The window fallback
+  still returns early on a grid tab for the same reason. An open cell editor
+  commits its draft on Ctrl+S and stops the event, so the first press stages
+  the value and the next saves it.
 
 ## The database is the tab's
 
@@ -1444,8 +1449,8 @@ that no longer matches it.
 
 ## The editable grid
 
-A browsed grid can be edited: change a cell, delete a row, copy selected rows as
-TSV, and one **Save** issues the batch. It is offered in browse mode when the
+A browsed grid can be edited: change a cell, delete a row, add a row, copy
+selected rows as TSV, and one **Save** issues the batch. It is offered in browse mode when the
 extension gave the page a row identity (`browse.keyColumns`) *and* the
 connection is not read-only — otherwise the grid stays read-only and the results
 bar says why. `useResults` computes `editable`/`readOnlyReason` and is the whole
@@ -1688,8 +1693,34 @@ same reason. The original key values are read
 from the browsed row at Save time, so editing a key column is just another staged
 cell while the `WHERE` still targets the original.
 
+**A new row is a draft, staged beside the edits.** `Pending.inserts` is one
+`Record<column name, value>` per row, in the same per-page stamp as the edits (so
+paging discards drafts too). It is keyed by column *name*, not index, because a
+draft is not a position in the rows on screen and the columns can be reordered or
+hidden while it waits; a hidden column simply cannot be filled and takes its
+default. A cell has three states, and the third is the starting one: untouched
+(shown as a muted *default*, left out of the `INSERT`), a value, or NULL (the ∅
+button, as on an existing row). `↺` in an open draft cell puts it back to default.
+Committing an *empty* box on an untouched cell leaves it at default rather than
+staging `''`, which would fail on a numeric column; an empty string is therefore
+only reachable by typing something first and clearing it.
+
+It is offered by `insertable` (a browse, and not read-only), which is *not*
+`editable`: a keyless table can take new rows though it cannot be edited. Three
+entry points, all `addInsert`: the **+ Row** button in the results bar, *Insert
+row* in the grid's row and cell menus, and the `insertRow` shortcut (grid tabs
+only, through `gridTabCommands` in `useShellCommands`). Drafts render in their own
+`<tbody data-testid="draft-rows">` above the page's rows, a row each with a `×` to
+remove it. They count toward `dirtyCount`, and an empty draft is a real change: it
+inserts the all-defaults row.
+
+After a Save that inserted, the page is re-read as usual, so a new row may sit on
+another page or be sorted or filtered out of view; the save bar says so
+(`saveNotice`, kept per tab beside `saveError` and cleared by Discard, which reads
+*Dismiss* once nothing is left to discard).
+
 `saveEdits` is the thunk (it crosses the bridge, so it is one), reading the tab's
-connection and database off state like `runQuery` and taking `edits`/`deletes` as
+connection and database off state like `runQuery` and taking `edits`/`deletes`/`inserts` as
 arguments the way `runQuery` takes `sql`. It touches no slice state: the grid stays
 exactly as browsed while the write is in flight, and on success the hook re-browses
 the same page and clears the staging. **A save error goes beside the save bar, in
@@ -2688,9 +2719,10 @@ entire keyboard.
 |---|---|---|
 | Editor | Run | `Ctrl+Enter` |
 | Editor | Run statement under cursor | `Ctrl+Shift+Enter` |
-| Editor | Save query | `Ctrl+S` |
+| Editor | Save query (on a grid tab: save the staged edits) | `Ctrl+S` |
 | Editor | Switch this tab's database | `Ctrl+D` |
 | Results | Refresh the rows | `Ctrl+R` |
+| Results | Insert a row | `Ctrl+Shift+N` |
 | Tabs | New tab | `Ctrl+T` |
 | Tabs | New tab in the other pane | `Ctrl+Shift+T` |
 | Tabs | Close tab | `Ctrl+W` |

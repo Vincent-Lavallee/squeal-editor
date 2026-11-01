@@ -172,7 +172,7 @@ export const postgresDriver: Driver<pg.Client> = {
         );
     },
 
-    async applyWrites(client, { relation, keyColumns, edits, deletes }) {
+    async applyWrites(client, { relation, keyColumns, edits, deletes, inserts }) {
         // One transaction for the batch -- see the mysql driver. A read-only session
         // makes the first write fail and the catch rolls back.
         await client.query('BEGIN');
@@ -182,6 +182,8 @@ export const postgresDriver: Driver<pg.Client> = {
                 keyColumns,
                 edits,
                 deletes,
+                inserts,
+                allDefaultsRow: 'DEFAULT VALUES',
                 quoteIdent: (name) => this.quoteIdent(name),
                 placeholder: (position) => this.placeholder(position),
                 exec: async (sql, params) => {

@@ -6,6 +6,7 @@ import type {
     FunctionInfo,
     RowDelete,
     RowEdit,
+    RowInsert,
     SqlDialect,
 } from '../../../shared/protocol/index.ts';
 
@@ -299,8 +300,8 @@ export interface Driver<C> {
      */
     rowKey(client: C, database: string, relation: Relation): Promise<string[] | null>;
     /**
-     * Apply staged edits and deletes as one atomic transaction, returning the
-     * total rows affected.
+     * Apply staged deletes, edits and inserts, in that order, as one atomic
+     * transaction, returning the total rows affected.
      *
      * Per-engine because both the quoting *and* the placeholder syntax differ
      * (`?` for mysql2, `$n` for pg). Each row is targeted by its `keyColumns`
@@ -312,7 +313,13 @@ export interface Driver<C> {
      */
     applyWrites(
         client: C,
-        args: { relation: Relation; keyColumns: string[]; edits: RowEdit[]; deletes: RowDelete[] },
+        args: {
+            relation: Relation;
+            keyColumns: string[];
+            edits: RowEdit[];
+            deletes: RowDelete[];
+            inserts: RowInsert[];
+        },
     ): Promise<number>;
     quoteIdent(name: string): string;
     /**

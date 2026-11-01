@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { CellValue } from '../../../../../shared/protocol/index.ts';
 import * as t from '../../../common/tokens';
+import { handleCellEditorKey } from './cellEditorKeys.ts';
 
 // `userSelect` back on: the cells around it are `none` so a drag selects them
 // rather than sweeping text, and an input inheriting that cannot have its own
@@ -42,10 +43,18 @@ interface Props {
     canNull: boolean;
     onCommit: (draft: string) => void;
     onNull: () => void;
+    onUseDefault?: () => void;
     onCancel: () => void;
 }
 
-export default function CellEditor({ initial, canNull, onCommit, onNull, onCancel }: Props) {
+export default function CellEditor({
+    initial,
+    canNull,
+    onCommit,
+    onNull,
+    onUseDefault,
+    onCancel,
+}: Props) {
     const [draft, setDraft] = useState(initial === null ? '' : String(initial));
     const ref = useRef<HTMLInputElement>(null);
     useEffect(() => {
@@ -62,19 +71,24 @@ export default function CellEditor({ initial, canNull, onCommit, onNull, onCance
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onBlur={() => onCommit(draft)}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        onCommit(draft);
-                    } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        onCancel();
-                    } else if (canNull && (e.ctrlKey || e.metaKey) && e.key === 'Delete') {
-                        e.preventDefault();
-                        onNull();
-                    }
-                }}
+                onKeyDown={(e) =>
+                    handleCellEditorKey(e, { draft, canNull, onCommit, onNull, onCancel })
+                }
             />
+            {onUseDefault && (
+                <button
+                    type="button"
+                    data-testid="cell-edit-default"
+                    style={nullButtonStyle}
+                    title="Use the database default"
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        onUseDefault();
+                    }}
+                >
+                    ↺
+                </button>
+            )}
             {canNull && (
                 <button
                     type="button"

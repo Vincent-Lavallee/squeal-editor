@@ -163,7 +163,7 @@ export const mysqlDriver: Driver<MysqlConnection> = {
         );
     },
 
-    async applyWrites(client, { relation, keyColumns, edits, deletes }) {
+    async applyWrites(client, { relation, keyColumns, edits, deletes, inserts }) {
         // The whole batch is one transaction: it all lands or none does. Under a
         // read-only session this START TRANSACTION inherits the mode, so the first
         // write is refused by the server and the catch rolls back -- the connection
@@ -175,6 +175,8 @@ export const mysqlDriver: Driver<MysqlConnection> = {
                 keyColumns,
                 edits,
                 deletes,
+                inserts,
+                allDefaultsRow: '() VALUES ()',
                 quoteIdent: (name) => this.quoteIdent(name),
                 placeholder: (position) => this.placeholder(position),
                 exec: async (sql, params) => {

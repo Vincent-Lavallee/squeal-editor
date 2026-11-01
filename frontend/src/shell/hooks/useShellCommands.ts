@@ -17,6 +17,27 @@ interface BuildArgs {
     close: ReturnType<typeof useCloseTabs>;
 }
 
+// Both refuse on any other kind of tab: an editor tab's Ctrl+S is the editor's own,
+// so answering it here too would save the query twice.
+function gridTabCommands(
+    data: BuildArgs['data'],
+    workingTab: Tab | null,
+    workingPane: 'primary' | 'secondary',
+): Partial<Record<ShortcutId, () => void>> {
+    const inSecondary = workingPane === 'secondary';
+    const saveEdits = inSecondary ? data.saveEditsSecondary : data.saveEditsPrimary;
+    const addInsert = inSecondary ? data.addInsertSecondary : data.addInsertPrimary;
+    const onGridTab = workingTab?.kind === 'grid';
+    return {
+        saveQuery: () => {
+            if (onGridTab) void saveEdits();
+        },
+        insertRow: () => {
+            if (onGridTab) addInsert();
+        },
+    };
+}
+
 function buildShellCommands({
     data,
     layout,
@@ -87,6 +108,7 @@ function buildShellCommands({
             if (workingPane === 'secondary') refreshSecondary();
             else refreshPrimary();
         },
+        ...gridTabCommands(data, workingTab, workingPane),
         // The one in front, which is what `useSession().disconnect` already defaults
         // to. The rail's menu is the other way in, and it names its own chip.
         disconnect: () => disconnect(),
@@ -122,6 +144,10 @@ export function useShellCommands(args: BuildArgs) {
         openAssistantTab,
         refreshPrimary,
         refreshSecondary,
+        saveEditsPrimary,
+        saveEditsSecondary,
+        addInsertPrimary,
+        addInsertSecondary,
     } = data;
     const { workingPane, toggleSidebar, focusTableFilter, askDiagramRefresh } = layout;
     const { treeDatabase, toggleTreeSync } = tree;
@@ -145,6 +171,10 @@ export function useShellCommands(args: BuildArgs) {
             treeDatabase,
             refreshPrimary,
             refreshSecondary,
+            saveEditsPrimary,
+            saveEditsSecondary,
+            addInsertPrimary,
+            addInsertSecondary,
             askDiagramRefresh,
         ],
     );

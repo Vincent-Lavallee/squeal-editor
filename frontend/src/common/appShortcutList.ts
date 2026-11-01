@@ -29,6 +29,8 @@ export const APP_SHORTCUT_LIST = [
     // is exactly why it is bound at all: the listeners preventDefault it whether
     // or not there is anything to refresh, on every kind of tab.
     { id: 'refresh', group: 'Results', label: 'Refresh the rows', defaultChord: 'Ctrl+R' },
+    // A grid tab's, like Refresh: an editor tab has no rows of its own to add to.
+    { id: 'insertRow', group: 'Results', label: 'Insert a row', defaultChord: 'Ctrl+Shift+N' },
     { id: 'newTab', group: 'Tabs', label: 'New tab', defaultChord: 'Ctrl+T' },
     // The Shift-pair of New tab, and the one command that says "split" out loud
     // by minting rather than moving -- `dockTab` below is still the only way an

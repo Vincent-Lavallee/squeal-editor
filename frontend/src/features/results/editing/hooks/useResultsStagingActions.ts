@@ -6,6 +6,7 @@ interface Options {
     activeTabId: string | null;
     page: string | null;
     editable: boolean;
+    insertable: boolean;
 }
 
 /**
@@ -13,7 +14,7 @@ interface Options {
  * the component can call these freely without a guard at every call site. Split
  * out of `useResults` purely for length.
  */
-export function useResultsStagingActions({ activeTabId, page, editable }: Options) {
+export function useResultsStagingActions({ activeTabId, page, editable, insertable }: Options) {
     const view = useResultsView();
 
     const setCell = useCallback(
@@ -35,9 +36,40 @@ export function useResultsStagingActions({ activeTabId, page, editable }: Option
         },
         [editable, activeTabId, page, view],
     );
+    const addInsert = useCallback(() => {
+        if (insertable && activeTabId && page) view.addInsert(activeTabId, page);
+    }, [insertable, activeTabId, page, view]);
+    const setInsertCell = useCallback(
+        (index: number, column: string, value: CellValue) => {
+            if (insertable && activeTabId && page)
+                view.setInsertCell({ tabId: activeTabId, page, index, column, value });
+        },
+        [insertable, activeTabId, page, view],
+    );
+    const clearInsertCell = useCallback(
+        (index: number, column: string) => {
+            if (activeTabId && page) view.clearInsertCell(activeTabId, page, index, column);
+        },
+        [activeTabId, page, view],
+    );
+    const removeInsert = useCallback(
+        (index: number) => {
+            if (activeTabId && page) view.removeInsert(activeTabId, page, index);
+        },
+        [activeTabId, page, view],
+    );
     const discard = useCallback(() => {
         if (activeTabId) view.discard(activeTabId);
     }, [activeTabId, view]);
 
-    return { setCell, clearCell, toggleDelete, discard };
+    return {
+        setCell,
+        clearCell,
+        toggleDelete,
+        addInsert,
+        setInsertCell,
+        clearInsertCell,
+        removeInsert,
+        discard,
+    };
 }

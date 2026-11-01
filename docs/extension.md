@@ -995,8 +995,11 @@ takes `SHOW CREATE TRIGGER`/`FUNCTION`/`PROCEDURE` verbatim, the same as
 
 ## Writing back edited rows
 
-`db.write` applies a browsed grid's staged edits and deletes. It exists for the
-same reason `db.browse` does: writing back means authoring `UPDATE`/`DELETE` SQL,
+`db.write` applies a browsed grid's staged deletes, edits and inserts, in that
+order, in one transaction (`runWrites` in `drivers/commonWrites.ts`). Deletes run
+first so a key they free can be taken by an edit or an insert in the same Save.
+It exists for the same reason `db.browse` does: writing back means authoring
+`UPDATE`/`DELETE`/`INSERT` SQL,
 quoted per engine, and only this side may — the UI names a table and hands over
 values, never SQL. `db.query` itself is never rewritten to make this possible —
 a hand-typed query still runs exactly as given — but its *result* may still be
@@ -1011,8 +1014,19 @@ over it targets both). It is per-engine like every catalog query: MySQL reads
 `COLUMN_NAME` and is dropped); Postgres reads `pg_index`, skipping partial
 (`indpred`) and expression (`indexprs`) indexes. `null` means no identity, and
 `db.write` refuses such a table outright — it recomputes the key itself and does
-not trust one from the UI, so a keyless table cannot be written even if a caller
-supplies column names.
+not trust one from the UI, so a keyless table cannot be edited or deleted from
+even if a caller supplies column names.
+
+**An insert needs no identity.** It targets no existing row, so `write` refuses a
+keyless table only when the batch carries an edit or a delete, and a keyless table
+takes inserts. A `RowInsert` names only the columns the user filled in: an absent
+column is left out of the `INSERT`, so the server's default, auto-increment or
+generated value applies, which is not the same as `null` (SQL NULL, set on
+purpose). A row with no columns at all is the engine's all-defaults row, and the
+spelling differs: `DEFAULT VALUES` everywhere but MySQL/MariaDB, which have none
+and take `() VALUES ()` (`allDefaultsRow`, passed in by each driver). Nothing here
+checks that the relation is a base table: an insert into a view is the engine's to
+accept or refuse, and the refusal reaches the save bar like any other.
 
 ### A hand-typed query's row identity
 

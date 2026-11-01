@@ -277,6 +277,15 @@ export interface RowEdit {
     set: Record<string, CellValue>;
 }
 
+/**
+ * One new row, staged in the grid and issued on Save. `values` holds only the
+ * columns the user filled in: a column that is absent takes the server's own
+ * default, which is not the same as `null` -- that is SQL NULL, set on purpose.
+ */
+export interface RowInsert {
+    values: Record<string, CellValue>;
+}
+
 /** One row's deletion, targeted by its identifying values -- see `RowEdit.key`. */
 export interface RowDelete {
     key: Record<string, CellValue>;

@@ -185,14 +185,15 @@ function commandsConnectionQuery(): Pick<
             return { count };
         },
 
-        async 'db.write'({ connectionId, database, table, schema, edits, deletes }) {
+        async 'db.write'({ connectionId, database, table, schema, edits, deletes, inserts }) {
             return {
-                affectedRows: await getConnection(connectionId).write(
+                affectedRows: await getConnection(connectionId).write({
                     database,
-                    { table, schema },
+                    relation: { table, schema },
                     edits,
                     deletes,
-                ),
+                    inserts,
+                }),
             };
         },
     };

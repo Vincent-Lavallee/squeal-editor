@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { CellValue } from '../../../../../../shared/protocol/index.ts';
+import { on, usePendingInserts } from './usePendingInserts.ts';
 
 /**
  * The edits and deletes staged on a browsed grid, keyed by tab id.
@@ -29,10 +30,22 @@ export interface Pending {
     edits: Record<number, Record<number, CellValue>>;
     /** rowIndex -> true for a row staged to be deleted. */
     deletes: Record<number, true>;
+    /**
+     * One entry per new row, column name -> value. By name rather than index, since
+     * a new row is not a position in the rows on screen and the columns shown can
+     * be reordered or hidden while it waits. A column with no entry is left to the
+     * server's default.
+     */
+    inserts: Record<string, CellValue>[];
 }
 
 /** Shared frozen empty, so a tab with nothing staged is a stable reference. */
-export const EMPTY_PENDING: Pending = Object.freeze({ page: '', edits: {}, deletes: {} });
+export const EMPTY_PENDING: Pending = Object.freeze({
+    page: '',
+    edits: {},
+    deletes: {},
+    inserts: [],
+});
 
 export interface SetCellArgs {
     tabId: string;
@@ -54,10 +67,7 @@ export function usePendingEdits() {
         [pendingByTab],
     );
 
-    // A fresh entry for a page not yet staged against -- also how a new page wipes
-    // the old one's now-meaningless row indices.
-    const on = (prev: Pending | undefined, page: string): Pending =>
-        prev && prev.page === page ? prev : { page, edits: {}, deletes: {} };
+    const inserts = usePendingInserts(setPendingByTab);
 
     const setCell = useCallback(({ tabId, page, row, col, value }: SetCellArgs) => {
         setPendingByTab((prev) => {
@@ -107,7 +117,7 @@ export function usePendingEdits() {
     }, []);
 
     return useMemo(
-        () => ({ pendingFor, setCell, clearCell, toggleDelete, clear, prune }),
-        [pendingFor, setCell, clearCell, toggleDelete, clear, prune],
+        () => ({ pendingFor, setCell, clearCell, toggleDelete, ...inserts, clear, prune }),
+        [pendingFor, setCell, clearCell, toggleDelete, inserts, clear, prune],
     );
 }

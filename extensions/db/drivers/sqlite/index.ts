@@ -67,7 +67,7 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
         client.run(`PRAGMA query_only = ${readOnly ? 'ON' : 'OFF'}`);
     },
 
-    async applyWrites(client, { relation, keyColumns, edits, deletes }) {
+    async applyWrites(client, { relation, keyColumns, edits, deletes, inserts }) {
         // One transaction for the batch -- see the mysql driver. Written out rather
         // than through bun:sqlite's `db.transaction()` helper, which wants a
         // synchronous callback and `runWrites` is async.
@@ -78,6 +78,8 @@ export const sqliteDriver: Driver<SqliteDatabase> = {
                 keyColumns,
                 edits,
                 deletes,
+                inserts,
+                allDefaultsRow: 'DEFAULT VALUES',
                 quoteIdent: (name) => this.quoteIdent(name),
                 placeholder: (position) => this.placeholder(position),
                 exec: async (sql, params) =>

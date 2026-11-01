@@ -8264,3 +8264,55 @@ launched on an aarch64 machine and started its extension from the right path.
 The release leg itself (`ubuntu-24.04-arm`, free only for public repositories)
 has not run yet. Connecting to a database, the borderless titlebar and
 libsecret passwords are still unchecked on Linux.
+
+---
+
+## Inserting a row: a draft in the staged batch, omitted columns, and no key required
+
+The grid could update and delete but not create, so adding a row meant leaving for
+another client. A new row is now a **draft row** staged beside the edits and
+deletes, and one Save issues all three.
+
+**It rides `db.write`, not a command of its own.** An insert has to land in the
+same transaction as the edits and deletes the user staged with it, and the
+protocol already says "one Save is one transaction". `db.write` gained `inserts`
+and runs deletes, then edits, then inserts. *Rejected: inserts first*, the natural
+reading order, because a key freed within the batch (delete id 5, insert a new 5;
+edit id 5 to 6, insert 5) would then fail on a unique violation the user can see
+the answer to on screen.
+
+**An untouched column is omitted from the `INSERT`, never sent as NULL.** Sending
+NULL for every column the user did not fill would break auto-increment keys,
+`NOT NULL DEFAULT` columns and `CURRENT_TIMESTAMP` on most real tables. Omission
+is "let the database decide", NULL is a value the user chose, and the empty string
+is a third thing — the same distinction *The result grid writes back* already
+draws between clearing a cell and setting NULL. *Rejected for now: extending
+`ColumnInfo` with nullability, default and auto-increment* so the UI could prefill
+or require columns. It would be a catalog query in every driver and would still
+not know the value of an expression default; the server's own refusal, shown in
+the save bar, names the column that was needed.
+
+**A keyless table takes inserts.** The read-only rule for a table with no primary
+or unique key exists so an `UPDATE`/`DELETE` `WHERE` targets one row; an insert
+targets none. The cost is that a row added to a keyless table cannot be edited
+afterwards, which is no different from the rows already there.
+
+**Views are not excluded by the UI.** The grid tab does not know whether it is
+browsing a table or a view (the browse payload carries a row identity, not a
+kind, and the explorer's listing is paged and search-narrowed, so it cannot be
+trusted to hold the entry). Gating on it would need the kind carried through the
+tab or the page. Until then an insert into a view is the engine's to refuse, which
+it does for non-updatable views and accepts for simple ones.
+
+**A cell committed empty while untouched stays at default.** Blur commits the
+editor's draft, so opening a draft cell and clicking away would otherwise stage
+`''` and fail on the first numeric column. The cost is that `''` is reachable only
+by typing and then clearing.
+
+**Verified** on MySQL, MariaDB, Postgres and SQLite in the extension suite
+(`tests/extension.test.ts`: values and defaults, delete-then-insert on a reused
+key, the all-defaults row, rollback on a failing insert, a keyless table taking an
+insert while refusing an edit). **Not verified: SQL Server** (the container does
+not start on arm64, so those blocks cannot connect) and **the UI** (the real-app
+suite is Windows-only); the `DEFAULT VALUES` spelling and the draft-row grid have
+not been run against either.

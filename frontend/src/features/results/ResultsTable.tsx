@@ -84,11 +84,12 @@ export default function ResultsTable({
 
             {g.result.truncated && <ResultsTruncatedBar rowCount={g.result.rows.length} />}
 
-            {(g.dirtyCount > 0 || g.saving || g.saveError) && (
+            {(g.dirtyCount > 0 || g.saving || g.saveError || g.saveNotice) && (
                 <ResultsSaveBar
                     dirtyCount={g.dirtyCount}
                     saving={g.saving}
                     saveError={g.saveError}
+                    saveNotice={g.saveNotice}
                     onDiscard={g.discard}
                     onSave={() => void g.save()}
                 />

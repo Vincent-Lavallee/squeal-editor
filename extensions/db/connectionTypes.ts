@@ -6,6 +6,7 @@ import type {
     FunctionInfo,
     RowDelete,
     RowEdit,
+    RowInsert,
     SortOrder,
     SqlDialect,
     TableFilter,
@@ -134,18 +135,20 @@ export interface ConnectionHandle {
     /** Drop a relation. Not undoable -- the UI guards it behind a typed confirmation. */
     dropRelation(database: string, relation: Relation, kind: 'table' | 'view'): Promise<void>;
     /**
-     * Write edited and deleted rows back to a browsed table, as one atomic batch,
-     * returning the total rows affected. Refused for a table with no row identity:
+     * Write deleted, edited and new rows back to a browsed table, as one atomic
+     * batch, returning the total rows affected. Edits and deletes are refused for
+     * a table with no row identity (inserts need none):
      * the key is recomputed here, not taken from the UI, so a keyless table cannot
      * be written even if the caller supplies one. Each op must carry every key
      * column, or it could not target a row.
      */
-    write(
-        database: string,
-        relation: Relation,
-        edits: RowEdit[],
-        deletes: RowDelete[],
-    ): Promise<number>;
+    write(args: {
+        database: string;
+        relation: Relation;
+        edits: RowEdit[];
+        deletes: RowDelete[];
+        inserts: RowInsert[];
+    }): Promise<number>;
     /**
      * Turn read-only on or off across every client this connection holds, and
      * remember it for every client opened afterwards. Both halves matter: one

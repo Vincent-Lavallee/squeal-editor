@@ -50,6 +50,7 @@ export type {
     QueryResult,
     RowDelete,
     RowEdit,
+    RowInsert,
     SortOrder,
     StarredTable,
     TableFilter,

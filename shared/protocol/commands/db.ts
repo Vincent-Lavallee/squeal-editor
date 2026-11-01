@@ -13,6 +13,7 @@ import type {
     QueryResult,
     RowDelete,
     RowEdit,
+    RowInsert,
     SortOrder,
     TableFilter,
     TableInfo,
@@ -308,13 +309,16 @@ export interface DbCommands {
         res: { ok: true };
     };
     /**
-     * Write edited and deleted rows back to a browsed table, as one atomic batch.
+     * Write edited, deleted and new rows back to a browsed table, as one atomic
+     * batch that runs deletes, then edits, then inserts -- so a key freed by a
+     * delete or an edit can be taken by an insert in the same Save.
      *
      * Only browse mode reaches here: `db.query` runs the user's statement as
      * written and is never rewritten, so write-back is only offered for rows the
      * extension itself paged and can identify. The extension recomputes the table's
      * key columns and refuses a table with none -- the UI may not choose what
-     * identifies a row any more than it may write the SQL.
+     * identifies a row any more than it may write the SQL. Inserts target no
+     * existing row, so a table with no key can still take them.
      *
      * The whole batch runs in a transaction: every edit and delete lands together
      * or none does, and a failure leaves the connection usable, like a failed
@@ -329,6 +333,7 @@ export interface DbCommands {
             schema?: string;
             edits: RowEdit[];
             deletes: RowDelete[];
+            inserts: RowInsert[];
         };
         res: { affectedRows: number };
     };

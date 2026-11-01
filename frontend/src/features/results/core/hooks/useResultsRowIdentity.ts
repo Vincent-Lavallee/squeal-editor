@@ -18,7 +18,7 @@ function readOnlyReasonFor(args: {
     queryKeyColumns: string[] | null;
 }): string | null {
     const { hasEditCandidate, readOnly, browse, queryKeyColumns } = args;
-    const noKey = 'This table has no primary or unique key, so it can’t be edited.';
+    const noKey = 'This table has no primary or unique key, so its rows can’t be edited.';
     if (!hasEditCandidate) return null;
     if (readOnly) return 'This connection is read-only — unlock it in the status bar to edit.';
     if (browse !== null) return browse.keyColumns === null ? noKey : null;
@@ -88,6 +88,10 @@ export function useResultsRowIdentity({
 
     const hasEditCandidate = browse !== null || editTarget !== null;
     const editable = keyColumns !== null && !readOnly;
+    // Only a browsed page: a new row needs the table named, and a hand-typed
+    // query's detected table is a guess where a browse's is a fact. A key is not
+    // needed -- an insert targets no existing row.
+    const insertable = browse !== null && !readOnly;
     const readOnlyReason = readOnlyReasonFor({
         hasEditCandidate,
         readOnly,
@@ -115,7 +119,8 @@ export function useResultsRowIdentity({
     const editedRows = Object.keys(pending.edits)
         .map(Number)
         .filter((r) => !deletedSet.has(r) && Object.keys(pending.edits[r] ?? {}).length > 0);
-    const dirtyCount = editedRows.length + deletedRows.length;
+    const insertCount = pending.inserts.length;
+    const dirtyCount = editedRows.length + deletedRows.length + insertCount;
 
     return {
         keyColumns,
@@ -125,6 +130,7 @@ export function useResultsRowIdentity({
         page,
         pending,
         editable,
+        insertable,
         readOnlyReason,
         missingKeyHint,
         deletedRows,

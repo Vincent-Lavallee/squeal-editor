@@ -1524,6 +1524,7 @@ describe.each([
                     { key: { id: 2 }, set: { name: null } },
                 ],
                 deletes: [{ key: { id: 3 } }],
+                inserts: [],
             })) as { affectedRows: number };
             expect(res.affectedRows).toBe(3);
 
@@ -1555,6 +1556,7 @@ describe.each([
                     { key: { id: 2 }, set: { nope: 'Y' } },
                 ],
                 deletes: [],
+                inserts: [],
             });
             expect(bad.ok).toBe(false);
 
@@ -1564,6 +1566,114 @@ describe.each([
             await query('DROP TABLE IF EXISTS zz_edit_rb');
         });
 
+        test('inserts new rows, leaving untouched columns to their defaults', async () => {
+            await query('DROP TABLE IF EXISTS zz_insert_test');
+            await query(
+                "CREATE TABLE zz_insert_test (id int primary key, name text, kind varchar(10) default 'plain', n bigint)",
+            );
+            await query("INSERT INTO zz_insert_test (id, name) VALUES (1, 'old'), (2, 'gone')");
+
+            const res = (await h.ok('db.write', {
+                connectionId,
+                database: fixtureDb,
+                table: 'zz_insert_test',
+                // Delete first, so id 2 is free for the insert in the same batch.
+                deletes: [{ key: { id: 2 } }],
+                edits: [{ key: { id: 1 }, set: { name: 'edited' } }],
+                inserts: [
+                    { values: { id: 2, name: 'reborn', n: '9007199254740993' } },
+                    { values: { id: 3, name: null } },
+                ],
+            })) as { affectedRows: number };
+            expect(res.affectedRows).toBe(4);
+
+            const after = await query('SELECT id, name, kind, n FROM zz_insert_test ORDER BY id');
+            expect(after.rows).toHaveLength(3);
+            const [one, two, three] = after.rows;
+            expect(one![1]).toBe('edited');
+            expect(two![1]).toBe('reborn');
+            expect(two![2]).toBe('plain');
+            expect(String(two![3])).toBe('9007199254740993');
+            expect(three![1]).toBeNull();
+
+            await query('DROP TABLE IF EXISTS zz_insert_test');
+        });
+
+        test('a row with nothing filled in inserts the table defaults', async () => {
+            await query('DROP TABLE IF EXISTS zz_insert_defaults');
+            await query(
+                label === 'mysql' || label === 'mariadb'
+                    ? "CREATE TABLE zz_insert_defaults (id int auto_increment primary key, tag varchar(10) default 'x')"
+                    : label === 'postgres'
+                      ? "CREATE TABLE zz_insert_defaults (id serial primary key, tag varchar(10) default 'x')"
+                      : label === 'mssql'
+                        ? "CREATE TABLE zz_insert_defaults (id int identity primary key, tag varchar(10) default 'x')"
+                        : "CREATE TABLE zz_insert_defaults (id integer primary key autoincrement, tag varchar(10) default 'x')",
+            );
+
+            await h.ok('db.write', {
+                connectionId,
+                database: fixtureDb,
+                table: 'zz_insert_defaults',
+                edits: [],
+                deletes: [],
+                inserts: [{ values: {} }, { values: {} }],
+            });
+
+            const after = await query('SELECT id, tag FROM zz_insert_defaults ORDER BY id');
+            expect(after.rows).toHaveLength(2);
+            expect(after.rows.map((r) => r[1])).toEqual(['x', 'x']);
+
+            await query('DROP TABLE IF EXISTS zz_insert_defaults');
+        });
+
+        test('a failing insert rolls the whole batch back', async () => {
+            await query('DROP TABLE IF EXISTS zz_insert_rb');
+            await query('CREATE TABLE zz_insert_rb (id int primary key, name text)');
+            await query("INSERT INTO zz_insert_rb (id, name) VALUES (1, 'a')");
+
+            const bad = await h.dispatch('db.write', {
+                connectionId,
+                database: fixtureDb,
+                table: 'zz_insert_rb',
+                edits: [],
+                deletes: [],
+                // The second collides with the first on the primary key.
+                inserts: [{ values: { id: 2, name: 'b' } }, { values: { id: 2, name: 'c' } }],
+            });
+            expect(bad.ok).toBe(false);
+            expect((await query('SELECT id FROM zz_insert_rb')).rows).toHaveLength(1);
+
+            await query('DROP TABLE IF EXISTS zz_insert_rb');
+        });
+
+        test('a keyless table takes inserts but still refuses edits', async () => {
+            await query('DROP TABLE IF EXISTS zz_insert_keyless');
+            await query('CREATE TABLE zz_insert_keyless (msg varchar(20))');
+
+            await h.ok('db.write', {
+                connectionId,
+                database: fixtureDb,
+                table: 'zz_insert_keyless',
+                edits: [],
+                deletes: [],
+                inserts: [{ values: { msg: 'hello' } }],
+            });
+            expect((await query('SELECT msg FROM zz_insert_keyless')).rows[0]![0]).toBe('hello');
+
+            const bad = await h.dispatch('db.write', {
+                connectionId,
+                database: fixtureDb,
+                table: 'zz_insert_keyless',
+                edits: [{ key: {}, set: { msg: 'x' } }],
+                deletes: [],
+                inserts: [],
+            });
+            expect(bad.ok).toBe(false);
+
+            await query('DROP TABLE IF EXISTS zz_insert_keyless');
+        });
+
         test('a keyless table cannot be written', async () => {
             const bad = await h.dispatch('db.write', {
                 connectionId,
@@ -1571,6 +1681,7 @@ describe.each([
                 table: 'logs',
                 edits: [{ key: {}, set: { msg: 'x' } }],
                 deletes: [],
+                inserts: [],
             });
             expect(bad.ok).toBe(false);
             if (!bad.ok) expect(bad.error).toMatch(/no primary or unique key/i);
@@ -1590,6 +1701,7 @@ describe.each([
                     table: 'zz_edit_ro',
                     edits: [{ key: { id: 1 }, set: { name: 'X' } }],
                     deletes: [],
+                    inserts: [],
                 });
                 expect(bad.ok).toBe(false);
                 await h.ok('db.readonly', { connectionId, readOnly: false });

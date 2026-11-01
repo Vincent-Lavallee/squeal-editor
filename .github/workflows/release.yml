@@ -109,6 +109,10 @@ jobs:
             # Linux ships an AppImage rather than the raw `neu build` output: a bare
             # binary has no launcher entry or icon. The script bundles the app, not
             # WebKitGTK, which the user's machine has to provide.
+            - name: Install what appimagetool shells out to
+              if: runner.os == 'Linux'
+              run: sudo apt-get update -qq && sudo apt-get install -y -qq desktop-file-utils squashfs-tools
+
             - name: Package the Linux AppImage
               if: runner.os == 'Linux'
               run: |

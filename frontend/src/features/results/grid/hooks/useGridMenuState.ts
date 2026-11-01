@@ -12,6 +12,8 @@ interface Options {
     setCells: (cells: CellRange | null) => void;
     setEditing: (cell: null) => void;
     editable: boolean;
+    insertable: boolean;
+    addInsert: () => void;
     columns: string[];
     rowCount: number;
     colCount: number;
@@ -97,6 +99,9 @@ function selectEverythingFor(o: Options): void {
     o.setCells({ anchor: { row: 0, col: 0 }, focus: { row: o.rowCount - 1, col: o.colCount - 1 } });
 }
 
+const insertRowItem = (o: Options): MenuItem[] =>
+    o.insertable ? [{ label: 'Insert row', onSelect: o.addInsert }] : [];
+
 function rowMenuItems(m: Menu, o: Options): MenuItem[] {
     const rows = o.selected.size > 0 ? [...o.selected].sort((a, b) => a - b) : [m.row];
     const allCols = indexRange(0, o.colCount - 1);
@@ -114,7 +119,7 @@ function rowMenuItems(m: Menu, o: Options): MenuItem[] {
             onSelect: () => o.toggleDelete(m.row),
         });
     }
-    return items;
+    return [...items, ...insertRowItem(o)];
 }
 
 function columnMenuItems(m: Menu, o: Options): MenuItem[] {
@@ -170,7 +175,7 @@ function cellMenuItems(m: Menu, o: Options): MenuItem[] {
             onSelect: () => o.toggleDelete(m.row),
         });
     }
-    return items;
+    return [...items, ...insertRowItem(o)];
 }
 
 /**

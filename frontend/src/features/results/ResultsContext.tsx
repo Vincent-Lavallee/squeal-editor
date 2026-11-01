@@ -21,6 +21,7 @@ import {
     EMPTY_PENDING,
     type Pending,
     type SetCellArgs,
+    type SetInsertCellArgs,
     useStagingState,
 } from './editing/hooks/useStagingState.ts';
 
@@ -42,12 +43,20 @@ export interface ResultsView {
     /** Un-stage one cell (the caller reverts when the value returns to the original). */
     clearCell: (tabId: string, page: string, row: number, col: number) => void;
     toggleDelete: (tabId: string, page: string, row: number) => void;
+    addInsert: (tabId: string, page: string) => void;
+    setInsertCell: (args: SetInsertCellArgs) => void;
+    /** Put a new row's cell back to the server's default. */
+    clearInsertCell: (tabId: string, page: string, index: number, column: string) => void;
+    removeInsert: (tabId: string, page: string, index: number) => void;
     /** Drop everything staged for a tab -- Discard, and after a successful Save. */
     discard: (tabId: string) => void;
     saving: Record<string, boolean>;
     setSaving: (tabId: string, value: boolean) => void;
     saveError: Record<string, string | null>;
     setSaveError: (tabId: string, message: string | null) => void;
+    /** What the last Save did that the grid cannot show for itself, e.g. rows inserted. */
+    saveNotice: Record<string, string | null>;
+    setSaveNotice: (tabId: string, message: string | null) => void;
     filterDraft: Record<string, FilterDraft>;
     setFilterDraft: (tabId: string, draft: FilterDraft) => void;
     clearFilterDraft: (tabId: string) => void;
@@ -107,15 +116,7 @@ export function ResultsProvider({ children }: { children: ReactNode }) {
 
     const value = useMemo(
         () => ({
-            pendingFor: staging.pendingFor,
-            setCell: staging.setCell,
-            clearCell: staging.clearCell,
-            toggleDelete: staging.toggleDelete,
-            discard: staging.discard,
-            saving: staging.saving,
-            setSaving: staging.setSaving,
-            saveError: staging.saveError,
-            setSaveError: staging.setSaveError,
+            ...staging,
             filterDraft: filter.filterDraft,
             setFilterDraft: filter.setFilterDraft,
             clearFilterDraft: filter.clearFilterDraft,
