@@ -159,14 +159,6 @@ Things that do not exist yet.
   and whatever key it takes has to be rebound inside the editor too — the way
   running already is — or Monaco eats it first.
 
-- **Linux AppImage release** — Linux ships no release download at all right now
-  — the raw zip it used to carry had no desktop integration (no icon in the
-  launcher, no .desktop entry, nothing), which was worse than nothing, so it
-  was dropped. Wrap the Neutralino binary output in an AppImage with a
-  .desktop file and the app icon, so Linux users get the same download-and-run
-  experience as the other platforms. AppImage only for now; deb and other
-  formats can follow once the format is proven to work.
-
 - **Copyable values in the assistant's tool-call detail** — The "Sent"/"Received"
   blocks under an expanded assistant tool call (e.g. a query result carrying row
   ids) render as plain preformatted text — there's no way to copy a single value

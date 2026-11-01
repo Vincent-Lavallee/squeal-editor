@@ -49,7 +49,7 @@ jobs:
                       name: windows
                     - os: macos-latest
                       name: macos
-                    - os: ubuntu-latest
+                    - os: ubuntu-24.04-arm
                       name: linux
         runs-on: ${{ matrix.os }}
         steps:
@@ -106,10 +106,14 @@ jobs:
             - name: Package the app
               run: bunx neu build
 
-            # Linux still builds and packages here for verification (see the
-            # fail-fast comment above), but ships nothing to the release for now: a
-            # raw zip with no desktop integration is a worse first run than no
-            # download at all. Revisit once the AppImage backlog item lands.
+            # Linux ships an AppImage rather than the raw `neu build` output: a bare
+            # binary has no launcher entry or icon. The script bundles the app, not
+            # WebKitGTK, which the user's machine has to provide.
+            - name: Package the Linux AppImage
+              if: runner.os == 'Linux'
+              run: |
+                  version="${{ needs.release-please.outputs.tag_name }}"
+                  bash scripts/package-linux.sh "${version#v}"
 
             # macOS ships a .dmg instead of a zip: the raw neu output is a bare
             # executable and a resources folder, which is not something macOS knows how
@@ -150,6 +154,14 @@ jobs:
               run: |
                   version="${{ needs.release-please.outputs.tag_name }}"
                   gh release upload "$version" "squeal-editor-macos-arm64-v${version#v}.dmg" --clobber
+
+            - name: Attach the AppImage to the release
+              if: runner.os == 'Linux'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  version="${{ needs.release-please.outputs.tag_name }}"
+                  gh release upload "$version" "squeal-editor-linux-aarch64-v${version#v}.AppImage" --clobber
 
             - name: Attach the installer to the release
               if: runner.os == 'Windows'

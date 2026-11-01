@@ -28,7 +28,17 @@ curl -fsSL https://raw.githubusercontent.com/Vincent-Lavallee/squeal-editor/dev/
 Or download `squeal-editor-macos-*.dmg` from the [Releases page][releases] —
 see [Gatekeeper on macOS](#gatekeeper-on-macos).
 
-**Linux**: not shipped yet — build from source.
+**Linux** (arm64 only): download `squeal-editor-linux-aarch64-*.AppImage` from
+the [Releases page][releases], then make it executable and run it:
+
+```bash
+chmod +x squeal-editor-linux-aarch64-*.AppImage
+./squeal-editor-linux-aarch64-*.AppImage
+```
+
+It needs WebKitGTK from your system (`webkit2gtk-4.1` on Arch,
+`libwebkit2gtk-4.1-0` on Debian/Ubuntu) and `libsecret` for saved passwords.
+x86_64 Linux is not shipped yet — build from source.
 
 [releases]: https://github.com/Vincent-Lavallee/squeal-editor/releases/latest
 

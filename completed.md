@@ -1115,3 +1115,11 @@ This is a record, not a plan. Nothing here is waiting on anything.
   engine (own label, own icon) reusing the MySQL driver underneath, and give
   the test setup a real MariaDB container alongside MySQL and Postgres rather
   than assuming mysql2 behaves identically against both servers.
+
+- **2026-11-01** — **Linux AppImage release** — Linux ships no release download at all right now
+  — the raw zip it used to carry had no desktop integration (no icon in the
+  launcher, no .desktop entry, nothing), which was worse than nothing, so it
+  was dropped. Wrap the Neutralino binary output in an AppImage with a
+  .desktop file and the app icon, so Linux users get the same download-and-run
+  experience as the other platforms. AppImage only for now; deb and other
+  formats can follow once the format is proven to work.
