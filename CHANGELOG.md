@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.21.0...v0.22.0) (2026-11-01)
+
+
+### Features
+
+* Added Linux AppImage release ([#71](https://github.com/Vincent-Lavallee/squeal-editor/issues/71)) ([9035fd6](https://github.com/Vincent-Lavallee/squeal-editor/commit/9035fd69280cb8875e30c43b327220c96ef31a00))
+
 ## [0.21.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.20.0...v0.21.0) (2026-09-21)
 
 
