@@ -175,7 +175,7 @@ function cellMenuItems(m: Menu, o: Options): MenuItem[] {
             onSelect: () => o.toggleDelete(m.row),
         });
     }
-    return [...items, ...insertRowItem(o)];
+    return isSingleCell ? [...items, ...insertRowItem(o)] : items;
 }
 
 /**

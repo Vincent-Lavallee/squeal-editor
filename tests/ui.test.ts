@@ -2326,6 +2326,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
                 'Copy row values',
                 'Copy as SQL insert',
                 'Delete row',
+                'Insert row',
             ]);
 
             await app.evaluate(clickContextItem('Copy as SQL insert'));
@@ -2357,6 +2358,7 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
                 'Copy column name',
                 'Set NULL',
                 'Delete row',
+                'Insert row',
             ]);
 
             await app.evaluate(clickContextItem('Copy cell value'));
