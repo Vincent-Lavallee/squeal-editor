@@ -246,7 +246,7 @@ const selectLines = (from: number, to: number) => `(() => {
 /**
  * Types a query, puts the cursor where the `|` was, and reads the popup's labels.
  *
- * Three things here are the test earning its keep rather than ceremony:
+ * Four things here are the test earning its keep rather than ceremony:
  *
  * - **The `|` marks the cursor**, because every one of these assertions is about
  *   a position and a hardcoded column number is a magic number that silently
@@ -254,6 +254,12 @@ const selectLines = (from: number, to: number) => `(() => {
  * - **The sleep before triggering is not padding.** The columns of anything in
  *   the FROM are fetched over the bridge off the text changing, so the round
  *   trip has to land before the popup is asked what it knows.
+ * - **An empty popup is asked again, not believed.** On a slow runner that round
+ *   trip outlasts the sleep, and the provider answers from the cache, so a popup
+ *   opened too early after a dot is empty and stays empty -- it never refreshes
+ *   when the columns land. It is re-opened until it has rows, and only taken as
+ *   empty once the bound runs out, because an empty popup is sometimes the
+ *   answer (`zzz_bait` below).
  * - **The labels are read, not the row text.** A row's `textContent` is the
  *   label *and* its type detail run together, so `.includes` on it would match
  *   far too much -- and the labels come back as exact strings, which is what
@@ -265,15 +271,20 @@ async function suggest(sql: string): Promise<string[]> {
     await app.evaluate(setEditorText(sql.replace('|', '')));
     await Bun.sleep(1200);
 
-    await app.evaluate(`
+    const emptyPopupBelievedAt = Date.now() + 5000;
+    let labels: string[] = [];
+    while (labels.length === 0 && Date.now() < emptyPopupBelievedAt) {
+        await app.evaluate(`
     window.squealEditor.setPosition({ lineNumber: 1, column: ${column} });
     window.squealEditor.focus();
     window.squealEditor.getAction('editor.action.triggerSuggest').run(); true;`);
-    await Bun.sleep(800);
+        await Bun.sleep(800);
 
-    return app.evaluate<string[]>(`
+        labels = await app.evaluate<string[]>(`
     [...document.querySelectorAll('.suggest-widget .monaco-list-row .label-name')]
       .map(e => e.textContent)`);
+    }
+    return labels;
 }
 
 /**
@@ -833,13 +844,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
         test('a table expands in place to show its columns, marking the primary key', async () => {
             await app.evaluate(toggleTable('users'));
-            await Bun.sleep(1000);
 
             const item = treeItem('users');
-            const cols = await app.evaluate<string[]>(
-                `[...${item}.querySelectorAll('[data-testid="tree-col-name"]')].map(e => e.textContent)`,
-            );
-            expect(cols).toContain('email');
+            const columnNames = `[...${item}.querySelectorAll('[data-testid="tree-col-name"]')].map(e => e.textContent)`;
+            await app.waitFor(`(${columnNames}).length > 0 ? true : null`);
+            expect(await app.evaluate<string[]>(columnNames)).toContain('email');
 
             // The key mark lands on the primary key and on nothing else -- the whole
             // point of carrying the flag rather than guessing from the name.
@@ -945,9 +954,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
             await app.evaluate(setEditorText('SELECT 42 AS answer'));
             await Bun.sleep(200);
             await app.evaluate(`document.querySelector('[data-testid="run-btn"]').click(); true;`);
-            await Bun.sleep(1500);
 
             const headers = `[...document.querySelectorAll('[data-testid="grid-col-name"]')].map(e => e.textContent)`;
+            await app.waitFor(
+                `JSON.stringify(${headers}) === JSON.stringify(['answer']) ? true : null`,
+            );
             expect(await app.evaluate<string[]>(headers)).toEqual(['answer']);
 
             // The grid tab still holds the table it browsed, not this query's row.
@@ -2117,11 +2128,11 @@ describe.skipIf(!UI_ENABLED)('the real app', () => {
 
             // The failure is what is on screen -- landing on Result 1's grid would
             // leave the user looking at a success and wondering why the run stopped.
-            expect(
-                await app.evaluate<string>(
-                    `document.querySelectorAll('[data-testid="statement-tab"]')[1].getAttribute('aria-selected')`,
-                ),
-            ).toBe('true');
+            // Waited for: Result 2's tab exists from the moment it starts running,
+            // and the strip only moves to it once the error comes back.
+            const failedTabSelected = `document.querySelectorAll('[data-testid="statement-tab"]')[1].getAttribute('aria-selected')`;
+            await app.waitFor(`(${failedTabSelected}) === 'true' ? true : null`);
+            expect(await app.evaluate<string>(failedTabSelected)).toBe('true');
             expect(
                 await app.evaluate<string>(
                     `document.querySelector('[data-testid="note-error"]')?.textContent ?? ''`,

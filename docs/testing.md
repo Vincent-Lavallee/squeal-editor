@@ -55,6 +55,16 @@ provisions test databases without Docker" in `docs/decisions.md` for why
 Docker isn't an option on the Windows runner `test-ui` needs. Locally,
 `bun run test:db:up` is still Docker; nothing here changes for a dev machine.
 
+**A host port something else already holds fails silently, and looks like
+every test timing out.** `docker run -p` that cannot bind still leaves a running
+container, just with no port published (`docker ps` shows `5432/tcp` and no
+`->`), and `test:db:up` still reports *up and seeded*, because in Docker mode
+it probes and seeds through `docker exec`, never through the port. The suites
+then connect to whatever owns the port: `db.connect timed out` across the
+board, and the UI suite's whole `postgres` block failing in its `beforeAll`.
+VS Code's port forwarding has been seen holding `127.0.0.1:55432`. Check
+`docker ps` for the arrow before suspecting the code.
+
 **Running `shogo82148/actions-setup-mysql` twice in one job means two client
 installs sharing one `PATH`, and native mode's bare `mysqladmin`/`mysql`
 commands resolve to whichever one ran *last*.** Found against a real CI run,
@@ -559,8 +569,16 @@ Two things to know:
   of undefined`), which is why `reapStaleApp`'s warning above about failures
   naming the wrong helper is not hypothetical. `reload()`'s own wait is capped at
   the same 30s `launchApp` gives first paint, for the same reason: a reload is
-  not cheaper than the first load. Convert the next one that bites rather than
-  all of them at once.
+  not cheaper than the first load. Four more went at once, each having failed a
+  CI run on its own: a tree table's columns on expand, a Run's grid headers, the
+  statement strip moving to a failed statement (its tab exists from the moment
+  the statement *starts*, and the strip only moves when the error lands), and
+  `suggest`'s popup. That last one cannot simply wait for rows: the provider
+  answers from the column cache, so a popup opened before the fetch lands is
+  empty and never refreshes, and an empty popup is sometimes the right answer.
+  It re-opens the popup until it has rows and gives up after a bound, leaving
+  the assertion to decide. Convert the next one that bites rather than all of
+  them at once.
 - **A dispatched `KeyboardEvent` cannot prove a chord is *available*, only that
   the handler works.** It enters at the DOM, below the embedder — so a chord the
   host claims as an accelerator passes the test and closes the window in real
