@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.23.0...v0.23.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* turn off macOS text suggestions in the cell editor ([#74](https://github.com/Vincent-Lavallee/squeal-editor/issues/74)) ([8cac1b2](https://github.com/Vincent-Lavallee/squeal-editor/commit/8cac1b2879074067c3f50c5a544bab82d884f810))
+
 ## [0.23.0](https://github.com/Vincent-Lavallee/squeal-editor/compare/v0.22.0...v0.23.0) (2026-11-01)
 
 
