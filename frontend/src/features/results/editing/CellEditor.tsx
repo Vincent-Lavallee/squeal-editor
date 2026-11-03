@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { CellValue } from '../../../../../shared/protocol/index.ts';
+import { NO_NATIVE_SUGGESTIONS } from '../../../common/nativeSuggestions.ts';
 import * as t from '../../../common/tokens';
 import { handleCellEditorKey } from './cellEditorKeys.ts';
 
@@ -67,6 +68,7 @@ export default function CellEditor({
             <input
                 ref={ref}
                 data-testid="cell-edit-input"
+                {...NO_NATIVE_SUGGESTIONS}
                 style={inputStyle}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}

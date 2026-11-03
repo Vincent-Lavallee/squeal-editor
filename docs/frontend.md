@@ -29,6 +29,7 @@ src/common/             shared infrastructure, no components
   theme/                theme.ts (the choice/resolved types) + hooks/ (useResolvedTheme, useThemeAttribute)
   db/                   the UI's engine table
   shortcuts.ts          every keyboard shortcut — the app's and Monaco's — and the one spelling of a chord
+  nativeSuggestions.ts  NO_NATIVE_SUGGESTIONS, spread onto every single-value text field (see design-system.md)
 src/store/              every slice; bridge-crossed state and the keys it is held under.
                         A slice split for length follows one shape: `xSlice.ts`
                         keeps the state, `createSlice` and its selectors;
@@ -513,13 +514,14 @@ typed so far, the way typing over a selected word does. `useEffect(..., [renamin
 runs once when rename mode is entered for a given tab and not again while its
 draft changes, which is the fix.
 
-**The rename field turns the platform's suggestions off — all four of them.**
-`autoComplete`, `autoCorrect`, `autoCapitalize` and `spellCheck` are set on it
-explicitly, the way the shared `Input` already defaults `autoComplete` off. A
-tab's name is a label, not prose: macOS otherwise offers autofill, spelling and
-its own text substitutions over a strip 200px wide, each drawn as a native popup
-outside the webview and over the tabs beside it — and a substitution would be
-editing a name the user typed.
+**The rename field turns the platform's suggestions off** by spreading
+`NO_NATIVE_SUGGESTIONS` (`common/nativeSuggestions.ts`). A tab's name is a
+label, not prose: macOS otherwise offers autofill, spelling, inline predictions
+and its own text substitutions over a strip 200px wide, each drawn as a native
+popup outside the webview and over the tabs beside it — and a substitution would
+be editing a name the user typed. The grid's `CellEditor` and every connection
+form field spread the same constant; see `docs/design-system.md`, *What the OS
+draws over a text field*.
 
 **The strip scrolls to whatever tab is now in front.** A tab arriving — `+`, a
 table, a definition, a duplicate, a saved query, a tab docked from the other

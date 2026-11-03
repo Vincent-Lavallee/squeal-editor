@@ -2,7 +2,8 @@ import Button from '../../../common/components/Button.tsx';
 import Input from '../../../common/components/Input.tsx';
 import Field from '../../../common/components/Field.tsx';
 import * as t from '../../../common/tokens';
-import { invalidBox, NO_NATIVE_SUGGESTIONS, requiredHint } from './connectionFormFieldHelpers.tsx';
+import { NO_NATIVE_SUGGESTIONS } from '../../../common/nativeSuggestions.ts';
+import { invalidBox, requiredHint } from './connectionFormFieldHelpers.tsx';
 
 interface Props {
     database: string;

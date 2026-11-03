@@ -4,6 +4,7 @@ import type {
     SavedConnection,
 } from '../../../../../shared/protocol/index.ts';
 import { ENGINES } from '../../../common/db/engines.ts';
+import { NO_NATIVE_SUGGESTIONS } from '../../../common/nativeSuggestions.ts';
 import Input from '../../../common/components/Input.tsx';
 import Select from '../../../common/components/Select.tsx';
 import Field from '../../../common/components/Field.tsx';
@@ -45,6 +46,7 @@ export default function ConnectionFormFields({ f, mode, initial, environments, b
                     id="name"
                     value={f.form.name}
                     autoFocus
+                    {...NO_NATIVE_SUGGESTIONS}
                     placeholder={mode === 'edit' ? '' : 'prod-analytics'}
                     aria-invalid={f.invalid('name') || undefined}
                     style={invalidBox(f.invalid('name'))}
