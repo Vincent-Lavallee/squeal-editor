@@ -1,12 +1,8 @@
 import type { Engine } from '../../../common/db/engines.ts';
 import Input from '../../../common/components/Input.tsx';
 import Field from '../../../common/components/Field.tsx';
-import {
-    invalidBox,
-    NO_NATIVE_SUGGESTIONS,
-    OPTIONAL,
-    requiredHint,
-} from './connectionFormFieldHelpers.tsx';
+import { NO_NATIVE_SUGGESTIONS } from '../../../common/nativeSuggestions.ts';
+import { invalidBox, OPTIONAL, requiredHint } from './connectionFormFieldHelpers.tsx';
 
 interface Props {
     engine: Engine;

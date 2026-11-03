@@ -195,6 +195,32 @@ set `display` inline** — and the better answer is usually not to render it: th
 editor box is hidden rather than unmounted only because Monaco's models hang off
 it, and nothing else in the app has that excuse.
 
+## What the OS draws over a text field
+
+On macOS, WebKit hands a focused text field to the system's text services:
+autofill, spelling, autocorrect, auto-capitalisation and — since Sonoma — inline
+predictive text, which writes a grey completion past the caret. Each is drawn
+natively, outside the webview, over whatever sits beside the field, and most of
+it never shows on Windows, so it goes unnoticed until someone edits on a Mac.
+
+**Every text field that holds a single value, not prose, spreads
+`NO_NATIVE_SUGGESTIONS` from `common/nativeSuggestions.ts`**: the grid's cell
+editor, the tab-rename field, the connection form. A suggestion there is wrong
+by definition: a cell holds what the server sent, a host or user name is not a
+dictionary word, and an accepted prediction or a substitution silently rewrites
+what was typed. The constant is the full set, and it takes all five:
+
+- `autoComplete`, `autoCorrect`, `autoCapitalize`, `spellCheck` — the long-known
+  four.
+- `writingsuggestions="false"` — the standard switch for inline predictions,
+  which the other four are not documented to cover. React 18 has no prop for it,
+  so it is a lowercase key with a string value, which React passes through to
+  the DOM verbatim.
+
+Turning these off one field at a time instead of spreading the constant is how
+a field ends up with four of the five. The assistant's composer is prose, so it
+does not use it.
+
 ## Recipes
 
 | Building | Do |

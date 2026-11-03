@@ -3,7 +3,8 @@ import Input from '../../../common/components/Input.tsx';
 import Field from '../../../common/components/Field.tsx';
 import AwsSignInButton from '../aws-sign-in/AwsSignInButton.tsx';
 import AwsSignInStatus from '../aws-sign-in/AwsSignInStatus.tsx';
-import { invalidBox, NO_NATIVE_SUGGESTIONS, requiredHint } from './connectionFormFieldHelpers.tsx';
+import { NO_NATIVE_SUGGESTIONS } from '../../../common/nativeSuggestions.ts';
+import { invalidBox, requiredHint } from './connectionFormFieldHelpers.tsx';
 
 interface Props {
     awsProfile: string;

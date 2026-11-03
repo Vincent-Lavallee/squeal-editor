@@ -1,3 +1,4 @@
+import { NO_NATIVE_SUGGESTIONS } from '../../common/nativeSuggestions.ts';
 import * as t from '../../common/tokens';
 
 export default function TabRenameInput({
@@ -21,14 +22,7 @@ export default function TabRenameInput({
         <input
             data-testid="tab-rename-input"
             ref={inputRef}
-            // A tab's name is a label, not prose: macOS otherwise offers
-            // autofill, spelling and its own text substitutions over a
-            // 200px-wide strip, each of them a native popup drawn outside
-            // the webview and over the tabs beside it.
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
+            {...NO_NATIVE_SUGGESTIONS}
             value={draft}
             onChange={(e) => onChange(e.target.value)}
             onBlur={onCommit}
